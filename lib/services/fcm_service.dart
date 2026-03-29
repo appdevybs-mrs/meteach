@@ -13,6 +13,7 @@ import '../admin/admin_classes.dart';
 import '../admin/admin_payments.dart';
 import '../admin/admin_teacher_reminders_screen.dart';
 import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
+import '../admin/admin_admin_todos_screen.dart';
 import '../learner/learner_booking_screen.dart';
 import '../learner/learner_courses_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
@@ -240,7 +241,7 @@ class FCMService {
     if (type == 'message' || type == 'chat') {
       channelId = chMessages;
       channelName = 'Messages';
-    } else if (type == 'reminder' || type == 'class') {
+    } else if (type == 'reminder' || type == 'class' || type == 'admin_todo') {
       channelId = chReminders;
       channelName = 'Reminders';
     } else if (type == 'mail' || type == 'email') {
@@ -520,6 +521,15 @@ class FCMService {
     }
   }
 
+  Future<void> _openAdminTodoByRole(Map<String, dynamic> data) async {
+    final role = await _fetchCurrentUserRole();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+    if (role != 'admin') return;
+
+    nav.push(MaterialPageRoute(builder: (_) => const AdminAdminTodosScreen()));
+  }
+
   Future<void> _openBookingByRole(Map<String, dynamic> data) async {
     final role = await _fetchCurrentUserRole();
     final targetRole = _normalizeRole(data['targetRole']);
@@ -577,6 +587,9 @@ class FCMService {
     }
     if (route == 'teacher_reminders' || type == 'reminder') {
       return 'reminder';
+    }
+    if (route == 'admin_todos' || type == 'admin_todo') {
+      return 'admin_todo';
     }
     if (type == 'booking') {
       return 'booking';
@@ -636,6 +649,10 @@ class FCMService {
       }
       if (action == 'reminder') {
         await _openReminderByRole(data);
+        return;
+      }
+      if (action == 'admin_todo') {
+        await _openAdminTodoByRole(data);
         return;
       }
       if (action == 'booking') {

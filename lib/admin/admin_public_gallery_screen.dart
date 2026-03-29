@@ -95,12 +95,13 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   String _adminName = 'Admin';
   String _learnerSearch = '';
+  String _teacherSearch = '';
   bool _onlyEmptyLearnerGalleries = false;
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
 
     _publicGalleryStream = _galleryRef().onValue.asBroadcastStream();
     _usersStream = _db.child('users').onValue.asBroadcastStream();
@@ -992,6 +993,270 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     );
   }
 
+  List<Map<String, dynamic>> _parseTeacherGalleryItems(dynamic value) {
+    if (value is! Map) return [];
+
+    final out = <Map<String, dynamic>>[];
+    final root = Map<dynamic, dynamic>.from(value);
+
+    root.forEach((learnerUid, learnerNode) {
+      if (learnerNode is! Map) return;
+
+      final items = Map<dynamic, dynamic>.from(learnerNode);
+      items.forEach((itemId, rawVal) {
+        if (rawVal is! Map) return;
+        final m = rawVal.map((k, v) => MapEntry(k.toString(), v));
+
+        final type = (m['type'] ?? '').toString().trim().toLowerCase();
+        final url = (m['url'] ?? '').toString().trim();
+        if (url.isEmpty || (type != 'photo' && type != 'video')) return;
+
+        final role = (m['uploadedByRole'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        final teacherUid = (m['teacherUid'] ?? '').toString().trim();
+        if (role == 'admin' || teacherUid.isEmpty) return;
+
+        out.add({
+          'id': itemId.toString(),
+          'learnerUid': learnerUid.toString(),
+          'learnerName': (m['learnerName'] ?? '').toString().trim(),
+          'teacherUid': teacherUid,
+          'teacherName': (m['teacherName'] ?? m['uploadedByName'] ?? '')
+              .toString()
+              .trim(),
+          ...m,
+        });
+      });
+    });
+
+    out.sort((a, b) {
+      final aTs = _toInt(a['createdAt']);
+      final bTs = _toInt(b['createdAt']);
+      return bTs.compareTo(aTs);
+    });
+
+    return out;
+  }
+
+  Future<void> _openTeacherViewer(Map<String, dynamic> item) async {
+    final itemId = (item['id'] ?? '').toString();
+    final type = (item['type'] ?? '').toString().trim().toLowerCase();
+    final url = (item['url'] ?? '').toString().trim();
+    final teacherName = (item['teacherName'] ?? '').toString().trim();
+    final learnerName = (item['learnerName'] ?? '').toString().trim();
+    final createdAt = _fmtDate(item['createdAt']);
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AdminLearnerGalleryViewerScreen(
+          itemId: itemId,
+          type: type,
+          url: url,
+          uploaderName: teacherName,
+          learnerName: learnerName,
+          createdAt: createdAt,
+          onDelete: null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTeacherGalleryTab() {
+    return StreamBuilder<DatabaseEvent>(
+      stream: _learnerGalleryStream,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting &&
+            _learnerGalleryCache == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final raw = snap.data?.snapshot.value;
+        if (raw != null) {
+          _learnerGalleryCache = raw;
+        }
+
+        final allItems = _parseTeacherGalleryItems(raw ?? _learnerGalleryCache);
+        final q = _teacherSearch.trim().toLowerCase();
+        final items = allItems.where((item) {
+          if (q.isEmpty) return true;
+          final teacherName = (item['teacherName'] ?? '')
+              .toString()
+              .toLowerCase();
+          final learnerName = (item['learnerName'] ?? '')
+              .toString()
+              .toLowerCase();
+          final type = (item['type'] ?? '').toString().toLowerCase();
+          return teacherName.contains(q) ||
+              learnerName.contains(q) ||
+              type.contains(q);
+        }).toList();
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            TextField(
+              onChanged: (v) => setState(() => _teacherSearch = v),
+              decoration: InputDecoration(
+                hintText: 'Search teacher or learner…',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: uiBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: uiBorder.withValues(alpha: 0.9),
+                  ),
+                ),
+                focusedBorder: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(14)),
+                  borderSide: BorderSide(color: primaryBlue),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${items.length} teacher item${items.length == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color: primaryBlue,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (items.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                ),
+                child: const Text(
+                  'No teacher gallery items found.',
+                  style: TextStyle(
+                    color: mainText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              )
+            else
+              GridView.builder(
+                itemCount: items.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1,
+                ),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final type = (item['type'] ?? '')
+                      .toString()
+                      .trim()
+                      .toLowerCase();
+                  final url = (item['url'] ?? '').toString().trim();
+                  final teacherName = (item['teacherName'] ?? '')
+                      .toString()
+                      .trim();
+                  final learnerName = (item['learnerName'] ?? '')
+                      .toString()
+                      .trim();
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => _openTeacherViewer(item),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: uiBorder.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (type == 'video')
+                              _AdminVideoTile(url: url)
+                            else
+                              Image.network(
+                                url,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  color: Colors.grey.shade200,
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.broken_image_outlined,
+                                  ),
+                                ),
+                              ),
+                            Positioned(
+                              left: 8,
+                              right: 8,
+                              bottom: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.58),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      teacherName.isEmpty
+                                          ? 'Teacher'
+                                          : teacherName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    if (learnerName.isNotEmpty)
+                                      Text(
+                                        learnerName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     AdminTourGuide.scheduleSimple(
@@ -1032,13 +1297,18 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           tabs: const [
             Tab(text: 'Public Gallery'),
             Tab(text: 'Learner Galleries'),
+            Tab(text: 'Teacher Gallery'),
           ],
         ),
       ),
       body: SafeArea(
         child: TabBarView(
           controller: _tab,
-          children: [_buildPublicTeasersTab(), _buildLearnerGalleriesTab()],
+          children: [
+            _buildPublicTeasersTab(),
+            _buildLearnerGalleriesTab(),
+            _buildTeacherGalleryTab(),
+          ],
         ),
       ),
     );

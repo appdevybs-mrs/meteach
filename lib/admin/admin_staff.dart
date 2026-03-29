@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import 'admin_teacher_reminders_screen.dart';
 import 'admin_teacher_mail_topics_screen.dart';
+import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -561,6 +563,114 @@ class _StaffListState extends State<_StaffList>
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  String _cleanPhone(String raw) {
+    final s = raw.trim();
+    return s.replaceAll(RegExp(r'[^0-9+]'), '');
+  }
+
+  Future<void> _openTeacherProfileSheet(
+    BuildContext context, {
+    required String teacherUid,
+    required Staff staff,
+  }) async {
+    if (staff.role != StaffRole.teacher) {
+      _snackHere(context, 'Only teachers have profile media.');
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: TeacherMediaSheet(
+          teacherUid: teacherUid,
+          teacherName: staff.fullName,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTeacherLearners(
+    BuildContext context, {
+    required String teacherUid,
+    required Staff staff,
+  }) async {
+    if (staff.role != StaffRole.teacher) {
+      _snackHere(context, 'Only teachers have learners.');
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminTeacherLearnersScreen(
+          teacherUid: teacherUid,
+          teacherName: staff.fullName,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchPhoneUri(String scheme, String phone) async {
+    final clean = _cleanPhone(phone);
+    if (clean.isEmpty) return;
+    final uri = Uri(scheme: scheme, path: clean);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      _snackHere(context, 'Could not open $scheme app.');
+    }
+  }
+
+  Future<void> _openPhoneActions(BuildContext context, String phone) async {
+    final clean = _cleanPhone(phone);
+    if (clean.isEmpty) {
+      _snackHere(context, 'No phone number.');
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.call_rounded),
+              title: const Text('Call'),
+              subtitle: Text(clean),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _launchPhoneUri('tel', clean);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.sms_rounded),
+              title: const Text('SMS'),
+              subtitle: Text(clean),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _launchPhoneUri('sms', clean);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy_rounded),
+              title: const Text('Copy number'),
+              subtitle: Text(clean),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: clean));
+                Navigator.pop(ctx);
+                _snackHere(context, 'Phone copied');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -695,6 +805,11 @@ class _StaffListState extends State<_StaffList>
                             .child(threadId)
                             .child('unreadCount')
                       : null;
+                  final phoneMain = u.phone1.trim().isNotEmpty
+                      ? u.phone1.trim()
+                      : u.phone2.trim();
+                  final canOpenProfile = u.role == StaffRole.teacher;
+                  final profilePhoto = u.primaryProfilePhoto;
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -718,17 +833,23 @@ class _StaffListState extends State<_StaffList>
                               clipBehavior: Clip.none,
                               children: [
                                 CircleAvatar(
+                                  radius: 21,
                                   backgroundColor: AdminStaffScreen.appBg
                                       .withValues(alpha: 1),
-                                  child: Text(
-                                    u.firstName.isNotEmpty
-                                        ? u.firstName[0].toUpperCase()
-                                        : 'S',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: AdminStaffScreen.primaryBlue,
-                                    ),
-                                  ),
+                                  backgroundImage: profilePhoto.isNotEmpty
+                                      ? NetworkImage(profilePhoto)
+                                      : null,
+                                  child: profilePhoto.isNotEmpty
+                                      ? null
+                                      : Text(
+                                          u.firstName.isNotEmpty
+                                              ? u.firstName[0].toUpperCase()
+                                              : 'S',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: AdminStaffScreen.primaryBlue,
+                                          ),
+                                        ),
                                 ),
                                 if (unreadRef != null)
                                   Positioned(
@@ -789,25 +910,13 @@ class _StaffListState extends State<_StaffList>
                           Expanded(
                             child: InkWell(
                               borderRadius: BorderRadius.circular(12),
-                              onTap: () {
-                                // Only teachers have learners list
-                                if (u.role != StaffRole.teacher) {
-                                  _snackHere(
-                                    context,
-                                    'Only teachers have learners.',
-                                  );
-                                  return;
-                                }
-
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => AdminTeacherLearnersScreen(
+                              onTap: canOpenProfile
+                                  ? () => _openTeacherProfileSheet(
+                                      context,
                                       teacherUid: row.uid,
-                                      teacherName: u.fullName,
-                                    ),
-                                  ),
-                                );
-                              },
+                                      staff: u,
+                                    )
+                                  : null,
                               child: Padding(
                                 // small padding so InkWell feels nice but doesn't change layout much
                                 padding: const EdgeInsets.symmetric(
@@ -847,12 +956,88 @@ class _StaffListState extends State<_StaffList>
                                           bg: _statusBg(u.status),
                                           fg: _statusFg(u.status),
                                         ),
-                                        if (u.phone1.trim().isNotEmpty)
-                                          _Pill(label: '📞 ${u.phone1}'),
                                         if (u.dob.trim().isNotEmpty)
                                           _Pill(label: '🎂 ${u.dob}'),
                                       ],
                                     ),
+                                    if (u.role == StaffRole.teacher &&
+                                        phoneMain.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      GestureDetector(
+                                        onLongPress: () => _openPhoneActions(
+                                          context,
+                                          phoneMain,
+                                        ),
+                                        child: _Pill(
+                                          label: 'Phone: $phoneMain',
+                                          bg: const Color(0xFFEAF2FF),
+                                          fg: AdminStaffScreen.primaryBlue,
+                                        ),
+                                      ),
+                                    ],
+                                    if (u.role == StaffRole.teacher) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          OutlinedButton.icon(
+                                            onPressed: () =>
+                                                _openTeacherLearners(
+                                                  context,
+                                                  teacherUid: row.uid,
+                                                  staff: u,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.groups_rounded,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Learners'),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
+                                                  AdminStaffScreen.primaryBlue,
+                                              side: BorderSide(
+                                                color: AdminStaffScreen
+                                                    .uiBorders
+                                                    .withValues(alpha: 0.9),
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 8,
+                                                  ),
+                                            ),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: () =>
+                                                _openTeacherProfileSheet(
+                                                  context,
+                                                  teacherUid: row.uid,
+                                                  staff: u,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.perm_media_rounded,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Profile'),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
+                                                  AdminStaffScreen.actionOrange,
+                                              side: BorderSide(
+                                                color: AdminStaffScreen
+                                                    .actionOrange
+                                                    .withValues(alpha: 0.45),
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 8,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -1789,6 +1974,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         role: _role,
         status: _status,
         updatedAtMs: null,
+        profilePhoto: widget.initial?.profilePhoto ?? '',
+        profilePhotos: widget.initial?.profilePhotos ?? const <String>[],
       );
 
       if (isCreate) {
@@ -2367,6 +2554,8 @@ class Staff {
     required this.role,
     required this.status,
     required this.updatedAtMs,
+    required this.profilePhoto,
+    required this.profilePhotos,
   });
 
   final String uid;
@@ -2381,8 +2570,18 @@ class Staff {
   final StaffRole role;
   final StaffStatus status;
   final int? updatedAtMs;
+  final String profilePhoto;
+  final List<String> profilePhotos;
 
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
+
+  String get primaryProfilePhoto {
+    if (profilePhoto.trim().isNotEmpty) return profilePhoto.trim();
+    for (final p in profilePhotos) {
+      if (p.trim().isNotEmpty) return p.trim();
+    }
+    return '';
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -2396,6 +2595,8 @@ class Staff {
       'serial': serial, // ✅ saved in DB as serial
       'status': status.value,
       'updatedAt': updatedAtMs,
+      'profile_photo': profilePhoto,
+      'profile_photos': profilePhotos,
     };
   }
 
@@ -2421,7 +2622,36 @@ class Staff {
       serial: (m['serial'] ?? '').toString(), // ✅ read from DB
       status: StaffStatus.fromValue(m['status']?.toString()),
       updatedAtMs: parseInt(m['updatedAt']),
+      profilePhoto: (m['profile_photo'] ?? '').toString().trim(),
+      profilePhotos: _stringList(m['profile_photos']),
     );
+  }
+
+  static List<String> _stringList(dynamic raw) {
+    final out = <String>[];
+    if (raw is List) {
+      for (final item in raw) {
+        final s = item.toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      }
+      return out;
+    }
+    if (raw is Map) {
+      final entries = raw.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final e in entries) {
+        final s = e.value.toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      }
+      return out;
+    }
+    final one = raw?.toString().trim() ?? '';
+    if (one.isNotEmpty) out.add(one);
+    return out;
   }
 }
 

@@ -33,6 +33,7 @@ import '../shared/screen_help_guide.dart';
 import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
+import 'admin_admin_todos_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -75,6 +76,8 @@ class _AdminHomeState extends State<AdminHome> {
 
   bool _isAdminMode = true;
   bool _loadingRole = true;
+  bool _showSearch = false;
+  String _homeSearch = '';
 
   @override
   void initState() {
@@ -206,235 +209,355 @@ class _AdminHomeState extends State<AdminHome> {
     }
     final gridGap = width >= 1200 ? 14.0 : (width >= 900 ? 12.0 : 10.0);
 
-    final allCards = <Widget>[
-      KeyedSubtree(
-        key: _learnersCardKey,
-        child: _LearnersDashCard(
+    _HomeCardItem card(String title, String subtitle, Widget child) {
+      return _HomeCardItem(title: title, subtitle: subtitle, child: child);
+    }
+
+    final allCards = <_HomeCardItem>[
+      card(
+        'Learners',
+        'Students list',
+        KeyedSubtree(
+          key: _learnersCardKey,
+          child: _LearnersDashCard(
+            isReceptionistStyle: !_isAdminMode,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Classes',
+        'Manage classes',
+        _DashCard(
+          title: 'Classes',
+          subtitle: 'Manage classes',
+          icon: Icons.class_rounded,
+          color: AdminHome.actionOrange,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
+        ),
+      ),
+      card(
+        'Payments',
+        'Financial records',
+        KeyedSubtree(
+          key: _paymentsCardKey,
+          child: _PaymentsAttentionDashCard(
+            isReceptionistStyle: !_isAdminMode,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Schedule',
+        'Weekly timetable',
+        _DashCard(
+          title: 'Schedule',
+          subtitle: 'Weekly timetable',
+          icon: Icons.calendar_view_week_rounded,
+          color: AdminHome.accentTeal,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
           ),
         ),
       ),
-      _DashCard(
-        title: 'Classes',
-        subtitle: 'Manage classes',
-        icon: Icons.class_rounded,
-        color: AdminHome.actionOrange,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
-      ),
-      KeyedSubtree(
-        key: _paymentsCardKey,
-        child: _PaymentsAttentionDashCard(
+      card(
+        'Attendance',
+        'Daily / Weekly stats',
+        _DashCard(
+          title: 'Attendance',
+          subtitle: 'Daily / Weekly stats',
+          icon: Icons.fact_check_rounded,
+          color: AdminHome.accentIndigo,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            MaterialPageRoute(
+              builder: (_) => const AdminAttendanceOverviewScreen(),
+            ),
           ),
         ),
       ),
-      _DashCard(
-        title: 'Schedule',
-        subtitle: 'Weekly timetable',
-        icon: Icons.calendar_view_week_rounded,
-        color: AdminHome.accentTeal,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminTimetableScreen())),
-      ),
-      _DashCard(
-        title: 'Attendance',
-        subtitle: 'Daily / Weekly stats',
-        icon: Icons.fact_check_rounded,
-        color: AdminHome.accentIndigo,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const AdminAttendanceOverviewScreen(),
-          ),
+      card(
+        'Courses',
+        'Manage courses',
+        _DashCard(
+          title: 'Courses',
+          subtitle: 'Manage courses',
+          icon: Icons.menu_book_rounded,
+          color: AdminHome.primaryBlue,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminCoursesScreen())),
         ),
       ),
-      _DashCard(
-        title: 'Courses',
-        subtitle: 'Manage courses',
-        icon: Icons.menu_book_rounded,
-        color: AdminHome.primaryBlue,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminCoursesScreen())),
+      card(
+        'Online Booking',
+        'Online Booking management',
+        _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
       ),
-      _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
-      _DashCard(
-        title: 'Reminders',
-        subtitle: 'Send & manage reminders',
-        icon: Icons.notifications_active_rounded,
-        color: AdminHome.accentPurple,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const AdminTeacherRemindersScreen(),
-          ),
-        ),
-      ),
-      _DashCard(
-        title: 'Staff',
-        subtitle: 'Teachers & staff',
-        icon: Icons.badge_rounded,
-        color: AdminHome.accentAmber,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
-      ),
-      _DashCard(
-        title: 'Wages',
-        subtitle: 'Teacher payments',
-        icon: Icons.wallet_rounded,
-        color: AdminHome.accentRose,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminWagesScreen())),
-      ),
-      _DashCard(
-        title: 'Teacher Availability',
-        subtitle: 'Coverage & staffing overview',
-        icon: Icons.manage_accounts_rounded,
-        color: AdminHome.accentCyan,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AdminTeacherAvailabilityOverviewScreen(),
-          ),
-        ),
-      ),
-      _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
-      _CertificatesDashCard(isReceptionistStyle: !_isAdminMode),
-      _DashCard(
-        title: 'File Manager',
-        subtitle: 'Courses & Games files',
-        icon: Icons.folder_open,
-        color: AdminHome.accentGreen,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminFileManager())),
-      ),
-      KeyedSubtree(
-        key: _sharedCardKey,
-        child: _AdminSharedFilesDashCard(isReceptionistStyle: !_isAdminMode),
-      ),
-      _DashCard(
-        title: 'Public Gallery',
-        subtitle: 'Teaser media',
-        icon: Icons.photo_library_rounded,
-        color: AdminHome.accentSky,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
-        ),
-      ),
-      _DashCard(
-        title: 'Contract',
-        subtitle: 'Contracts & documents',
-        icon: Icons.description_rounded,
-        color: AdminHome.accentCyan,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminContractScreen())),
-      ),
-      _DashCard(
-        title: 'Settings',
-        subtitle: 'Force update config',
-        icon: Icons.settings_rounded,
-        color: AdminHome.accentIndigo,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminForceUpdateAllScreen()),
-        ),
-      ),
-      _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
-    ];
-
-    final receptionistCards = <Widget>[
-      KeyedSubtree(
-        key: _learnersCardKey,
-        child: _LearnersDashCard(
-          isReceptionistStyle: true,
+      card(
+        'Reminders',
+        'Send & manage reminders',
+        _DashCard(
+          title: 'Reminders',
+          subtitle: 'Send & manage reminders',
+          icon: Icons.notifications_active_rounded,
+          color: AdminHome.accentPurple,
+          isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            MaterialPageRoute(
+              builder: (_) => const AdminTeacherRemindersScreen(),
+            ),
           ),
         ),
       ),
-      _DashCard(
-        title: 'Classes',
-        subtitle: 'Manage classes',
-        icon: Icons.class_rounded,
-        color: AdminHome.actionOrange,
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
+      card(
+        'Staff',
+        'Teachers & staff',
+        _DashCard(
+          title: 'Staff',
+          subtitle: 'Teachers & staff',
+          icon: Icons.badge_rounded,
+          color: AdminHome.accentAmber,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+        ),
       ),
-      KeyedSubtree(
-        key: _paymentsCardKey,
-        child: _PaymentsAttentionDashCard(
-          isReceptionistStyle: true,
+      card(
+        'Wages',
+        'Teacher payments',
+        _DashCard(
+          title: 'Wages',
+          subtitle: 'Teacher payments',
+          icon: Icons.wallet_rounded,
+          color: AdminHome.accentRose,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminWagesScreen())),
+        ),
+      ),
+      card(
+        'Teacher Availability',
+        'Coverage & staffing overview',
+        _DashCard(
+          title: 'Teacher Availability',
+          subtitle: 'Coverage & staffing overview',
+          icon: Icons.manage_accounts_rounded,
+          color: AdminHome.accentCyan,
+          isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            MaterialPageRoute(
+              builder: (_) => AdminTeacherAvailabilityOverviewScreen(),
+            ),
           ),
         ),
       ),
-      _DashCard(
-        title: 'Schedule',
-        subtitle: 'Weekly timetable',
-        icon: Icons.calendar_view_week_rounded,
-        color: AdminHome.accentTeal,
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminTimetableScreen())),
+      card(
+        'Subscriptions',
+        'Registration requests',
+        _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
       ),
-      _DashCard(
-        title: 'Reminders',
-        subtitle: 'Send reminders',
-        icon: Icons.notifications_active_rounded,
-        color: AdminHome.accentPurple,
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const AdminTeacherRemindersScreen(),
+      card(
+        'Certificates',
+        'Issued certificates',
+        _CertificatesDashCard(isReceptionistStyle: !_isAdminMode),
+      ),
+      card(
+        'File Manager',
+        'Courses & Games files',
+        _DashCard(
+          title: 'File Manager',
+          subtitle: 'Courses & Games files',
+          icon: Icons.folder_open,
+          color: AdminHome.accentGreen,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminFileManager())),
+        ),
+      ),
+      card(
+        'Shared Files',
+        'Teacher shared files',
+        KeyedSubtree(
+          key: _sharedCardKey,
+          child: _AdminSharedFilesDashCard(isReceptionistStyle: !_isAdminMode),
+        ),
+      ),
+      card(
+        'Public Gallery',
+        'Teaser media',
+        _DashCard(
+          title: 'Public Gallery',
+          subtitle: 'Teaser media',
+          icon: Icons.photo_library_rounded,
+          color: AdminHome.accentSky,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
           ),
         ),
       ),
-      _DashCard(
-        title: 'Staff',
-        subtitle: 'Teachers & staff',
-        icon: Icons.badge_rounded,
-        color: AdminHome.accentAmber,
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
-      ),
-      _DashCard(
-        title: 'Public Gallery',
-        subtitle: 'Teaser media',
-        icon: Icons.photo_library_rounded,
-        color: AdminHome.accentSky,
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
+      card(
+        'Contract',
+        'Contracts & documents',
+        _DashCard(
+          title: 'Contract',
+          subtitle: 'Contracts & documents',
+          icon: Icons.description_rounded,
+          color: AdminHome.accentCyan,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminContractScreen()),
+          ),
         ),
+      ),
+      card(
+        'Settings',
+        'Force update config',
+        _DashCard(
+          title: 'Settings',
+          subtitle: 'Force update config',
+          icon: Icons.settings_rounded,
+          color: AdminHome.accentIndigo,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminForceUpdateAllScreen(),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Job Applications',
+        'Hiring pipeline',
+        _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
       ),
     ];
 
-    final visibleCards = _isAdminMode ? allCards : receptionistCards;
+    final receptionistCards = <_HomeCardItem>[
+      card(
+        'Learners',
+        'Students overview',
+        KeyedSubtree(
+          key: _learnersCardKey,
+          child: _LearnersDashCard(
+            isReceptionistStyle: true,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Classes',
+        'Manage classes',
+        _DashCard(
+          title: 'Classes',
+          subtitle: 'Manage classes',
+          icon: Icons.class_rounded,
+          color: AdminHome.actionOrange,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
+        ),
+      ),
+      card(
+        'Payments',
+        'Financial records',
+        KeyedSubtree(
+          key: _paymentsCardKey,
+          child: _PaymentsAttentionDashCard(
+            isReceptionistStyle: true,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Schedule',
+        'Weekly timetable',
+        _DashCard(
+          title: 'Schedule',
+          subtitle: 'Weekly timetable',
+          icon: Icons.calendar_view_week_rounded,
+          color: AdminHome.accentTeal,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+          ),
+        ),
+      ),
+      card(
+        'Reminders',
+        'Send reminders',
+        _DashCard(
+          title: 'Reminders',
+          subtitle: 'Send reminders',
+          icon: Icons.notifications_active_rounded,
+          color: AdminHome.accentPurple,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminTeacherRemindersScreen(),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Staff',
+        'Teachers & staff',
+        _DashCard(
+          title: 'Staff',
+          subtitle: 'Teachers & staff',
+          icon: Icons.badge_rounded,
+          color: AdminHome.accentAmber,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+        ),
+      ),
+      card(
+        'Public Gallery',
+        'Teaser media',
+        _DashCard(
+          title: 'Public Gallery',
+          subtitle: 'Teaser media',
+          icon: Icons.photo_library_rounded,
+          color: AdminHome.accentSky,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
+          ),
+        ),
+      ),
+    ];
+
+    final q = _homeSearch.trim().toLowerCase();
+    final selectedCards = _isAdminMode ? allCards : receptionistCards;
+    final visibleCards = selectedCards
+        .where(
+          (c) =>
+              q.isEmpty ||
+              c.title.toLowerCase().contains(q) ||
+              c.subtitle.toLowerCase().contains(q),
+        )
+        .map((c) => c.child)
+        .toList();
 
     return Scaffold(
       key: _scaffoldKey,
@@ -493,6 +616,20 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: _showSearch ? 'Close search' : 'Search tools',
+            icon: Icon(
+              _showSearch ? Icons.close_rounded : Icons.search_rounded,
+            ),
+            onPressed: () {
+              setState(() {
+                if (_showSearch) {
+                  _homeSearch = '';
+                }
+                _showSearch = !_showSearch;
+              });
+            },
+          ),
           IconButton(
             tooltip: 'Help / Instructions',
             icon: const Icon(Icons.help_outline_rounded),
@@ -570,16 +707,62 @@ class _AdminHomeState extends State<AdminHome> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      height: _showSearch ? 56 : 0,
+                      curve: Curves.easeOutCubic,
+                      child: _showSearch
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: TextField(
+                                onChanged: (v) =>
+                                    setState(() => _homeSearch = v),
+                                decoration: InputDecoration(
+                                  hintText: 'Search dashboard tools...',
+                                  prefixIcon: const Icon(Icons.search_rounded),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 0,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    _AdminTodoHomeCard(
+                      isReceptionistStyle: !_isAdminMode,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AdminAdminTodosScreen(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     Expanded(
                       child: KeyedSubtree(
                         key: _cardsGridKey,
-                        child: GridView.count(
-                          crossAxisCount: crossAxisCount,
-                          mainAxisSpacing: gridGap,
-                          crossAxisSpacing: gridGap,
-                          childAspectRatio: cardRatio,
-                          children: visibleCards,
-                        ),
+                        child: visibleCards.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No tools matched "$q"',
+                                  style: const TextStyle(
+                                    color: AdminHome.softText,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              )
+                            : GridView.count(
+                                crossAxisCount: crossAxisCount,
+                                mainAxisSpacing: gridGap,
+                                crossAxisSpacing: gridGap,
+                                childAspectRatio: cardRatio,
+                                children: visibleCards,
+                              ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -601,6 +784,224 @@ class _AdminHomeState extends State<AdminHome> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HomeCardItem {
+  const _HomeCardItem({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+}
+
+class _AdminTodoHomeCard extends StatelessWidget {
+  const _AdminTodoHomeCard({
+    required this.onTap,
+    required this.isReceptionistStyle,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    final ref = FirebaseDatabase.instance.ref('admin_todos/$uid');
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isReceptionistStyle
+                ? const Color(0xFFFFDDBE)
+                : AdminHome.uiBorder,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.035),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: StreamBuilder<DatabaseEvent>(
+          stream: uid.isEmpty ? null : ref.onValue,
+          builder: (context, snap) {
+            int newCount = 0;
+            int seenCount = 0;
+            int doneCount = 0;
+            int overdueCount = 0;
+            String nextTitle = '';
+            int nextDue = 1 << 62;
+
+            final now = DateTime.now().millisecondsSinceEpoch;
+            final val = snap.data?.snapshot.value;
+            if (val is Map) {
+              val.forEach((_, raw) {
+                if (raw is! Map) return;
+                final m = raw.map((k, v) => MapEntry(k.toString(), v));
+                final status = (m['status'] ?? 'new')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                final dueAt = _toInt(m['dueAt']);
+                final isOverdue = status != 'done' && dueAt > 0 && dueAt < now;
+
+                if (status == 'done') {
+                  doneCount++;
+                } else if (status == 'seen' || status == 'read') {
+                  seenCount++;
+                } else {
+                  newCount++;
+                }
+                if (isOverdue) overdueCount++;
+
+                if (status != 'done') {
+                  final title = (m['title'] ?? '').toString().trim();
+                  if (title.isNotEmpty && dueAt > 0 && dueAt < nextDue) {
+                    nextDue = dueAt;
+                    nextTitle = title;
+                  } else if (title.isNotEmpty && nextTitle.isEmpty) {
+                    nextTitle = title;
+                  }
+                }
+              });
+            }
+
+            Widget chip(String label, String value, Color fg, Color bg) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: fg.withValues(alpha: 0.18)),
+                ),
+                child: Text(
+                  '$label $value',
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
+                ),
+              );
+            }
+
+            return Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2FF),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.task_alt_rounded,
+                    color: AdminHome.primaryBlue,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Admin TODO Inbox',
+                        style: TextStyle(
+                          color: AdminHome.primaryBlue,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Tasks from other admins',
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (nextTitle.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Next: $nextTitle',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.black.withValues(alpha: 0.66),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: [
+                          chip(
+                            'New',
+                            '$newCount',
+                            const Color(0xFFEF6C00),
+                            const Color(0xFFFFF2E7),
+                          ),
+                          chip(
+                            'Seen',
+                            '$seenCount',
+                            const Color(0xFF1565C0),
+                            const Color(0xFFEAF2FF),
+                          ),
+                          chip(
+                            'Done',
+                            '$doneCount',
+                            const Color(0xFF2E7D32),
+                            const Color(0xFFEAF8EF),
+                          ),
+                          chip(
+                            'Overdue',
+                            '$overdueCount',
+                            const Color(0xFFB71C1C),
+                            const Color(0xFFFFECEB),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AdminHome.primaryBlue,
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
