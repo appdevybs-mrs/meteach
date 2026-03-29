@@ -25,6 +25,7 @@ import 'shared/app_theme.dart';
 import 'shared/app_feedback.dart';
 import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
+import 'shared/in_app_chat_head_host.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
@@ -82,6 +83,9 @@ class YourBridgeSchoolApp extends StatelessWidget {
           navigatorKey: appNavigatorKey,
           scaffoldMessengerKey: messengerKey,
           debugShowCheckedModeBanner: false,
+          builder: (context, child) {
+            return InAppChatHeadHost(child: child ?? const SizedBox.shrink());
+          },
           theme: appThemeController.themeData.copyWith(
             snackBarTheme: const SnackBarThemeData(
               behavior: SnackBarBehavior.floating,
