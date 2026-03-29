@@ -25,7 +25,6 @@ import 'shared/app_theme.dart';
 import 'shared/app_feedback.dart';
 import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
-import 'shared/in_app_chat_head_host.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
@@ -83,9 +82,6 @@ class YourBridgeSchoolApp extends StatelessWidget {
           navigatorKey: appNavigatorKey,
           scaffoldMessengerKey: messengerKey,
           debugShowCheckedModeBanner: false,
-          builder: (context, child) {
-            return InAppChatHeadHost(child: child ?? const SizedBox.shrink());
-          },
           theme: appThemeController.themeData.copyWith(
             snackBarTheme: const SnackBarThemeData(
               behavior: SnackBarBehavior.floating,
@@ -801,15 +797,10 @@ class _LevelTestCard extends StatelessWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.title,
-    required this.subtitle,
-    this.trailingText,
-  });
+  const _SectionHeader({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;
-  final String? trailingText;
 
   @override
   Widget build(BuildContext context) {
@@ -838,27 +829,6 @@ class _SectionHeader extends StatelessWidget {
             ],
           ),
         ),
-        if (trailingText != null) ...[
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Brand.actionOrange.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: Brand.actionOrange.withValues(alpha: 0.28),
-              ),
-            ),
-            child: Text(
-              trailingText!,
-              style: const TextStyle(
-                color: Brand.actionOrange,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -3042,11 +3012,10 @@ class _CategoryGridCard extends StatelessWidget {
 }
 
 class _PrettyChip extends StatelessWidget {
-  const _PrettyChip({this.icon, required this.label, this.ellipsize = false});
+  const _PrettyChip({this.icon, required this.label});
 
   final IconData? icon;
   final String label;
-  final bool ellipsize;
 
   @override
   Widget build(BuildContext context) {
@@ -3058,7 +3027,7 @@ class _PrettyChip extends StatelessWidget {
         border: Border.all(color: Brand.uiBorder),
       ),
       child: Row(
-        mainAxisSize: ellipsize ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
             Icon(icon, size: 14, color: Brand.primaryBlue),

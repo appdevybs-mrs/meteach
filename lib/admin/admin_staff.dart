@@ -564,6 +564,18 @@ class _StaffListState extends State<_StaffList>
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  int _parseReminderUnread(dynamic v) {
+    if (v is! Map) return 0;
+    int count = 0;
+    v.forEach((_, raw) {
+      if (raw is! Map) return;
+      final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
+      final status = (m['status'] ?? 'new').toString().trim().toLowerCase();
+      if (status == 'new') count++;
+    });
+    return count;
+  }
+
   String _cleanPhone(String raw) {
     final s = raw.trim();
     return s.replaceAll(RegExp(r'[^0-9+]'), '');
@@ -806,6 +818,9 @@ class _StaffListState extends State<_StaffList>
                             .child(threadId)
                             .child('unreadCount')
                       : null;
+                  final reminderUnreadRef = u.role == StaffRole.teacher
+                      ? _db.ref('reminders').child(row.uid)
+                      : null;
                   final phoneMain = u.phone1.trim().isNotEmpty
                       ? u.phone1.trim()
                       : u.phone2.trim();
@@ -872,6 +887,58 @@ class _StaffListState extends State<_StaffList>
                                             ),
                                             decoration: BoxDecoration(
                                               color: Colors.red,
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border: Border.all(
+                                                color: Colors.white,
+                                                width: 2,
+                                              ),
+                                            ),
+                                            constraints: const BoxConstraints(
+                                              minWidth: 18,
+                                              minHeight: 18,
+                                            ),
+                                            child: Center(
+                                              child: Text(
+                                                txt,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                if (reminderUnreadRef != null)
+                                  Positioned(
+                                    left: -2,
+                                    top: -2,
+                                    child: StreamBuilder<DatabaseEvent>(
+                                      stream: reminderUnreadRef.onValue,
+                                      builder: (_, snap) {
+                                        final unread = _parseReminderUnread(
+                                          snap.data?.snapshot.value,
+                                        );
+                                        if (unread <= 0) {
+                                          return const SizedBox.shrink();
+                                        }
+
+                                        final txt = unread > 9
+                                            ? '9+'
+                                            : unread.toString();
+
+                                        return IgnorePointer(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF98D28),
                                               borderRadius:
                                                   BorderRadius.circular(999),
                                               border: Border.all(
@@ -2415,7 +2482,6 @@ class _TextField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.hint,
-    this.maxLines = 1,
     this.keyboardType,
     this.validator,
     this.enabled = true,
@@ -2425,7 +2491,6 @@ class _TextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String hint;
-  final int maxLines;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
   final bool enabled;
@@ -2435,7 +2500,7 @@ class _TextField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
-      maxLines: maxLines,
+      maxLines: 1,
       keyboardType: keyboardType,
       validator: validator,
       enabled: enabled,
@@ -2521,7 +2586,6 @@ Color _statusBg(StaffStatus s) {
     case StaffStatus.paused:
       return const Color(0xFFFFF3D6);
     case StaffStatus.active:
-    default:
       return const Color(0xFFDFF7E8);
   }
 }
@@ -2531,7 +2595,6 @@ Color _statusFg(StaffStatus s) {
     case StaffStatus.paused:
       return const Color(0xFF9A6B00);
     case StaffStatus.active:
-    default:
       return const Color(0xFF157A3D);
   }
 }
@@ -2699,21 +2762,6 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
 
   final String teacherUid;
   final String teacherName;
-
-  Widget _statChip(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: Colors.black.withValues(alpha: 0.06),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.12)),
-      ),
-      child: Text(
-        '$label: $value',
-        style: const TextStyle(fontWeight: FontWeight.w900),
-      ),
-    );
-  }
 
   Widget _statInline(String label, String value) {
     return Padding(
