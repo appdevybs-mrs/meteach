@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import '../shared/human_error.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
@@ -32,6 +33,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
   final Map<String, String> _nameCache = {};
   final Map<String, String> _roleCache = {};
+  final Map<String, String> _photoCache = {};
   final Map<String, Future<void>> _userFetchPending = {};
 
   @override
@@ -82,7 +84,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     uid = uid.trim();
     if (uid.isEmpty) return Future.value();
 
-    if (_nameCache.containsKey(uid) && _roleCache.containsKey(uid)) {
+    if (_nameCache.containsKey(uid) &&
+        _roleCache.containsKey(uid) &&
+        _photoCache.containsKey(uid)) {
       return Future.value();
     }
 
@@ -95,6 +99,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
         String resolvedName = 'User';
         String resolvedRole = 'learner';
+        String resolvedPhoto = '';
 
         if (snap.exists && snap.value is Map) {
           final m = (snap.value as Map).map(
@@ -112,21 +117,28 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               ? full
               : (email.isNotEmpty ? email : 'User');
           resolvedRole = _normalizeRole(m['role']);
+          resolvedPhoto = ProfileAvatar.resolvePhotoFromMap(m);
         }
 
         final changed =
-            _nameCache[uid] != resolvedName || _roleCache[uid] != resolvedRole;
+            _nameCache[uid] != resolvedName ||
+            _roleCache[uid] != resolvedRole ||
+            _photoCache[uid] != resolvedPhoto;
         _nameCache[uid] = resolvedName;
         _roleCache[uid] = resolvedRole;
+        _photoCache[uid] = resolvedPhoto;
 
         if (changed && mounted) {
           setState(() {});
         }
       } catch (_) {
         final changed =
-            !_nameCache.containsKey(uid) || !_roleCache.containsKey(uid);
+            !_nameCache.containsKey(uid) ||
+            !_roleCache.containsKey(uid) ||
+            !_photoCache.containsKey(uid);
         _nameCache.putIfAbsent(uid, () => 'User');
         _roleCache.putIfAbsent(uid, () => 'learner');
+        _photoCache.putIfAbsent(uid, () => '');
 
         if (changed && mounted) {
           setState(() {});
@@ -152,6 +164,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
   String _bestRole(_TopicRow r) {
     return _roleCache[r.peerUid.trim()] ?? '';
+  }
+
+  String _bestPhoto(_TopicRow r) {
+    return _photoCache[r.peerUid.trim()] ?? '';
   }
 
   bool _matchesTab(_InboxTabRole tab, _TopicRow r) {
@@ -902,6 +918,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               top.peerUid.isEmpty ? displayName : top.peerUid,
               context,
             ),
+            photoUrl: _bestPhoto(top),
             latestTime: _timeLabel(top.updatedAtMs),
             unreadTotal: unreadTotal,
             children: items.map((r) {
@@ -1142,6 +1159,7 @@ class _InboxGroupCard extends StatefulWidget {
   const _InboxGroupCard({
     required this.displayName,
     required this.avatarColor,
+    required this.photoUrl,
     required this.latestTime,
     required this.unreadTotal,
     required this.children,
@@ -1149,6 +1167,7 @@ class _InboxGroupCard extends StatefulWidget {
 
   final String displayName;
   final Color avatarColor;
+  final String photoUrl;
   final String latestTime;
   final int unreadTotal;
   final List<Widget> children;
@@ -1195,19 +1214,13 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          leading: CircleAvatar(
+          leading: ProfileAvatar(
+            name: widget.displayName,
+            photoUrl: widget.photoUrl,
             radius: 24,
-            backgroundColor: widget.avatarColor.withValues(alpha: 0.14),
-            child: Text(
-              widget.displayName.isEmpty
-                  ? '?'
-                  : widget.displayName.trim().characters.first.toUpperCase(),
-              style: TextStyle(
-                color: widget.avatarColor,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
+            fallbackBg: widget.avatarColor.withValues(alpha: 0.14),
+            fallbackFg: widget.avatarColor,
+            borderColor: widget.avatarColor.withValues(alpha: 0.25),
           ),
           title: Row(
             children: [

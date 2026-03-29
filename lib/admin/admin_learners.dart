@@ -8,6 +8,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/screen_help_guide.dart';
 
 import 'payment_dialog_shared.dart';
@@ -1219,18 +1220,14 @@ class _LearnersListState extends State<_LearnersList>
                                           return Stack(
                                             clipBehavior: Clip.none,
                                             children: [
-                                              CircleAvatar(
-                                                backgroundColor: avatarBg,
-                                                child: Text(
-                                                  l.firstName.isNotEmpty
-                                                      ? l.firstName[0]
-                                                            .toUpperCase()
-                                                      : 'L',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w900,
-                                                    color: avatarFg,
-                                                  ),
-                                                ),
+                                              ProfileAvatar(
+                                                name: l.fullName,
+                                                photoUrl: l.primaryProfilePhoto,
+                                                radius: 20,
+                                                fallbackBg: avatarBg,
+                                                fallbackFg: avatarFg,
+                                                borderColor: avatarBg
+                                                    .withValues(alpha: 0.45),
                                               ),
                                               if (unread > 0)
                                                 Positioned(
@@ -1911,6 +1908,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         role: 'learner',
         status: _status,
         updatedAtMs: null,
+        profilePhoto: widget.initial?.profilePhoto ?? '',
+        profilePhotos: widget.initial?.profilePhotos ?? const <String>[],
       );
 
       if (isCreate) {
@@ -2371,6 +2370,8 @@ class Learner {
     required this.role,
     required this.status,
     required this.updatedAtMs,
+    required this.profilePhoto,
+    required this.profilePhotos,
     this.deleteAuth = false,
     this.selfDeleteDone = false,
   });
@@ -2386,10 +2387,20 @@ class Learner {
   final String role;
   final LearnerStatus status;
   final int? updatedAtMs;
+  final String profilePhoto;
+  final List<String> profilePhotos;
   final bool deleteAuth;
   final bool selfDeleteDone;
 
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
+
+  String get primaryProfilePhoto {
+    if (profilePhoto.trim().isNotEmpty) return profilePhoto.trim();
+    for (final p in profilePhotos) {
+      if (p.trim().isNotEmpty) return p.trim();
+    }
+    return '';
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -2403,6 +2414,8 @@ class Learner {
       'serial': serial,
       'status': status.value,
       'updatedAt': updatedAtMs,
+      'profile_photo': profilePhoto,
+      'profile_photos': profilePhotos,
       'deleteAuth': deleteAuth,
       'selfDeleteDone': selfDeleteDone,
     };
@@ -2430,12 +2443,41 @@ class Learner {
       serial: (m['serial'] ?? '').toString(),
       status: LearnerStatus.fromValue(m['status']?.toString()),
       updatedAtMs: parseInt(m['updatedAt']),
+      profilePhoto: (m['profile_photo'] ?? '').toString().trim(),
+      profilePhotos: _stringList(m['profile_photos']),
       deleteAuth:
           (m['deleteAuth'] == true) || (m['deleteAuth']?.toString() == 'true'),
       selfDeleteDone:
           (m['selfDeleteDone'] == true) ||
           (m['selfDeleteDone']?.toString() == 'true'),
     );
+  }
+
+  static List<String> _stringList(dynamic raw) {
+    final out = <String>[];
+    if (raw is List) {
+      for (final item in raw) {
+        final s = item.toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      }
+      return out;
+    }
+    if (raw is Map) {
+      final entries = raw.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final e in entries) {
+        final s = e.value.toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      }
+      return out;
+    }
+    final one = raw?.toString().trim() ?? '';
+    if (one.isNotEmpty) out.add(one);
+    return out;
   }
 }
 

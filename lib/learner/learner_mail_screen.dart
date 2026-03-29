@@ -9,6 +9,7 @@ import '../shared/watermark_background.dart';
 import 'learner_mail_thread_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/profile_avatar.dart';
 
 class LearnerMailScreen extends StatefulWidget {
   const LearnerMailScreen({super.key});
@@ -19,6 +20,8 @@ class LearnerMailScreen extends StatefulWidget {
 
 class _LearnerMailScreenState extends State<LearnerMailScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final Map<String, String> _photoCache = {};
+  final Map<String, Future<void>> _userFetchPending = {};
 
   Color get _navy => UiK.primaryBlue;
   Color get _orange => UiK.actionOrange;
@@ -47,6 +50,37 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     if (!mounted) return;
     AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
+
+  Future<void> _ensureUserPhotoCached(String uid) {
+    uid = uid.trim();
+    if (uid.isEmpty) return Future.value();
+    if (_photoCache.containsKey(uid)) return Future.value();
+
+    final pending = _userFetchPending[uid];
+    if (pending != null) return pending;
+
+    final fut = () async {
+      try {
+        final snap = await _db.child('users/$uid').get();
+        String photo = '';
+        if (snap.value is Map) {
+          photo = ProfileAvatar.resolvePhotoFromMap(snap.value as Map);
+        }
+        final changed = _photoCache[uid] != photo;
+        _photoCache[uid] = photo;
+        if (changed && mounted) setState(() {});
+      } catch (_) {
+        _photoCache.putIfAbsent(uid, () => '');
+      } finally {
+        _userFetchPending.remove(uid);
+      }
+    }();
+
+    _userFetchPending[uid] = fut;
+    return fut;
+  }
+
+  String _bestPhoto(String uid) => _photoCache[uid.trim()] ?? '';
 
   Future<void> _deleteThreadForMe(_TopicRow row) async {
     final ok =
@@ -510,6 +544,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
                                   final threadId = r.threadId;
                                   final peerUid = r.peerUid;
+                                  if (peerUid.trim().isNotEmpty) {
+                                    _ensureUserPhotoCached(peerUid);
+                                  }
                                   final peerName = r.peerName.trim().isEmpty
                                       ? 'User'
                                       : r.peerName.trim();
@@ -566,30 +603,20 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                           Stack(
                                             clipBehavior: Clip.none,
                                             children: [
-                                              Container(
-                                                width: 46,
-                                                height: 46,
-                                                decoration: BoxDecoration(
-                                                  color: _navy.withValues(
-                                                    alpha: 0.06,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(16),
-                                                  border: Border.all(
-                                                    color: _navy.withValues(
-                                                      alpha: 0.14,
-                                                    ),
-                                                  ),
+                                              ProfileAvatar(
+                                                name: peerName,
+                                                photoUrl: _bestPhoto(peerUid),
+                                                radius: 23,
+                                                fallbackBg: _navy.withValues(
+                                                  alpha: 0.10,
                                                 ),
-                                                child: Icon(
-                                                  isHomework
-                                                      ? Icons.assignment_rounded
-                                                      : Icons.mail_rounded,
-                                                  color: isHomework
-                                                      ? _hwAccent
-                                                      : _navy.withValues(
-                                                          alpha: 0.92,
-                                                        ),
+                                                fallbackFg: isHomework
+                                                    ? _hwAccent
+                                                    : _navy.withValues(
+                                                        alpha: 0.92,
+                                                      ),
+                                                borderColor: _navy.withValues(
+                                                  alpha: 0.15,
                                                 ),
                                               ),
                                               if (unread > 0)

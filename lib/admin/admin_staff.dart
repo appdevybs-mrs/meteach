@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import 'admin_teacher_reminders_screen.dart';
 import 'admin_teacher_mail_topics_screen.dart';
+import '../shared/profile_avatar.dart';
 import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
@@ -834,22 +835,16 @@ class _StaffListState extends State<_StaffList>
                               children: [
                                 CircleAvatar(
                                   radius: 21,
-                                  backgroundColor: AdminStaffScreen.appBg
-                                      .withValues(alpha: 1),
-                                  backgroundImage: profilePhoto.isNotEmpty
-                                      ? NetworkImage(profilePhoto)
-                                      : null,
-                                  child: profilePhoto.isNotEmpty
-                                      ? null
-                                      : Text(
-                                          u.firstName.isNotEmpty
-                                              ? u.firstName[0].toUpperCase()
-                                              : 'S',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: AdminStaffScreen.primaryBlue,
-                                          ),
-                                        ),
+                                  backgroundColor: Colors.transparent,
+                                  child: ProfileAvatar(
+                                    name: u.fullName,
+                                    photoUrl: profilePhoto,
+                                    radius: 21,
+                                    fallbackBg: AdminStaffScreen.appBg,
+                                    fallbackFg: AdminStaffScreen.primaryBlue,
+                                    borderColor: AdminStaffScreen.uiBorders
+                                        .withValues(alpha: 0.75),
+                                  ),
                                 ),
                                 if (unreadRef != null)
                                   Positioned(
