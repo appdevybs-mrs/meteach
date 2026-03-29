@@ -833,57 +833,42 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     return out;
   }
 
-  Map<String, int> _parseLearnerGalleryCounts(dynamic value) {
-    final counts = <String, int>{};
-
-    if (value is! Map) return counts;
-
-    final raw = Map<dynamic, dynamic>.from(value);
-
-    raw.forEach((learnerUid, learnerGalleryValue) {
-      if (learnerGalleryValue is Map) {
-        counts[learnerUid.toString()] = learnerGalleryValue.length;
-      } else {
-        counts[learnerUid.toString()] = 0;
-      }
-    });
-
-    return counts;
-  }
-
-  Map<String, List<Map<String, dynamic>>> _parseLearnerGalleryPreviews(
-    dynamic value,
-  ) {
-    final out = <String, List<Map<String, dynamic>>>{};
+  Map<String, Map<String, dynamic>> _parseLearnerGalleryStats(dynamic value) {
+    final out = <String, Map<String, dynamic>>{};
     if (value is! Map) return out;
 
     final raw = Map<dynamic, dynamic>.from(value);
     raw.forEach((learnerUid, learnerGalleryValue) {
       if (learnerGalleryValue is! Map) {
-        out[learnerUid.toString()] = const <Map<String, dynamic>>[];
+        out[learnerUid.toString()] = const {'count': 0, 'thumbnailUrl': ''};
         return;
       }
 
-      final items = <Map<String, dynamic>>[];
+      int count = 0;
+      String thumbnailUrl = '';
+      int newestPhotoTs = -1;
       final gallery = Map<dynamic, dynamic>.from(learnerGalleryValue);
-      gallery.forEach((itemId, itemRaw) {
+      gallery.forEach((_, itemRaw) {
         if (itemRaw is! Map) return;
         final m = itemRaw.map((k, v) => MapEntry(k.toString(), v));
         final type = (m['type'] ?? '').toString().trim().toLowerCase();
         final url = (m['url'] ?? '').toString().trim();
         if (url.isEmpty || (type != 'photo' && type != 'video')) return;
-        items.add({
-          'id': itemId.toString(),
-          'type': type,
-          'url': url,
-          'createdAt': m['createdAt'],
-        });
+        count++;
+
+        if (type == 'photo') {
+          final ts = _toInt(m['createdAt']);
+          if (ts >= newestPhotoTs) {
+            newestPhotoTs = ts;
+            thumbnailUrl = url;
+          }
+        }
       });
 
-      items.sort(
-        (a, b) => _toInt(b['createdAt']).compareTo(_toInt(a['createdAt'])),
-      );
-      out[learnerUid.toString()] = items.take(6).toList();
+      out[learnerUid.toString()] = {
+        'count': count,
+        'thumbnailUrl': thumbnailUrl,
+      };
     });
 
     return out;
@@ -963,17 +948,15 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
               _learnerGalleryCache = galleryValue;
             }
 
-            final counts = _parseLearnerGalleryCounts(
-              galleryValue ?? _learnerGalleryCache,
-            );
-            final previews = _parseLearnerGalleryPreviews(
+            final stats = _parseLearnerGalleryStats(
               galleryValue ?? _learnerGalleryCache,
             );
 
             final q = _learnerSearch.trim().toLowerCase();
 
             final filtered = learners.where((l) {
-              if (_onlyEmptyLearnerGalleries && (counts[l.uid] ?? 0) > 0) {
+              final count = (stats[l.uid]?['count'] as int?) ?? 0;
+              if (_onlyEmptyLearnerGalleries && count > 0) {
                 return false;
               }
               if (q.isEmpty) return true;
@@ -1058,31 +1041,30 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   )
                 else
                   LayoutBuilder(
-                    builder: (context, constraints) {
-                      final w = constraints.maxWidth;
-                      final crossAxisCount = w >= 1100
-                          ? 4
-                          : (w >= 780 ? 3 : (w >= 520 ? 2 : 1));
-
+                    builder: (context, _) {
                       return GridView.builder(
                         itemCount: filtered.length,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 1.06,
-                        ),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 1.12,
+                            ),
                         itemBuilder: (context, index) {
                           final learner = filtered[index];
+                          final stat =
+                              stats[learner.uid] ??
+                              const {'count': 0, 'thumbnailUrl': ''};
                           return _AdminLearnerGalleryCard(
                             key: ValueKey(learner.uid),
                             learner: learner,
-                            itemCount: counts[learner.uid] ?? 0,
-                            previewItems:
-                                previews[learner.uid] ??
-                                const <Map<String, dynamic>>[],
+                            itemCount: (stat['count'] as int?) ?? 0,
+                            thumbnailUrl: (stat['thumbnailUrl'] ?? '')
+                                .toString()
+                                .trim(),
                             onTap: () async {
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
@@ -1155,10 +1137,6 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
       final introVideoUrl = _normUrl(profile['intro_video_url']);
       final safeVideoUrl = _isHttpUrl(introVideoUrl) ? introVideoUrl : '';
-      final previewItems = <Map<String, dynamic>>[
-        for (final p in photos) {'type': 'photo', 'url': p},
-        if (safeVideoUrl.isNotEmpty) {'type': 'video', 'url': safeVideoUrl},
-      ];
 
       out.add(
         _AdminTeacherProfileLite(
@@ -1168,7 +1146,6 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           phone1: phone,
           photoUrls: photos,
           introVideoUrl: safeVideoUrl,
-          previewItems: previewItems,
         ),
       );
     });
@@ -1273,26 +1250,25 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   )
                 else
                   LayoutBuilder(
-                    builder: (context, constraints) {
-                      final w = constraints.maxWidth;
-                      final crossAxisCount = w >= 1100
-                          ? 4
-                          : (w >= 780 ? 3 : (w >= 520 ? 2 : 1));
-
+                    builder: (context, _) {
                       return GridView.builder(
                         itemCount: filtered.length,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 1.02,
-                        ),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 1.12,
+                            ),
                         itemBuilder: (context, index) {
                           final teacher = filtered[index];
                           return _AdminTeacherProfileCard(
                             teacher: teacher,
+                            thumbnailUrl: teacher.photoUrls.isEmpty
+                                ? ''
+                                : teacher.photoUrls.first,
                             onTap: () async {
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
@@ -1400,7 +1376,6 @@ class _AdminTeacherProfileLite {
     required this.phone1,
     required this.photoUrls,
     required this.introVideoUrl,
-    required this.previewItems,
   });
 
   final String uid;
@@ -1409,24 +1384,22 @@ class _AdminTeacherProfileLite {
   final String phone1;
   final List<String> photoUrls;
   final String introVideoUrl;
-  final List<Map<String, dynamic>> previewItems;
 }
 
 class _AdminTeacherProfileCard extends StatelessWidget {
-  const _AdminTeacherProfileCard({required this.teacher, required this.onTap});
+  const _AdminTeacherProfileCard({
+    required this.teacher,
+    required this.thumbnailUrl,
+    required this.onTap,
+  });
 
   final _AdminTeacherProfileLite teacher;
+  final String thumbnailUrl;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    const primaryBlue = _AdminPublicGalleryScreenState.primaryBlue;
-    const mainText = _AdminPublicGalleryScreenState.mainText;
     const uiBorder = _AdminPublicGalleryScreenState.uiBorder;
-
-    final itemCount =
-        teacher.photoUrls.length +
-        (teacher.introVideoUrl.trim().isNotEmpty ? 1 : 0);
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -1437,89 +1410,10 @@ class _AdminTeacherProfileCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _MediaMiniPreviewStrip(
-              items: teacher.previewItems,
-              emptyIcon: Icons.person_rounded,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          teacher.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: primaryBlue,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primaryBlue.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '$itemCount',
-                          style: const TextStyle(
-                            color: primaryBlue,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
-                  if (teacher.email.trim().isNotEmpty)
-                    Text(
-                      teacher.email,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: mainText.withValues(alpha: 0.68),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                      ),
-                    )
-                  else if (teacher.phone1.trim().isNotEmpty)
-                    Text(
-                      teacher.phone1,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: mainText.withValues(alpha: 0.68),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                      ),
-                    ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap to open teacher profile media',
-                    style: TextStyle(
-                      color: mainText.withValues(alpha: 0.58),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+        child: _SingleCardImage(
+          url: thumbnailUrl,
+          emptyIcon: Icons.person_rounded,
+          topTag: teacher.name,
         ),
       ),
     );
@@ -1531,19 +1425,17 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
     super.key,
     required this.learner,
     required this.itemCount,
-    required this.previewItems,
+    required this.thumbnailUrl,
     required this.onTap,
   });
 
   final _AdminLearnerLite learner;
   final int itemCount;
-  final List<Map<String, dynamic>> previewItems;
+  final String thumbnailUrl;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    const primaryBlue = _AdminPublicGalleryScreenState.primaryBlue;
-    const mainText = _AdminPublicGalleryScreenState.mainText;
     const uiBorder = _AdminPublicGalleryScreenState.uiBorder;
 
     return InkWell(
@@ -1555,99 +1447,42 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _MediaMiniPreviewStrip(
-              items: previewItems,
-              emptyIcon: Icons.photo_library_rounded,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          learner.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: primaryBlue,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primaryBlue.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '$itemCount',
-                          style: const TextStyle(
-                            color: primaryBlue,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    learner.responsibleTeacher,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: mainText.withValues(alpha: 0.72),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap to open learner gallery',
-                    style: TextStyle(
-                      color: mainText.withValues(alpha: 0.58),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+        child: _SingleCardImage(
+          url: thumbnailUrl,
+          emptyIcon: Icons.photo_library_rounded,
+          topTag: learner.fullName,
+          trailingCount: itemCount,
         ),
       ),
     );
   }
 }
 
-class _MediaMiniPreviewStrip extends StatelessWidget {
-  const _MediaMiniPreviewStrip({required this.items, required this.emptyIcon});
+class _SingleCardImage extends StatelessWidget {
+  const _SingleCardImage({
+    required this.url,
+    required this.emptyIcon,
+    required this.topTag,
+    this.trailingCount,
+  });
 
-  final List<Map<String, dynamic>> items;
+  final String url;
   final IconData emptyIcon;
+  final String topTag;
+  final int? trailingCount;
 
   @override
   Widget build(BuildContext context) {
-    final previews = items.take(3).toList();
+    final cardWidth = (MediaQuery.of(context).size.width - (16 * 2) - 12) / 2;
+    final pxRatio = MediaQuery.of(context).devicePixelRatio;
+    final targetCacheWidth = (cardWidth * pxRatio).round();
 
-    if (previews.isEmpty) {
+    if (url.trim().isEmpty) {
       return Container(
-        height: 90,
+        constraints: const BoxConstraints(minHeight: 120),
         decoration: BoxDecoration(
           color: _AdminPublicGalleryScreenState.appBg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          borderRadius: BorderRadius.circular(18),
           border: Border(
             bottom: BorderSide(
               color: _AdminPublicGalleryScreenState.uiBorder.withValues(
@@ -1656,81 +1491,109 @@ class _MediaMiniPreviewStrip extends StatelessWidget {
             ),
           ),
         ),
-        child: Center(
-          child: Icon(
-            emptyIcon,
-            color: _AdminPublicGalleryScreenState.primaryBlue.withValues(
-              alpha: 0.35,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: Icon(
+                emptyIcon,
+                color: _AdminPublicGalleryScreenState.primaryBlue.withValues(
+                  alpha: 0.35,
+                ),
+                size: 24,
+              ),
             ),
-            size: 24,
-          ),
+            _TopNameTag(label: topTag),
+            if (trailingCount != null) _BottomCountTag(count: trailingCount!),
+          ],
         ),
       );
     }
 
-    return SizedBox(
-      height: 90,
-      child: Row(
-        children: [
-          for (int i = 0; i < previews.length; i++) ...[
-            if (i > 0)
-              Container(
-                width: 1,
-                color: _AdminPublicGalleryScreenState.uiBorder.withValues(
-                  alpha: 0.5,
-                ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              url,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.low,
+              cacheWidth: targetCacheWidth,
+              errorBuilder: (_, _, _) => Container(
+                color: Colors.grey.shade200,
+                alignment: Alignment.center,
+                child: const Icon(Icons.broken_image_outlined),
               ),
-            Expanded(child: _MiniPreviewTile(item: previews[i])),
+            ),
+            _TopNameTag(label: topTag),
+            if (trailingCount != null) _BottomCountTag(count: trailingCount!),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-class _MiniPreviewTile extends StatelessWidget {
-  const _MiniPreviewTile({required this.item});
+class _TopNameTag extends StatelessWidget {
+  const _TopNameTag({required this.label});
 
-  final Map<String, dynamic> item;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final type = (item['type'] ?? '').toString().trim().toLowerCase();
-    final url = (item['url'] ?? '').toString().trim();
+    return Positioned(
+      top: 8,
+      left: 8,
+      right: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.58),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (type == 'video')
-          _AdminVideoTile(url: url)
-        else
-          Image.network(
-            url,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => Container(
-              color: Colors.grey.shade200,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined, size: 18),
-            ),
+class _BottomCountTag extends StatelessWidget {
+  const _BottomCountTag({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 8,
+      bottom: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.58),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 11,
           ),
-        if (type == 'video')
-          Align(
-            alignment: Alignment.center,
-            child: Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.48),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-      ],
+        ),
+      ),
     );
   }
 }
