@@ -521,8 +521,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       await _stateRef.child(_meUid).child(widget.threadId).update({
         'lastReadAt': now,
       });
-      await _indexRef.child(_meUid).child(widget.threadId).update({
-        'unreadCount': 0,
+      await _indexRef.child(_meUid).child(widget.threadId).runTransaction((
+        cur,
+      ) {
+        final map = _asStringDynamicMap(cur);
+        map['lastReadAt'] = now;
+        final updatedAt = _asInt(map['updatedAt']);
+        if (updatedAt <= now) {
+          map['unreadCount'] = 0;
+        }
+        return Transaction.success(map);
       });
     } catch (_) {}
   }
@@ -799,6 +807,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return <String, dynamic>{};
   }
 
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   Future<void> _sendRawMessage({
     required String body,
     required List<Map<String, String>> attachments,
@@ -808,6 +822,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final msgRef = _msgsRef.push();
+    final msgKey = msgRef.key!;
 
     final preview = body.trim().isEmpty
         ? (attachments.isNotEmpty ? '📎 Attachment' : '')
@@ -830,42 +845,43 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       payload['type'] = messageType.trim();
     }
 
-    await msgRef.set(payload);
+    final root = _db.ref();
+    final updates = <String, dynamic>{
+      'mail_messages/${widget.threadId}/$msgKey': payload,
+    };
 
     if (updateThreadPreview) {
-      await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
+      final threadPath = 'mail_threads/${widget.threadId}';
+      updates['$threadPath/subject'] = widget.subject;
+      updates['$threadPath/updatedAt'] = now;
+      updates['$threadPath/lastMessage'] = preview80;
+      updates['$threadPath/participants/$_meUid'] = true;
+      updates['$threadPath/participants/${widget.peerUid}'] = true;
 
-      await _indexRef.child(_meUid).child(widget.threadId).update({
-        'subject': widget.subject,
-        'updatedAt': now,
-        'lastMessage': preview80,
-        'unreadCount': 0,
-        'peerUid': widget.peerUid,
-        'peerName': _peerNameShown,
-        'deletedAt': null,
-      });
+      final senderIndexPath = 'mail_index/$_meUid/${widget.threadId}';
+      updates['$senderIndexPath/subject'] = widget.subject;
+      updates['$senderIndexPath/updatedAt'] = now;
+      updates['$senderIndexPath/lastMessage'] = preview80;
+      updates['$senderIndexPath/unreadCount'] = 0;
+      updates['$senderIndexPath/peerUid'] = widget.peerUid;
+      updates['$senderIndexPath/peerName'] = _peerNameShown;
+      updates['$senderIndexPath/deletedAt'] = null;
 
-      await _indexRef
-          .child(widget.peerUid)
-          .child(widget.threadId)
-          .runTransaction((cur) {
-            final m = _asStringDynamicMap(cur);
+      final peerIndexPath = 'mail_index/${widget.peerUid}/${widget.threadId}';
+      updates['$peerIndexPath/subject'] = widget.subject;
+      updates['$peerIndexPath/updatedAt'] = now;
+      updates['$peerIndexPath/lastMessage'] = preview80;
+      updates['$peerIndexPath/peerUid'] = _meUid;
+      updates['$peerIndexPath/peerName'] = _meDisplayName;
+      updates['$peerIndexPath/deletedAt'] = null;
+      updates['$peerIndexPath/unreadCount'] = ServerValue.increment(1);
 
-            final oldUnread = (m['unreadCount'] is num)
-                ? (m['unreadCount'] as num).toInt()
-                : int.tryParse((m['unreadCount'] ?? '').toString()) ?? 0;
+      updates['mail_state/$_meUid/${widget.threadId}/lastReadAt'] = now;
+    }
 
-            m['subject'] = widget.subject;
-            m['updatedAt'] = now;
-            m['lastMessage'] = preview80;
-            m['unreadCount'] = oldUnread + 1;
-            m['peerUid'] = _meUid;
-            m['peerName'] = _meDisplayName;
-            m['deletedAt'] = null;
+    await root.update(updates);
 
-            return Transaction.success(m);
-          });
-
+    if (updateThreadPreview) {
       unawaited(_markRead());
     }
 
@@ -2859,46 +2875,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         if (noteText.isNotEmpty) 'Comment: $noteText',
       ].join('\n');
 
-      final msgRef = _msgsRef.push();
-      await msgRef.set({
-        'fromUid': _meUid,
-        'body': evalText,
-        'type': 'homework_eval',
-        'toUids': {widget.peerUid: true},
-        'ccUids': {},
-        'bccUids': {},
-        'attachments': [],
-        'createdAt': now,
-        'deletedFor': {},
-        'reactions': {},
-      });
-
-      final preview80 = evalText.length > 80
-          ? evalText.substring(0, 80)
-          : evalText;
-
-      await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
-
-      await _indexRef
-          .child(widget.peerUid)
-          .child(widget.threadId)
-          .runTransaction((cur) {
-            final m = _asStringDynamicMap(cur);
-
-            final oldUnread = (m['unreadCount'] is num)
-                ? (m['unreadCount'] as num).toInt()
-                : int.tryParse((m['unreadCount'] ?? '').toString()) ?? 0;
-
-            m['subject'] = widget.subject;
-            m['updatedAt'] = now;
-            m['lastMessage'] = preview80;
-            m['unreadCount'] = oldUnread + 1;
-            m['peerUid'] = _meUid;
-            m['peerName'] = _meDisplayName;
-            m['deletedAt'] = null;
-
-            return Transaction.success(m);
-          });
+      await _sendRawMessage(
+        body: evalText,
+        attachments: const [],
+        updateThreadPreview: true,
+        sendPush: false,
+        messageType: 'homework_eval',
+      );
 
       _snack('Saved + sent ✅');
       scoreC.dispose();

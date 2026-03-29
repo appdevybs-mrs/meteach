@@ -1,0 +1,442 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "appConfig": {
+      ".read": true,
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
+    "admin_todos": {
+      "$assigneeUid": {
+        ".read": "auth != null && auth.uid == $assigneeUid",
+        "$todoId": {
+          ".write": "auth != null && (auth.uid == $assigneeUid || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('admins').child(auth.uid).exists())",
+
+          "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
+          "description": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+          "dueAt": { ".validate": "newData.isNumber()" },
+
+          "status": { ".validate": "newData.isString() && (newData.val() == 'new' || newData.val() == 'seen' || newData.val() == 'done' || newData.val() == 'read')" },
+
+          "createdAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+          "updatedAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+
+          "createdByUid": { ".validate": "newData.isString()" },
+          "createdByName": { ".validate": "newData.isString()" },
+          "assigneeUid": { ".validate": "newData.isString() && newData.val() == $assigneeUid" },
+          "assigneeName": { ".validate": "newData.isString()" },
+
+          "seenAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null" },
+          "doneAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null" },
+
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "admins": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": false
+      }
+    },
+
+    "website": {
+      ".read": true,
+      ".write": "auth != null",
+      "teachers": {
+        ".read": true,
+        "$uid": {
+          "profile": {
+            ".read": true,
+            ".write": "auth != null && auth.uid == $uid"
+          }
+        }
+      }
+    },
+
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+
+        "role": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+        },
+        "status": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+        },
+        "deleteAuth": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+        },
+        "selfDeleteDone": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+        }
+      }
+    },
+
+    "users_deleted": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    "users_blocked": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    "blocked_emails": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "courses": {
+      ".read": true,
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
+    "certificates": {
+      ".read": true,
+      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      ".indexOn": ["cvn"],
+
+      "$certificateId": {
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+
+        "cvn": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{6,50}$/)"
+        },
+        "fullName": {
+          ".validate": "newData.isString() && newData.val().length > 1 && newData.val().length <= 120"
+        },
+        "certificateTitle": {
+          ".validate": "newData.isString() && newData.val().length > 1 && newData.val().length <= 200"
+        },
+        "trainingDate": {
+          ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)"
+        },
+        "expirationDate": {
+          ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() == 'valid' || newData.val() == 'expired' || newData.val() == 'revoked')"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() || !newData.exists()"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() || !newData.exists()"
+        },
+
+        "pdfUrl": {
+          ".read": "data.parent().child('downloadsEnabled').val() == true || (auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^https?:\\/\\/.+/))"
+        },
+        "pdfPreviewUrl": {
+          ".read": "data.parent().child('downloadsEnabled').val() == true || (auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^https?:\\/\\/.+/))"
+        },
+
+        "downloadCount": {
+          ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "lastDownloadedAt": {
+          ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
+
+        "downloadsEnabled": {
+          ".validate": "newData.isBoolean() || !newData.exists()"
+        },
+
+        "nationalIdNumber": {
+          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".validate": "newData.isString() && newData.val().length >= 4 && newData.val().length <= 30"
+        },
+        "issuedBy": {
+          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+        "notes": {
+          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+
+    "stories": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+
+    "circle": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+
+    "games": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+
+    "public_gallery_teasers": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+
+    "learner_gallery": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+
+    "classes": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
+    "payments": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
+    "subscriptions": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      "$subscriptionId": {
+        ".write": "(auth != null && root.child('admins').child(auth.uid).exists()) || (!data.exists() && newData.hasChildren(['courseId','courseTitle','fullName','phone','createdAt']) && newData.child('courseId').isString() && newData.child('courseTitle').isString() && newData.child('fullName').isString() && newData.child('phone').isString() && newData.child('createdAt').isNumber())",
+
+        "courseId": { ".validate": "newData.isString()" },
+        "courseTitle": { ".validate": "newData.isString()" },
+        "fullName": { ".validate": "newData.isString()" },
+        "firstName": { ".validate": "!newData.exists() || newData.isString()" },
+        "lastName": { ".validate": "!newData.exists() || newData.isString()" },
+        "phone": { ".validate": "newData.isString()" },
+        "dob": { ".validate": "!newData.exists() || newData.isString()" },
+        "dateOfBirth": { ".validate": "!newData.exists() || newData.isString()" },
+        "email": { ".validate": "!newData.exists() || newData.isString()" },
+        "delivery": { ".validate": "!newData.exists() || newData.isString()" },
+        "paymentPlan": { ".validate": "!newData.exists() || newData.isString()" },
+        "deliveryKey": { ".validate": "!newData.exists() || newData.isString()" },
+        "deliveryLabel": { ".validate": "!newData.exists() || newData.isString()" },
+        "studyMode": { ".validate": "!newData.exists() || newData.isString()" },
+        "studyModeLabel": { ".validate": "!newData.exists() || newData.isString()" },
+        "selectedFee": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "accessMode": { ".validate": "!newData.exists() || newData.isString()" },
+        "accessDurationMonths": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "accessLabel": { ".validate": "!newData.exists() || newData.isString()" },
+        "additionalInfo": { ".validate": "!newData.exists() || newData.isString()" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+
+        "$other": { ".validate": false }
+      }
+    },
+
+    "contract": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
+    "reminders": {
+      ".read": "auth != null",
+      "$teacherUid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    "online_attendance": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "sessions": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    "shared_files": {
+      ".read": "auth != null",
+      "$fileId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('admins').child(auth.uid).exists())",
+
+        ".validate": "newData.hasChildren(['id', 'description', 'name', 'ext', 'url', 'ownerUid', 'ownerName', 'createdAt'])",
+
+        "id": { ".validate": "newData.isString()" },
+        "title": { ".validate": "newData.isString() || !newData.exists()" },
+        "description": { ".validate": "newData.isString()" },
+        "name": { ".validate": "newData.isString()" },
+        "ext": { ".validate": "newData.isString()" },
+        "url": { ".validate": "newData.isString()" },
+        "ownerUid": { ".validate": "newData.isString() && newData.val() == auth.uid" },
+        "ownerName": { ".validate": "newData.isString()" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+
+        "serverRoot": { ".validate": "newData.isString() || !newData.exists()" },
+        "serverPath": { ".validate": "newData.isString() || !newData.exists()" },
+
+        "$other": { ".validate": false }
+      }
+    },
+
+    "fcm_tokens": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+
+        "token": { ".validate": "newData.isString() && newData.val().length > 0" },
+        "platform": { ".validate": "!newData.exists() || newData.isString()" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+
+        "$other": { ".validate": false }
+      }
+    },
+
+    "mail_threads": {
+      "$threadId": {
+        ".read": "auth != null && data.child('participants').child(auth.uid).exists()",
+        ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || (!data.exists() && newData.child('participants').child(auth.uid).exists()))",
+
+        "participants": {
+          "$participantUid": {
+            ".validate": "newData.isBoolean() && newData.val() == true"
+          }
+        },
+        "subject": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 240)" },
+        "createdAt": { ".validate": "newData.isNumber() || !newData.exists()" },
+        "updatedAt": { ".validate": "newData.isNumber() || !newData.exists()" },
+        "lastMessageAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "lastMessagePreview": { ".validate": "!newData.exists() || newData.isString()" },
+        "$other": { ".validate": true }
+      }
+    },
+
+    "mail_messages": {
+      "$threadId": {
+        ".read": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()",
+        "$messageId": {
+          ".write": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && newData.child('fromUid').val() == auth.uid",
+          ".validate": "newData.hasChildren(['fromUid','body','createdAt']) && newData.child('fromUid').isString() && newData.child('body').isString() && newData.child('createdAt').isNumber()"
+        }
+      }
+    },
+
+    "mail_index": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$threadId": {
+          ".write": "auth != null && auth.uid == $uid && root.child('mail_threads').child($threadId).child('participants').child($uid).exists()",
+          ".validate": "newData.hasChildren(['subject','updatedAt','unread']) && newData.child('subject').isString() && newData.child('updatedAt').isNumber() && newData.child('unread').isNumber()"
+        }
+      }
+    },
+
+    "mail_state": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$threadId": {
+          ".write": "auth != null && auth.uid == $uid && root.child('mail_threads').child($threadId).child('participants').child($uid).exists()",
+          ".validate": "!newData.exists() || newData.isMap()"
+        }
+      }
+    },
+
+    "booking_availability": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "booking_reservations": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "reports": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "syllabi": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "job_applications": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".indexOn": ["stage", "status", "priority", "createdAt", "email", "phone"],
+
+      "$appId": {
+        ".write": "(!data.exists() && newData.hasChildren(['full_name','phone','email','position','cv_pdf_url','status','isGuest','submittedByUid','createdAt']) && newData.child('status').val() == 'new' && (!newData.child('stage').exists() || newData.child('stage').val() == 'new') && (!newData.child('priority').exists() || newData.child('priority').val() == 'medium')) || (auth != null && root.child('admins').child(auth.uid).exists())",
+
+        "full_name": {
+          ".validate": "newData.isString() && newData.val().length > 1 && newData.val().length <= 120 && newData.val().matches(/^.*\\S.*$/)"
+        },
+        "phone": {
+          ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 30"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().matches(/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/)"
+        },
+        "position": {
+          ".validate": "newData.isString() && newData.val().length > 1 && newData.val().length <= 120 && newData.val().matches(/^.*\\S.*$/)"
+        },
+        "cv_pdf_url": {
+          ".validate": "newData.isString() && newData.val().matches(/^https?:\\/\\/.+/)"
+        },
+
+        "status": {
+          ".validate": "newData.isString() && (newData.val() == 'new' || newData.val() == 'reviewed' || newData.val() == 'shortlisted' || newData.val() == 'rejected' || newData.val() == 'hired')"
+        },
+        "stage": {
+          ".validate": "!newData.exists() || (newData.isString() && (newData.val() == 'new' || newData.val() == 'called_reached' || newData.val() == 'called_no_answer' || newData.val() == 'callback_requested' || newData.val() == 'interview_scheduled' || newData.val() == 'interview_done' || newData.val() == 'rejected' || newData.val() == 'hired'))"
+        },
+        "priority": {
+          ".validate": "!newData.exists() || (newData.isString() && (newData.val() == 'high' || newData.val() == 'medium' || newData.val() == 'low'))"
+        },
+
+        "isGuest": { ".validate": "newData.isBoolean()" },
+        "submittedByUid": { ".validate": "newData.isString()" },
+
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "updatedBy": { ".validate": "!newData.exists() || newData.isString()" },
+        "interviewAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+
+        "timeline": {
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type','at','byUid','byName','payload'])",
+
+            "type": {
+              ".validate": "newData.isString() && (newData.val() == 'stage_changed' || newData.val() == 'call_outcome' || newData.val() == 'interview_scheduled' || newData.val() == 'interview_done' || newData.val() == 'rejected' || newData.val() == 'hired')"
+            },
+            "at": { ".validate": "newData.isNumber()" },
+            "byUid": { ".validate": "newData.isString()" },
+            "byName": { ".validate": "newData.isString()" },
+
+            "payload": {
+              "$k": {
+                ".validate": "newData.isString() || newData.isNumber() || newData.isBoolean() || !newData.exists()"
+              }
+            },
+
+            "$other": { ".validate": false }
+          }
+        },
+
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

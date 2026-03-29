@@ -117,6 +117,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     final hwMsgKeyPath =
         'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework/autoMailMsgKey';
     // Multi-location update (thread + message + my index)
+    final learnerName = await _myDisplayName();
+
     final Map<String, dynamic> updates = {
       // thread meta
       'mail_threads/$threadId/subject': subject,
@@ -160,33 +162,21 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
       // my read state (optional but consistent)
       'mail_state/$_uid/$threadId/lastReadAt': now,
+      'mail_index/$teacherUid/$threadId/peerUid': _uid,
+      'mail_index/$teacherUid/$threadId/peerName': learnerName.isEmpty
+          ? 'Learner'
+          : learnerName,
+      'mail_index/$teacherUid/$threadId/subject': subject,
+      'mail_index/$teacherUid/$threadId/lastMessage': body.length > 60
+          ? body.substring(0, 60)
+          : body,
+      'mail_index/$teacherUid/$threadId/updatedAt': now,
+      'mail_index/$teacherUid/$threadId/type': 'homework',
+      'mail_index/$teacherUid/$threadId/deletedAt': null,
+      'mail_index/$teacherUid/$threadId/unreadCount': ServerValue.increment(1),
     };
 
     await _db.update(updates);
-
-    // Teacher index + unreadCount increment safely
-    final teacherIndexRef = _db
-        .child('mail_index')
-        .child(teacherUid)
-        .child(threadId);
-
-    final learnerName = await _myDisplayName();
-
-    await teacherIndexRef.update({
-      'peerUid': _uid,
-      'peerName': learnerName,
-      'subject': subject,
-      'lastMessage': body.length > 60 ? body.substring(0, 60) : body,
-      'updatedAt': now,
-      'type': 'homework',
-    });
-
-    await teacherIndexRef.child('unreadCount').runTransaction((v) {
-      final curr = (v is num)
-          ? v.toInt()
-          : int.tryParse(v?.toString() ?? '') ?? 0;
-      return Transaction.success(curr + 1);
-    });
 
     if (!mounted) return;
 
