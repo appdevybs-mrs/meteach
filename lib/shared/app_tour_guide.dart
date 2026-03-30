@@ -214,7 +214,7 @@ class AppTourGuide {
         final current = hints[index];
         final isLast = index == hints.length - 1;
 
-        await _waitForHintTargetReady(current, context);
+        await _waitForHintTargetReady(current);
         if (!context.mounted) return;
 
         final action = await showDialog<_TourStepAction>(
@@ -264,17 +264,14 @@ class AppTourGuide {
     }
   }
 
-  static Future<void> _waitForHintTargetReady(
-    AppTourHint hint,
-    BuildContext context,
-  ) async {
+  static Future<void> _waitForHintTargetReady(AppTourHint hint) async {
     final key = hint.targetKey;
     if (key == null) return;
 
     for (var i = 0; i < 18; i++) {
-      if (!context.mounted) return;
       final targetCtx = key.currentContext;
       if (targetCtx != null) {
+        // ignore: use_build_context_synchronously
         final ro = targetCtx.findRenderObject();
         if (ro is RenderBox && ro.hasSize && ro.size.longestSide > 0) {
           return;
@@ -398,6 +395,10 @@ class _AppTourStepDialogState extends State<_AppTourStepDialog> {
     for (var i = 0; i < 12; i++) {
       final ctx = key.currentContext;
       if (ctx != null) {
+        if (!ctx.mounted) {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+          continue;
+        }
         try {
           await Scrollable.ensureVisible(
             ctx,

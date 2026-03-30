@@ -546,6 +546,8 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       }
     } catch (_) {}
 
+    if (!mounted) return;
+
     final scoreC = TextEditingController(text: score.toString());
     final noteC = TextEditingController(text: note);
 

@@ -709,6 +709,8 @@ class PaymentDialogShared {
         ? courseVal.map((k, v) => MapEntry(k.toString(), v))
         : <String, dynamic>{};
 
+    if (!context.mounted) return;
+
     await _showAddDialogCore(
       context: context,
       db: db,
@@ -800,8 +802,10 @@ class PaymentDialogShared {
         );
       }
 
+      if (!context.mounted) return;
       _snack(context, 'Deleted ✅');
     } catch (e) {
+      if (!context.mounted) return;
       _snack(context, 'Delete failed: $e');
     }
   }
@@ -818,6 +822,8 @@ class PaymentDialogShared {
     if (paymentId.isEmpty) return;
 
     final teachers = await _loadTeachers(usersRef);
+
+    if (!context.mounted) return;
 
     String variantKey = _normalizeDeliveryKey(
       (payment['variantKey'] ?? '').toString(),
@@ -921,6 +927,8 @@ class PaymentDialogShared {
     String? teacherUid = (payment['teacherId'] ?? '').toString().trim();
     if (teacherUid.isEmpty) teacherUid = null;
     String teacherName = (payment['teacherName'] ?? '').toString().trim();
+
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -1221,9 +1229,11 @@ class PaymentDialogShared {
                       );
                     }
 
-                    if (context.mounted) Navigator.pop(context);
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
                     _snack(context, 'Updated ✅');
                   } catch (e) {
+                    if (!context.mounted) return;
                     _snack(context, toHumanError(e));
                   }
                 },
@@ -1376,6 +1386,8 @@ class PaymentDialogShared {
     } else {
       await loadCourseAndDefaults();
     }
+
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -2012,9 +2024,11 @@ class PaymentDialogShared {
                       );
                     }
 
-                    if (context.mounted) Navigator.pop(context);
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
                     _snack(context, 'Payment saved ✅');
                   } catch (e) {
+                    if (!context.mounted) return;
                     _snack(context, toHumanError(e));
                   }
                 },

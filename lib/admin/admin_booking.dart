@@ -358,8 +358,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     } catch (e) {
       _toast('Failed loading courses: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => loadingCourses = false);
+      if (mounted) {
+        setState(() => loadingCourses = false);
+      }
     }
   }
 
@@ -465,8 +466,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     } catch (e) {
       _toast('Failed loading bookings: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => loadingBookings = false);
+      if (mounted) {
+        setState(() => loadingBookings = false);
+      }
     }
   }
 
@@ -556,8 +558,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     } catch (e) {
       _toast('Failed loading bookings: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => loadingBookings = false);
+      if (mounted) {
+        setState(() => loadingBookings = false);
+      }
     }
   }
 
@@ -774,8 +777,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     } catch (e) {
       _toast('Cancel failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => busyAction = false);
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
     }
   }
 
@@ -1092,6 +1096,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     );
 
     if (chosen == null) return;
+    if (!detailsSheetContext.mounted) return;
 
     await _moveLearnerToNewSlot(
       sourceSlot: sourceSlot,
@@ -1225,8 +1230,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     } catch (e) {
       _toast('Reschedule failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => busyAction = false);
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
     }
   }
 

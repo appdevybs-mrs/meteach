@@ -543,6 +543,16 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
     return StreamBuilder<DatabaseEvent>(
       stream: _classesStream,
       builder: (context, classesSnap) {
+        if (classesSnap.hasError && _classesCache == null) {
+          return const Center(
+            child: Text('Could not load classes. Please try again.'),
+          );
+        }
+        if (classesSnap.connectionState == ConnectionState.waiting &&
+            _classesCache == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
         final classesValue = classesSnap.data?.snapshot.value;
         if (classesValue != null) {
           _classesCache = classesValue;
@@ -551,6 +561,18 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
         return StreamBuilder<DatabaseEvent>(
           stream: _learnerGalleryStream,
           builder: (context, gallerySnap) {
+            if (gallerySnap.hasError && _learnerGalleryCache == null) {
+              return const Center(
+                child: Text(
+                  'Could not load gallery items. Please check your connection.',
+                ),
+              );
+            }
+            if (gallerySnap.connectionState == ConnectionState.waiting &&
+                _learnerGalleryCache == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
             final learnerGalleryValue = gallerySnap.data?.snapshot.value;
             if (learnerGalleryValue != null) {
               _learnerGalleryCache = learnerGalleryValue;
@@ -845,6 +867,16 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
     return StreamBuilder<DatabaseEvent>(
       stream: _learnerGalleryStream,
       builder: (context, snap) {
+        if (snap.hasError && _learnerGalleryCache == null) {
+          return const Center(
+            child: Text('Could not load teachers gallery. Please try again.'),
+          );
+        }
+        if (snap.connectionState == ConnectionState.waiting &&
+            _learnerGalleryCache == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
         final learnerGalleryValue = snap.data?.snapshot.value;
         if (learnerGalleryValue != null) {
           _learnerGalleryCache = learnerGalleryValue;

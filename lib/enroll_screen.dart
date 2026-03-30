@@ -592,6 +592,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
     return (w < 420 ? 16.0 : 18.0);
   }
 
+  String _biHint(String english, String arabic) => '$english  |  $arabic';
+
   InputDecoration _inputDeco({
     required String label,
     required IconData icon,
@@ -800,9 +802,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             controller: fullNameC,
                             textInputAction: TextInputAction.next,
                             decoration: _inputDeco(
-                              label: 'Full name',
+                              label: 'Full name | الاسم الكامل',
                               icon: Icons.person_rounded,
-                              hint: 'Your full name',
+                              hint: _biHint('Your full name', 'الاسم الكامل'),
                             ),
                             validator: (v) {
                               final s = (v ?? '').trim();
@@ -820,9 +822,12 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             keyboardType: TextInputType.phone,
                             textInputAction: TextInputAction.next,
                             decoration: _inputDeco(
-                              label: 'Phone number',
+                              label: 'Phone number | رقم الهاتف',
                               icon: Icons.phone_rounded,
-                              hint: 'e.g. 0550 00 00 00',
+                              hint: _biHint(
+                                'e.g. 0550 00 00 00',
+                                'مثال: 0550 00 00 00',
+                              ),
                             ),
                             validator: (v) {
                               final s = (v ?? '').trim();
@@ -843,9 +848,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             onTap: _pickDob,
                             textInputAction: TextInputAction.next,
                             decoration: _inputDeco(
-                              label: 'Date of birth',
+                              label: 'Date of birth | تاريخ الميلاد',
                               icon: Icons.cake_rounded,
-                              hint: 'YYYY-MM-DD',
+                              hint: _biHint('YYYY-MM-DD', 'سنة-شهر-يوم'),
                             ),
                             validator: (v) {
                               final s = (v ?? '').trim();
@@ -881,9 +886,13 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.done,
                             decoration: _inputDeco(
-                              label: 'Email (optional)',
+                              label:
+                                  'Email (optional) | البريد الإلكتروني (اختياري)',
                               icon: Icons.alternate_email_rounded,
-                              hint: 'name@example.com',
+                              hint: _biHint(
+                                'name@example.com',
+                                'البريد الإلكتروني (اختياري)',
+                              ),
                             ),
                             validator: (v) {
                               final s = (v ?? '').trim();

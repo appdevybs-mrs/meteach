@@ -752,7 +752,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     uploadedStoryFileName = _fileNameFromUrl(uploadedUrl);
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -761,7 +761,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -832,7 +832,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     uploadedAudioFileName = _fileNameFromUrl(uploadedAudioUrl);
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -841,7 +841,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -912,14 +912,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     uploadedPdfFileName = _fileNameFromUrl(uploadedPdfUrl);
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(content: Text('PDF uploaded successfully.')),
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -999,7 +999,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     uploadedThumbFileName = _fileNameFromUrl(uploadedThumbnail);
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -1008,7 +1008,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1119,7 +1119,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final teacher = await _loadMyTeacherData();
               if (teacher == null) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -1131,7 +1131,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
@@ -1206,9 +1206,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
                 await ref.update(data);
 
-                if (!mounted) return;
+                if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
 
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1220,7 +1221,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   ),
                 );
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1549,7 +1550,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedUrl),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(
@@ -1655,7 +1656,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedAudioUrl),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(
@@ -1761,7 +1762,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedPdfUrl),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(
@@ -1887,7 +1888,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedThumbnail),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(

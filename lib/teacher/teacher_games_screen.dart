@@ -673,7 +673,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     uploadedGameFileName = _fileNameFromUrl(uploadedUrl);
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -682,7 +682,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -761,7 +761,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     thumbPreviewVersion = DateTime.now().millisecondsSinceEpoch;
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -770,7 +770,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -829,7 +829,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final teacher = await _loadMyTeacherData();
               if (teacher == null) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -841,7 +841,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
@@ -904,9 +904,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
                 await ref.update(data);
 
-                if (!mounted) return;
+                if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
 
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -918,7 +919,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   ),
                 );
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1207,7 +1208,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedUrl),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(
@@ -1358,7 +1359,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedThumbnail),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(

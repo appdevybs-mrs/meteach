@@ -207,10 +207,11 @@ class _FileBrowserState extends State<_FileBrowser>
     } catch (e) {
       _showSnack('Load failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -472,10 +473,11 @@ class _FileBrowserState extends State<_FileBrowser>
     } catch (e) {
       _showSnack('Upload failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() {
-        isUploading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isUploading = false;
+        });
+      }
     }
   }
 
@@ -1142,6 +1144,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (uid == null || uid.isEmpty || user == null) {
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -1153,6 +1156,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -1179,7 +1183,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                     uploadedUrl = url.trim();
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -1188,7 +1192,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1209,6 +1213,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (uid == null || uid.isEmpty || user == null) {
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -1220,6 +1225,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -1248,7 +1254,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                     uploadedThumbnail = url.trim();
                   });
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
                     const SnackBar(
@@ -1257,7 +1263,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   );
                 }
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1317,7 +1323,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (currentUser == null || uid == null || uid.isEmpty) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   const SnackBar(
@@ -1413,9 +1419,10 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
                 await ref.update(data);
 
-                if (!mounted) return;
+                if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
 
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1427,7 +1434,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   ),
                 );
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
                   SnackBar(
@@ -1614,7 +1621,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedUrl),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(
@@ -1710,7 +1717,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                       await Clipboard.setData(
                                         ClipboardData(text: uploadedThumbnail),
                                       );
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       AppToast.fromSnackBar(
                                         context,
                                         const SnackBar(

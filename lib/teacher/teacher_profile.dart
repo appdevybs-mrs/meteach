@@ -135,6 +135,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         throw Exception('No user record found in database.');
       }
 
+      if (snap.value is! Map) {
+        throw Exception('User profile has invalid format.');
+      }
+
       final data = Map<String, dynamic>.from(snap.value as Map);
 
       _firstNameCtrl.text = (data['first_name'] ?? '').toString();

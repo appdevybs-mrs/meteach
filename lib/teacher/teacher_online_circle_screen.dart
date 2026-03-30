@@ -85,7 +85,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
         _meetingUrlCtrl.text = meetingSnap.value.toString().trim();
       }
 
-      if (circleSnap.exists && circleSnap.value != null) {
+      if (circleSnap.exists && circleSnap.value is Map) {
         final data = Map<String, dynamic>.from(circleSnap.value as Map);
 
         _topicCtrl.text = (data['topic'] ?? '').toString();
