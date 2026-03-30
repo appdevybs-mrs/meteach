@@ -15,6 +15,7 @@ class AdminPaymentsLogScreen extends StatefulWidget {
 
 class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
   final _db = FirebaseDatabase.instance;
+  static const int _paymentsWindowSize = 3000;
   String _search = '';
 
   DatabaseReference get _paymentsRef => _db.ref('payments');
@@ -78,7 +79,10 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
           ),
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
-              stream: _paymentsRef.onValue,
+              stream: _paymentsRef
+                  .orderByChild('paidAt')
+                  .limitToLast(_paymentsWindowSize)
+                  .onValue,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return const Center(child: Text('Error loading payments.'));

@@ -145,6 +145,7 @@ class AdminTeacherMailThreadScreen extends StatefulWidget {
 
 class _AdminTeacherMailThreadScreenState
     extends State<AdminTeacherMailThreadScreen> {
+  static const int _messageWindowSize = 300;
   static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
 
   final _db = FirebaseDatabase.instance;
@@ -183,7 +184,11 @@ class _AdminTeacherMailThreadScreenState
     _threadId = _pairThreadId(_meUid, widget.teacherUid);
     RouteState.enterMailThread(_threadId);
 
-    _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
+    _msgStream = _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(_messageWindowSize)
+        .onValue
+        .asBroadcastStream();
 
     _loadOrInitThread();
     _markRead(); // best effort

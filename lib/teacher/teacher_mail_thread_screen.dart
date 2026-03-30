@@ -44,6 +44,7 @@ class TeacherMailThreadScreen extends StatefulWidget {
 }
 
 class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
+  static const int _messageWindowSize = 300;
   // ---------------- Pro palette (matches learner style) ----------------
   static const Color _navy = Color(0xFF243B5A);
   static const Color _navyDark = Color(0xFF1C2F4A);
@@ -196,7 +197,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     super.initState();
     RouteState.enterMailThread(widget.threadId);
 
-    _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
+    _msgStream = _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(_messageWindowSize)
+        .onValue
+        .asBroadcastStream();
 
     _markRead();
     _loadNames();

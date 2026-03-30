@@ -283,7 +283,13 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
         ],
       ),
       body: StreamBuilder<DatabaseEvent>(
-        stream: FirebaseDatabase.instance.ref('payments').onValue,
+        stream: myUid.isEmpty
+            ? const Stream<DatabaseEvent>.empty()
+            : FirebaseDatabase.instance
+                  .ref('payments')
+                  .orderByChild('teacherId')
+                  .equalTo(myUid)
+                  .onValue,
         builder: (context, snap) {
           final raw = snap.data?.snapshot.value;
 

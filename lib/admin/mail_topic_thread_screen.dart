@@ -139,6 +139,7 @@ class MailTopicThreadScreen extends StatefulWidget {
 }
 
 class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
+  static const int _messageWindowSize = 300;
   static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
 
   final _db = FirebaseDatabase.instance;
@@ -173,7 +174,11 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     super.initState();
     RouteState.enterMailThread(widget.threadId);
 
-    _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
+    _msgStream = _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(_messageWindowSize)
+        .onValue
+        .asBroadcastStream();
     _loadSubject();
     _markRead();
   }

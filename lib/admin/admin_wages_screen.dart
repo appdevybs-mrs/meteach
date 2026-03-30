@@ -9,6 +9,7 @@ import '../shared/screen_help_guide.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
+  static const int _paymentsWindowSize = 3000;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -494,7 +495,10 @@ class AdminWagesScreen extends StatelessWidget {
         ],
       ),
       body: StreamBuilder<DatabaseEvent>(
-        stream: paymentsRef.onValue,
+        stream: paymentsRef
+            .orderByChild('paidAt')
+            .limitToLast(_paymentsWindowSize)
+            .onValue,
         builder: (context, paySnap) {
           final payRaw = paySnap.data?.snapshot.value;
 

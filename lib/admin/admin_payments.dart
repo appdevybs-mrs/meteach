@@ -30,6 +30,7 @@ class AdminPaymentsScreen extends StatefulWidget {
 
 class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   final _db = FirebaseDatabase.instance;
+  static const int _paymentsWindowSize = 3000;
 
   DatabaseReference get _paymentsRef => _db.ref('payments');
   DatabaseReference get _usersRef => _db.ref('users');
@@ -1138,7 +1139,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     );
 
     return StreamBuilder<DatabaseEvent>(
-      stream: _paymentsRef.onValue,
+      stream: _paymentsRef
+          .orderByChild('paidAt')
+          .limitToLast(_paymentsWindowSize)
+          .onValue,
       builder: (context, snap) {
         if (snap.hasError) {
           return const Scaffold(
