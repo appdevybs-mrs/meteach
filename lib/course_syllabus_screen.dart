@@ -46,6 +46,7 @@ class CourseSyllabusScreen extends StatefulWidget {
 
 class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   final _db = FirebaseDatabase.instance;
+  final Set<String> _bulkTouchedSessionIds = <String>{};
 
   DatabaseReference get _syllabusRef =>
       _db.ref('syllabi').child(widget.courseId).child(widget.variantKey);
@@ -95,8 +96,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
         _units = units;
         _ensureSessionNumbers();
+        _bulkTouchedSessionIds.clear();
       } else {
         _units = [];
+        _bulkTouchedSessionIds.clear();
       }
     } catch (_) {
       _units = [];
@@ -150,6 +153,71 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     );
   }
 
+  Future<void> _mergeRecordedAssetsForUntouchedBulkSessions() async {
+    if (!_isRecordedVariant || _bulkTouchedSessionIds.isEmpty) return;
+
+    final snap = await _syllabusRef.get();
+    if (snap.value is! Map) return;
+
+    final root = Map<String, dynamic>.from(snap.value as Map);
+    final rawUnits = _asListOfMaps(root['units']);
+    final remoteUnits = rawUnits.map(SyllabusUnit.fromMap).toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    for (final u in remoteUnits) {
+      u.sessions.sort((a, b) => a.order.compareTo(b.order));
+    }
+
+    final remoteById = <String, SyllabusSession>{};
+    for (int ui = 0; ui < remoteUnits.length; ui++) {
+      final unit = remoteUnits[ui];
+      for (int si = 0; si < unit.sessions.length; si++) {
+        final session = unit.sessions[si];
+        final sid = session.id.trim();
+        if (sid.isNotEmpty) {
+          remoteById[sid] = session;
+        }
+      }
+    }
+
+    for (int ui = 0; ui < _units.length; ui++) {
+      final unit = _units[ui];
+      final sessions = [...unit.sessions];
+
+      for (int si = 0; si < sessions.length; si++) {
+        final local = sessions[si];
+        final sid = local.id.trim();
+        if (sid.isNotEmpty && _bulkTouchedSessionIds.contains(sid)) continue;
+
+        SyllabusSession? remote = sid.isEmpty ? null : remoteById[sid];
+        if (remote == null && ui < remoteUnits.length) {
+          final remoteSessions = remoteUnits[ui].sessions;
+          if (si < remoteSessions.length) remote = remoteSessions[si];
+        }
+        if (remote == null) continue;
+
+        final keepVideo = local.videoUrl.trim().isNotEmpty;
+        final keepMaterials = local.materialsUrl.trim().isNotEmpty;
+        final keepThumb = local.videoThumbnailUrl.trim().isNotEmpty;
+        final keepFolder = local.serverFolderPath.trim().isNotEmpty;
+
+        sessions[si] = local.copyWith(
+          videoUrl: keepVideo ? local.videoUrl : remote.videoUrl,
+          materialsUrl: keepMaterials
+              ? local.materialsUrl
+              : remote.materialsUrl,
+          videoThumbnailUrl: keepThumb
+              ? local.videoThumbnailUrl
+              : remote.videoThumbnailUrl,
+          serverFolderPath: keepFolder
+              ? local.serverFolderPath
+              : remote.serverFolderPath,
+        );
+      }
+
+      _units[ui] = unit.copyWith(sessions: sessions);
+    }
+  }
+
   Future<void> _saveSyllabus() async {
     setState(() => _saving = true);
     try {
@@ -161,6 +229,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       }
 
       _ensureSessionNumbers();
+
+      await _mergeRecordedAssetsForUntouchedBulkSessions();
 
       final courseMap = await _loadCourseMeta();
       final courseCode = (courseMap['course_code'] ?? '').toString();
@@ -191,6 +261,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           .child('syllabi_flags')
           .child(widget.variantKey)
           .set(true);
+
+      _bulkTouchedSessionIds.clear();
 
       if (!mounted) return;
       AppToast.show(context, 'Syllabus saved', type: AppToastType.success);
@@ -543,6 +615,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     final result = await showModalBottomSheet<_BulkUploadResult>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: const Color(0xFFF8FAFC),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
@@ -550,6 +623,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       builder: (_) => _RecordedBulkUploadSheet(
         units: _units,
         courseFolderName: courseFolderName,
+        courseTitle: widget.courseTitle,
+        courseId: widget.courseId,
       ),
     );
 
@@ -566,6 +641,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
         final sessions = [...unit.sessions];
         final current = sessions[u.sessionIndex];
+        final currentId = current.id.trim();
+        if (currentId.isNotEmpty) {
+          _bulkTouchedSessionIds.add(currentId);
+        }
         sessions[u.sessionIndex] = current.copyWith(
           videoUrl: u.videoUrl ?? current.videoUrl,
           materialsUrl: u.materialsUrl ?? current.materialsUrl,
@@ -2553,25 +2632,34 @@ class _BulkSessionEntry {
     required this.key,
     required this.unitIndex,
     required this.sessionIndex,
+    required this.sessionId,
     required this.unitTitle,
     required this.sessionTitle,
     required this.sessionNumber,
+    required this.existingVideoUrl,
+    required this.existingMaterialsUrl,
   });
 
   final String key;
   final int unitIndex;
   final int sessionIndex;
+  final String sessionId;
   final String unitTitle;
   final String sessionTitle;
   final int sessionNumber;
+  final String existingVideoUrl;
+  final String existingMaterialsUrl;
 }
 
 enum _BulkAssetStatus { idle, queued, uploading, done, failed }
+
+enum _BulkAssetAction { keep, replace, remove }
 
 class _BulkAssetSlot {
   const _BulkAssetSlot({
     this.file,
     this.status = _BulkAssetStatus.idle,
+    this.action = _BulkAssetAction.keep,
     this.progress = 0,
     this.uploadedUrl,
     this.error,
@@ -2579,6 +2667,7 @@ class _BulkAssetSlot {
 
   final PlatformFile? file;
   final _BulkAssetStatus status;
+  final _BulkAssetAction action;
   final double progress;
   final String? uploadedUrl;
   final String? error;
@@ -2587,6 +2676,7 @@ class _BulkAssetSlot {
     PlatformFile? file,
     bool clearFile = false,
     _BulkAssetStatus? status,
+    _BulkAssetAction? action,
     double? progress,
     String? uploadedUrl,
     bool clearUploadedUrl = false,
@@ -2596,6 +2686,7 @@ class _BulkAssetSlot {
     return _BulkAssetSlot(
       file: clearFile ? null : (file ?? this.file),
       status: status ?? this.status,
+      action: action ?? this.action,
       progress: progress ?? this.progress,
       uploadedUrl: clearUploadedUrl ? null : (uploadedUrl ?? this.uploadedUrl),
       error: clearError ? null : (error ?? this.error),
@@ -2607,10 +2698,14 @@ class _RecordedBulkUploadSheet extends StatefulWidget {
   const _RecordedBulkUploadSheet({
     required this.units,
     required this.courseFolderName,
+    required this.courseTitle,
+    required this.courseId,
   });
 
   final List<SyllabusUnit> units;
   final String courseFolderName;
+  final String courseTitle;
+  final String courseId;
 
   @override
   State<_RecordedBulkUploadSheet> createState() =>
@@ -2625,6 +2720,9 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
 
   late final List<_BulkSessionEntry> _entries;
   bool _uploading = false;
+  bool _checkingServerAssets = false;
+  final Map<String, bool> _serverHasVideo = <String, bool>{};
+  final Map<String, bool> _serverHasHtml = <String, bool>{};
 
   @override
   void initState() {
@@ -2640,6 +2738,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
             key: '${ui}_$si',
             unitIndex: ui,
             sessionIndex: si,
+            sessionId: s.id,
             unitTitle: unit.title.trim().isEmpty
                 ? 'Unit ${ui + 1}'
                 : unit.title,
@@ -2647,10 +2746,14 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
                 ? 'Session $sessionNo'
                 : s.title,
             sessionNumber: sessionNo,
+            existingVideoUrl: s.videoUrl.trim(),
+            existingMaterialsUrl: s.materialsUrl.trim(),
           ),
         );
       }
     }
+
+    unawaited(_loadServerAssetState());
   }
 
   _BulkAssetSlot _videoOf(String key) =>
@@ -2661,8 +2764,10 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
   int get _queuedFileCount {
     int n = 0;
     for (final e in _entries) {
-      if (_videoOf(e.key).file != null) n++;
-      if (_htmlOf(e.key).file != null) n++;
+      final vs = _videoOf(e.key);
+      final hs = _htmlOf(e.key);
+      if (vs.action != _BulkAssetAction.keep) n++;
+      if (hs.action != _BulkAssetAction.keep) n++;
     }
     return n;
   }
@@ -2683,6 +2788,426 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
       if (_htmlOf(e.key).status == _BulkAssetStatus.failed) n++;
     }
     return n;
+  }
+
+  String _fileNameOnly(String fullPath) {
+    final p = fullPath.replaceAll('\\', '/');
+    final i = p.lastIndexOf('/');
+    return i >= 0 ? p.substring(i + 1) : p;
+  }
+
+  int? _inferModuleFromCourseContext() {
+    final sources = <String>[widget.courseTitle, widget.courseId];
+    final moduleWord = RegExp(r'module\s*([0-9]+)', caseSensitive: false);
+    final compact = RegExp(r'\bm\s*([0-9]+)\b', caseSensitive: false);
+
+    for (final s in sources) {
+      final t = s.trim();
+      if (t.isEmpty) continue;
+      final m1 = moduleWord.firstMatch(t);
+      if (m1 != null) {
+        final n = int.tryParse(m1.group(1) ?? '');
+        if (n != null && n > 0) return n;
+      }
+      final m2 = compact.firstMatch(t);
+      if (m2 != null) {
+        final n = int.tryParse(m2.group(1) ?? '');
+        if (n != null && n > 0) return n;
+      }
+    }
+    return null;
+  }
+
+  Future<int?> _pickModuleFromSet(List<int> modules) async {
+    if (modules.isEmpty) return null;
+    if (modules.length == 1) return modules.first;
+
+    int selected = modules.first;
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Choose module to import'),
+        content: StatefulBuilder(
+          builder: (ctx, setD) => DropdownButtonFormField<int>(
+            initialValue: selected,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Module',
+            ),
+            items: modules
+                .map(
+                  (m) =>
+                      DropdownMenuItem<int>(value: m, child: Text('Module $m')),
+                )
+                .toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              setD(() => selected = v);
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, selected),
+            child: const Text('Use module'),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
+
+  Future<void> _importHtmlFromFiles() async {
+    if (_uploading) return;
+
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: const ['html', 'htm'],
+    );
+    if (picked == null || picked.files.isEmpty) return;
+
+    final strictReg = RegExp(
+      r'^TESP_M(\d+)_U(\d+)_(L(\d+)|Revision)\.(html|htm)$',
+      caseSensitive: false,
+    );
+    final looseReg = RegExp(
+      r'M(\d+)_U(\d+)_(L(\d+)|Revision)(?:\.|_|\b)',
+      caseSensitive: false,
+    );
+
+    final candidates = picked.files;
+
+    final numericReg = RegExp(r'^(\d+)\.(html|htm)$', caseSensitive: false);
+    final numericParsed = <Map<String, dynamic>>[];
+    for (final file in candidates) {
+      final pathOrName = (file.path ?? '').trim().isNotEmpty
+          ? file.path!
+          : file.name;
+      final name = _fileNameOnly(pathOrName);
+      final m = numericReg.firstMatch(name);
+      if (m == null) continue;
+      final n = int.tryParse(m.group(1) ?? '') ?? 0;
+      if (n <= 0) continue;
+      numericParsed.add({'file': file, 'index': n});
+    }
+
+    if (numericParsed.isNotEmpty && numericParsed.length == candidates.length) {
+      final bySessionNumber = <int, _BulkSessionEntry>{};
+      for (final e in _entries) {
+        if (e.sessionNumber > 0) bySessionNumber[e.sessionNumber] = e;
+      }
+
+      int matched = 0;
+      int skipped = 0;
+      int duplicate = 0;
+      final used = <String>{};
+      final draftUpdates = <Map<String, dynamic>>[];
+
+      numericParsed.sort(
+        (a, b) => (a['index'] as int).compareTo(b['index'] as int),
+      );
+
+      for (final row in numericParsed) {
+        final idx = row['index'] as int;
+        final file = row['file'] as PlatformFile;
+        final target = bySessionNumber[idx];
+        if (target == null) {
+          skipped++;
+          continue;
+        }
+        if (used.contains(target.key)) {
+          duplicate++;
+          skipped++;
+          continue;
+        }
+        used.add(target.key);
+        draftUpdates.add({'key': target.key, 'file': file});
+        matched++;
+      }
+
+      final proceed =
+          await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Numbered import summary'),
+              content: Text(
+                'Selected: ${candidates.length}\nMatched by session number: $matched\nSkipped: $skipped\nDuplicate targets: $duplicate',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Queue files'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!proceed) return;
+
+      setState(() {
+        for (final u in draftUpdates) {
+          final key = u['key'] as String;
+          final file = u['file'] as PlatformFile;
+          _htmlSlots[key] = _htmlOf(key).copyWith(
+            file: file,
+            action: _BulkAssetAction.replace,
+            status: _BulkAssetStatus.queued,
+            progress: 0,
+            clearUploadedUrl: true,
+            clearError: true,
+          );
+        }
+      });
+
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Queued $matched numbered HTML file(s)${skipped > 0 ? ' • skipped $skipped' : ''}.',
+        type: matched > 0 ? AppToastType.success : AppToastType.info,
+      );
+      return;
+    }
+
+    final parsed = <Map<String, dynamic>>[];
+    final moduleSet = <int>{};
+    for (final file in candidates) {
+      final pathOrName = (file.path ?? '').trim().isNotEmpty
+          ? file.path!
+          : file.name;
+      final name = _fileNameOnly(pathOrName);
+      final m = strictReg.firstMatch(name) ?? looseReg.firstMatch(name);
+      if (m == null) continue;
+      final moduleNo = int.tryParse(m.group(1) ?? '') ?? 0;
+      final unitNo = int.tryParse(m.group(2) ?? '') ?? 0;
+      final lessonNo = int.tryParse(m.group(4) ?? '') ?? 0;
+      final isRevision = (m.group(3) ?? '').toLowerCase() == 'revision';
+      if (moduleNo <= 0 || unitNo <= 0) continue;
+
+      moduleSet.add(moduleNo);
+      parsed.add({
+        'file': file,
+        'module': moduleNo,
+        'unit': unitNo,
+        'lesson': lessonNo,
+        'revision': isRevision,
+      });
+    }
+
+    if (parsed.isEmpty) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'No files matched naming pattern (e.g. TESP_M1_U2_L3.html).',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    final modules = moduleSet.toList()..sort();
+    final inferredModule = _inferModuleFromCourseContext();
+    int? chosenModule;
+    if (inferredModule != null && modules.contains(inferredModule)) {
+      chosenModule = inferredModule;
+    } else {
+      chosenModule = await _pickModuleFromSet(modules);
+    }
+    if (chosenModule == null) return;
+
+    final byUnit = <int, List<_BulkSessionEntry>>{};
+    for (final e in _entries) {
+      final unitNo = e.unitIndex + 1;
+      byUnit.putIfAbsent(unitNo, () => <_BulkSessionEntry>[]).add(e);
+    }
+
+    int matched = 0;
+    int skipped = 0;
+    int duplicateTargets = 0;
+    int missingUnits = 0;
+    final usedEntryKeys = <String>{};
+
+    final draftUpdates = <Map<String, dynamic>>[];
+
+    for (final p in parsed) {
+      if (p['module'] != chosenModule) continue;
+
+      final unitNo = p['unit'] as int;
+      final lessonNo = p['lesson'] as int;
+      final isRevision = p['revision'] as bool;
+      final file = p['file'] as PlatformFile;
+      final unitEntries = byUnit[unitNo] ?? const <_BulkSessionEntry>[];
+      if (unitEntries.isEmpty) {
+        missingUnits++;
+        skipped++;
+        continue;
+      }
+
+      _BulkSessionEntry? target;
+      if (isRevision) {
+        for (final e in unitEntries) {
+          if (e.sessionTitle.toLowerCase().contains('revision')) {
+            target = e;
+            break;
+          }
+        }
+        target ??= unitEntries.isNotEmpty ? unitEntries.last : null;
+      } else {
+        for (final e in unitEntries) {
+          final localLessonIndex = e.sessionIndex + 1;
+          if (localLessonIndex == lessonNo) {
+            target = e;
+            break;
+          }
+        }
+      }
+
+      if (target == null || usedEntryKeys.contains(target.key)) {
+        duplicateTargets++;
+        skipped++;
+        continue;
+      }
+
+      usedEntryKeys.add(target.key);
+      draftUpdates.add({'key': target.key, 'file': file});
+      matched++;
+    }
+
+    final proceed =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Import summary'),
+            content: Text(
+              'Selected: ${candidates.length}\nParsed: ${parsed.length}\nModule used: $chosenModule${inferredModule != null ? ' (course hint: $inferredModule)' : ''}\nMatched: $matched\nSkipped: $skipped\nMissing unit in screen: $missingUnits\nDuplicate/overlap: $duplicateTargets',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Queue files'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!proceed) return;
+
+    setState(() {
+      for (final u in draftUpdates) {
+        final key = u['key'] as String;
+        final file = u['file'] as PlatformFile;
+        _htmlSlots[key] = _htmlOf(key).copyWith(
+          file: file,
+          action: _BulkAssetAction.replace,
+          status: _BulkAssetStatus.queued,
+          progress: 0,
+          clearUploadedUrl: true,
+          clearError: true,
+        );
+      }
+    });
+
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Queued $matched HTML file(s)${skipped > 0 ? ' • skipped $skipped' : ''}.',
+      type: matched > 0 ? AppToastType.success : AppToastType.info,
+    );
+  }
+
+  Future<bool> _assetUrlExistsOnServer(
+    String url,
+    Map<String, List<Map<String, dynamic>>> listCache,
+  ) async {
+    final rel = _SyllabusServerStorage.extractRelativePathFromUrl(url);
+    if (rel.isEmpty) return false;
+
+    final segments = rel
+        .split('/')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (segments.length < 2) return false;
+
+    final fileName = segments.last;
+    final folderPath = segments.sublist(0, segments.length - 1).join('/');
+
+    if (!listCache.containsKey(folderPath)) {
+      listCache[folderPath] = await _SyllabusServerStorage.listItems(
+        root: 'courses',
+        path: folderPath,
+      );
+    }
+
+    final items = listCache[folderPath] ?? const <Map<String, dynamic>>[];
+    for (final item in items) {
+      final type = (item['type'] ?? '').toString().trim().toLowerCase();
+      final name = (item['name'] ?? '').toString().trim();
+      if (type != 'folder' && name == fileName) return true;
+    }
+    return false;
+  }
+
+  Future<void> _loadServerAssetState() async {
+    if (!mounted) return;
+    setState(() => _checkingServerAssets = true);
+
+    final listCache = <String, List<Map<String, dynamic>>>{};
+    final nextVideo = <String, bool>{};
+    final nextHtml = <String, bool>{};
+
+    try {
+      for (final e in _entries) {
+        if (e.existingVideoUrl.isNotEmpty) {
+          try {
+            nextVideo[e.key] = await _assetUrlExistsOnServer(
+              e.existingVideoUrl,
+              listCache,
+            );
+          } catch (_) {
+            nextVideo[e.key] = false;
+          }
+        } else {
+          nextVideo[e.key] = false;
+        }
+
+        if (e.existingMaterialsUrl.isNotEmpty) {
+          try {
+            nextHtml[e.key] = await _assetUrlExistsOnServer(
+              e.existingMaterialsUrl,
+              listCache,
+            );
+          } catch (_) {
+            nextHtml[e.key] = false;
+          }
+        } else {
+          nextHtml[e.key] = false;
+        }
+      }
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _serverHasVideo
+          ..clear()
+          ..addAll(nextVideo);
+        _serverHasHtml
+          ..clear()
+          ..addAll(nextHtml);
+        _checkingServerAssets = false;
+      });
+    }
   }
 
   Future<void> _pickVideo(_BulkSessionEntry entry) async {
@@ -2706,6 +3231,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     setState(() {
       _videoSlots[entry.key] = _videoOf(entry.key).copyWith(
         file: file,
+        action: _BulkAssetAction.replace,
         status: _BulkAssetStatus.queued,
         progress: 0,
         clearUploadedUrl: true,
@@ -2736,12 +3262,52 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     setState(() {
       _htmlSlots[entry.key] = _htmlOf(entry.key).copyWith(
         file: file,
+        action: _BulkAssetAction.replace,
         status: _BulkAssetStatus.queued,
         progress: 0,
         clearUploadedUrl: true,
         clearError: true,
       );
     });
+  }
+
+  void _markKeep(_BulkSessionEntry entry, {required bool isVideo}) {
+    if (_uploading) return;
+    setState(() {
+      if (isVideo) {
+        _videoSlots.remove(entry.key);
+      } else {
+        _htmlSlots.remove(entry.key);
+      }
+    });
+  }
+
+  void _markRemove(_BulkSessionEntry entry, {required bool isVideo}) {
+    if (_uploading) return;
+    setState(() {
+      final current = isVideo ? _videoOf(entry.key) : _htmlOf(entry.key);
+      final next = current.copyWith(
+        action: _BulkAssetAction.remove,
+        status: _BulkAssetStatus.queued,
+        progress: 0,
+        clearFile: true,
+        clearUploadedUrl: true,
+        clearError: true,
+      );
+      if (isVideo) {
+        _videoSlots[entry.key] = next;
+      } else {
+        _htmlSlots[entry.key] = next;
+      }
+    });
+  }
+
+  String _serverStateLabel({
+    required bool hasUrl,
+    required bool existsOnServer,
+  }) {
+    if (!hasUrl) return 'No URL in RTDB';
+    return existsOnServer ? 'Available on server' : 'Missing on server';
   }
 
   void _clearSelections() {
@@ -2763,15 +3329,23 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
   }
 
   String _statusLabel(_BulkAssetSlot slot) {
+    if (slot.action == _BulkAssetAction.remove &&
+        slot.status == _BulkAssetStatus.queued) {
+      return 'Ready to remove';
+    }
     switch (slot.status) {
       case _BulkAssetStatus.idle:
         return 'Not selected';
       case _BulkAssetStatus.queued:
-        return 'Ready';
+        return slot.action == _BulkAssetAction.replace
+            ? 'Ready to replace'
+            : 'Ready';
       case _BulkAssetStatus.uploading:
-        return 'Uploading ${(slot.progress * 100).round()}%';
+        return slot.action == _BulkAssetAction.remove
+            ? 'Removing old file...'
+            : 'Uploading ${(slot.progress * 100).round()}%';
       case _BulkAssetStatus.done:
-        return 'Uploaded';
+        return slot.action == _BulkAssetAction.remove ? 'Removed' : 'Uploaded';
       case _BulkAssetStatus.failed:
         return 'Failed';
     }
@@ -2796,18 +3370,196 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     if (_uploading) return;
 
     final hasQueued = _entries.any(
-      (e) => _videoOf(e.key).file != null || _htmlOf(e.key).file != null,
+      (e) =>
+          _videoOf(e.key).action != _BulkAssetAction.keep ||
+          _htmlOf(e.key).action != _BulkAssetAction.keep,
     );
     if (!hasQueued) {
       AppToast.show(
         context,
-        'Pick at least one video or HTML file first.',
+        'Choose at least one action (replace/remove) first.',
         type: AppToastType.info,
       );
       return;
     }
 
     setState(() => _uploading = true);
+
+    bool _isIgnorableDeleteError(Object err) {
+      final m = err.toString().toLowerCase();
+      return m.contains('not found') ||
+          m.contains('already missing') ||
+          m.contains('item not found') ||
+          m.contains('no such file');
+    }
+
+    Future<String> _uploadWithRetry({
+      required PlatformFile file,
+      required String serverPath,
+      required int sessionNumber,
+      required String customSuffix,
+      required void Function(double p) onProgress,
+    }) async {
+      Object? lastErr;
+      for (int attempt = 1; attempt <= 2; attempt++) {
+        try {
+          return await _SyllabusServerStorage.uploadPlatformFile(
+            file: file,
+            root: 'courses',
+            path: serverPath,
+            customName: _SyllabusServerStorage.buildCustomBaseName(
+              sessionNumber: sessionNumber,
+              suffix: customSuffix,
+            ),
+            onProgress: onProgress,
+          );
+        } catch (err) {
+          lastErr = err;
+          if (attempt == 1) {
+            await Future<void>.delayed(const Duration(milliseconds: 700));
+          }
+        }
+      }
+      throw lastErr ?? Exception('Upload failed.');
+    }
+
+    Future<void> processAsset({
+      required _BulkSessionEntry entry,
+      required bool isVideo,
+      required String existingUrl,
+      required String serverPath,
+      required String customSuffix,
+    }) async {
+      final key = entry.key;
+      final read = isVideo ? _videoOf : _htmlOf;
+      final write = (_BulkAssetSlot s) {
+        if (isVideo) {
+          _videoSlots[key] = s;
+        } else {
+          _htmlSlots[key] = s;
+        }
+      };
+
+      final slot = read(key);
+      if (slot.action == _BulkAssetAction.keep) return;
+
+      if (mounted) {
+        setState(() {
+          write(
+            slot.copyWith(
+              status: _BulkAssetStatus.uploading,
+              progress: 0,
+              clearError: true,
+            ),
+          );
+        });
+      }
+
+      if (existingUrl.trim().isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          existingUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+          } catch (err) {
+            if (_isIgnorableDeleteError(err)) {
+              // old file already missing is acceptable in replace/remove flow
+            } else {
+              if (!mounted) return;
+              setState(() {
+                write(
+                  read(key).copyWith(
+                    status: _BulkAssetStatus.failed,
+                    error: toHumanError(
+                      err,
+                      fallback: 'Could not delete old file.',
+                    ),
+                  ),
+                );
+              });
+              return;
+            }
+          }
+        }
+      }
+
+      if (slot.action == _BulkAssetAction.remove) {
+        if (!mounted) return;
+        setState(() {
+          write(
+            read(key).copyWith(
+              status: _BulkAssetStatus.done,
+              progress: 1,
+              uploadedUrl: '',
+              clearError: true,
+            ),
+          );
+          if (isVideo) {
+            _serverHasVideo[key] = false;
+          } else {
+            _serverHasHtml[key] = false;
+          }
+        });
+        return;
+      }
+
+      final fresh = read(key);
+      if (fresh.file == null) {
+        if (!mounted) return;
+        setState(() {
+          write(
+            fresh.copyWith(
+              status: _BulkAssetStatus.failed,
+              error: 'Pick a file for replace.',
+            ),
+          );
+        });
+        return;
+      }
+
+      try {
+        final url = await _uploadWithRetry(
+          file: fresh.file!,
+          serverPath: serverPath,
+          sessionNumber: entry.sessionNumber,
+          customSuffix: customSuffix,
+          onProgress: (p) {
+            if (!mounted) return;
+            setState(() {
+              write(read(key).copyWith(progress: p.clamp(0.0, 1.0)));
+            });
+          },
+        );
+        if (!mounted) return;
+        setState(() {
+          write(
+            read(key).copyWith(
+              status: _BulkAssetStatus.done,
+              progress: 1,
+              uploadedUrl: url,
+              clearError: true,
+            ),
+          );
+          if (isVideo) {
+            _serverHasVideo[key] = true;
+          } else {
+            _serverHasHtml[key] = true;
+          }
+        });
+      } catch (err) {
+        if (!mounted) return;
+        setState(() {
+          write(
+            read(key).copyWith(
+              status: _BulkAssetStatus.failed,
+              error: toHumanError(err, fallback: 'Upload failed.'),
+            ),
+          );
+        });
+      }
+    }
+
     try {
       for (final e in _entries) {
         final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
@@ -2816,99 +3568,21 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
         );
         final serverPath = '${widget.courseFolderName}/$sessionFolder';
 
-        final videoSlot = _videoOf(e.key);
-        if (videoSlot.file != null) {
-          setState(() {
-            _videoSlots[e.key] = videoSlot.copyWith(
-              status: _BulkAssetStatus.uploading,
-              progress: 0,
-              clearError: true,
-            );
-          });
-          try {
-            final url = await _SyllabusServerStorage.uploadPlatformFile(
-              file: videoSlot.file!,
-              root: 'courses',
-              path: serverPath,
-              customName: _SyllabusServerStorage.buildCustomBaseName(
-                sessionNumber: e.sessionNumber,
-                suffix: 'video',
-              ),
-              onProgress: (p) {
-                if (!mounted) return;
-                setState(() {
-                  _videoSlots[e.key] = _videoOf(
-                    e.key,
-                  ).copyWith(progress: p.clamp(0.0, 1.0));
-                });
-              },
-            );
-            if (!mounted) return;
-            setState(() {
-              _videoSlots[e.key] = _videoOf(e.key).copyWith(
-                status: _BulkAssetStatus.done,
-                progress: 1,
-                uploadedUrl: url,
-                clearError: true,
-              );
-            });
-          } catch (err) {
-            if (!mounted) return;
-            setState(() {
-              _videoSlots[e.key] = _videoOf(e.key).copyWith(
-                status: _BulkAssetStatus.failed,
-                error: toHumanError(err, fallback: 'Upload failed.'),
-              );
-            });
-          }
-        }
+        await processAsset(
+          entry: e,
+          isVideo: true,
+          existingUrl: e.existingVideoUrl,
+          serverPath: serverPath,
+          customSuffix: 'video',
+        );
 
-        final htmlSlot = _htmlOf(e.key);
-        if (htmlSlot.file != null) {
-          setState(() {
-            _htmlSlots[e.key] = htmlSlot.copyWith(
-              status: _BulkAssetStatus.uploading,
-              progress: 0,
-              clearError: true,
-            );
-          });
-          try {
-            final url = await _SyllabusServerStorage.uploadPlatformFile(
-              file: htmlSlot.file!,
-              root: 'courses',
-              path: serverPath,
-              customName: _SyllabusServerStorage.buildCustomBaseName(
-                sessionNumber: e.sessionNumber,
-                suffix: 'materials',
-              ),
-              onProgress: (p) {
-                if (!mounted) return;
-                setState(() {
-                  _htmlSlots[e.key] = _htmlOf(
-                    e.key,
-                  ).copyWith(progress: p.clamp(0.0, 1.0));
-                });
-              },
-            );
-            if (!mounted) return;
-            setState(() {
-              _htmlSlots[e.key] = _htmlOf(e.key).copyWith(
-                status: _BulkAssetStatus.done,
-                progress: 1,
-                uploadedUrl: url,
-                clearError: true,
-              );
-            });
-          } catch (err) {
-            if (!mounted) return;
-            setState(() {
-              _htmlSlots[e.key] = _htmlOf(e.key).copyWith(
-                status: _BulkAssetStatus.failed,
-                error: toHumanError(err, fallback: 'Upload failed.'),
-              );
-            });
-          }
-        }
+        await processAsset(
+          entry: e,
+          isVideo: false,
+          existingUrl: e.existingMaterialsUrl,
+          serverPath: serverPath,
+          customSuffix: 'materials',
+        );
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -2924,7 +3598,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     if (_completedFileCount > 0) {
       AppToast.show(
         context,
-        'Uploaded $_completedFileCount files. $_failedFileCount failed. You can apply successful uploads.',
+        'Completed $_completedFileCount changes. $_failedFileCount failed. You can apply successful changes.',
         type: AppToastType.info,
       );
     } else {
@@ -2941,9 +3615,16 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     for (final e in _entries) {
       final v = _videoOf(e.key);
       final h = _htmlOf(e.key);
-      final videoUrl = v.status == _BulkAssetStatus.done ? v.uploadedUrl : null;
-      final htmlUrl = h.status == _BulkAssetStatus.done ? h.uploadedUrl : null;
-      if ((videoUrl ?? '').isEmpty && (htmlUrl ?? '').isEmpty) continue;
+      final videoChanged =
+          v.status == _BulkAssetStatus.done &&
+          v.action != _BulkAssetAction.keep;
+      final htmlChanged =
+          h.status == _BulkAssetStatus.done &&
+          h.action != _BulkAssetAction.keep;
+      if (!videoChanged && !htmlChanged) continue;
+
+      final videoUrl = videoChanged ? (v.uploadedUrl ?? '') : null;
+      final htmlUrl = htmlChanged ? (h.uploadedUrl ?? '') : null;
 
       final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
         sessionNumber: e.sessionNumber,
@@ -2965,7 +3646,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     if (updates.isEmpty) {
       AppToast.show(
         context,
-        'No uploaded files to apply yet.',
+        'No successful changes to apply yet.',
         type: AppToastType.info,
       );
       return;
@@ -2975,15 +3656,42 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
   }
 
   Widget _buildAssetCell({
+    required _BulkSessionEntry entry,
+    required bool isVideo,
     required String label,
     required _BulkAssetSlot slot,
     required VoidCallback onPick,
   }) {
+    final hasExistingUrl = isVideo
+        ? entry.existingVideoUrl.isNotEmpty
+        : entry.existingMaterialsUrl.isNotEmpty;
+    final existsOnServer = isVideo
+        ? (_serverHasVideo[entry.key] ?? false)
+        : (_serverHasHtml[entry.key] ?? false);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
         const SizedBox(height: 4),
+        Text(
+          _serverStateLabel(
+            hasUrl: hasExistingUrl,
+            existsOnServer: existsOnServer,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: hasExistingUrl
+                ? (existsOnServer
+                      ? const Color(0xFF166534)
+                      : const Color(0xFFB45309))
+                : Colors.black.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 6),
         if (slot.file != null)
           Text(
             '${slot.file!.name} • ${_fmtBytes(slot.file!.size)}',
@@ -3001,12 +3709,43 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
             ),
           ),
         const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            ChoiceChip(
+              label: const Text('Keep'),
+              selected: slot.action == _BulkAssetAction.keep,
+              onSelected: _uploading
+                  ? null
+                  : (_) => _markKeep(entry, isVideo: isVideo),
+            ),
+            ChoiceChip(
+              label: Text(hasExistingUrl ? 'Replace' : 'Add'),
+              selected: slot.action == _BulkAssetAction.replace,
+              onSelected: _uploading ? null : (_) => onPick(),
+            ),
+            if (hasExistingUrl)
+              ChoiceChip(
+                label: const Text('Remove'),
+                selected: slot.action == _BulkAssetAction.remove,
+                onSelected: _uploading
+                    ? null
+                    : (_) => _markRemove(entry, isVideo: isVideo),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
         Row(
           children: [
             FilledButton.tonalIcon(
-              onPressed: _uploading ? null : onPick,
+              onPressed: _uploading
+                  ? null
+                  : () {
+                      onPick();
+                    },
               icon: const Icon(Icons.attach_file_rounded, size: 16),
-              label: const Text('Pick'),
+              label: Text(hasExistingUrl ? 'Pick replace file' : 'Pick file'),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -3091,17 +3830,35 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
                 ),
               ),
             ),
+            if (_checkingServerAssets)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Checking current server files...',
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 10),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _Pill(label: 'Selected $selected'),
-                const SizedBox(width: 8),
-                _Pill(label: 'Uploaded $done'),
-                if (failed > 0) ...[
-                  const SizedBox(width: 8),
-                  _Pill(label: 'Failed $failed'),
-                ],
-                const Spacer(),
+                _Pill(label: 'Completed $done'),
+                if (failed > 0) _Pill(label: 'Failed $failed'),
+                TextButton.icon(
+                  onPressed: _uploading ? null : _importHtmlFromFiles,
+                  icon: const Icon(Icons.folder_open_rounded, size: 17),
+                  label: const Text('Import HTML files'),
+                ),
                 TextButton.icon(
                   onPressed: _uploading ? null : _clearSelections,
                   icon: const Icon(Icons.layers_clear_rounded, size: 17),
@@ -3146,12 +3903,29 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
                             color: Colors.black.withValues(alpha: 0.65),
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            _Pill(
+                              label:
+                                  'Server HTML: ${(_serverHasHtml[e.key] ?? false) ? 'Yes' : 'No'}',
+                            ),
+                            _Pill(
+                              label:
+                                  'Server Video: ${(_serverHasVideo[e.key] ?? false) ? 'Yes' : 'No'}',
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 10),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: _buildAssetCell(
+                                entry: e,
+                                isVideo: true,
                                 label: 'Video',
                                 slot: _videoOf(e.key),
                                 onPick: () => _pickVideo(e),
@@ -3160,6 +3934,8 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: _buildAssetCell(
+                                entry: e,
+                                isVideo: false,
                                 label: 'HTML',
                                 slot: _htmlOf(e.key),
                                 onPick: () => _pickHtml(e),

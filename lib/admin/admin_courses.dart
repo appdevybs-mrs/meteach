@@ -1194,54 +1194,16 @@ class _CourseCard extends StatelessWidget {
                       color: AdminCoursesScreen.primaryBlue,
                     ),
                   ),
-
-                  // ✅ show course code (if exists)
-                  if (course.courseCode.trim().isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      course.courseCode,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
-                    course.shortDescription.isEmpty
-                        ? 'No short description'
-                        : course.shortDescription,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    course.duration.trim().isEmpty
+                        ? 'Duration: -'
+                        : 'Duration: ${course.duration.trim()}',
                     style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.65),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black.withValues(alpha: 0.62),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _Pill(
-                        label: course.status.label,
-                        bg: _statusBg(course.status),
-                        fg: _statusFg(course.status),
-                      ),
-                      if (course.level.trim().isNotEmpty)
-                        _Pill(label: course.level),
-                      if (course.language.trim().isNotEmpty)
-                        _Pill(label: course.language),
-                      // show each delivery option as its own colored pill
-                      ...course.deliveryOptions.map(
-                        (opt) => _Pill(
-                          label: _displayDeliveryLabel(opt),
-                          bg: _deliveryBg(opt),
-                          fg: _deliveryFg(opt),
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
@@ -1357,26 +1319,16 @@ class _TrashCourseCard extends StatelessWidget {
                       color: AdminCoursesScreen.primaryBlue,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
-                    course.shortDescription.isEmpty
-                        ? 'No short description'
-                        : course.shortDescription,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    course.duration.trim().isEmpty
+                        ? 'Duration: -'
+                        : 'Duration: ${course.duration.trim()}',
                     style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.65),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black.withValues(alpha: 0.62),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      const _Pill(label: 'Trashed'),
-                      if (course.status.label.isNotEmpty)
-                        _Pill(label: 'Was: ${course.status.label}'),
-                    ],
                   ),
                 ],
               ),
@@ -1453,111 +1405,6 @@ class _Thumb extends StatelessWidget {
             : const Icon(Icons.image_outlined),
       ),
     );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  const _Pill({required this.label, this.bg, this.fg, this.border});
-
-  final String label;
-  final Color? bg;
-  final Color? fg;
-  final Color? border;
-
-  @override
-  Widget build(BuildContext context) {
-    final background = bg ?? AdminCoursesScreen.appBg;
-    final foreground = fg ?? AdminCoursesScreen.primaryBlue;
-    final borderColor = border;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-        border: borderColor == null ? null : Border.all(color: borderColor),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: foreground,
-        ),
-      ),
-    );
-  }
-}
-
-Color _statusBg(CourseStatus s) {
-  switch (s) {
-    case CourseStatus.published:
-      return const Color(0xFFDFF7E8); // light green
-    case CourseStatus.paused:
-      return const Color(0xFFFFF3D6); // light amber
-    case CourseStatus.archived:
-      return const Color(0xFFE8E8E8); // light gray
-    case CourseStatus.draft:
-    default:
-      return const Color(0xFFE6F0FF); // light blue
-  }
-}
-
-Color _statusFg(CourseStatus s) {
-  switch (s) {
-    case CourseStatus.published:
-      return const Color(0xFF157A3D); // green
-    case CourseStatus.paused:
-      return const Color(0xFF9A6B00); // amber/brown
-    case CourseStatus.archived:
-      return const Color(0xFF444444); // dark gray
-    case CourseStatus.draft:
-    default:
-      return const Color(0xFF1A4FA3); // blue
-  }
-}
-
-Color _deliveryBg(String d) {
-  switch (d.toLowerCase().trim()) {
-    case 'online':
-    case 'flexible':
-      return const Color(0xFFF3E8FF); // soft purple
-
-    case 'recorded':
-      return const Color(0xFFEAF2FF); // soft blue
-
-    case 'live':
-    case 'private':
-      return const Color(0xFFE8FFFB); // soft cyan
-
-    case 'in-class':
-    case 'in class':
-      return const Color(0xFFFFE8EA); // soft pink
-
-    default:
-      return AdminCoursesScreen.appBg;
-  }
-}
-
-Color _deliveryFg(String d) {
-  switch (d.toLowerCase().trim()) {
-    case 'online':
-    case 'flexible':
-      return const Color(0xFF6A1B9A);
-
-    case 'recorded':
-      return const Color(0xFF1A4FA3);
-
-    case 'live':
-    case 'private':
-      return const Color(0xFF007A7A);
-
-    case 'in-class':
-    case 'in class':
-      return const Color(0xFFB00020);
-
-    default:
-      return AdminCoursesScreen.primaryBlue;
   }
 }
 
@@ -3284,29 +3131,6 @@ class _DeliveryCheckboxes extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-String _displayDeliveryLabel(String value) {
-  switch (value.toLowerCase().trim()) {
-    case 'online':
-    case 'flexible':
-      return 'Flexible';
-
-    case 'live':
-    case 'private':
-      return 'Private';
-
-    case 'recorded':
-      return 'Recorded';
-
-    case 'in-class':
-    case 'in class':
-    case 'inclass':
-      return 'In-Class';
-
-    default:
-      return value;
   }
 }
 
