@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -63,6 +64,56 @@ Future<void> _deleteUploadedCoursesAsset(String fileUrl) async {
   throw Exception(msg);
 }
 
+Future<http.StreamedResponse> _sendMultipartWithProgress({
+  required http.MultipartRequest request,
+  required void Function(double progress) onProgress,
+}) async {
+  final totalBytes = request.contentLength;
+  var sentBytes = 0;
+
+  final stream = request.finalize().transform(
+    StreamTransformer.fromHandlers(
+      handleData: (chunk, sink) {
+        sentBytes += chunk.length;
+        if (totalBytes > 0) {
+          final p = (sentBytes / totalBytes).clamp(0.0, 1.0);
+          onProgress(p);
+        }
+        sink.add(chunk);
+      },
+    ),
+  );
+
+  final streamedRequest = http.StreamedRequest(request.method, request.url)
+    ..headers.addAll(request.headers)
+    ..contentLength = totalBytes;
+
+  final pipeDone = Completer<void>();
+  stream.listen(
+    (data) => streamedRequest.sink.add(data as List<int>),
+    onError: (e, st) {
+      if (!pipeDone.isCompleted) pipeDone.completeError(e, st);
+      streamedRequest.sink.close();
+    },
+    onDone: () {
+      if (!pipeDone.isCompleted) pipeDone.complete();
+      streamedRequest.sink.close();
+    },
+    cancelOnError: true,
+  );
+
+  final client = http.Client();
+  try {
+    final responseFuture = client.send(streamedRequest);
+    await pipeDone.future;
+    final response = await responseFuture;
+    onProgress(1.0);
+    return response;
+  } finally {
+    client.close();
+  }
+}
+
 class AdminPublicGalleryScreen extends StatefulWidget {
   const AdminPublicGalleryScreen({super.key});
 
@@ -92,6 +143,8 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
   dynamic _teacherProfilesCache;
   bool _uploadingPhoto = false;
   bool _uploadingVideo = false;
+  double? _uploadPhotoProgress;
+  double? _uploadVideoProgress;
   String? _error;
   String? _ok;
 
@@ -150,7 +203,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   DatabaseReference _galleryRef() => _db.child('public_gallery_teasers');
 
-  Future<String> _uploadPlatformFile(PlatformFile file) async {
+  Future<String> _uploadPlatformFile(
+    PlatformFile file, {
+    required void Function(double progress) onProgress,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
@@ -183,7 +239,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       );
     }
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await _sendMultipartWithProgress(
+      request: request,
+      onProgress: onProgress,
+    );
     final responseBody = await streamedResponse.stream.bytesToString();
 
     if (streamedResponse.statusCode != 200) {
@@ -269,6 +328,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       setState(() {
         _uploadingPhoto = true;
         _uploadingVideo = false;
+        _uploadPhotoProgress = 0;
         _error = null;
         _ok = null;
       });
@@ -283,7 +343,13 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
+      final url = await _uploadPlatformFile(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _uploadPhotoProgress = p);
+        },
+      );
 
       await _saveGalleryItem(type: 'photo', url: url);
 
@@ -300,6 +366,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       if (!mounted) return;
       setState(() {
         _uploadingPhoto = false;
+        _uploadPhotoProgress = null;
       });
     }
   }
@@ -311,6 +378,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       setState(() {
         _uploadingVideo = true;
         _uploadingPhoto = false;
+        _uploadVideoProgress = 0;
         _error = null;
         _ok = null;
       });
@@ -325,7 +393,13 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
+      final url = await _uploadPlatformFile(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _uploadVideoProgress = p);
+        },
+      );
 
       await _saveGalleryItem(type: 'video', url: url);
 
@@ -342,6 +416,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       if (!mounted) return;
       setState(() {
         _uploadingVideo = false;
+        _uploadVideoProgress = null;
       });
     }
   }
@@ -504,7 +579,9 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                           )
                         : const Icon(Icons.add_photo_alternate_rounded),
                     label: Text(
-                      _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
+                      _uploadingPhoto
+                          ? 'Uploading ${((_uploadPhotoProgress ?? 0) * 100).toStringAsFixed(0)}%'
+                          : 'Upload Photo',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: actionOrange,
@@ -530,7 +607,9 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                           )
                         : const Icon(Icons.video_call_rounded),
                     label: Text(
-                      _uploadingVideo ? 'Uploading...' : 'Upload Video',
+                      _uploadingVideo
+                          ? 'Uploading ${((_uploadVideoProgress ?? 0) * 100).toStringAsFixed(0)}%'
+                          : 'Upload Video',
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: primaryBlue,
@@ -1826,6 +1905,8 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
 
   bool _uploadingPhoto = false;
   bool _uploadingVideo = false;
+  double? _uploadPhotoProgress;
+  double? _uploadVideoProgress;
   String? _error;
   String? _ok;
   String _adminName = 'Admin';
@@ -1863,7 +1944,10 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
   DatabaseReference _galleryRef() =>
       _db.child('learner_gallery/${widget.learnerUid}');
 
-  Future<String> _uploadPlatformFile(PlatformFile file) async {
+  Future<String> _uploadPlatformFile(
+    PlatformFile file, {
+    required void Function(double progress) onProgress,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
@@ -1896,7 +1980,10 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       );
     }
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await _sendMultipartWithProgress(
+      request: request,
+      onProgress: onProgress,
+    );
     final responseBody = await streamedResponse.stream.bytesToString();
 
     if (streamedResponse.statusCode != 200) {
@@ -1956,6 +2043,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       setState(() {
         _uploadingPhoto = true;
         _uploadingVideo = false;
+        _uploadPhotoProgress = 0;
         _error = null;
         _ok = null;
       });
@@ -1970,7 +2058,13 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
+      final url = await _uploadPlatformFile(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _uploadPhotoProgress = p);
+        },
+      );
 
       await _saveGalleryItem(type: 'photo', url: url);
 
@@ -1987,6 +2081,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (!mounted) return;
       setState(() {
         _uploadingPhoto = false;
+        _uploadPhotoProgress = null;
       });
     }
   }
@@ -1998,6 +2093,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       setState(() {
         _uploadingVideo = true;
         _uploadingPhoto = false;
+        _uploadVideoProgress = 0;
         _error = null;
         _ok = null;
       });
@@ -2012,7 +2108,13 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
+      final url = await _uploadPlatformFile(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _uploadVideoProgress = p);
+        },
+      );
 
       await _saveGalleryItem(type: 'video', url: url);
 
@@ -2029,6 +2131,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (!mounted) return;
       setState(() {
         _uploadingVideo = false;
+        _uploadVideoProgress = null;
       });
     }
   }
@@ -2278,7 +2381,9 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                               )
                             : const Icon(Icons.add_photo_alternate_rounded),
                         label: Text(
-                          _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
+                          _uploadingPhoto
+                              ? 'Uploading ${((_uploadPhotoProgress ?? 0) * 100).toStringAsFixed(0)}%'
+                              : 'Upload Photo',
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: actionOrange,
@@ -2306,7 +2411,9 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                               )
                             : const Icon(Icons.video_call_rounded),
                         label: Text(
-                          _uploadingVideo ? 'Uploading...' : 'Upload Video',
+                          _uploadingVideo
+                              ? 'Uploading ${((_uploadVideoProgress ?? 0) * 100).toStringAsFixed(0)}%'
+                              : 'Upload Video',
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryBlue,

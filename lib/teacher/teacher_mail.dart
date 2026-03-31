@@ -293,6 +293,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     return grouped.length;
   }
 
+  int _unreadForTab(List<_TopicRow> rows, _InboxTabRole tabRole) {
+    final roleRows = rows.where((r) => _matchesTab(tabRole, r)).toList();
+    return _sumUnread(roleRows);
+  }
+
   String _previewFromMessage(String body) {
     final clean = body.trim();
     if (clean.isEmpty) return '(No messages yet)';
@@ -1007,6 +1012,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     required int learnersCount,
     required int teachersCount,
     required int adminCount,
+    required int learnersUnread,
+    required int teachersUnread,
+    required int adminUnread,
   }) {
     final scheme = Theme.of(context).colorScheme;
 
@@ -1037,9 +1045,42 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           fontSize: 13,
         ),
         tabs: [
-          Tab(text: 'Learners ($learnersCount)'),
-          Tab(text: 'Teachers ($teachersCount)'),
-          Tab(text: 'Admin ($adminCount)'),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Learners ($learnersCount)'),
+                if (learnersUnread > 0) ...[
+                  const SizedBox(width: 6),
+                  _UnreadPill(value: learnersUnread),
+                ],
+              ],
+            ),
+          ),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Teachers ($teachersCount)'),
+                if (teachersUnread > 0) ...[
+                  const SizedBox(width: 6),
+                  _UnreadPill(value: teachersUnread),
+                ],
+              ],
+            ),
+          ),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Admin ($adminCount)'),
+                if (adminUnread > 0) ...[
+                  const SizedBox(width: 6),
+                  _UnreadPill(value: adminUnread),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1129,6 +1170,15 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               _InboxTabRole.teachers,
             );
             final adminCount = _countGroupsForTab(allRows, _InboxTabRole.admin);
+            final learnersUnread = _unreadForTab(
+              allRows,
+              _InboxTabRole.learners,
+            );
+            final teachersUnread = _unreadForTab(
+              allRows,
+              _InboxTabRole.teachers,
+            );
+            final adminUnread = _unreadForTab(allRows, _InboxTabRole.admin);
 
             return Column(
               children: [
@@ -1137,6 +1187,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                   learnersCount: learnersCount,
                   teachersCount: teachersCount,
                   adminCount: adminCount,
+                  learnersUnread: learnersUnread,
+                  teachersUnread: teachersUnread,
+                  adminUnread: adminUnread,
                 ),
                 const SizedBox(height: 2),
                 Expanded(
@@ -1187,10 +1240,10 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _expanded
               ? scheme.primary.withValues(alpha: 0.30)
@@ -1199,7 +1252,7 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: _expanded ? 0.07 : 0.04),
-            blurRadius: _expanded ? 22 : 14,
+            blurRadius: _expanded ? 18 : 12,
             offset: const Offset(0, 8),
           ),
         ],
@@ -1207,19 +1260,19 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          tilePadding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          tilePadding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
           onExpansionChanged: (v) => setState(() => _expanded = v),
           collapsedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(18),
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(18),
           ),
           leading: ProfileAvatar(
             name: widget.displayName,
             photoUrl: widget.photoUrl,
-            radius: 24,
+            radius: 20,
             fallbackBg: widget.avatarColor.withValues(alpha: 0.14),
             fallbackFg: widget.avatarColor,
             borderColor: widget.avatarColor.withValues(alpha: 0.25),
@@ -1233,7 +1286,7 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                    fontSize: 14,
                   ),
                 ),
               ),
@@ -1242,7 +1295,7 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
                 Text(
                   widget.latestTime,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     color: Colors.grey.shade700,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1320,32 +1373,33 @@ class _ThreadTile extends StatelessWidget {
               : scheme.outline.withValues(alpha: 0.10));
 
     return Container(
-      margin: const EdgeInsets.only(top: 10),
+      margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         onLongPress: onLongPress,
         onTap: onOpen,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (isHomework)
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
                     Icons.assignment_rounded,
                     color: Colors.orange,
+                    size: 20,
                   ),
                 ),
               if (isHomework) const SizedBox(width: 12),
@@ -1381,7 +1435,7 @@ class _ThreadTile extends StatelessWidget {
                           fontWeight: row.unreadCount > 0
                               ? FontWeight.w900
                               : FontWeight.w800,
-                          fontSize: 15,
+                          fontSize: 14,
                           color: Colors.black.withValues(alpha: 0.88),
                         ),
                       ),
@@ -1396,7 +1450,7 @@ class _ThreadTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: Colors.grey.shade700,
-                            fontSize: 12.5,
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1410,7 +1464,7 @@ class _ThreadTile extends StatelessWidget {
                           fontWeight: row.unreadCount > 0
                               ? FontWeight.w900
                               : FontWeight.w800,
-                          fontSize: 14.5,
+                          fontSize: 13.5,
                         ),
                       ),
                     ],
@@ -1422,7 +1476,7 @@ class _ThreadTile extends StatelessWidget {
                       style: TextStyle(
                         color: Colors.grey.shade800,
                         height: 1.25,
-                        fontSize: 13.5,
+                        fontSize: 12.5,
                       ),
                     ),
                   ],

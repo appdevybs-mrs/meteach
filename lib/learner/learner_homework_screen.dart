@@ -253,6 +253,29 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     } catch (_) {}
   }
 
+  Future<bool> _confirmFirstSubmit() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Send homework email?'),
+        content: const Text(
+          'Was the homework done and ready to send to the teacher?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not yet'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, send'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -915,7 +938,22 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
                                 if (text.isNotEmpty) ...[
                                   const SizedBox(height: 10),
-                                  Text(text, style: UiK.subtleText()),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: UiK.uiBorder.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                      ),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                    ),
+                                    child: Text(text, style: UiK.subtleText()),
+                                  ),
                                 ],
 
                                 const SizedBox(height: 12),
@@ -973,6 +1011,15 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                                 );
                                               }
                                               return;
+                                            }
+
+                                            final isFirstSend =
+                                                submittedAt == null &&
+                                                autoMailMsgKey.isEmpty;
+                                            if (isFirstSend) {
+                                              final ok =
+                                                  await _confirmFirstSubmit();
+                                              if (!ok) return;
                                             }
 
                                             final now = _nowMs();

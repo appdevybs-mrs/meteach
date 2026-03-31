@@ -144,6 +144,22 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     );
     if (!ok) return;
 
+    final removeFromClasses = await _confirm(
+      title: 'Also remove from classes?',
+      message:
+          'If this learner exists in class rosters, remove them there too.\n\nEmpty classes will be deleted automatically.',
+      confirmText: 'Remove from classes',
+      danger: true,
+    );
+
+    int removedFromClasses = 0;
+    int removedClassesCount = 0;
+    if (removeFromClasses) {
+      final cleanup = await _removeLearnerFromAllClasses(uid);
+      removedFromClasses = cleanup.removedFromClasses;
+      removedClassesCount = cleanup.deletedClasses;
+    }
+
     final data = learner.toMap()
       ..addAll({
         'movedAt': ServerValue.timestamp,
@@ -157,7 +173,58 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     await _deletedRef.child(uid).set(data);
     await _usersRef.child(uid).remove();
 
+    if (removeFromClasses) {
+      _toast(
+        'Moved to deleted 🗑️ • Removed from $removedFromClasses class(es)${removedClassesCount > 0 ? ' • Deleted $removedClassesCount empty class(es)' : ''}',
+      );
+      return;
+    }
+
     _toast('Moved to deleted 🗑️');
+  }
+
+  Future<_ClassCleanupResult> _removeLearnerFromAllClasses(String uid) async {
+    final snap = await _db.ref('classes').get();
+    final v = snap.value;
+    if (v is! Map) {
+      return const _ClassCleanupResult(
+        removedFromClasses: 0,
+        deletedClasses: 0,
+      );
+    }
+
+    final root = v.map((k, vv) => MapEntry('$k', vv));
+    int removedFromClasses = 0;
+    int deletedClasses = 0;
+
+    final updates = <String, dynamic>{};
+    root.forEach((classId, clsRaw) {
+      if (clsRaw is! Map) return;
+      final cls = clsRaw.map((k, vv) => MapEntry('$k', vv));
+      final learnersRaw = cls['learners'];
+      if (learnersRaw is! Map) return;
+
+      final learners = learnersRaw.map((k, vv) => MapEntry('$k', vv));
+      if (!learners.containsKey(uid)) return;
+
+      removedFromClasses++;
+      final left = learners.length - 1;
+      if (left <= 0) {
+        updates['classes/$classId'] = null;
+        deletedClasses++;
+      } else {
+        updates['classes/$classId/learners/$uid'] = null;
+      }
+    });
+
+    if (updates.isNotEmpty) {
+      await _db.ref().update(updates);
+    }
+
+    return _ClassCleanupResult(
+      removedFromClasses: removedFromClasses,
+      deletedClasses: deletedClasses,
+    );
   }
 
   Future<void> _moveToBlocked(String uid, Learner learner) async {
@@ -2323,6 +2390,16 @@ class _TextField extends StatelessWidget {
 // ----------------------------
 // Model + Parsing
 // ----------------------------
+
+class _ClassCleanupResult {
+  const _ClassCleanupResult({
+    required this.removedFromClasses,
+    required this.deletedClasses,
+  });
+
+  final int removedFromClasses;
+  final int deletedClasses;
+}
 
 enum LearnerStatus {
   active,

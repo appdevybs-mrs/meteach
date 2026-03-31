@@ -4032,8 +4032,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           IconButton(
             tooltip: 'Evaluate homework',
             icon: Icon(
-              Icons.fact_check_rounded,
-              color: _navy.withValues(alpha: 0.95),
+              Icons.assignment_turned_in_rounded,
+              color: Colors.deepOrange.withValues(alpha: 0.95),
             ),
             onPressed: _reviewHomeworkFromThread,
           ),
@@ -4041,10 +4041,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             IconButton(
               tooltip: 'Report card',
               icon: Icon(
-                Icons.analytics_rounded,
+                Icons.assessment_rounded,
                 color: canReport
-                    ? _navy.withValues(alpha: 0.95)
-                    : _navy.withValues(alpha: 0.35),
+                    ? Colors.teal.withValues(alpha: 0.95)
+                    : Colors.teal.withValues(alpha: 0.35),
               ),
               onPressed: canReport ? _openReportCard : null,
             ),
