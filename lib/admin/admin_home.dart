@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -66,6 +67,7 @@ class AdminHome extends StatefulWidget {
 
 class _AdminHomeState extends State<AdminHome> {
   static const _prefsRoleKey = 'admin_home_role_mode_is_admin';
+  int _lastBackPressMs = 0;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuButtonKey = GlobalKey();
@@ -114,6 +116,12 @@ class _AdminHomeState extends State<AdminHome> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefsRoleKey, isAdmin);
     } catch (_) {}
+  }
+
+  Future<void> _refreshHome() async {
+    if (!mounted) return;
+    setState(() {});
+    await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -559,231 +567,251 @@ class _AdminHomeState extends State<AdminHome> {
         .map((c) => c.child)
         .toList();
 
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: _screenBg,
-      drawer: _AdminHomeDrawer(
-        userEmail: user?.email ?? 'Admin',
-        isAdminMode: _isAdminMode,
-        loadingRole: _loadingRole,
-        onOpenMain: () {
-          Navigator.of(context).pop();
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminPublicPreview()));
-        },
-        onSelectAdmin: () async {
-          Navigator.of(context).pop();
-          await _setRoleMode(true);
-        },
-        onSelectReceptionist: () async {
-          Navigator.of(context).pop();
-          await _setRoleMode(false);
-        },
-        onLogout: () async {
-          Navigator.of(context).pop();
-          await _logout(context);
-        },
-      ),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        automaticallyImplyLeading: false,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10, top: 8, bottom: 8),
-          child: Material(
-            key: _menuButtonKey,
-            color: _isAdminMode
-                ? const Color(0xFFF1F5F9)
-                : const Color(0xFFFFF5EB),
-            borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => _scaffoldKey.currentState?.openDrawer(),
-              child: const Center(
-                child: Icon(Icons.menu_rounded, color: AdminHome.primaryBlue),
-              ),
-            ),
-          ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastBackPressMs < 1800) {
+          await SystemNavigator.pop();
+          return;
+        }
+        _lastBackPressMs = now;
+        AppToast.show(context, 'Press back again to close app');
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: _screenBg,
+        drawer: _AdminHomeDrawer(
+          userEmail: user?.email ?? 'Admin',
+          isAdminMode: _isAdminMode,
+          loadingRole: _loadingRole,
+          onOpenMain: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
+            );
+          },
+          onSelectAdmin: () async {
+            Navigator.of(context).pop();
+            await _setRoleMode(true);
+          },
+          onSelectReceptionist: () async {
+            Navigator.of(context).pop();
+            await _setRoleMode(false);
+          },
+          onLogout: () async {
+            Navigator.of(context).pop();
+            await _logout(context);
+          },
         ),
-        centerTitle: true,
-        title: Text(
-          _screenTitle,
-          style: const TextStyle(
-            color: AdminHome.primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: _showSearch ? 'Close search' : 'Search tools',
-            icon: Icon(
-              _showSearch ? Icons.close_rounded : Icons.search_rounded,
-            ),
-            onPressed: () {
-              setState(() {
-                if (_showSearch) {
-                  _homeSearch = '';
-                }
-                _showSearch = !_showSearch;
-              });
-            },
-          ),
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_home',
-              screenTitle: _screenTitle,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 10, top: 8, bottom: 8),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.white,
+          automaticallyImplyLeading: false,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 10, top: 8, bottom: 8),
             child: Material(
+              key: _menuButtonKey,
               color: _isAdminMode
-                  ? const Color(0xFFFFF1E5)
-                  : const Color(0xFFEAF8FF),
+                  ? const Color(0xFFF1F5F9)
+                  : const Color(0xFFFFF5EB),
               borderRadius: BorderRadius.circular(14),
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
-                onTap: () => _logout(context),
-                child: SizedBox(
-                  width: 44,
-                  child: Center(
-                    child: Icon(
-                      Icons.logout,
-                      color: _isAdminMode
-                          ? AdminHome.actionOrange
-                          : AdminHome.accentSky,
-                    ),
-                  ),
+                onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                child: const Center(
+                  child: Icon(Icons.menu_rounded, color: AdminHome.primaryBlue),
                 ),
               ),
             ),
           ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: _isAdminMode
-                      ? const [Color(0xFFE7F0FF), Color(0xFFF2F6FF)]
-                      : const [Color(0xFFFFE8D7), Color(0xFFFFF6EE)],
-                ),
-              ),
+          centerTitle: true,
+          title: Text(
+            _screenTitle,
+            style: const TextStyle(
+              color: AdminHome.primaryBlue,
+              fontWeight: FontWeight.w900,
             ),
           ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: _isAdminMode ? 0.035 : 0.028,
-                child: Center(
-                  child: FractionallySizedBox(
-                    widthFactor: 0.72,
-                    child: Image.asset(
-                      'assets/images/ybs_logo.png',
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-                  ),
-                ),
+          actions: [
+            IconButton(
+              tooltip: _showSearch ? 'Close search' : 'Search tools',
+              icon: Icon(
+                _showSearch ? Icons.close_rounded : Icons.search_rounded,
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_showSearch) {
+                    _homeSearch = '';
+                  }
+                  _showSearch = !_showSearch;
+                });
+              },
+            ),
+            IconButton(
+              tooltip: 'Help / Instructions',
+              icon: const Icon(Icons.help_outline_rounded),
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.admin,
+                screenId: 'admin_home',
+                screenTitle: _screenTitle,
               ),
             ),
-          ),
-          SafeArea(
-            child: webPageFrame(
-              maxWidth: 1500,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      height: _showSearch ? 56 : 0,
-                      curve: Curves.easeOutCubic,
-                      child: _showSearch
-                          ? Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: TextField(
-                                onChanged: (v) =>
-                                    setState(() => _homeSearch = v),
-                                decoration: InputDecoration(
-                                  hintText: 'Search dashboard tools...',
-                                  prefixIcon: const Icon(Icons.search_rounded),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 0,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    _AdminTodoHomeCard(
-                      isReceptionistStyle: !_isAdminMode,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const AdminAdminTodosScreen(),
-                        ),
+            Padding(
+              padding: const EdgeInsets.only(right: 10, top: 8, bottom: 8),
+              child: Material(
+                color: _isAdminMode
+                    ? const Color(0xFFFFF1E5)
+                    : const Color(0xFFEAF8FF),
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => _logout(context),
+                  child: SizedBox(
+                    width: 44,
+                    child: Center(
+                      child: Icon(
+                        Icons.logout,
+                        color: _isAdminMode
+                            ? AdminHome.actionOrange
+                            : AdminHome.accentSky,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: KeyedSubtree(
-                        key: _cardsGridKey,
-                        child: visibleCards.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No tools matched "$q"',
-                                  style: const TextStyle(
-                                    color: AdminHome.softText,
-                                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: _isAdminMode
+                        ? const [Color(0xFFE7F0FF), Color(0xFFF2F6FF)]
+                        : const [Color(0xFFFFE8D7), Color(0xFFFFF6EE)],
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: _isAdminMode ? 0.035 : 0.028,
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.72,
+                      child: Image.asset(
+                        'assets/images/ybs_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: webPageFrame(
+                maxWidth: 1500,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        height: _showSearch ? 56 : 0,
+                        curve: Curves.easeOutCubic,
+                        child: _showSearch
+                            ? Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: TextField(
+                                  onChanged: (v) =>
+                                      setState(() => _homeSearch = v),
+                                  decoration: InputDecoration(
+                                    hintText: 'Search dashboard tools...',
+                                    prefixIcon: const Icon(
+                                      Icons.search_rounded,
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 0,
+                                    ),
                                   ),
                                 ),
                               )
-                            : GridView.count(
-                                crossAxisCount: crossAxisCount,
-                                mainAxisSpacing: gridGap,
-                                crossAxisSpacing: gridGap,
-                                childAspectRatio: cardRatio,
-                                children: visibleCards,
-                              ),
+                            : const SizedBox.shrink(),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Text(
-                        _isAdminMode
-                            ? 'Your Bridge School • Admin View'
-                            : 'Your Bridge School • Receptionist View',
-                        style: const TextStyle(
-                          color: AdminHome.softText,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                      _AdminTodoHomeCard(
+                        isReceptionistStyle: !_isAdminMode,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AdminAdminTodosScreen(),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: KeyedSubtree(
+                          key: _cardsGridKey,
+                          child: visibleCards.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    'No tools matched "$q"',
+                                    style: const TextStyle(
+                                      color: AdminHome.softText,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                )
+                              : RefreshIndicator(
+                                  onRefresh: _refreshHome,
+                                  child: GridView.count(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    crossAxisCount: crossAxisCount,
+                                    mainAxisSpacing: gridGap,
+                                    crossAxisSpacing: gridGap,
+                                    childAspectRatio: cardRatio,
+                                    children: visibleCards,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: Text(
+                          _isAdminMode
+                              ? 'Your Bridge School • Admin View'
+                              : 'Your Bridge School • Receptionist View',
+                          style: const TextStyle(
+                            color: AdminHome.softText,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

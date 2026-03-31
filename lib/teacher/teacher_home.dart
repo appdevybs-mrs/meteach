@@ -493,23 +493,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return false;
   }
 
-  int _countUnreadHomework(dynamic snapshotValue) {
-    if (snapshotValue is! Map) return 0;
-    int total = 0;
-
-    snapshotValue.forEach((k, v) {
-      if (v is! Map) return;
-      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-      if (m['deletedAt'] != null) return;
-      if (!_isHomeworkThreadMeta(m)) return;
-
-      total += _toInt(m['unreadCount']);
-    });
-
-    return total;
-  }
-
   Future<int> _countUnreviewedHomework(dynamic snapshotValue) async {
     if (snapshotValue is! Map) return 0;
 
@@ -525,24 +508,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     if (threadIds.isEmpty) return 0;
 
-    int unreviewed = 0;
-
-    for (final threadId in threadIds) {
+    final checks = threadIds.map((threadId) async {
       try {
         final tSnap = await _db.child('mail_threads/$threadId').get();
-        if (!tSnap.exists || tSnap.value is! Map) continue;
+        if (!tSnap.exists || tSnap.value is! Map) return 0;
         final t = (tSnap.value as Map).map((k, v) => MapEntry('$k', v));
         final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
-        if (hwRefPath.isEmpty) {
-          unreviewed++;
-          continue;
-        }
+        if (hwRefPath.isEmpty) return 1;
 
         final hwSnap = await _db.child(hwRefPath).get();
-        if (!hwSnap.exists || hwSnap.value is! Map) {
-          unreviewed++;
-          continue;
-        }
+        if (!hwSnap.exists || hwSnap.value is! Map) return 1;
 
         final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
         final reviewedAt = _toInt(hw['reviewedAt']);
@@ -551,13 +526,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             .trim()
             .toLowerCase();
         final reviewed = reviewedAt > 0 || reviewStatus.isNotEmpty;
-        if (!reviewed) unreviewed++;
+        return reviewed ? 0 : 1;
       } catch (_) {
-        unreviewed++;
+        return 1;
       }
-    }
+    }).toList();
 
-    return unreviewed;
+    final parts = await Future.wait(checks);
+    return parts.fold<int>(0, (sum, n) => sum + n);
   }
 
   int _toInt(dynamic v) {

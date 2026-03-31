@@ -464,6 +464,13 @@ class _TeacherHomeworkInboxScreenState
     );
   }
 
+  Future<void> _refreshInbox() async {
+    _rowsSignature = '';
+    _viewsFuture = null;
+    if (mounted) setState(() {});
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -545,7 +552,16 @@ class _TeacherHomeworkInboxScreenState
                     .where((r) => r.deletedAtMs == null)
                     .toList();
                 if (activeRows.isEmpty) {
-                  return const Center(child: Text('No homework threads yet.'));
+                  return RefreshIndicator(
+                    onRefresh: _refreshInbox,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 180),
+                        Center(child: Text('No homework threads yet.')),
+                      ],
+                    ),
+                  );
                 }
 
                 return FutureBuilder<List<_HomeworkThreadView>>(
@@ -562,286 +578,297 @@ class _TeacherHomeworkInboxScreenState
                         .toList();
                     final views = _applyFilter(activeViews);
 
-                    return ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                      itemCount: views.length + 1,
-                      itemBuilder: (context, i) {
-                        if (i == 0) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildFilterBar(activeViews),
-                          );
-                        }
+                    return RefreshIndicator(
+                      onRefresh: _refreshInbox,
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                        itemCount: views.length + 1,
+                        itemBuilder: (context, i) {
+                          if (i == 0) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _buildFilterBar(activeViews),
+                            );
+                          }
 
-                        final v = views[i - 1];
-                        return Dismissible(
-                          key: ValueKey('hw_${v.row.threadId}'),
-                          direction: DismissDirection.startToEnd,
-                          confirmDismiss: (_) async {
-                            if (v.reviewed) return false;
-                            final ok =
-                                await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Mark as reviewed?'),
-                                    content: const Text(
-                                      'This will mark this homework thread as reviewed and remove it from "Not reviewed".',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: const Text('Cancel'),
+                          final v = views[i - 1];
+                          return Dismissible(
+                            key: ValueKey('hw_${v.row.threadId}'),
+                            direction: DismissDirection.startToEnd,
+                            confirmDismiss: (_) async {
+                              if (v.reviewed) return false;
+                              final ok =
+                                  await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Mark as reviewed?'),
+                                      content: const Text(
+                                        'This will mark this homework thread as reviewed and remove it from "Not reviewed".',
                                       ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: const Text('Mark reviewed'),
-                                      ),
-                                    ],
-                                  ),
-                                ) ??
-                                false;
-                            if (!ok) return false;
-                            await _markReviewed(v);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Marked reviewed'),
-                                  duration: Duration(milliseconds: 1200),
-                                ),
-                              );
-                            }
-                            return false;
-                          },
-                          background: Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            alignment: Alignment.centerLeft,
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(
-                                  Icons.check_circle_outline_rounded,
-                                  color: Colors.green,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Mark reviewed',
-                                  style: TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          child: Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onLongPress: () => _deleteForMe(v),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => TeacherMailThreadScreen(
-                                      threadId: v.row.threadId,
-                                      peerUid: v.row.peerUid,
-                                      peerName: v.row.peerName,
-                                      subject: v.row.subject,
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: const Text('Mark reviewed'),
+                                        ),
+                                      ],
                                     ),
+                                  ) ??
+                                  false;
+                              if (!ok) return false;
+                              await _markReviewed(v);
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Marked reviewed'),
+                                    duration: Duration(milliseconds: 1200),
                                   ),
                                 );
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 18,
-                                      backgroundColor: v.reviewed
-                                          ? Colors.green.withValues(alpha: 0.14)
-                                          : Colors.orange.withValues(
-                                              alpha: 0.14,
-                                            ),
-                                      child: Icon(
-                                        Icons.assignment_rounded,
-                                        color: v.reviewed
-                                            ? Colors.green.shade700
-                                            : Colors.orange.shade700,
+                              }
+                              return false;
+                            },
+                            background: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              alignment: Alignment.centerLeft,
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_outline_rounded,
+                                    color: Colors.green,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Mark reviewed',
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            child: Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onLongPress: () => _deleteForMe(v),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => TeacherMailThreadScreen(
+                                        threadId: v.row.threadId,
+                                        peerUid: v.row.peerUid,
+                                        peerName: v.row.peerName,
+                                        subject: v.row.subject,
                                       ),
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            v.row.peerName,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 14.5,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            v.courseTitle,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              color: Colors.black.withValues(
-                                                alpha: 0.67,
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 18,
+                                        backgroundColor: v.reviewed
+                                            ? Colors.green.withValues(
+                                                alpha: 0.14,
+                                              )
+                                            : Colors.orange.withValues(
+                                                alpha: 0.14,
                                               ),
-                                              fontSize: 12.2,
+                                        child: Icon(
+                                          Icons.assignment_rounded,
+                                          color: v.reviewed
+                                              ? Colors.green.shade700
+                                              : Colors.orange.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              v.row.peerName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 14.5,
+                                              ),
                                             ),
-                                          ),
-                                          if (v.classId.isNotEmpty) ...[
                                             const SizedBox(height: 3),
                                             Text(
-                                              'Class: ${v.classId}',
+                                              v.courseTitle,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontWeight: FontWeight.w700,
+                                                fontWeight: FontWeight.w800,
                                                 color: Colors.black.withValues(
-                                                  alpha: 0.55,
+                                                  alpha: 0.67,
                                                 ),
-                                                fontSize: 11.2,
+                                                fontSize: 12.2,
+                                              ),
+                                            ),
+                                            if (v.classId.isNotEmpty) ...[
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                'Class: ${v.classId}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.55),
+                                                  fontSize: 11.2,
+                                                ),
+                                              ),
+                                            ],
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              v.row.lastMessage.isEmpty
+                                                  ? '-'
+                                                  : v.row.lastMessage,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.62,
+                                                ),
+                                                fontSize: 12,
                                               ),
                                             ),
                                           ],
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            v.row.lastMessage.isEmpty
-                                                ? '-'
-                                                : v.row.lastMessage,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.62,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (v.unreadCount > 0)
+                                                Container(
+                                                  margin: const EdgeInsets.only(
+                                                    right: 6,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red
+                                                        .withValues(
+                                                          alpha: 0.12,
+                                                        ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    v.unreadCount.toString(),
+                                                    style: const TextStyle(
+                                                      color: Colors.red,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              IconButton(
+                                                tooltip: 'Homework details',
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onPressed: () =>
+                                                    _showDetails(v),
+                                                icon: Icon(
+                                                  Icons.info_outline_rounded,
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.65),
+                                                ),
                                               ),
-                                              fontSize: 12,
+                                            ],
+                                          ),
+                                          Text(
+                                            _fmtTime(v.row.updatedAtMs),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.58,
+                                              ),
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: v.reviewed
+                                                  ? Colors.green.withValues(
+                                                      alpha: 0.12,
+                                                    )
+                                                  : Colors.orange.withValues(
+                                                      alpha: 0.12,
+                                                    ),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              v.needsRedo
+                                                  ? 'Redo'
+                                                  : (v.reviewed
+                                                        ? 'Reviewed'
+                                                        : 'Not reviewed'),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w900,
+                                                color: v.needsRedo
+                                                    ? Colors.orange.shade800
+                                                    : (v.reviewed
+                                                          ? Colors
+                                                                .green
+                                                                .shade800
+                                                          : Colors
+                                                                .orange
+                                                                .shade800),
+                                              ),
                                             ),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (v.unreadCount > 0)
-                                              Container(
-                                                margin: const EdgeInsets.only(
-                                                  right: 6,
-                                                ),
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.red.withValues(
-                                                    alpha: 0.12,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
-                                                ),
-                                                child: Text(
-                                                  v.unreadCount.toString(),
-                                                  style: const TextStyle(
-                                                    color: Colors.red,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w900,
-                                                  ),
-                                                ),
-                                              ),
-                                            IconButton(
-                                              tooltip: 'Homework details',
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              onPressed: () => _showDetails(v),
-                                              icon: Icon(
-                                                Icons.info_outline_rounded,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.65,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        Text(
-                                          _fmtTime(v.row.updatedAtMs),
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.black.withValues(
-                                              alpha: 0.58,
-                                            ),
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: v.reviewed
-                                                ? Colors.green.withValues(
-                                                    alpha: 0.12,
-                                                  )
-                                                : Colors.orange.withValues(
-                                                    alpha: 0.12,
-                                                  ),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            v.needsRedo
-                                                ? 'Redo'
-                                                : (v.reviewed
-                                                      ? 'Reviewed'
-                                                      : 'Not reviewed'),
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w900,
-                                              color: v.needsRedo
-                                                  ? Colors.orange.shade800
-                                                  : (v.reviewed
-                                                        ? Colors.green.shade800
-                                                        : Colors
-                                                              .orange
-                                                              .shade800),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     );
                   },
                 );

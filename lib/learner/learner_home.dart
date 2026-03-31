@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -36,6 +37,8 @@ class LearnerHome extends StatefulWidget {
 }
 
 class _LearnerHomeState extends State<LearnerHome> {
+  int _lastBackPressMs = 0;
+  int _shellRefreshEpoch = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuIconKey = GlobalKey();
   final GlobalKey _drawerCoursesKey = GlobalKey();
@@ -301,6 +304,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     setState(() {
       _displayNameFuture = _myDisplayName();
       _profilePhotoFuture = _myProfilePhoto();
+      _shellRefreshEpoch++;
     });
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
@@ -492,136 +496,153 @@ class _LearnerHomeState extends State<LearnerHome> {
       _maybeStartDrawerTour();
     });
 
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: p.appBg,
-      drawer: _LearnerDrawer(
-        palette: p,
-        displayNameFuture: _displayNameFuture,
-        profilePhotoFuture: _profilePhotoFuture,
-        coursesTileKey: _drawerCoursesKey,
-        galleryTileKey: _drawerGalleryKey,
-        gamesTileKey: _drawerGamesKey,
-        coachTileKey: _drawerCoachKey,
-        storiesTileKey: _drawerStoriesKey,
-        profileTileKey: _drawerProfileKey,
-        mailTileKey: _drawerMailKey,
-        regulationsTileKey: _drawerRegulationsKey,
-        themeTileKey: _drawerThemeKey,
-        restartTourTileKey: _drawerRestartTourKey,
-        logoutButtonKey: _drawerLogoutKey,
-        onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
-        onOpenMail: () => _pushScreen(LearnerMailScreen()),
-        onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
-        onOpenGallery: () => _pushScreen(const LearnerGalleryScreen()),
-        onOpenStories: _openStoriesScreen,
-        onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
-        onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
-        onOpenRegulations: () => _pushScreen(const LearnerRegulationsScreen()),
-        onOpenThemeSettings: _openThemeSheet,
-        onRestartTour: () async {
-          await LearnerTourGuide.resetAll();
-          if (!mounted || !context.mounted) return;
-          final homeHints = _homeScreenHints(onlyVisibleTargets: true);
-          final dashboardHints = _homeDashboardHints(onlyVisibleTargets: true);
-          await LearnerTourGuide.startNow(
-            context,
-            screenId: 'learner_quick_start',
-            hints: _quickStartHints,
-            isQuickStart: true,
-          );
-          if (!mounted || !context.mounted) return;
-          if (homeHints.isNotEmpty) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastBackPressMs < 1800) {
+          await SystemNavigator.pop();
+          return;
+        }
+        _lastBackPressMs = now;
+        AppToast.show(context, 'Press back again to close app');
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: p.appBg,
+        drawer: _LearnerDrawer(
+          palette: p,
+          displayNameFuture: _displayNameFuture,
+          profilePhotoFuture: _profilePhotoFuture,
+          coursesTileKey: _drawerCoursesKey,
+          galleryTileKey: _drawerGalleryKey,
+          gamesTileKey: _drawerGamesKey,
+          coachTileKey: _drawerCoachKey,
+          storiesTileKey: _drawerStoriesKey,
+          profileTileKey: _drawerProfileKey,
+          mailTileKey: _drawerMailKey,
+          regulationsTileKey: _drawerRegulationsKey,
+          themeTileKey: _drawerThemeKey,
+          restartTourTileKey: _drawerRestartTourKey,
+          logoutButtonKey: _drawerLogoutKey,
+          onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
+          onOpenMail: () => _pushScreen(LearnerMailScreen()),
+          onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
+          onOpenGallery: () => _pushScreen(const LearnerGalleryScreen()),
+          onOpenStories: _openStoriesScreen,
+          onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
+          onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
+          onOpenRegulations: () =>
+              _pushScreen(const LearnerRegulationsScreen()),
+          onOpenThemeSettings: _openThemeSheet,
+          onRestartTour: () async {
+            await LearnerTourGuide.resetAll();
+            if (!mounted || !context.mounted) return;
+            final homeHints = _homeScreenHints(onlyVisibleTargets: true);
+            final dashboardHints = _homeDashboardHints(
+              onlyVisibleTargets: true,
+            );
             await LearnerTourGuide.startNow(
               context,
-              screenId: 'learner_home',
-              hints: homeHints,
+              screenId: 'learner_quick_start',
+              hints: _quickStartHints,
+              isQuickStart: true,
             );
-          }
-          if (!mounted || !context.mounted) return;
-          if (dashboardHints.isNotEmpty) {
-            await LearnerTourGuide.startNow(
-              context,
-              screenId: 'learner_home_dashboard',
-              hints: dashboardHints,
-            );
-          }
-          _drawerTourAttempted = false;
-          if (!mounted || !context.mounted) return;
-          await _maybeStartDrawerTour();
-        },
-        onLogout: () => _logout(context),
-      ),
-
-      appBar: AppBar(
-        toolbarHeight: isWebDashboard ? 74 : kToolbarHeight,
-        backgroundColor: p.cardBg,
-        elevation: 0,
-        centerTitle: false,
-        surfaceTintColor: p.cardBg,
-        leading: IconButton(
-          icon: Icon(Icons.menu_rounded, key: _menuIconKey, color: p.primary),
-          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-        ),
-        title: FutureBuilder<String>(
-          future: _displayNameFuture,
-          builder: (context, snap) {
-            final name = (snap.data ?? '').trim();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome back',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: isWebDashboard ? 18 : 16,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  name.isNotEmpty ? name : 'Learner',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w700,
-                    fontSize: isWebDashboard ? 13 : 12,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            tooltip: 'Guide',
-            onPressed: () async {
-              final homeHints = _homeScreenHints(onlyVisibleTargets: true);
+            if (!mounted || !context.mounted) return;
+            if (homeHints.isNotEmpty) {
               await LearnerTourGuide.startNow(
                 context,
                 screenId: 'learner_home',
                 hints: homeHints,
               );
-              if (!mounted) return;
-              _drawerTourAttempted = false;
-              await _maybeStartDrawerTour();
+            }
+            if (!mounted || !context.mounted) return;
+            if (dashboardHints.isNotEmpty) {
+              await LearnerTourGuide.startNow(
+                context,
+                screenId: 'learner_home_dashboard',
+                hints: dashboardHints,
+              );
+            }
+            _drawerTourAttempted = false;
+            if (!mounted || !context.mounted) return;
+            await _maybeStartDrawerTour();
+          },
+          onLogout: () => _logout(context),
+        ),
+
+        appBar: AppBar(
+          toolbarHeight: isWebDashboard ? 74 : kToolbarHeight,
+          backgroundColor: p.cardBg,
+          elevation: 0,
+          centerTitle: false,
+          surfaceTintColor: p.cardBg,
+          leading: IconButton(
+            icon: Icon(Icons.menu_rounded, key: _menuIconKey, color: p.primary),
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          ),
+          title: FutureBuilder<String>(
+            future: _displayNameFuture,
+            builder: (context, snap) {
+              final name = (snap.data ?? '').trim();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welcome back',
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: isWebDashboard ? 18 : 16,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    name.isNotEmpty ? name : 'Learner',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.72),
+                      fontWeight: FontWeight.w700,
+                      fontSize: isWebDashboard ? 13 : 12,
+                    ),
+                  ),
+                ],
+              );
             },
           ),
-          IconButton(
-            icon: Icon(Icons.logout_rounded, color: p.accent),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refreshShell,
-        child: WatermarkBackground(
-          child: _LearnerDashboardLite(
-            homeworkCardKey: _dashboardHomeworkCardKey,
-            bookingCardKey: _dashboardBookingCardKey,
-            coursesListKey: _dashboardCoursesListKey,
+          actions: [
+            IconButton(
+              icon: Icon(Icons.help_outline_rounded, color: p.primary),
+              tooltip: 'Guide',
+              onPressed: () async {
+                final homeHints = _homeScreenHints(onlyVisibleTargets: true);
+                await LearnerTourGuide.startNow(
+                  context,
+                  screenId: 'learner_home',
+                  hints: homeHints,
+                );
+                if (!mounted) return;
+                _drawerTourAttempted = false;
+                await _maybeStartDrawerTour();
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.logout_rounded, color: p.accent),
+              onPressed: () => _logout(context),
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _refreshShell,
+          child: WatermarkBackground(
+            child: _LearnerDashboardLite(
+              key: ValueKey('learner_dash_$_shellRefreshEpoch'),
+              homeworkCardKey: _dashboardHomeworkCardKey,
+              bookingCardKey: _dashboardBookingCardKey,
+              coursesListKey: _dashboardCoursesListKey,
+            ),
           ),
         ),
       ),
@@ -631,6 +652,7 @@ class _LearnerHomeState extends State<LearnerHome> {
 
 class _LearnerDashboardLite extends StatefulWidget {
   const _LearnerDashboardLite({
+    super.key,
     required this.homeworkCardKey,
     required this.bookingCardKey,
     required this.coursesListKey,
