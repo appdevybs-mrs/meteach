@@ -633,16 +633,7 @@ class _TeacherLearnerGalleryScreenState
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_learner_gallery',
-              screenTitle: '$displayLearnerName Gallery',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: SafeArea(
@@ -1524,16 +1515,7 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.accent),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_gallery_viewer',
-              screenTitle: isVideo ? 'Video' : 'Photo',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Download',
             icon: Icon(Icons.download_rounded, color: p.accent),

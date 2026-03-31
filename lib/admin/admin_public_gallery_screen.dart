@@ -1392,16 +1392,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_public_gallery',
-              screenTitle: 'Gallery',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
         bottom: TabBar(
           controller: _tab,
@@ -2295,16 +2286,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_learner_gallery',
-              screenTitle: '${widget.learnerName} Gallery',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: SafeArea(
@@ -3071,16 +3053,7 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_gallery_viewer',
-              screenTitle: isVideo ? 'Video' : 'Photo',
-            ),
-            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Download',
             icon: const Icon(Icons.download_rounded, color: Colors.white),
@@ -3251,16 +3224,7 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_gallery_viewer',
-              screenTitle: isVideo ? 'Video' : 'Photo',
-            ),
-            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Download',
             icon: const Icon(Icons.download_rounded, color: Colors.white),

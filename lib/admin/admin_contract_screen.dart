@@ -559,16 +559,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_contract',
-              screenTitle: 'Contract',
-            ),
-            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Reload',
             onPressed: _ensuring ? null : _ensureBaseNodes,

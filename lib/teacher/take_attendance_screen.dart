@@ -1457,16 +1457,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_take_attendance',
-              screenTitle: _isEdit ? 'Edit Session' : 'Take Attendance',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: _busy

@@ -632,16 +632,7 @@ class _AdminJobApplicationsScreenState
         foregroundColor: _primaryBlue,
         elevation: 0,
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_job_applications',
-              screenTitle: 'Job Applications',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: Column(

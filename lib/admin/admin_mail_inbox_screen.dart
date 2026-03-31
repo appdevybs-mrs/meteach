@@ -72,16 +72,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
       appBar: AppBar(
         title: const Text('Mail'),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_mail_inbox',
-              screenTitle: 'Mail',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'New mail',
             icon: const Icon(Icons.edit),

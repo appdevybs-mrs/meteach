@@ -329,16 +329,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: 'Instructions',
-              icon: Icon(Icons.help_outline_rounded, color: p.primary),
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.teacher,
-                screenId: 'teacher_schedule',
-                screenTitle: 'Teacher Schedule',
-              ),
-            ),
+            const SizedBox.shrink(),
             IconButton(
               tooltip: 'Settings',
               icon: Icon(Icons.settings_rounded, color: p.primary),

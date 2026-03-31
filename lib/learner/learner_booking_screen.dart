@@ -2814,11 +2814,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             runSpacing: 8,
             children: [
               _smallActionButton(
-                icon: Icons.help_outline_rounded,
-                label: 'How booking works',
-                onTap: _openHowBookingWorks,
-              ),
-              _smallActionButton(
                 icon: Icons.menu_book_rounded,
                 label: 'Session details',
                 onTap: _openNextSessionDetails,
@@ -3234,11 +3229,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'How booking works',
-            onPressed: busy ? null : _openHowBookingWorks,
-            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',
             onPressed: (loading || booking || refreshing || cid == null)

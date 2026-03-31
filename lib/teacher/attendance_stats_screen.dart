@@ -471,16 +471,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_attendance_stats',
-              screenTitle: 'Attendance Stats',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.primary),

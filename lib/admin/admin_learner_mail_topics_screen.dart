@@ -193,16 +193,7 @@ class _AdminLearnerMailTopicsScreenState
           'Mail — ${widget.learnerName.isEmpty ? 'Learner' : widget.learnerName}',
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_learner_mail_topics',
-              screenTitle: 'Learner Mail Topics',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'New topic',
             icon: const Icon(Icons.add),

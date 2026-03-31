@@ -2051,34 +2051,38 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // -------------------- Classes List UI --------------------
 
   Widget _buildTopFilters() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: _searchCtrl,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            labelText: "Search (ID / course / instructor / learner)",
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 10),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 900;
+        final twoColWidth = (constraints.maxWidth - 10) / 2;
 
-        // Day filter
-        Row(
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            const Text("Day:", style: TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(width: 10),
-            Expanded(
+            SizedBox(
+              width: narrow
+                  ? constraints.maxWidth
+                  : constraints.maxWidth * 0.52,
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  prefixIcon: Icon(Icons.search),
+                  labelText: "Search (ID / course / instructor / learner)",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: narrow ? twoColWidth : 170,
               child: DropdownButtonFormField<String>(
                 initialValue: _dayFilter,
                 decoration: const InputDecoration(
                   isDense: true,
+                  labelText: 'Day',
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 10,
-                  ),
                 ),
                 items: [
                   const DropdownMenuItem(value: "All", child: Text("All days")),
@@ -2092,34 +2096,39 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                 },
               ),
             ),
+            SizedBox(
+              width: narrow ? twoColWidth : 170,
+              child: DropdownButtonFormField<String>(
+                initialValue: _openFilter == null
+                    ? 'all'
+                    : (_openFilter! ? 'open' : 'closed'),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'Status',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All')),
+                  DropdownMenuItem(value: 'open', child: Text('Open only')),
+                  DropdownMenuItem(value: 'closed', child: Text('Closed only')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() {
+                    if (v == 'all') {
+                      _openFilter = null;
+                    } else if (v == 'open') {
+                      _openFilter = true;
+                    } else {
+                      _openFilter = false;
+                    }
+                  });
+                },
+              ),
+            ),
           ],
-        ),
-
-        const SizedBox(height: 10),
-
-        // Open / Closed filter chips
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text("All"),
-              selected: _openFilter == null,
-              onSelected: (_) => setState(() => _openFilter = null),
-            ),
-            ChoiceChip(
-              label: const Text("Open only"),
-              selected: _openFilter == true,
-              onSelected: (_) => setState(() => _openFilter = true),
-            ),
-            ChoiceChip(
-              label: const Text("Closed only"),
-              selected: _openFilter == false,
-              onSelected: (_) => setState(() => _openFilter = false),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -2200,13 +2209,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                         final id = (cls["class_id"] ?? "").toString();
                         final status = (cls["status"] ?? "active").toString();
-                        final bool isOpen = (cls["is_open"] ?? true) == true;
 
                         final courseTitle = (cls["course_title"] ?? "")
                             .toString();
-                        final courseLevel = (cls["course_level"] ?? "")
-                            .toString();
-                        final courseId = (cls["course_id"] ?? "").toString();
                         final variantKey = (cls["variantKey"] ?? "").toString();
                         final studyMode = (cls["studyMode"] ?? "").toString();
                         final classTypeLabel = _classTypeLabel(
@@ -2221,13 +2226,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             : <String, dynamic>{};
                         final firstDate = (sched["first_session_date"] ?? "")
                             .toString();
-                        final sessionsCount = (sched["sessions_count"] ?? "")
-                            .toString();
-
-                        final learners = (cls["learners"] is Map)
-                            ? Map<dynamic, dynamic>.from(cls["learners"])
-                            : null;
-                        final learnersCount = learners?.length ?? 0;
 
                         return Card(
                           elevation: 0,
@@ -2246,8 +2244,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   children: [
                                     Expanded(
                                       child: Text(
-                                        id,
-                                        maxLines: 1,
+                                        courseTitle.isEmpty
+                                            ? (id.isEmpty ? '-' : id)
+                                            : courseTitle,
+                                        maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w900,
@@ -2255,51 +2255,71 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    _pill(
-                                      text: status.toUpperCase(),
-                                      color: _statusColor(status),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _pill(
-                                      text: isOpen ? "OPEN" : "CLOSED",
-                                      color: _openColor(isOpen),
+                                    PopupMenuButton<String>(
+                                      tooltip: 'Class actions',
+                                      onSelected: (value) {
+                                        if (value == 'edit') {
+                                          _openClassEditor(existingClass: cls);
+                                          return;
+                                        }
+                                        if (value == 'pause') {
+                                          _setClassStatus(id, 'paused');
+                                          return;
+                                        }
+                                        if (value == 'block') {
+                                          _setClassStatus(id, 'blocked');
+                                          return;
+                                        }
+                                        if (value == 'activate') {
+                                          _setClassStatus(id, 'active');
+                                          return;
+                                        }
+                                        if (value == 'delete') {
+                                          _deleteClass(id);
+                                        }
+                                      },
+                                      itemBuilder: (context) => [
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text('Edit'),
+                                        ),
+                                        const PopupMenuDivider(),
+                                        PopupMenuItem(
+                                          value: 'activate',
+                                          enabled: status != 'active',
+                                          child: const Text('Activate'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'pause',
+                                          enabled: status != 'paused',
+                                          child: const Text('Pause'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'block',
+                                          enabled: status != 'blocked',
+                                          child: const Text('Block'),
+                                        ),
+                                        const PopupMenuDivider(),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('Delete'),
+                                        ),
+                                      ],
+                                      icon: const Icon(Icons.more_vert_rounded),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
-
-                                // ✅ ORDER YOU REQUESTED:
-                                // 1) class: level + title
-                                Text(
-                                  "${courseLevel.isEmpty ? "" : "$courseLevel  "}${courseTitle.isEmpty ? "-" : courseTitle}"
-                                      .trim(),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-
-                                /*    // 2) course_id
-                                  Text(
-                                    "Course ID: ${courseId.isEmpty ? "-" : courseId}",
-                                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
-                                  ),
-  
-                                  const SizedBox(height: 6),*/
                                 if (classTypeLabel.trim().isNotEmpty) ...[
                                   Text(
-                                    classTypeLabel,
+                                    'Variant: $classTypeLabel',
                                     style: TextStyle(
                                       color: Colors.grey.shade800,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 6),
                                 ],
-                                // 3) rest
                                 Text(
                                   instructor.isEmpty
                                       ? "Instructor: -"
@@ -2310,153 +2330,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   ),
                                 ),
 
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 6),
                                 Text(
-                                  "Start: ${firstDate.isEmpty ? '-' : firstDate} • Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount} • Learners: $learnersCount",
-                                  style: TextStyle(
-                                    color: Colors.grey.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-
-                                const SizedBox(height: 8),
-                                Text(
-                                  _prettySessions(cls),
+                                  firstDate.isEmpty
+                                      ? _prettySessions(cls)
+                                      : 'Start: $firstDate • ${_prettySessions(cls)}',
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
                                     fontWeight: FontWeight.w600,
                                   ),
-                                ),
-
-                                const SizedBox(height: 10),
-                                if (id.isNotEmpty &&
-                                    !_progressRequestedClassIds.contains(id))
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: OutlinedButton.icon(
-                                      onPressed: () {
-                                        setState(() {
-                                          _progressRequestedClassIds.add(id);
-                                        });
-                                      },
-                                      icon: const Icon(
-                                        Icons.insights_rounded,
-                                        size: 18,
-                                      ),
-                                      label: const Text('Load progress'),
-                                    ),
-                                  )
-                                else
-                                  FutureBuilder<_ClassProg>(
-                                    future: id.isEmpty
-                                        ? Future.value(_ClassProg.zero())
-                                        : _loadClassProgress(id, cls),
-                                    builder: (context, snapP) {
-                                      final p = snapP.data ?? _ClassProg.zero();
-                                      final pct = p.percent.clamp(0, 100);
-
-                                      final totalLabel = p.totalSessions <= 0
-                                          ? "-"
-                                          : p.totalSessions.toString();
-
-                                      return Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.insights_rounded,
-                                                size: 16,
-                                                color: Colors.deepOrange,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  "Progress: $pct% • ${p.coveredCount}/$totalLabel covered • Attendance records: ${p.sessionsHeld}",
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade800,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            child: LinearProgressIndicator(
-                                              value: p.totalSessions <= 0
-                                                  ? 0
-                                                  : (p.coveredCount /
-                                                            p.totalSessions)
-                                                        .clamp(0, 1),
-                                              minHeight: 8,
-                                              backgroundColor: Colors.black
-                                                  .withValues(alpha: 0.06),
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _openClassEditor(existingClass: cls),
-                                      icon: const Icon(Icons.edit, size: 18),
-                                      label: const Text("Edit"),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: status == "paused"
-                                          ? null
-                                          : () => _setClassStatus(id, "paused"),
-                                      icon: const Icon(
-                                        Icons.pause_circle,
-                                        size: 18,
-                                      ),
-                                      label: const Text("Pause"),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: status == "blocked"
-                                          ? null
-                                          : () =>
-                                                _setClassStatus(id, "blocked"),
-                                      icon: const Icon(Icons.block, size: 18),
-                                      label: const Text("Block"),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: status == "active"
-                                          ? null
-                                          : () => _setClassStatus(id, "active"),
-                                      icon: const Icon(
-                                        Icons.play_circle,
-                                        size: 18,
-                                      ),
-                                      label: const Text("Activate"),
-                                    ),
-                                    TextButton.icon(
-                                      onPressed: () => _deleteClass(id),
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                        size: 18,
-                                      ),
-                                      label: const Text(
-                                        "Delete",
-                                        style: TextStyle(color: Colors.red),
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ],
                             ),
@@ -2489,16 +2371,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       appBar: AppBar(
         title: const Text('Classes'),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_classes',
-              screenTitle: 'Classes',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: Padding(

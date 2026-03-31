@@ -97,16 +97,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_courses',
-              screenTitle: 'Courses',
-            ),
-          ),
+          const SizedBox.shrink(),
           // Add only on Courses tab
           AnimatedBuilder(
             animation: _tabController,
@@ -1865,16 +1856,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_course_editor',
-              screenTitle: isEdit ? 'Edit Course' : 'Add Course',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       bottomNavigationBar: SafeArea(

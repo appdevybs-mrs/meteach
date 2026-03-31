@@ -3988,16 +3988,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 ),
               ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: const Icon(Icons.help_outline_rounded, color: _navy),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_mail_thread',
-              screenTitle: title,
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: _searching ? 'Close search' : 'Search',
             icon: Icon(

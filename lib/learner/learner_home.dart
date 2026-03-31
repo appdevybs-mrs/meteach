@@ -613,21 +613,7 @@ class _LearnerHomeState extends State<LearnerHome> {
             },
           ),
           actions: [
-            IconButton(
-              icon: Icon(Icons.help_outline_rounded, color: p.primary),
-              tooltip: 'Guide',
-              onPressed: () async {
-                final homeHints = _homeScreenHints(onlyVisibleTargets: true);
-                await LearnerTourGuide.startNow(
-                  context,
-                  screenId: 'learner_home',
-                  hints: homeHints,
-                );
-                if (!mounted) return;
-                _drawerTourAttempted = false;
-                await _maybeStartDrawerTour();
-              },
-            ),
+            const SizedBox.shrink(),
             IconButton(
               icon: Icon(Icons.logout_rounded, color: p.accent),
               onPressed: () => _logout(context),

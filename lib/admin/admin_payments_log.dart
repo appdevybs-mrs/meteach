@@ -46,16 +46,7 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_payments_log',
-              screenTitle: 'Payments Log',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: Column(

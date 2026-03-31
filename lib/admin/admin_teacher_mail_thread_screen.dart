@@ -894,16 +894,7 @@ class _AdminTeacherMailThreadScreenState
               icon: const Icon(Icons.close_rounded),
               onPressed: () => setState(() => _selectedMessageIds.clear()),
             ),
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_teacher_mail_thread',
-              screenTitle: 'Mail Thread',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Set subject',
             onPressed: _setSubjectIfNeeded,

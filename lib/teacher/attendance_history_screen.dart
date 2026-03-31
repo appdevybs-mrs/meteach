@@ -898,16 +898,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_attendance_history',
-              screenTitle: 'Attendance History',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.primary),

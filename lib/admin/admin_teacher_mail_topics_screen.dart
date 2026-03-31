@@ -214,16 +214,7 @@ class _AdminTeacherMailTopicsScreenState
       appBar: AppBar(
         title: Text('Mail — $teacherName'),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_teacher_mail_topics',
-              screenTitle: 'Teacher Mail Topics',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'New topic',
             onPressed: _createNewTopic,

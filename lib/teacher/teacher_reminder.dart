@@ -744,16 +744,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_reminders',
-              screenTitle: 'My Reminders',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: Stack(

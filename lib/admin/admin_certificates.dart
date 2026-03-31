@@ -327,16 +327,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           style: TextStyle(color: _primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_certificates',
-              screenTitle: 'Certificates',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             icon: const Icon(Icons.add_circle_outline, color: _actionOrange),
             onPressed: _showAddCertificateForm,

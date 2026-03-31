@@ -979,30 +979,8 @@ class _TeacherOnlineBookingScreenState
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_online_booking',
-              screenTitle: 'Teacher Availability',
-            ),
-          ),
-          IconButton(
-            tooltip: 'How this works',
-            onPressed: () => _showHelp(
-              'How this works',
-              '1) Turn teacher booking ON.\n'
-                  '2) Tick the courses you want to teach.\n'
-                  '3) Set one weekly schedule.\n'
-                  '4) Save.\n\n'
-                  'The same schedule is saved to all checked courses.\n'
-                  'Unchecked courses are turned OFF when possible.\n'
-                  'If an unchecked course already has upcoming bookings, it stays ON.',
-            ),
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-          ),
+          const SizedBox.shrink(),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Save',
             onPressed: saving ? null : _saveAvailability,
@@ -1458,24 +1436,7 @@ class _MiniHelpButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: palette.soft.withValues(alpha: 0.65),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: palette.border.withValues(alpha: 0.85)),
-        ),
-        child: Icon(
-          Icons.question_mark_rounded,
-          size: 16,
-          color: palette.primary,
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 

@@ -2211,16 +2211,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       appBar: AppBar(
         title: const Text('Games'),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_games',
-              screenTitle: 'Games',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

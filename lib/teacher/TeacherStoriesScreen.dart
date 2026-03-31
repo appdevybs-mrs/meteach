@@ -3160,16 +3160,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       appBar: AppBar(
         title: const Text('Stories'),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_stories',
-              screenTitle: 'Stories',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

@@ -54,16 +54,7 @@ class AdminSubscriptionsScreen extends StatelessWidget {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_subscriptions',
-              screenTitle: 'Subscriptions',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Add subscription',
             icon: const Icon(Icons.add_circle_rounded, color: actionOrange),

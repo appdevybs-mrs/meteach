@@ -429,16 +429,7 @@ class _TeacherSyllabusDetailsScreenState
             tabs: _variantKeys.map((e) => Tab(text: _variantLabel(e))).toList(),
           ),
           actions: [
-            IconButton(
-              tooltip: 'Instructions',
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.teacher,
-                screenId: 'teacher_syllabus_details',
-                screenTitle: c?.title ?? 'Syllabus',
-              ),
-              icon: const Icon(Icons.help_outline_rounded),
-            ),
+            const SizedBox.shrink(),
             IconButton(
               tooltip: 'Refresh',
               icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),

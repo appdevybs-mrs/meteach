@@ -1146,16 +1146,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       appBar: AppBar(
         title: const Text("Weekly Timetable"),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_timetable',
-              screenTitle: 'Weekly Timetable',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: "Reload teachers",
             onPressed: _loadTeachers,

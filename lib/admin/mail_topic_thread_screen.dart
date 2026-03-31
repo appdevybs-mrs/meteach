@@ -754,16 +754,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               icon: const Icon(Icons.close_rounded),
               onPressed: () => setState(() => _selectedMessageIds.clear()),
             ),
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_mail_topic_thread',
-              screenTitle: title,
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
           PopupMenuButton<String>(
             onSelected: (v) async {
               if (v == 'delete_topic') await _deleteThreadForMe();

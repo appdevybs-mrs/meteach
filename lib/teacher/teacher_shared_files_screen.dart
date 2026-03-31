@@ -595,16 +595,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       appBar: AppBar(
         title: const Text('Shared'),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_shared_files',
-              screenTitle: 'Shared Files',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Upload document',
             onPressed: _uploading ? null : _pickAndUpload,

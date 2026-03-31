@@ -942,18 +942,7 @@ class _AdminTeacherRemindersScreenState
               : 'All reminders',
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_teacher_reminders',
-              screenTitle: _isSingleTeacherMode
-                  ? 'Teacher Reminders'
-                  : 'All Reminders',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: _isSingleTeacherMode ? 'Add reminder' : 'Send reminder',
             onPressed: _openAddDialog,

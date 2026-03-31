@@ -337,16 +337,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_staff',
-              screenTitle: 'Staff',
-            ),
-          ),
+          const SizedBox.shrink(),
           AnimatedBuilder(
             animation: _tab,
             builder: (_, _) {

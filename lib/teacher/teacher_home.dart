@@ -818,84 +818,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             },
           ),
           actions: [
-            IconButton(
-              tooltip: 'Instructions',
-              icon: Icon(Icons.translate_rounded, color: p.primary),
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.teacher,
-                screenId: 'teacher_home',
-                screenTitle: 'Teacher Dashboard',
-              ),
-            ),
-            IconButton(
-              key: _guideButtonKey,
-              tooltip: 'Guide',
-              icon: Icon(Icons.help_outline_rounded, color: p.primary),
-              onPressed: () {
-                TeacherTourGuide.startNow(
-                  context,
-                  screenId: 'teacher_home',
-                  hints: [
-                    const TeacherTourHint(
-                      title: 'Teacher dashboard',
-                      line:
-                          'This screen is your operational center for classes, mail, reminders, and daily actions.',
-                      highlightShape: AppTourHighlightShape.fullscreen,
-                    ),
-                    TeacherTourHint(
-                      title: 'Open menu',
-                      line:
-                          'Use this button to open all teacher tools and navigation links.',
-                      targetKey: _menuButtonKey,
-                      highlightShape: AppTourHighlightShape.circle,
-                    ),
-                    TeacherTourHint(
-                      title: 'Guide',
-                      line:
-                          'Tap here anytime to restart the guided tour for this screen.',
-                      targetKey: _guideButtonKey,
-                      highlightShape: AppTourHighlightShape.circle,
-                    ),
-                    TeacherTourHint(
-                      title: 'Teacher summary',
-                      line:
-                          'This card shows your profile shortcut and quick access to your teaching schedule.',
-                      targetKey: _heroCardKey,
-                    ),
-                    TeacherTourHint(
-                      title: 'Inbox status',
-                      line:
-                          'This indicator shows unread mail and opens the teacher mailbox directly.',
-                      targetKey: _inboxCardKey,
-                    ),
-                    TeacherTourHint(
-                      title: 'Reminders status',
-                      line:
-                          'This card shows pending reminders and opens your reminders management screen.',
-                      targetKey: _remindersCardKey,
-                    ),
-                    TeacherTourHint(
-                      title: 'Overview panel',
-                      line:
-                          'This section summarizes classes, learners, and upcoming online sessions.',
-                      targetKey: _overviewPanelKey,
-                    ),
-                    TeacherTourHint(
-                      title: 'Classes shortcut',
-                      line: 'Use this card to open your classes list quickly.',
-                      targetKey: _classesCardKey,
-                    ),
-                    TeacherTourHint(
-                      title: 'Next class',
-                      line:
-                          'This card highlights your next scheduled class and opens the schedule details.',
-                      targetKey: _nextClassCardKey,
-                    ),
-                  ],
-                );
-              },
-            ),
+            const SizedBox.shrink(),
+            const SizedBox.shrink(),
             IconButton(
               tooltip: 'Theme',
               icon: Icon(Icons.palette_rounded, color: p.accent),

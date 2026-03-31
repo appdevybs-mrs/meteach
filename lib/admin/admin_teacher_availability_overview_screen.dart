@@ -1588,16 +1588,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_teacher_availability_overview',
-              screenTitle: 'Teacher Availability',
-            ),
-            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',
             onPressed: loading ? null : _loadAll,

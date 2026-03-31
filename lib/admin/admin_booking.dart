@@ -1531,16 +1531,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_booking',
-              screenTitle: 'Admin Booking',
-            ),
-            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',
             onPressed: (loadingCourses || loadingBookings)

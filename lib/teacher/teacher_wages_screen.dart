@@ -270,16 +270,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_wages',
-              screenTitle: 'My Wages',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: StreamBuilder<DatabaseEvent>(

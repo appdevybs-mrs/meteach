@@ -50,16 +50,7 @@ class _AdminFileManagerState extends State<AdminFileManager>
       appBar: AppBar(
         title: const Text('File Manager'),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_file_manager',
-              screenTitle: 'File Manager',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
         bottom: TabBar(
           controller: _tabs,

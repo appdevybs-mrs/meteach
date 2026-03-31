@@ -1186,16 +1186,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_public_gallery',
-              screenTitle: 'Gallery',
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
         bottom: TabBar(
           controller: _tab,
@@ -1741,16 +1732,7 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_gallery_viewer',
-              screenTitle: isVideo ? 'Video' : 'Photo',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Download',
             icon: const Icon(Icons.download_rounded, color: Colors.white),

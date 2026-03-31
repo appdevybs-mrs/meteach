@@ -1141,16 +1141,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: 'Instructions',
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.teacher,
-                screenId: 'teacher_mail',
-                screenTitle: 'Mailbox',
-              ),
-              icon: const Icon(Icons.help_outline_rounded),
-            ),
+            const SizedBox.shrink(),
           ],
         ),
         floatingActionButton: FloatingActionButton.extended(

@@ -128,16 +128,7 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
       appBar: AppBar(
         title: const Text('Shared Files'),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_shared_files',
-              screenTitle: 'Shared Files',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       body: StreamBuilder<DatabaseEvent>(

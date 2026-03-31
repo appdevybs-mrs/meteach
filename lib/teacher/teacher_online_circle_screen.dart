@@ -411,16 +411,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Instructions',
-            icon: Icon(Icons.help_outline_rounded, color: p.primary),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.teacher,
-              screenId: 'teacher_online_circle',
-              screenTitle: 'Online Circle',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.accent),

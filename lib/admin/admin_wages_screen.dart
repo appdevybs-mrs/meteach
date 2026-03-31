@@ -458,16 +458,7 @@ class AdminWagesScreen extends StatelessWidget {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Help / Instructions',
-            icon: const Icon(Icons.help_outline_rounded),
-            onPressed: () => ScreenHelpGuide.show(
-              context,
-              role: GuideRole.admin,
-              screenId: 'admin_wages',
-              screenTitle: 'Wages',
-            ),
-          ),
+          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Export Excel',
             icon: const Icon(Icons.file_download_outlined),

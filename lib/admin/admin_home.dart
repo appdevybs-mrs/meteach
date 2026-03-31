@@ -650,16 +650,7 @@ class _AdminHomeState extends State<AdminHome> {
                 });
               },
             ),
-            IconButton(
-              tooltip: 'Help / Instructions',
-              icon: const Icon(Icons.help_outline_rounded),
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.admin,
-                screenId: 'admin_home',
-                screenTitle: _screenTitle,
-              ),
-            ),
+            const SizedBox.shrink(),
             Padding(
               padding: const EdgeInsets.only(right: 10, top: 8, bottom: 8),
               child: Material(

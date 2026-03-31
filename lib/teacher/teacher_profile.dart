@@ -1836,16 +1836,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: 'Instructions',
-              icon: Icon(Icons.help_outline_rounded, color: p.primary),
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.teacher,
-                screenId: 'teacher_profile',
-                screenTitle: 'Teacher Profile',
-              ),
-            ),
+            const SizedBox.shrink(),
             IconButton(
               tooltip: 'Save',
               onPressed: _busy ? null : _save,
