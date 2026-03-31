@@ -510,6 +510,56 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return total;
   }
 
+  Future<int> _countUnreviewedHomework(dynamic snapshotValue) async {
+    if (snapshotValue is! Map) return 0;
+
+    final threadIds = <String>[];
+    snapshotValue.forEach((k, v) {
+      if (v is! Map) return;
+      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+      if (m['deletedAt'] != null) return;
+      if (!_isHomeworkThreadMeta(m)) return;
+      final tid = k.toString().trim();
+      if (tid.isNotEmpty) threadIds.add(tid);
+    });
+
+    if (threadIds.isEmpty) return 0;
+
+    int unreviewed = 0;
+
+    for (final threadId in threadIds) {
+      try {
+        final tSnap = await _db.child('mail_threads/$threadId').get();
+        if (!tSnap.exists || tSnap.value is! Map) continue;
+        final t = (tSnap.value as Map).map((k, v) => MapEntry('$k', v));
+        final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+        if (hwRefPath.isEmpty) {
+          unreviewed++;
+          continue;
+        }
+
+        final hwSnap = await _db.child(hwRefPath).get();
+        if (!hwSnap.exists || hwSnap.value is! Map) {
+          unreviewed++;
+          continue;
+        }
+
+        final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
+        final reviewedAt = _toInt(hw['reviewedAt']);
+        final reviewStatus = (hw['reviewStatus'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        final reviewed = reviewedAt > 0 || reviewStatus.isNotEmpty;
+        if (!reviewed) unreviewed++;
+      } catch (_) {
+        unreviewed++;
+      }
+    }
+
+    return unreviewed;
+  }
+
   int _toInt(dynamic v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
@@ -931,10 +981,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 key: _inboxCardKey,
                                 child: _MiniStatCard(
                                   palette: p,
-                                  label: 'Inbox',
-                                  value: unread == 0
-                                      ? 'Clear'
-                                      : '$unread unread',
+                                  value: unread == 0 ? '0' : '$unread',
                                   icon: Icons.email_rounded,
                                   badgeCount: unread,
                                   badgeColor: Colors.red,
@@ -951,24 +998,28 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           child: StreamBuilder<DatabaseEvent>(
                             stream: _mailIndexStream,
                             builder: (context, snap) {
-                              final unread = _countUnreadHomework(
-                                snap.data?.snapshot.value,
-                              );
-                              return KeyedSubtree(
-                                key: _homeworkCardKey,
-                                child: _MiniStatCard(
-                                  palette: p,
-                                  label: 'Homework',
-                                  value: unread == 0
-                                      ? 'Clear'
-                                      : '$unread unread',
-                                  icon: Icons.assignment_rounded,
-                                  badgeCount: unread,
-                                  badgeColor: const Color(0xFFD97706),
-                                  onTap: () => _pushScreen(
-                                    const TeacherHomeworkInboxScreen(),
-                                  ),
+                              return FutureBuilder<int>(
+                                future: _countUnreviewedHomework(
+                                  snap.data?.snapshot.value,
                                 ),
+                                builder: (context, homeworkSnap) {
+                                  final unreviewed = homeworkSnap.data ?? 0;
+                                  return KeyedSubtree(
+                                    key: _homeworkCardKey,
+                                    child: _MiniStatCard(
+                                      palette: p,
+                                      value: unreviewed == 0
+                                          ? '0'
+                                          : '$unreviewed',
+                                      icon: Icons.assignment_rounded,
+                                      badgeCount: unreviewed,
+                                      badgeColor: const Color(0xFFD97706),
+                                      onTap: () => _pushScreen(
+                                        const TeacherHomeworkInboxScreen(),
+                                      ),
+                                    ),
+                                  );
+                                },
                               );
                             },
                           ),
@@ -986,10 +1037,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 key: _remindersCardKey,
                                 child: _MiniStatCard(
                                   palette: p,
-                                  label: 'Reminders',
-                                  value: pending == 0
-                                      ? 'None'
-                                      : '$pending pending',
+                                  value: pending == 0 ? '0' : '$pending',
                                   icon: Icons.alarm_rounded,
                                   badgeCount: pending,
                                   badgeColor: p.accent,
@@ -2049,7 +2097,6 @@ class _InfoChip extends StatelessWidget {
 class _MiniStatCard extends StatelessWidget {
   const _MiniStatCard({
     required this.palette,
-    required this.label,
     required this.value,
     required this.icon,
     this.onTap,
@@ -2058,7 +2105,6 @@ class _MiniStatCard extends StatelessWidget {
   });
 
   final _HomePalette palette;
-  final String label;
   final String value;
   final IconData icon;
   final VoidCallback? onTap;
@@ -2123,31 +2169,15 @@ class _MiniStatCard extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.primary.withValues(alpha: 0.7),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+              ),
             ),
           ),
           if (onTap != null)

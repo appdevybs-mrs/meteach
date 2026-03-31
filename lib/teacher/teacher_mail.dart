@@ -288,13 +288,19 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   int _countGroupsForTab(List<_TopicRow> rows, _InboxTabRole tabRole) {
-    final roleRows = rows.where((r) => _matchesTab(tabRole, r)).toList();
+    final roleRows = rows
+        .where((r) => _matchesTab(tabRole, r))
+        .where((r) => !r.isHomework)
+        .toList();
     final grouped = _groupByPeer(roleRows);
     return grouped.length;
   }
 
   int _unreadForTab(List<_TopicRow> rows, _InboxTabRole tabRole) {
-    final roleRows = rows.where((r) => _matchesTab(tabRole, r)).toList();
+    final roleRows = rows
+        .where((r) => _matchesTab(tabRole, r))
+        .where((r) => !r.isHomework)
+        .toList();
     return _sumUnread(roleRows);
   }
 
@@ -882,7 +888,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       );
     }
 
-    final roleRows = allRows.where((r) => _matchesTab(tabRole, r)).toList();
+    final roleRows = allRows
+        .where((r) => _matchesTab(tabRole, r))
+        .where((r) => !r.isHomework)
+        .toList();
     final filtered = _applyFilter(roleRows);
 
     if (filtered.isEmpty) {
@@ -2181,6 +2190,9 @@ class _TopicRow {
     final s = subject.trim().toLowerCase();
     if (s.startsWith('[hw]')) return true;
     if (s.contains('homework')) return true;
+    final lm = lastMessage.trim().toLowerCase();
+    if (lm.startsWith('homework')) return true;
+    if (lm.contains('homework')) return true;
     return false;
   }
 
