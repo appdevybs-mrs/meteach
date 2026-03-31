@@ -476,6 +476,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
 
       if (m['deletedAt'] != null) return;
+      if (_isHomeworkThreadMeta(m)) return;
 
       final unread = _toInt(m['unreadCount']);
       total += unread;
