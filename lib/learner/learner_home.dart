@@ -39,6 +39,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuIconKey = GlobalKey();
   final GlobalKey _drawerCoursesKey = GlobalKey();
+  final GlobalKey _drawerGalleryKey = GlobalKey();
   final GlobalKey _drawerGamesKey = GlobalKey();
   final GlobalKey _drawerCoachKey = GlobalKey();
   final GlobalKey _drawerStoriesKey = GlobalKey();
@@ -204,6 +205,22 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
     addIfVisible(
       LearnerTourHint(
+        title: 'القصص',
+        line: 'يحتوي هذا القسم على القصص للقراءة والاستماع والمشاهدة.',
+        targetKey: _drawerStoriesKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'المعرض',
+        line: 'من هنا يمكنك مشاهدة صورك وملفاتك في المعرض.',
+        targetKey: _drawerGalleryKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
         title: 'الألعاب',
         line: 'يخصص هذا القسم للتدريب التعليمي بطريقة تفاعلية.',
         targetKey: _drawerGamesKey,
@@ -220,9 +237,9 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
     addIfVisible(
       LearnerTourHint(
-        title: 'القصص',
-        line: 'يحتوي هذا القسم على القصص للقراءة والاستماع والمشاهدة.',
-        targetKey: _drawerStoriesKey,
+        title: 'البريد',
+        line: 'يتيح لك هذا القسم متابعة الرسائل والمحادثات مع المعلمين.',
+        targetKey: _drawerMailKey,
         highlightShape: AppTourHighlightShape.roundedRectangle,
       ),
     );
@@ -231,14 +248,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         title: 'الملف الشخصي',
         line: 'من هذا القسم يمكنك مراجعة بياناتك الشخصية وصورتك.',
         targetKey: _drawerProfileKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'البريد',
-        line: 'يتيح لك هذا القسم متابعة الرسائل والمحادثات مع المعلمين.',
-        targetKey: _drawerMailKey,
         highlightShape: AppTourHighlightShape.roundedRectangle,
       ),
     );
@@ -491,6 +500,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         displayNameFuture: _displayNameFuture,
         profilePhotoFuture: _profilePhotoFuture,
         coursesTileKey: _drawerCoursesKey,
+        galleryTileKey: _drawerGalleryKey,
         gamesTileKey: _drawerGamesKey,
         coachTileKey: _drawerCoachKey,
         storiesTileKey: _drawerStoriesKey,
@@ -503,6 +513,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
         onOpenMail: () => _pushScreen(LearnerMailScreen()),
         onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
+        onOpenGallery: () => _pushScreen(const LearnerGalleryScreen()),
         onOpenStories: _openStoriesScreen,
         onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
         onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
@@ -1471,19 +1482,24 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
         final variantKey = resolveCourseDeliveryKey(course);
         final isPrivateOnline = isPrivateOnlineCourse(course);
+        final isScheduledVariant =
+            variantKey == 'private' || variantKey == 'inclass';
 
-        String scheduleLine = '';
+        String scheduleLine = variantKey == 'recorded'
+            ? 'On-demand'
+            : (variantKey == 'flexible'
+                  ? 'Flexible booking'
+                  : 'Schedule: not set');
         int nextStartMs = 0;
         int sessionDurationMinutes = 60;
         String meetUrl = '';
+        Map<String, dynamic> classNode = <String, dynamic>{};
+        final cls = (course['class'] is Map)
+            ? Map<String, dynamic>.from(course['class'] as Map)
+            : <String, dynamic>{};
 
-        if (isPrivateOnline) {
-          final cls = (course['class'] is Map)
-              ? Map<String, dynamic>.from(course['class'] as Map)
-              : <String, dynamic>{};
-
+        if (isScheduledVariant) {
           final classId = (cls['class_id'] ?? '').toString().trim();
-          Map<String, dynamic> classNode = <String, dynamic>{};
           if (classId.isNotEmpty) {
             try {
               final cs = await _db.child('classes/$classId').get();
@@ -1506,7 +1522,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               sessionDurationMinutes = next.durationMinutes;
             }
           }
+        }
 
+        if (isPrivateOnline) {
           String teacherUid =
               (classNode['teacherUid'] ??
                       classNode['teacher_uid'] ??
@@ -1584,7 +1602,20 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         );
       }
 
-      out.sort((a, b) => b.progress.compareTo(a.progress));
+      out.sort((a, b) {
+        final aHasNext = a.nextStartMs > 0;
+        final bHasNext = b.nextStartMs > 0;
+        if (aHasNext != bHasNext) return aHasNext ? -1 : 1;
+
+        if (aHasNext && bHasNext) {
+          final byNext = a.nextStartMs.compareTo(b.nextStartMs);
+          if (byNext != 0) return byNext;
+        }
+
+        final byProgress = b.progress.compareTo(a.progress);
+        if (byProgress != 0) return byProgress;
+        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      });
       return out;
     } catch (_) {
       return [];
@@ -2202,6 +2233,28 @@ class _ProgressCard extends StatelessWidget {
     }
   }
 
+  String _schedulePreviewText(_CourseProgressItem item) {
+    final line = item.scheduleLine.trim();
+    if (line.isNotEmpty) return line;
+
+    switch (item.variantKey) {
+      case 'recorded':
+        return 'Schedule: On-demand';
+      case 'flexible':
+      case 'online':
+        return 'Schedule: Flexible booking';
+      case 'private':
+      case 'live':
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return 'Schedule: not set';
+      default:
+        return 'Schedule: -';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final percentText = (item.progress * 100).round();
@@ -2333,20 +2386,18 @@ class _ProgressCard extends StatelessWidget {
                       fontSize: compact ? 10 : 11,
                     ),
                   ),
-                  if (item.isPrivateOnline) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      item.scheduleLine.trim().isEmpty
-                          ? 'Schedule: not set'
-                          : item.scheduleLine,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.text.withValues(alpha: 0.64),
-                        fontWeight: FontWeight.w700,
-                        fontSize: compact ? 9 : 10,
-                      ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _schedulePreviewText(item),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.text.withValues(alpha: 0.64),
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 9 : 10,
                     ),
+                  ),
+                  if (item.isPrivateOnline) ...[
                     const SizedBox(height: 8),
                     StreamBuilder<int>(
                       stream: Stream.periodic(
@@ -4795,6 +4846,7 @@ class _LearnerDrawer extends StatelessWidget {
     required this.displayNameFuture,
     required this.profilePhotoFuture,
     required this.coursesTileKey,
+    required this.galleryTileKey,
     required this.gamesTileKey,
     required this.coachTileKey,
     required this.storiesTileKey,
@@ -4807,6 +4859,7 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenProfile,
     required this.onOpenMail,
     required this.onOpenCourses,
+    required this.onOpenGallery,
     required this.onOpenStories,
     required this.onOpenGames,
     required this.onOpenStudyCoach,
@@ -4820,6 +4873,7 @@ class _LearnerDrawer extends StatelessWidget {
   final Future<String>? displayNameFuture;
   final Future<String>? profilePhotoFuture;
   final GlobalKey coursesTileKey;
+  final GlobalKey galleryTileKey;
   final GlobalKey gamesTileKey;
   final GlobalKey coachTileKey;
   final GlobalKey storiesTileKey;
@@ -4832,6 +4886,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenCourses;
+  final VoidCallback onOpenGallery;
   final VoidCallback onOpenStories;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStudyCoach;
@@ -4939,6 +4994,27 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
+                    targetKey: storiesTileKey,
+                    palette: palette,
+                    icon: Icons.auto_stories_rounded,
+                    title: 'Stories',
+                    subtitle: 'Read, listen, and watch stories',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenStories();
+                    },
+                  ),
+                  _DrawerTile(
+                    targetKey: galleryTileKey,
+                    palette: palette,
+                    icon: Icons.photo_library_rounded,
+                    title: 'Gallery',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGallery();
+                    },
+                  ),
+                  _DrawerTile(
                     targetKey: gamesTileKey,
                     palette: palette,
                     icon: Icons.sports_esports_rounded,
@@ -4961,14 +5037,13 @@ class _LearnerDrawer extends StatelessWidget {
                   ),
 
                   _DrawerTile(
-                    targetKey: storiesTileKey,
+                    targetKey: mailTileKey,
                     palette: palette,
-                    icon: Icons.auto_stories_rounded,
-                    title: 'Stories',
-                    subtitle: 'Read, listen, and watch stories',
+                    icon: Icons.mail_rounded,
+                    title: 'Mail',
                     onTap: () {
                       Navigator.of(context).pop();
-                      onOpenStories();
+                      onOpenMail();
                     },
                   ),
 
@@ -4980,16 +5055,6 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenProfile();
-                    },
-                  ),
-                  _DrawerTile(
-                    targetKey: mailTileKey,
-                    palette: palette,
-                    icon: Icons.mail_rounded,
-                    title: 'Mail',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenMail();
                     },
                   ),
                   _DrawerTile(

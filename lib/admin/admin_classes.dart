@@ -28,10 +28,12 @@
 //    - Keeps ALL existing create/edit/delete/status/schedule/sync logic intact.
 //
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -56,10 +58,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   late final DatabaseReference _classesRef = _db.child(classesNode);
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
-  // ✅ Always-visible notifications (even above modals)
-  final GlobalKey<ScaffoldMessengerState> _messengerKey =
-      GlobalKey<ScaffoldMessengerState>();
-
   // ===== Courses cache =====
   bool _loadingCourses = true;
   List<Map<String, dynamic>> _courses = [];
@@ -77,6 +75,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   Map<String, String> _teacherUidByName = {}; // normalizedFullName -> uid
   // ✅ Cache progress per class (so list scrolling is smooth)
   final Map<String, _ClassProg> _classProgCache = {};
+  final Map<String, int> _syllabusSessionCountCache = <String, int>{};
+  final Set<String> _progressRequestedClassIds = <String>{};
   List<Map<String, String>> get _teachers {
     final list = _teachersByUid.values.toList();
     list.sort((a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""));
@@ -86,6 +86,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ===== Search =====
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = "";
+  Timer? _searchDebounce;
 
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
@@ -114,13 +115,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     _loadAllLearners();
 
     _searchCtrl.addListener(() {
-      if (!mounted) return;
-      setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+      });
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -129,36 +134,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   void _notify(String msg, {bool error = false}) {
     if (!mounted) return;
-
-    final ms = _messengerKey.currentState;
-    if (ms == null) return;
-
-    ms.clearMaterialBanners();
-    ms.showMaterialBanner(
-      MaterialBanner(
-        backgroundColor: error
-            ? Colors.red.withValues(alpha: 0.08)
-            : Colors.black.withValues(alpha: 0.06),
-        content: Text(
-          error ? humanizeUiMessage(msg) : msg,
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: error ? Colors.red.shade800 : Colors.black87,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => ms.clearMaterialBanners(),
-            child: const Text("OK"),
-          ),
-        ],
-      ),
+    AppToast.show(
+      context,
+      error ? humanizeUiMessage(msg) : msg,
+      type: error ? AppToastType.error : AppToastType.info,
     );
-
-    Future.delayed(const Duration(seconds: 3), () {
-      if (!mounted) return;
-      _messengerKey.currentState?.clearMaterialBanners();
-    });
   }
 
   // -------------------- Utilities --------------------
@@ -888,6 +868,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       currentClassId: currentClassId,
     );
     String q = "";
+    Timer? pickerSearchDebounce;
 
     await showDialog(
       context: context,
@@ -934,8 +915,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         prefixIcon: Icon(Icons.search),
                         hintText: "Search by name or serial",
                       ),
-                      onChanged: (v) =>
-                          setDState(() => q = v.trim().toLowerCase()),
+                      onChanged: (v) {
+                        pickerSearchDebounce?.cancel();
+                        pickerSearchDebounce = Timer(
+                          const Duration(milliseconds: 250),
+                          () {
+                            if (!context.mounted) return;
+                            setDState(() => q = v.trim().toLowerCase());
+                          },
+                        );
+                      },
                     ),
                     const SizedBox(height: 10),
                     Expanded(
@@ -1045,6 +1034,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         );
       },
     );
+
+    pickerSearchDebounce?.cancel();
   }
 
   // -------------------- Full Create/Edit Bottom Sheet --------------------
@@ -1955,30 +1946,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     final syllabusVariant = syllabusVariantForScheduledAttendance(rawVariant);
 
     // 1) total sessions from syllabi/<course_id> (same as Teacher screen)
-    int totalSessions = 0;
-
-    if (courseId.isNotEmpty) {
-      var sSnap = await _syllabiRef
-          .child(courseId)
-          .child(syllabusVariant)
-          .get();
-      if ((!sSnap.exists || sSnap.value is! Map) &&
-          syllabusVariant == 'private') {
-        sSnap = await _syllabiRef.child(courseId).child('inclass').get();
-      }
-      if (sSnap.exists && sSnap.value is Map) {
-        final s = Map<String, dynamic>.from(sSnap.value as Map);
-        final units = s["units"];
-        if (units is List) {
-          for (final u in units) {
-            if (u is! Map) continue;
-            final unit = Map<String, dynamic>.from(u);
-            final sessions = unit["sessions"];
-            if (sessions is List) totalSessions += sessions.length;
-          }
-        }
-      }
-    }
+    int totalSessions = await _loadSyllabusSessionCount(
+      courseId: courseId,
+      syllabusVariant: syllabusVariant,
+    );
 
     // Fallback: if syllabus missing, use schedule.sessions_count
     if (totalSessions <= 0) {
@@ -2042,6 +2013,40 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     _classProgCache[classId] = prog;
     return prog;
+  }
+
+  Future<int> _loadSyllabusSessionCount({
+    required String courseId,
+    required String syllabusVariant,
+  }) async {
+    if (courseId.isEmpty) return 0;
+
+    final key = '$courseId|$syllabusVariant';
+    final cached = _syllabusSessionCountCache[key];
+    if (cached != null) return cached;
+
+    int totalSessions = 0;
+    var sSnap = await _syllabiRef.child(courseId).child(syllabusVariant).get();
+    if ((!sSnap.exists || sSnap.value is! Map) &&
+        syllabusVariant == 'private') {
+      sSnap = await _syllabiRef.child(courseId).child('inclass').get();
+    }
+
+    if (sSnap.exists && sSnap.value is Map) {
+      final s = Map<String, dynamic>.from(sSnap.value as Map);
+      final units = s['units'];
+      if (units is List) {
+        for (final u in units) {
+          if (u is! Map) continue;
+          final unit = Map<String, dynamic>.from(u);
+          final sessions = unit['sessions'];
+          if (sessions is List) totalSessions += sessions.length;
+        }
+      }
+    }
+
+    _syllabusSessionCountCache[key] = totalSessions;
+    return totalSessions;
   }
   // -------------------- Classes List UI --------------------
 
@@ -2323,65 +2328,83 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   ),
                                 ),
 
-                                // ✅ NEW: class progress bar
                                 const SizedBox(height: 10),
-                                FutureBuilder<_ClassProg>(
-                                  future: id.isEmpty
-                                      ? Future.value(_ClassProg.zero())
-                                      : _loadClassProgress(id, cls),
-                                  builder: (context, snapP) {
-                                    final p = snapP.data ?? _ClassProg.zero();
-                                    final pct = p.percent.clamp(0, 100);
+                                if (id.isNotEmpty &&
+                                    !_progressRequestedClassIds.contains(id))
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _progressRequestedClassIds.add(id);
+                                        });
+                                      },
+                                      icon: const Icon(
+                                        Icons.insights_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Load progress'),
+                                    ),
+                                  )
+                                else
+                                  FutureBuilder<_ClassProg>(
+                                    future: id.isEmpty
+                                        ? Future.value(_ClassProg.zero())
+                                        : _loadClassProgress(id, cls),
+                                    builder: (context, snapP) {
+                                      final p = snapP.data ?? _ClassProg.zero();
+                                      final pct = p.percent.clamp(0, 100);
 
-                                    final totalLabel = p.totalSessions <= 0
-                                        ? "-"
-                                        : p.totalSessions.toString();
+                                      final totalLabel = p.totalSessions <= 0
+                                          ? "-"
+                                          : p.totalSessions.toString();
 
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.insights_rounded,
-                                              size: 16,
-                                              color: Colors.deepOrange,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                "Progress: $pct% • ${p.coveredCount}/$totalLabel covered • Attendance records: ${p.sessionsHeld}",
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade800,
-                                                  fontWeight: FontWeight.w800,
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.insights_rounded,
+                                                size: 16,
+                                                color: Colors.deepOrange,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  "Progress: $pct% • ${p.coveredCount}/$totalLabel covered • Attendance records: ${p.sessionsHeld}",
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade800,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
                                                 ),
                                               ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              999,
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            999,
+                                            child: LinearProgressIndicator(
+                                              value: p.totalSessions <= 0
+                                                  ? 0
+                                                  : (p.coveredCount /
+                                                            p.totalSessions)
+                                                        .clamp(0, 1),
+                                              minHeight: 8,
+                                              backgroundColor: Colors.black
+                                                  .withValues(alpha: 0.06),
+                                            ),
                                           ),
-                                          child: LinearProgressIndicator(
-                                            value: p.totalSessions <= 0
-                                                ? 0
-                                                : (p.coveredCount /
-                                                          p.totalSessions)
-                                                      .clamp(0, 1),
-                                            minHeight: 8,
-                                            backgroundColor: Colors.black
-                                                .withValues(alpha: 0.06),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
+                                        ],
+                                      );
+                                    },
+                                  ),
                                 const SizedBox(height: 12),
                                 Wrap(
                                   spacing: 8,
@@ -2462,32 +2485,29 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       line: 'هذه الشاشة تعرض كل الصفوف وتسمح باضافة صف جديد او تعديل صف موجود.',
     );
 
-    return ScaffoldMessenger(
-      key: _messengerKey,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Classes'),
-          actions: [
-            IconButton(
-              tooltip: 'Help / Instructions',
-              icon: const Icon(Icons.help_outline_rounded),
-              onPressed: () => ScreenHelpGuide.show(
-                context,
-                role: GuideRole.admin,
-                screenId: 'admin_classes',
-                screenTitle: 'Classes',
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Classes'),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_classes',
+              screenTitle: 'Classes',
             ),
-          ],
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: _buildClassesList(),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _openClassEditor(existingClass: null),
-          child: const Icon(Icons.add),
-        ),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _buildClassesList(),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _openClassEditor(existingClass: null),
+        child: const Icon(Icons.add),
       ),
     );
   }

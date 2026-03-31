@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -39,8 +40,24 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   String _search = '';
   String? _selectedMonthYyyyMm;
   final Set<String> _selectedPaymentIds = {};
+  Timer? _searchDebounce;
+  bool _isBulkDeleting = false;
 
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() => _search = value);
+    });
+  }
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -321,6 +338,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     required int sessionsPaid,
     required int totalSessions,
     required int durationMonths,
+    required int expiryMonths,
   }) {
     final pricePerMonth = _asInt(course['price_per_month']);
     final pricePerLevel = _asInt(course['price_per_level']);
@@ -334,7 +352,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       if (v == 'recorded')
         return cfgFee * (durationMonths > 0 ? durationMonths : 1);
       if (v == 'flexible')
-        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
+        return cfgFee * (expiryMonths > 0 ? expiryMonths : 1);
       if (sessionsPaid > 0) return cfgFee * sessionsPaid;
     }
 
@@ -343,6 +361,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         return pricePerMonth * durationMonths;
       }
       return 0;
+    }
+
+    if (v == 'flexible') {
+      if (pricePerMonth > 0 && expiryMonths > 0) {
+        return pricePerMonth * expiryMonths;
+      }
+      if (pricePerMonth > 0) return pricePerMonth;
     }
 
     if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
@@ -1258,6 +1283,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
         int selectedTotal = 0;
         int selectedCount = 0;
+        final selectedVisiblePayments = <Map<String, dynamic>>[];
         if (_selectedPaymentIds.isNotEmpty) {
           final visibleById = <String, Map<String, dynamic>>{};
           for (final p in visible) {
@@ -1272,6 +1298,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             } else {
               selectedCount++;
               selectedTotal += _asInt(p['amount']);
+              selectedVisiblePayments.add(p);
             }
           }
 
@@ -1284,6 +1311,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             });
           }
         }
+
+        final visibleIds = visible
+            .map((p) => (p['paymentId'] ?? '').toString().trim())
+            .where((id) => id.isNotEmpty)
+            .toList();
+        final allVisibleSelected =
+            visibleIds.isNotEmpty &&
+            visibleIds.every((id) => _selectedPaymentIds.contains(id));
 
         final todayPill = _Pill(
           icon: Icons.today_rounded,
@@ -1345,7 +1380,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 color: Colors.white,
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 child: TextField(
-                  onChanged: (v) => setState(() => _search = v),
+                  onChanged: _onSearchChanged,
                   decoration: InputDecoration(
                     hintText:
                         'Search: learner, serial, variant, teacher, course, notes, dates…',
@@ -1417,6 +1452,64 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           onPressed: () =>
                               setState(() => _selectedPaymentIds.clear()),
                           icon: const Icon(Icons.close, size: 18),
+                        ),
+                        IconButton(
+                          tooltip: allVisibleSelected
+                              ? 'Unselect all visible'
+                              : 'Select all visible',
+                          onPressed: () {
+                            setState(() {
+                              if (allVisibleSelected) {
+                                _selectedPaymentIds.removeAll(visibleIds);
+                              } else {
+                                _selectedPaymentIds.addAll(visibleIds);
+                              }
+                            });
+                          },
+                          icon: Icon(
+                            allVisibleSelected
+                                ? Icons.check_box_rounded
+                                : Icons.check_box_outline_blank_rounded,
+                            size: 20,
+                            color: AdminPaymentsScreen.primaryBlue,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Delete selected',
+                          onPressed: _isBulkDeleting
+                              ? null
+                              : () => _deleteSelectedPayments(
+                                  selectedVisiblePayments,
+                                ),
+                          icon: const Icon(
+                            Icons.delete_forever_rounded,
+                            size: 20,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
+                      if (selectedCount == 0 && visibleIds.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: allVisibleSelected
+                              ? 'Unselect all visible'
+                              : 'Select all visible',
+                          onPressed: () {
+                            setState(() {
+                              if (allVisibleSelected) {
+                                _selectedPaymentIds.removeAll(visibleIds);
+                              } else {
+                                _selectedPaymentIds.addAll(visibleIds);
+                              }
+                            });
+                          },
+                          icon: Icon(
+                            allVisibleSelected
+                                ? Icons.check_box_rounded
+                                : Icons.check_box_outline_blank_rounded,
+                            size: 20,
+                            color: AdminPaymentsScreen.primaryBlue,
+                          ),
                         ),
                       ],
                       const SizedBox(width: 6),
@@ -1738,6 +1831,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     String? selectedTeacherName;
 
     bool isSaving = false;
+    bool saveLocked = false;
 
     Future<void> loadCourseAndDefaults() async {
       if (pickedCourseId == null || pickedCourseId!.trim().isEmpty) return;
@@ -1791,6 +1885,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         sessionsPaid: sessionsPaid,
         totalSessions: totalSessions,
         durationMonths: durationMonths,
+        expiryMonths: expiryMonths,
       ).toString();
 
       if (!_variantUsesTeacher(pickedVariantKey)) {
@@ -2101,6 +2196,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             sessionsPaid: sessionsPaid,
                             totalSessions: totalSessions,
                             durationMonths: durationMonths,
+                            expiryMonths: expiryMonths,
                           ).toString();
 
                           if (usesReminder) {
@@ -2135,7 +2231,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         value: expiryMonths,
                         min: 1,
                         max: 12,
-                        onChanged: (v) => setD(() => expiryMonths = v),
+                        onChanged: (v) {
+                          expiryMonths = v;
+                          amountC.text = _defaultAmountForVariant(
+                            variantKey: pickedVariantKey,
+                            course: pickedCourse,
+                            sessionsPaid: sessionsPaid,
+                            totalSessions: totalSessions,
+                            durationMonths: durationMonths,
+                            expiryMonths: expiryMonths,
+                          ).toString();
+                          setD(() {});
+                        },
                       ),
                       const SizedBox(height: 10),
                       _InfoLine(
@@ -2161,6 +2268,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             sessionsPaid: sessionsPaid,
                             totalSessions: totalSessions,
                             durationMonths: durationMonths,
+                            expiryMonths: expiryMonths,
                           ).toString();
                           setD(() {});
                         },
@@ -2214,24 +2322,30 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 onPressed: isSaving
                     ? null
                     : () async {
+                        if (saveLocked) return;
+                        saveLocked = true;
                         if (pickedUid == null) {
+                          saveLocked = false;
                           _toast('Pick learner first.');
                           return;
                         }
                         if (pickedCourseKey == null ||
                             pickedCourseKey!.trim().isEmpty) {
+                          saveLocked = false;
                           _toast('Pick course.');
                           return;
                         }
 
                         final fee = int.tryParse(amountC.text.trim()) ?? 0;
                         if (fee <= 0) {
+                          saveLocked = false;
                           _toast('Fee must be > 0');
                           return;
                         }
 
                         final paidAtMs = _ymdToMs(paidDateYmd);
                         if (paidAtMs <= 0) {
+                          saveLocked = false;
                           _toast('Invalid paid date.');
                           return;
                         }
@@ -2280,6 +2394,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           );
                           if (dup) {
                             setD(() => isSaving = false);
+                            saveLocked = false;
                             _toast('Duplicate payment blocked ✅');
                             return;
                           }
@@ -2382,6 +2497,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           if (context.mounted) Navigator.pop(context);
                           _toast('Payment saved ✅');
                         } catch (e) {
+                          saveLocked = false;
                           setD(() => isSaving = false);
                           _toast(toHumanError(e));
                         }
@@ -2452,6 +2568,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     if (selectedTeacherName.isEmpty) selectedTeacherName = null;
 
     bool isSaving = false;
+    bool saveLocked = false;
 
     await showDialog<void>(
       context: context,
@@ -2640,14 +2757,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 onPressed: isSaving
                     ? null
                     : () async {
+                        if (saveLocked) return;
+                        saveLocked = true;
                         final fee = int.tryParse(amountC.text.trim()) ?? 0;
                         if (fee <= 0) {
+                          saveLocked = false;
                           _toast('Fee must be > 0');
                           return;
                         }
 
                         final paidAtMs = _ymdToMs(paidDateYmd);
                         if (paidAtMs <= 0) {
+                          saveLocked = false;
                           _toast('Invalid paid date.');
                           return;
                         }
@@ -2721,6 +2842,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           if (context.mounted) Navigator.pop(context);
                           _toast('Updated ✅');
                         } catch (e) {
+                          saveLocked = false;
                           setD(() => isSaving = false);
                           _toast(toHumanError(e));
                         }
@@ -2735,6 +2857,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   }
 
   Future<void> _deletePayment(Map<String, dynamic> p) async {
+    if (_isBulkDeleting) return;
     final paymentId = (p['paymentId'] ?? '').toString();
     if (paymentId.isEmpty) return;
 
@@ -2789,6 +2912,109 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       setState(() => _selectedPaymentIds.remove(paymentId));
       _toast('Deleted ✅');
     } catch (e) {
+      _toast(toHumanError(e));
+    }
+  }
+
+  Future<void> _deleteSelectedPayments(
+    List<Map<String, dynamic>> selectedPayments,
+  ) async {
+    if (_isBulkDeleting) return;
+    if (selectedPayments.isEmpty) {
+      _toast('No selected payments to delete.');
+      return;
+    }
+
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete selected payments?'),
+            content: Text(
+              'This will delete ${selectedPayments.length} payment record(s) and rebuild learner payment data.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete all'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    if (!mounted) return;
+    setState(() => _isBulkDeleting = true);
+
+    try {
+      final idsToDelete = <String>{};
+      final updates = <String, dynamic>{};
+      final pairVariants = <String, Set<String>>{};
+
+      for (final p in selectedPayments) {
+        final paymentId = (p['paymentId'] ?? '').toString().trim();
+        if (paymentId.isEmpty) continue;
+        idsToDelete.add(paymentId);
+        updates[paymentId] = null;
+
+        final uid = (p['uid'] ?? '').toString().trim();
+        final courseKey = (p['courseKey'] ?? '').toString().trim();
+        if (uid.isEmpty || courseKey.isEmpty) continue;
+        final pairKey = '$uid|$courseKey';
+        pairVariants
+            .putIfAbsent(pairKey, () => <String>{})
+            .add(_normalizeVariantKey((p['variantKey'] ?? '').toString()));
+      }
+
+      if (updates.isEmpty) {
+        if (mounted) {
+          setState(() => _isBulkDeleting = false);
+        }
+        _toast('No valid selected payments to delete.');
+        return;
+      }
+
+      await _paymentsRef.update(updates);
+
+      for (final entry in pairVariants.entries) {
+        final sep = entry.key.indexOf('|');
+        if (sep <= 0 || sep >= entry.key.length - 1) continue;
+        final uid = entry.key.substring(0, sep);
+        final courseKey = entry.key.substring(sep + 1);
+        if (uid.isEmpty || courseKey.isEmpty) continue;
+
+        await _rebuildLearnerSummaryFromPayments(
+          uid: uid,
+          courseKey: courseKey,
+        );
+
+        for (final variantKey in entry.value) {
+          if (!_variantUsesExpiry(variantKey)) continue;
+          await _rebuildVariantAccessFromPayments(
+            uid: uid,
+            courseKey: courseKey,
+            variantKey: variantKey,
+          );
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedPaymentIds.removeAll(idsToDelete);
+        _isBulkDeleting = false;
+      });
+      _toast('Deleted ${idsToDelete.length} payment(s) ✅');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isBulkDeleting = false);
+      }
       _toast(toHumanError(e));
     }
   }

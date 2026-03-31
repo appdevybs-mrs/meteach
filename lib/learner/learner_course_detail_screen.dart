@@ -158,6 +158,40 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     }
   }
 
+  static int? _tryParseYmdHmToMillis(String ymd, String hm) {
+    final base = _tryParseYmdToMillis(ymd);
+    if (base == null) return null;
+
+    final parts = hm.trim().split(':');
+    if (parts.length < 2) return base;
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+
+    final d = DateTime.fromMillisecondsSinceEpoch(base);
+    return DateTime(d.year, d.month, d.day, h, m).millisecondsSinceEpoch;
+  }
+
+  static int? _tryParseDateTimeTextToMillis(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return null;
+
+    final direct = DateTime.tryParse(t);
+    if (direct != null) return direct.millisecondsSinceEpoch;
+
+    final normalized = t.replaceAll('  ', ' ');
+    final secondTry = DateTime.tryParse(normalized);
+    if (secondTry != null) return secondTry.millisecondsSinceEpoch;
+
+    final pieces = normalized.split(' ');
+    if (pieces.length >= 2) {
+      final ymd = pieces[0].trim();
+      final hm = pieces[1].trim();
+      return _tryParseYmdHmToMillis(ymd, hm);
+    }
+
+    return _tryParseYmdToMillis(normalized);
+  }
+
   static String _fmtMoney(int v) {
     final s = v.toString();
     final buf = StringBuffer();
@@ -360,6 +394,53 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
     if (parts.isEmpty) return 'Schedule: not set';
     return 'Schedule: ${parts.join(' • ')}';
+  }
+
+  String _compactScheduleText() {
+    if (_deliveryKey == 'recorded') return 'Schedule: On-demand';
+    if (_deliveryKey == 'flexible') return 'Schedule: Flexible booking';
+
+    final scheduleRaw = _cls['schedule'];
+    if (scheduleRaw is Map) {
+      final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
+      return _weeklyScheduleLine(schedule['sessions']);
+    }
+
+    if (_deliveryKey == 'private' || _deliveryKey == 'inclass') {
+      return 'Schedule: not set';
+    }
+    return 'Schedule: -';
+  }
+
+  String _compactNextSessionText() {
+    final scheduleRaw = _cls['schedule'];
+    if (scheduleRaw is! Map) return '';
+    final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
+    final next = _nextOccurrenceFromSchedule(schedule);
+    if (next == null) return '';
+    return 'Next: ${_fmtDateTimeFromMs(next.start.millisecondsSinceEpoch)}';
+  }
+
+  int _attendanceSortMsFromRecord(Map<String, dynamic> rec) {
+    final startAt = _asInt(rec['startAt']);
+    if (startAt > 0) return startAt;
+
+    final dateRaw = (rec['date'] ?? rec['dayKey'] ?? '').toString().trim();
+    final timeRaw = (rec['time'] ?? '').toString().trim();
+
+    int? parsed;
+    if (dateRaw.isNotEmpty && timeRaw.isNotEmpty) {
+      parsed = _tryParseYmdHmToMillis(dateRaw, timeRaw);
+    }
+    parsed ??= _tryParseDateTimeTextToMillis(dateRaw);
+    if (parsed != null && parsed > 0) return parsed;
+
+    final createdAt = rec['createdAt'] ?? rec['created_at'];
+    if (createdAt is num) return createdAt.toInt();
+    final updatedAt = rec['updatedAt'];
+    if (updatedAt is num) return updatedAt.toInt();
+
+    return 0;
   }
 
   int _weekdayFromShort(String day) {
@@ -937,18 +1018,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             taughtSummary = (taughtOld['title'] ?? '').toString().trim();
           }
 
-          // sort key (best effort)
-          int sortMs = 0;
-          final updatedAt = rec['updatedAt'];
-          final createdAt = rec['createdAt'] ?? rec['created_at'];
-          if (updatedAt is num) {
-            sortMs = updatedAt.toInt();
-          } else if (createdAt is num)
-            sortMs = createdAt.toInt();
-          else {
-            final dateStr = (rec['date'] ?? '').toString();
-            sortMs = _tryParseYmdToMillis(dateStr) ?? 0;
-          }
+          final sortMs = _attendanceSortMsFromRecord(rec);
 
           attList.add({
             'source': 'in_class',
@@ -1465,6 +1535,50 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: UiK.uiBorder.withValues(alpha: 0.85),
+                    ),
+                    color: UiK.primaryBlue.withValues(alpha: 0.04),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule_rounded,
+                            size: 16,
+                            color: UiK.primaryBlue,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _compactScheduleText(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: UiK.subtleText(),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_compactNextSessionText().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _compactNextSessionText(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: UiK.subtleText(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
                 if (_isPrivateOnlineCourse && _privateMetaFuture != null)
                   FutureBuilder<_DetailPrivateMeta?>(
                     future: _privateMetaFuture,

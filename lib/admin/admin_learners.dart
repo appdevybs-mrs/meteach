@@ -49,6 +49,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   // UI state
   String _search = '';
   LearnerStatus? _statusFilter; // only used on Users tab
+  Timer? _searchDebounce;
 
   DatabaseReference get _usersRef => _db.ref(_usersPath);
   DatabaseReference get _deletedRef => _db.ref(_deletedPath);
@@ -67,8 +68,17 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _tab.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _search = value);
+    });
   }
 
   void _toast(String msg) {
@@ -329,7 +339,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
             stream: _usersStream,
             search: _search,
             statusFilter: _statusFilter,
-            onSearchChanged: (v) => setState(() => _search = v),
+            onSearchChanged: _onSearchChanged,
             onStatusFilterChanged: (s) => setState(() => _statusFilter = s),
             onEdit: (uid, learner) async {
               final updated = await Navigator.of(context).push<Learner?>(
@@ -385,7 +395,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
             stream: _deletedStream,
             search: _search,
             statusFilter: null,
-            onSearchChanged: (v) => setState(() => _search = v),
+            onSearchChanged: _onSearchChanged,
             onStatusFilterChanged: (_) {},
             actionsBuilder: (_, _) => const [
               PopupMenuItem(value: _RowAction.restore, child: Text('Restore')),
@@ -422,7 +432,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
             stream: _blockedStream,
             search: _search,
             statusFilter: null,
-            onSearchChanged: (v) => setState(() => _search = v),
+            onSearchChanged: _onSearchChanged,
             onStatusFilterChanged: (_) {},
             actionsBuilder: (_, _) => const [
               PopupMenuItem(value: _RowAction.restore, child: Text('Unblock')),
@@ -493,6 +503,15 @@ class _LearnersList extends StatefulWidget {
 
 class _LearnersListState extends State<_LearnersList>
     with AutomaticKeepAliveClientMixin {
+  late final Stream<Map<String, int>> _unreadByLearnerStream;
+  final Map<String, _PayFlag> _payFlagCache = <String, _PayFlag>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _unreadByLearnerStream = _unreadByLearnerMapStream();
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -568,11 +587,9 @@ class _LearnersListState extends State<_LearnersList>
       if (mounted) _toast('Message copied ✅');
     }
 
-    final uri = Uri(
-      scheme: 'sms',
-      path: p,
-      queryParameters: text.isEmpty ? null : {'body': text},
-    );
+    final uri = text.isEmpty
+        ? Uri.parse('sms:$p')
+        : Uri.parse('sms:$p?body=${Uri.encodeComponent(text)}');
 
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -596,34 +613,33 @@ class _LearnersListState extends State<_LearnersList>
 
   String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  Stream<int> _unreadForLearnerStream(String learnerUid) {
-    final q = FirebaseDatabase.instance
-        .ref('mail_index/$_adminUid')
-        .orderByChild('peerUid')
-        .equalTo(learnerUid);
+  Stream<Map<String, int>> _unreadByLearnerMapStream() {
+    final q = FirebaseDatabase.instance.ref('mail_index/$_adminUid');
 
     return q.onValue.map((event) {
       final v = event.snapshot.value;
-      if (v is! Map) return 0;
+      if (v is! Map) return const <String, int>{};
 
-      int sum = 0;
+      int toInt(dynamic x) {
+        if (x is int) return x;
+        if (x is num) return x.toInt();
+        return int.tryParse(x?.toString() ?? '') ?? 0;
+      }
+
+      final out = <String, int>{};
       v.forEach((_, raw) {
         if (raw is! Map) return;
         final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
-
         if (m['deletedAt'] != null) return;
 
-        final uc = m['unreadCount'];
-        int toInt(dynamic x) {
-          if (x is int) return x;
-          if (x is num) return x.toInt();
-          return int.tryParse(x?.toString() ?? '') ?? 0;
-        }
+        final peerUid = (m['peerUid'] ?? '').toString().trim();
+        if (peerUid.isEmpty) return;
 
-        sum += toInt(uc);
+        final unread = toInt(m['unreadCount']);
+        if (unread <= 0) return;
+        out[peerUid] = (out[peerUid] ?? 0) + unread;
       });
-
-      return sum;
+      return out;
     });
   }
 
@@ -647,6 +663,61 @@ class _LearnersListState extends State<_LearnersList>
         ),
       ),
     );
+  }
+
+  Future<void> _loadPayFlagForUid(String uid) async {
+    final key = uid.trim();
+    if (key.isEmpty) return;
+    if (_payFlagCache.containsKey(key)) return;
+
+    try {
+      final snap = await _db.ref('users/$key/courses').get();
+      final v = snap.value;
+      if (v is! Map) {
+        if (!mounted) return;
+        setState(() => _payFlagCache[key] = _PayFlag.noCourse);
+        return;
+      }
+
+      final courseMaps = <Map<String, dynamic>>[];
+      v.forEach((_, courseVal) {
+        if (courseVal is! Map) return;
+        courseMaps.add(
+          courseVal
+              .map((k, vv) => MapEntry(k.toString(), vv))
+              .cast<String, dynamic>(),
+        );
+      });
+
+      _PayFlag best = _PayFlag.ok;
+
+      int rank(_PayFlag f) {
+        switch (f) {
+          case _PayFlag.black:
+            return 4;
+          case _PayFlag.red:
+            return 3;
+          case _PayFlag.yellow:
+            return 2;
+          case _PayFlag.ok:
+            return 1;
+          case _PayFlag.noCourse:
+          default:
+            return 0;
+        }
+      }
+
+      for (final courseMap in courseMaps) {
+        final flag = _variantPaymentFlag(courseMap);
+        if (rank(flag) > rank(best)) best = flag;
+        if (best == _PayFlag.black) break;
+      }
+
+      if (!mounted) return;
+      setState(() => _payFlagCache[key] = best);
+    } catch (_) {
+      // Keep UI responsive; skip flag on transient failures.
+    }
   }
 
   Future<void> _sendLearnerQuickReminder({
@@ -986,59 +1057,6 @@ class _LearnersListState extends State<_LearnersList>
     );
   }
 
-  Widget _withLearnerDueFlag({
-    required String uid,
-    required Widget Function(_PayFlag flag) builder,
-  }) {
-    final coursesRef = _db.ref('users/$uid/courses');
-
-    return StreamBuilder<DatabaseEvent>(
-      stream: coursesRef.onValue,
-      builder: (context, snap) {
-        final v = snap.data?.snapshot.value;
-        if (v is! Map) return builder(_PayFlag.noCourse);
-
-        final courseMaps = <Map<String, dynamic>>[];
-        v.forEach((_, courseVal) {
-          if (courseVal is! Map) return;
-          courseMaps.add(
-            courseVal
-                .map((k, vv) => MapEntry(k.toString(), vv))
-                .cast<String, dynamic>(),
-          );
-        });
-
-        if (courseMaps.isEmpty) return builder(_PayFlag.noCourse);
-
-        _PayFlag best = _PayFlag.ok;
-
-        int rank(_PayFlag f) {
-          switch (f) {
-            case _PayFlag.black:
-              return 4;
-            case _PayFlag.red:
-              return 3;
-            case _PayFlag.yellow:
-              return 2;
-            case _PayFlag.ok:
-              return 1;
-            case _PayFlag.noCourse:
-            default:
-              return 0;
-          }
-        }
-
-        for (final courseMap in courseMaps) {
-          final flag = _variantPaymentFlag(courseMap);
-          if (rank(flag) > rank(best)) best = flag;
-          if (best == _PayFlag.black) break;
-        }
-
-        return builder(best);
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1131,17 +1149,23 @@ class _LearnersListState extends State<_LearnersList>
                 );
               }
 
-              return ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                itemCount: filtered.length,
-                itemBuilder: (context, i) {
-                  final row = filtered[i];
-                  final l = row.learner;
-                  final isExpanded = _expandedUid == row.uid;
+              return StreamBuilder<Map<String, int>>(
+                stream: _unreadByLearnerStream,
+                builder: (context, unreadSnap) {
+                  final unreadByLearner =
+                      unreadSnap.data ?? const <String, int>{};
 
-                  return _withLearnerDueFlag(
-                    uid: row.uid,
-                    builder: (flag) {
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, i) {
+                      final row = filtered[i];
+                      final l = row.learner;
+                      final isExpanded = _expandedUid == row.uid;
+                      final unread = unreadByLearner[row.uid] ?? 0;
+
+                      final flag = _payFlagCache[row.uid] ?? _PayFlag.ok;
+
                       Color avatarBg;
                       Color avatarFg;
 
@@ -1192,9 +1216,13 @@ class _LearnersListState extends State<_LearnersList>
                             InkWell(
                               borderRadius: BorderRadius.circular(16),
                               onTap: () {
+                                final expandTo = isExpanded ? null : row.uid;
                                 setState(() {
-                                  _expandedUid = isExpanded ? null : row.uid;
+                                  _expandedUid = expandTo;
                                 });
+                                if (expandTo != null) {
+                                  _loadPayFlagForUid(row.uid);
+                                }
                               },
                               child: Padding(
                                 padding: const EdgeInsets.all(12),
@@ -1210,34 +1238,26 @@ class _LearnersListState extends State<_LearnersList>
                                             uid: row.uid,
                                             learner: l,
                                           ),
-                                      child: StreamBuilder<int>(
-                                        stream: _unreadForLearnerStream(
-                                          row.uid,
-                                        ),
-                                        builder: (context, snapUnread) {
-                                          final unread = snapUnread.data ?? 0;
-
-                                          return Stack(
-                                            clipBehavior: Clip.none,
-                                            children: [
-                                              ProfileAvatar(
-                                                name: l.fullName,
-                                                photoUrl: l.primaryProfilePhoto,
-                                                radius: 20,
-                                                fallbackBg: avatarBg,
-                                                fallbackFg: avatarFg,
-                                                borderColor: avatarBg
-                                                    .withValues(alpha: 0.45),
-                                              ),
-                                              if (unread > 0)
-                                                Positioned(
-                                                  right: -6,
-                                                  top: -6,
-                                                  child: _badge(unread),
-                                                ),
-                                            ],
-                                          );
-                                        },
+                                      child: Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          ProfileAvatar(
+                                            name: l.fullName,
+                                            photoUrl: l.primaryProfilePhoto,
+                                            radius: 20,
+                                            fallbackBg: avatarBg,
+                                            fallbackFg: avatarFg,
+                                            borderColor: avatarBg.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                          ),
+                                          if (unread > 0)
+                                            Positioned(
+                                              right: -6,
+                                              top: -6,
+                                              child: _badge(unread),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                     const SizedBox(width: 12),
@@ -1411,25 +1431,25 @@ class _LearnersListState extends State<_LearnersList>
                                 ),
                               ),
                             ),
-                            AnimatedCrossFade(
-                              firstChild: const SizedBox.shrink(),
-                              secondChild: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  0,
-                                  12,
-                                  12,
-                                ),
-                                child: _LearnerExpandedTabs(
-                                  uid: row.uid,
-                                  db: _db,
-                                  methods: _methods,
-                                ),
-                              ),
-                              crossFadeState: isExpanded
-                                  ? CrossFadeState.showSecond
-                                  : CrossFadeState.showFirst,
-                              duration: const Duration(milliseconds: 200),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              alignment: Alignment.topCenter,
+                              child: isExpanded
+                                  ? Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        0,
+                                        12,
+                                        12,
+                                      ),
+                                      child: _LearnerExpandedTabs(
+                                        uid: row.uid,
+                                        db: _db,
+                                        methods: _methods,
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
                             ),
                           ],
                         ),
@@ -2531,6 +2551,7 @@ class _LearnerExpandedTabs extends StatefulWidget {
 class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
+  final Set<int> _loadedTabIndexes = <int>{0};
 
   String? _selectedCourseKey;
   Map<String, dynamic> _userCourses = {};
@@ -2538,6 +2559,16 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
   final Set<String> _summaryRepairInFlight = <String>{};
+  final Set<String> _summaryRepairQueued = <String>{};
+
+  final Map<String, Future<DataSnapshot>> _courseSnapFutureCache =
+      <String, Future<DataSnapshot>>{};
+  final Map<String, Future<DataSnapshot>> _paymentSummaryFutureCache =
+      <String, Future<DataSnapshot>>{};
+  final Map<String, Future<DataSnapshot>> _recordedSyllabusFutureCache =
+      <String, Future<DataSnapshot>>{};
+  final Map<String, Future<DataSnapshot>> _classAttendanceFutureCache =
+      <String, Future<DataSnapshot>>{};
 
   static const List<String> _variantKeys = [
     'inclass',
@@ -2553,10 +2584,90 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
   DatabaseReference get _coursesRef => widget.db.ref('courses');
   DatabaseReference get _paymentsRef => widget.db.ref('payments');
 
+  Future<DataSnapshot> _courseSnapshotFuture(String courseId) {
+    final key = courseId.trim();
+    return _courseSnapFutureCache.putIfAbsent(
+      key,
+      () => _coursesRef.child(key).get(),
+    );
+  }
+
+  Future<DataSnapshot> _paymentSummaryFuture(String courseKey) {
+    final key = courseKey.trim();
+    return _paymentSummaryFutureCache.putIfAbsent(
+      key,
+      () => widget.db
+          .ref('users/${widget.uid}/courses/$key/payment_summary')
+          .get(),
+    );
+  }
+
+  Future<DataSnapshot> _recordedSyllabusFuture(String courseId) {
+    final key = courseId.trim();
+    return _recordedSyllabusFutureCache.putIfAbsent(
+      key,
+      () => widget.db.ref('syllabi/$key/recorded').get(),
+    );
+  }
+
+  Future<DataSnapshot> _classAttendanceFuture(String classId) {
+    final key = classId.trim();
+    return _classAttendanceFutureCache.putIfAbsent(
+      key,
+      () => widget.db.ref('classes/$key/attendance').get(),
+    );
+  }
+
+  void _scheduleSummaryRepairIfNeeded({
+    required String courseKey,
+    required int summarySessionsPaidTotal,
+    required int summaryTotalPaid,
+    required int summaryLastPaymentAt,
+    required int summaryLastAmount,
+    required int derivedSessionsPaidTotal,
+    required int derivedTotalPaid,
+    required int derivedLastPaymentAt,
+    required int derivedLastAmount,
+  }) {
+    final mismatch =
+        summarySessionsPaidTotal != derivedSessionsPaidTotal ||
+        summaryTotalPaid != derivedTotalPaid ||
+        summaryLastPaymentAt != derivedLastPaymentAt ||
+        summaryLastAmount != derivedLastAmount;
+    if (!mismatch) {
+      _summaryRepairQueued.remove(courseKey);
+      return;
+    }
+    if (_summaryRepairQueued.contains(courseKey)) return;
+
+    _summaryRepairQueued.add(courseKey);
+    unawaited(
+      _maybeRepairLearnerCourseSummary(
+        courseKey: courseKey,
+        summarySessionsPaidTotal: summarySessionsPaidTotal,
+        summaryTotalPaid: summaryTotalPaid,
+        summaryLastPaymentAt: summaryLastPaymentAt,
+        summaryLastAmount: summaryLastAmount,
+        derivedSessionsPaidTotal: derivedSessionsPaidTotal,
+        derivedTotalPaid: derivedTotalPaid,
+        derivedLastPaymentAt: derivedLastPaymentAt,
+        derivedLastAmount: derivedLastAmount,
+      ).whenComplete(() {
+        _summaryRepairQueued.remove(courseKey);
+      }),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    _tab.addListener(() {
+      if (!mounted || _tab.indexIsChanging) return;
+      setState(() {
+        _loadedTabIndexes.add(_tab.index);
+      });
+    });
   }
 
   @override
@@ -3223,9 +3334,15 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
               return TabBarView(
                 controller: _tab,
                 children: [
-                  _paymentTab(context, keys),
-                  _attendanceTab(context, keys),
-                  _reportTab(context),
+                  _loadedTabIndexes.contains(0)
+                      ? _paymentTab(context, keys)
+                      : const SizedBox.shrink(),
+                  _loadedTabIndexes.contains(1)
+                      ? _attendanceTab(context, keys)
+                      : const SizedBox.shrink(),
+                  _loadedTabIndexes.contains(2)
+                      ? _reportTab(context)
+                      : const SizedBox.shrink(),
                 ],
               );
             },
@@ -3441,7 +3558,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
         return FutureBuilder<DataSnapshot>(
           key: ValueKey('payment-course-$courseId'),
-          future: _coursesRef.child(courseId).get(),
+          future: _courseSnapshotFuture(courseId),
           builder: (context, snap) {
             if (!snap.hasData) {
               return const Padding(
@@ -3463,9 +3580,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
             return FutureBuilder<DataSnapshot>(
               key: ValueKey('payment-sum-$courseKey'),
-              future: widget.db
-                  .ref('users/${widget.uid}/courses/$courseKey/payment_summary')
-                  .get(),
+              future: _paymentSummaryFuture(courseKey),
               builder: (context, sumSnap) {
                 final sumRaw = sumSnap.data?.value;
                 final sum = sumRaw is Map
@@ -3556,28 +3671,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () async {
-                            final ck = _selectedCourseKey!;
-                            final node = (_userCourses[ck] ?? {}) as Map;
-                            final cid = (node['id'] ?? '').toString().trim();
-                            if (cid.isEmpty) return;
-
-                            await PaymentDialogShared.showAddFromLearnerTab(
-                              context: context,
-                              db: widget.db,
-                              uid: widget.uid,
-                              courseKey: ck,
-                              courseId: cid,
-                            );
-                          },
-                          icon: const Icon(Icons.add_card_rounded),
-                          label: const Text('Add payment'),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
@@ -3776,20 +3869,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                               remainingToConsume -= consumed;
                             }
 
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              _maybeRepairLearnerCourseSummary(
-                                courseKey: courseKey,
-                                summarySessionsPaidTotal: sessionsPaidTotal,
-                                summaryTotalPaid: totalPaid,
-                                summaryLastPaymentAt: lastPaymentAt,
-                                summaryLastAmount: lastAmount,
-                                derivedSessionsPaidTotal:
-                                    derivedSessionsPaidTotal,
-                                derivedTotalPaid: derivedTotalPaid,
-                                derivedLastPaymentAt: derivedLastPaymentAt,
-                                derivedLastAmount: derivedLastAmount,
-                              );
-                            });
+                            _scheduleSummaryRepairIfNeeded(
+                              courseKey: courseKey,
+                              summarySessionsPaidTotal: sessionsPaidTotal,
+                              summaryTotalPaid: totalPaid,
+                              summaryLastPaymentAt: lastPaymentAt,
+                              summaryLastAmount: lastAmount,
+                              derivedSessionsPaidTotal:
+                                  derivedSessionsPaidTotal,
+                              derivedTotalPaid: derivedTotalPaid,
+                              derivedLastPaymentAt: derivedLastPaymentAt,
+                              derivedLastAmount: derivedLastAmount,
+                            );
 
                             return ListView.builder(
                               padding: EdgeInsets.zero,
@@ -3970,7 +4061,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
       return FutureBuilder<DataSnapshot>(
         key: ValueKey('recorded-progress-$courseId'),
-        future: widget.db.ref('syllabi/$courseId/recorded').get(),
+        future: _recordedSyllabusFuture(courseId),
         builder: (context, syllabusSnap) {
           if (!syllabusSnap.hasData) {
             return ListView(
@@ -4224,7 +4315,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
       return FutureBuilder<DataSnapshot>(
         key: ValueKey('attendance-course-$courseId'),
-        future: _coursesRef.child(courseId).get(),
+        future: _courseSnapshotFuture(courseId),
         builder: (context, cs) {
           if (!cs.hasData) {
             return ListView(
@@ -4379,7 +4470,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
     return FutureBuilder<DataSnapshot>(
       key: ValueKey('attendance-course-$courseId'),
-      future: _coursesRef.child(courseId).get(),
+      future: _courseSnapshotFuture(courseId),
       builder: (context, cs) {
         if (!cs.hasData) {
           return ListView(
@@ -4401,7 +4492,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
         return FutureBuilder<DataSnapshot>(
           key: ValueKey('class-att-$classId'),
-          future: widget.db.ref('classes/$classId/attendance').get(),
+          future: _classAttendanceFuture(classId),
           builder: (context, classSnap) {
             final classAttendanceRaw = classSnap.data?.value;
             final classSessions = _mapToList(classAttendanceRaw);

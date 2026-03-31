@@ -87,6 +87,7 @@ class ProfileAvatar extends StatelessWidget {
                 fit: BoxFit.cover,
                 filterQuality: FilterQuality.low,
                 cacheWidth: cache,
+                cacheHeight: cache,
                 errorBuilder: (_, _, _) => Container(
                   color: bg,
                   alignment: Alignment.center,
