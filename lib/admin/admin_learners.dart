@@ -1190,11 +1190,18 @@ class _LearnersListState extends State<_LearnersList>
       )) {
         return _PayFlag.red;
       }
-      if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      if (expiresAt > 0 && _isNearExpiryMs(expiresAt, days: 10)) {
+        return _PayFlag.yellow;
+      }
       if (isPaymentWarningBySessions(
         sessionsPaidTotal: effectiveSessionsPaidTotal,
         sessionsPresent: sessionsDone,
-        remindBeforeSession: 1,
+        remindBeforeSession: normalizeReminderForSessions(
+          sessionsPaidTotal: effectiveSessionsPaidTotal,
+          remindBeforeSession: remindBeforeSession > 0
+              ? remindBeforeSession
+              : 2,
+        ),
       )) {
         return _PayFlag.yellow;
       }
@@ -4464,8 +4471,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     final learnerBySid = _attendanceBySessionId(learnerAttendance);
 
     if (classId.isEmpty && _variantIsFlexible(variantKey)) {
-      final learnerSessions = _mapToList(learnerAttendance);
-
       return FutureBuilder<DataSnapshot>(
         key: ValueKey('attendance-course-$courseId'),
         future: _courseSnapshotFuture(courseId),
@@ -4488,123 +4493,166 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             cMap['duration']?.toString() ?? '',
           );
 
-          return ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              _coursePicker(keys),
-              const SizedBox(height: 8),
-              _miniCard(
-                child: Text(
-                  totalSessions > 0
-                      ? 'Flexible attendance: ${learnerSessions.length} / $totalSessions'
-                      : 'Flexible attendance: ${learnerSessions.length}',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (learnerSessions.isEmpty)
-                const _MiniState(text: 'No attendance recorded yet.')
-              else
-                ...learnerSessions.asMap().entries.map((entry) {
-                  final i = entry.key;
-                  final m = entry.value;
-                  final date = (m['date'] ?? '').toString();
-                  final statusRaw = (m['status'] ?? '').toString().trim();
-                  final status = statusRaw.toLowerCase();
-                  final teacher = (m['teacherName'] ?? '').toString();
-                  final taught = m['taught'] is Map
-                      ? (m['taught'] as Map)
-                      : null;
-                  final taughtTitle = taught == null
-                      ? ''
-                      : (taught['title'] ?? '').toString();
+          return FutureBuilder<DataSnapshot>(
+            key: ValueKey('attendance-online-${widget.uid}-$courseId'),
+            future: widget.db
+                .ref(
+                  'booking_progress/${widget.uid}/$courseId/online_attendance',
+                )
+                .get(),
+            builder: (context, progressSnap) {
+              if (!progressSnap.hasData) {
+                return ListView(
+                  padding: EdgeInsets.zero,
+                  children: const [
+                    SizedBox(height: 8),
+                    Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  ],
+                );
+              }
 
-                  Color bar;
-                  Color tint;
+              final onlineRaw = progressSnap.data?.value;
+              final presentRows = <Map<String, dynamic>>[];
+              if (onlineRaw is Map) {
+                onlineRaw.forEach((_, value) {
+                  if (value is! Map) return;
+                  final m = value
+                      .map((k, v) => MapEntry(k.toString(), v))
+                      .cast<String, dynamic>();
+                  if (m['present'] != true) return;
+                  presentRows.add(m);
+                });
+              }
 
-                  if (status == 'present') {
-                    bar = const Color(0xFF157A3D);
-                    tint = const Color(0xFF157A3D).withValues(alpha: 0.08);
-                  } else if (status == 'absent') {
-                    bar = Colors.red;
-                    tint = Colors.red.withValues(alpha: 0.08);
-                  } else {
-                    bar = const Color(0xFF64748B);
-                    tint = const Color(0xFF64748B).withValues(alpha: 0.08);
-                  }
+              int toTs(Map<String, dynamic> m) {
+                final raw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
+                if (raw is int) return raw;
+                if (raw is num) return raw.toInt();
+                return int.tryParse(raw?.toString() ?? '') ?? 0;
+              }
 
-                  final shownStatus = statusRaw.isEmpty
-                      ? 'not registered'
-                      : statusRaw;
+              presentRows.sort((a, b) => toTs(a).compareTo(toTs(b)));
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: tint,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AdminLearnersScreen.uiBorders,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 58,
-                            decoration: BoxDecoration(
-                              color: bar,
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(16),
-                                bottomLeft: Radius.circular(16),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 8,
-                                horizontal: 6,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '#${i + 1}  $date — $shownStatus',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    [
-                                      if (taughtTitle.trim().isNotEmpty)
-                                        taughtTitle,
-                                      if (teacher.trim().isNotEmpty) teacher,
-                                    ].join(' • '),
-                                    style: TextStyle(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.65,
-                                      ),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+              String formatWhen(Map<String, dynamic> m) {
+                final dayKey = (m['dayKey'] ?? '').toString().trim();
+                final time = (m['time'] ?? '').toString().trim();
+                if (dayKey.isNotEmpty && time.isNotEmpty)
+                  return '$dayKey $time';
+                if (dayKey.isNotEmpty) return dayKey;
+
+                final ts = toTs(m);
+                if (ts > 0) {
+                  final d = DateTime.fromMillisecondsSinceEpoch(ts);
+                  final mm = d.month.toString().padLeft(2, '0');
+                  final dd = d.day.toString().padLeft(2, '0');
+                  final hh = d.hour.toString().padLeft(2, '0');
+                  final mi = d.minute.toString().padLeft(2, '0');
+                  return '${d.year}-$mm-$dd $hh:$mi';
+                }
+                return '-';
+              }
+
+              return ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _coursePicker(keys),
+                  const SizedBox(height: 8),
+                  _miniCard(
+                    child: Text(
+                      totalSessions > 0
+                          ? 'Flexible consumed sessions: ${presentRows.length} / $totalSessions'
+                          : 'Flexible consumed sessions: ${presentRows.length}',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                  );
-                }),
-            ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (presentRows.isEmpty)
+                    const _MiniState(
+                      text: 'No present attendance recorded yet.',
+                    )
+                  else
+                    ...presentRows.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final m = entry.value;
+                      final when = formatWhen(m);
+                      final sessionNo = _asInt(m['sessionNo']);
+                      final teacher = (m['teacherName'] ?? '')
+                          .toString()
+                          .trim();
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF157A3D,
+                            ).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AdminLearnersScreen.uiBorders,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 58,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF157A3D),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: Radius.circular(16),
+                                    bottomLeft: Radius.circular(16),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                    horizontal: 6,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '#${i + 1}  Session ${sessionNo <= 0 ? '-' : sessionNo} — present',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        [
+                                          when,
+                                          if (teacher.isNotEmpty)
+                                            'Teacher: $teacher',
+                                        ].join(' • '),
+                                        style: TextStyle(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.65,
+                                          ),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              );
+            },
           );
         },
       );

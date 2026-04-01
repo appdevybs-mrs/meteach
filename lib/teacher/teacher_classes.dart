@@ -2652,14 +2652,9 @@ class _OnlineTakeAttendanceScreenState
           if (cur <= 0) cur = 1;
 
           final confirmedSession = widget.booking.sessionNo;
-          final next = confirmedSession + 1;
+          final next = (cur >= confirmedSession ? cur : confirmedSession) + 1;
 
-          // Safe rule:
-          // only advance if the learner is currently on the exact session
-          // that the teacher is confirming as present.
-          if (cur == confirmedSession) {
-            await curRef.set(next);
-          }
+          await curRef.set(next);
         }
       }
 

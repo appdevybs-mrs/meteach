@@ -10,6 +10,7 @@ import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
 import '../shared/course_join_rules.dart';
+import '../shared/payment_status.dart';
 import '../shared/web_page_frame.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
@@ -63,6 +64,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   // Progress
   int currentSession = 1;
+  int studiedSessionsConsumed = 0;
+
+  String studyMode = 'follow'; // follow | custom
+  int selectedSessionNo = 1;
+  bool lessonsExpanded = false;
 
   // Slots window / schedule
   int daysAhead = 14;
@@ -204,6 +210,38 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     return _toInt(raw, fallback: 0);
   }
 
+  int get _effectiveTotalSessions {
+    if (totalSessions > 0) return totalSessions;
+    if (curriculumSessions.isNotEmpty) return curriculumSessions.length;
+    return currentSession > 0 ? currentSession : 1;
+  }
+
+  int get _targetSessionNo {
+    final maxSessions = _effectiveTotalSessions;
+    if (studyMode == 'custom') {
+      return selectedSessionNo.clamp(1, maxSessions).toInt();
+    }
+    return currentSession.clamp(1, maxSessions).toInt();
+  }
+
+  int get _sessionsLeft {
+    final left = _effectiveTotalSessions - studiedSessionsConsumed;
+    return left < 0 ? 0 : left;
+  }
+
+  String _verticalTimeLabel(String time) {
+    final cleaned = time.trim();
+    if (cleaned.contains(':')) {
+      final parts = cleaned.split(':');
+      final hh = parts.isNotEmpty ? parts.first : cleaned;
+      final mm = parts.length > 1 ? parts[1] : '';
+      return mm.isEmpty ? hh : '$hh\n$mm';
+    }
+    if (cleaned.length <= 2) return cleaned;
+    final mid = cleaned.length ~/ 2;
+    return '${cleaned.substring(0, mid)}\n${cleaned.substring(mid)}';
+  }
+
   DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
 
   DatabaseReference _progressRef(String cid) =>
@@ -276,17 +314,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   bool _isJoinable(_Slot s) {
+    final targetSession = _targetSessionNo;
     if (_isBookingLockedForNewBooking(s)) return false;
     if (s.bookedByMe) return true;
     if (s.groupSessionNo == null) return true;
-    if (s.groupSessionNo != currentSession) return false;
+    if (s.groupSessionNo != targetSession) return false;
     if (s.isFull) return false;
     return true;
   }
 
   bool _isPeerGroup(_Slot s) {
+    final targetSession = _targetSessionNo;
     return !_isBookingLockedForNewBooking(s) &&
-        (s.groupSessionNo == currentSession) &&
+        (s.groupSessionNo == targetSession) &&
         (s.bookedCount > 0) &&
         !s.bookedByMe &&
         !s.isFull;
@@ -329,7 +369,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     try {
       final learnerName = await _getMyFullName();
 
-      final sessionNo = slot.groupSessionNo ?? currentSession;
+      final sessionNo = slot.groupSessionNo ?? _targetSessionNo;
       final safeCourseTitle = courseTitle.trim().isEmpty
           ? 'Course'
           : courseTitle.trim();
@@ -390,7 +430,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       await NotificationService.I.init();
       await NotificationService.I.requestPermissions();
 
-      final sessionNo = slot.groupSessionNo ?? currentSession;
+      final sessionNo = slot.groupSessionNo ?? _targetSessionNo;
       final safeCourseTitle = courseTitle.trim().isEmpty
           ? 'Course'
           : courseTitle.trim();
@@ -463,6 +503,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     await _loadCurriculum(courseId!);
     await _loadOrCreateProgress(courseId!);
+    await _loadStudiedSessions(courseId!);
 
     _classId = await _inferClassIdForCourse(courseId!);
 
@@ -652,6 +693,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       final sessionNo = _readSessionNoFromProgress(raw);
       currentSession = sessionNo > 0 ? sessionNo : 1;
+      selectedSessionNo = currentSession;
 
       final needsCanonicalWrite =
           raw == null ||
@@ -666,6 +708,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       }
     } catch (e) {
       currentSession = 1;
+      selectedSessionNo = 1;
       try {
         await _progressRef(
           cid,
@@ -684,6 +727,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           );
         }
       }
+    }
+  }
+
+  Future<void> _loadStudiedSessions(String cid) async {
+    try {
+      final snap = await _progressRef(cid).child('online_attendance').get();
+      studiedSessionsConsumed = countPresentOnlineAttendance(snap.value);
+    } catch (_) {
+      studiedSessionsConsumed = 0;
     }
   }
 
@@ -1014,12 +1066,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       return;
     }
 
-    if (totalSessions <= 0) {
+    final targetSession = _targetSessionNo;
+
+    if (_effectiveTotalSessions <= 0) {
       _toast('Booking enabled, but total lessons not set.');
       return;
     }
 
-    if (currentSession > totalSessions) {
+    if (targetSession > _effectiveTotalSessions) {
       _toast('You already finished this course.');
       return;
     }
@@ -1029,8 +1083,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         _toast('Booking closes 24 hours before class.');
         return;
       }
-      if (slot.groupSessionNo != null &&
-          slot.groupSessionNo != currentSession) {
+      if (slot.groupSessionNo != null && slot.groupSessionNo != targetSession) {
         _toast('This slot is already a Session ${slot.groupSessionNo} group.');
         return;
       }
@@ -1114,9 +1167,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       }
 
       if (existingGroupSession != null &&
-          existingGroupSession != currentSession) {
+          existingGroupSession != targetSession) {
         _toast(
-          'This slot is a Session $existingGroupSession group. You are on Session $currentSession.',
+          'This slot is a Session $existingGroupSession group. You selected Session $targetSession.',
         );
         return;
       }
@@ -1150,7 +1203,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         }
 
         final groupSessionNo = _toInt(node['sessionNo'], fallback: 0);
-        if (groupSessionNo > 0 && groupSessionNo != currentSession) {
+        if (groupSessionNo > 0 && groupSessionNo != targetSession) {
           return Transaction.abort();
         }
 
@@ -1158,7 +1211,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         node['teacherId'] = slot.teacherId;
         node['teacherName'] = slot.teacherName;
-        node['sessionNo'] = currentSession;
+        node['sessionNo'] = targetSession;
         node['learners'] = learners;
         node['createdAt'] = ServerValue.timestamp;
 
@@ -1175,9 +1228,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
       final newCount = (existingCount + 1);
       if (existingCount == 0) {
-        _toast('Booked ✅ Started Session $currentSession group');
+        _toast('Booked ✅ Started Session $targetSession group');
       } else {
-        _toast('Joined ✅ Session $currentSession group ($newCount/$cap)');
+        _toast('Joined ✅ Session $targetSession group ($newCount/$cap)');
       }
 
       await _sendBookingNotifications(slot);
@@ -1292,6 +1345,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     setState(() => refreshing = true);
     try {
+      await _loadStudiedSessions(cid);
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } finally {
@@ -1352,8 +1406,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   // ================== Session details ==================
 
-  Future<void> _openNextSessionDetails() async {
-    final info = curriculumSessions['$currentSession'];
+  Future<void> _openSessionDetails(int sessionNo) async {
+    final info = curriculumSessions['$sessionNo'];
     if (info is! Map) {
       _toast('Session details not found (curriculum is optional).');
       return;
@@ -1363,8 +1417,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     final rawTitle = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
     final title = rawTitle.isEmpty
-        ? 'Session $currentSession'
-        : 'Session $currentSession — $rawTitle';
+        ? 'Session $sessionNo'
+        : 'Session $sessionNo — $rawTitle';
     final objective = (m['objective'] ?? '').toString().trim();
     final content = (m['content'] ?? '').toString().trim();
     final homework = (m['homework'] ?? '').toString().trim();
@@ -1396,7 +1450,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _kv('Session', '$currentSession / $totalSessions'),
+                  _kv('Session', '$sessionNo / $_effectiveTotalSessions'),
                   if (duration > 0) _kv('Duration', '$duration min'),
                   const SizedBox(height: 10),
                   if (objective.isNotEmpty) ...[
@@ -1885,15 +1939,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   String _helpRule1(String lang) {
     switch (lang) {
       case 'ar':
-        return 'يمكنك الحجز فقط في حصتك الحالية.';
+        return 'يمكنك متابعة الترتيب أو اختيار أي حصة مخصصة من المنهج.';
       case 'fr':
-        return 'Vous pouvez réserver seulement votre session actuelle.';
+        return 'Vous pouvez suivre la prochaine session ou choisir une session personnalisée.';
       case 'tr':
-        return 'Sadece mevcut oturumunuz için rezervasyon yapabilirsiniz.';
+        return 'Sıradaki oturumu takip edebilir veya istediğiniz oturumu seçebilirsiniz.';
       case 'ur':
-        return 'آپ صرف اپنے موجودہ سیشن کے لیے بکنگ کر سکتے ہیں۔';
+        return 'آپ اگلا سیشن فالو کر سکتے ہیں یا اپنی پسند کا سیشن منتخب کر سکتے ہیں۔';
       default:
-        return 'You can only book your current session.';
+        return 'You can follow the next session or choose a custom session to study.';
     }
   }
 
@@ -2032,6 +2086,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       ),
       builder: (_) {
         final bottomPad = MediaQuery.of(context).padding.bottom;
+        final targetSession = _targetSessionNo;
 
         final canCancel =
             slot.bookedByMe &&
@@ -2040,7 +2095,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final newBookingLocked = _isBookingLockedForNewBooking(slot);
 
-        final shownSessionNo = slot.groupSessionNo ?? currentSession;
+        final shownSessionNo = slot.groupSessionNo ?? targetSession;
         final topic = _sessionTitleFor(shownSessionNo);
 
         final joinable = _isJoinable(slot);
@@ -2121,8 +2176,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   icon: Icons.menu_book_rounded,
                   title: 'Session',
                   value: topic.isEmpty
-                      ? '$shownSessionNo / $totalSessions'
-                      : '$shownSessionNo / $totalSessions • $topic',
+                      ? '$shownSessionNo / $_effectiveTotalSessions'
+                      : '$shownSessionNo / $_effectiveTotalSessions • $topic',
                 ),
                 const SizedBox(height: 10),
                 _sheetInfoRow(
@@ -2267,7 +2322,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                             final label = isSameTimeDifferentTeacher
                                 ? 'Change teacher'
                                 : ((slot.bookedCount > 0 &&
-                                          slot.groupSessionNo == currentSession)
+                                          slot.groupSessionNo == targetSession)
                                       ? 'Join group'
                                       : 'Book this slot');
 
@@ -2276,8 +2331,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                                       ? 'You already booked a class within 24 hours.\nYou can’t change it now.'
                                       : isSameTimeDifferentTeacher
                                       ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
-                                      : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? currentSession} (${slot.bookedCount}/$cap).')
-                                : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? currentSession}\nLearners: ${slot.bookedCount}/$cap';
+                                      : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? targetSession} (${slot.bookedCount}/$cap).')
+                                : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? targetSession}\nLearners: ${slot.bookedCount}/$cap';
                             if (hasOther && locked) {
                               _toast(
                                 'You can’t change booking within 24 hours.',
@@ -2308,7 +2363,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     child: Text(
                       joinable
                           ? ((slot.bookedCount > 0 &&
-                                    slot.groupSessionNo == currentSession)
+                                    slot.groupSessionNo == targetSession)
                                 ? 'Join group'
                                 : 'Book this slot')
                           : (newBookingLocked ? 'Closed' : 'Unavailable'),
@@ -2772,12 +2827,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   // ================== Compact header ==================
 
   Widget _buildCompactHeader() {
-    final sessionInfo = curriculumSessions['$currentSession'];
+    final targetSession = _targetSessionNo;
+    final sessionInfo = curriculumSessions['$targetSession'];
     final sessionTitle = (sessionInfo is Map)
         ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '')
               .toString()
               .trim()
         : '';
+
+    final total = _effectiveTotalSessions;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -2798,16 +2856,43 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
-            sessionTitle.isEmpty
-                ? 'Session $currentSession / $totalSessions'
-                : 'Session $currentSession / $totalSessions • $sessionTitle',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Colors.grey.shade800,
-              height: 1.25,
-            ),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Text(
+                'Session $targetSession / $total',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Colors.grey.shade800,
+                  height: 1.25,
+                ),
+              ),
+              _smallStatPill('Studied', '$studiedSessionsConsumed'),
+              _smallStatPill('Left', '$_sessionsLeft'),
+              _smallStatPill('Next', '$currentSession'),
+            ],
           ),
+          if (sessionTitle.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              sessionTitle,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
+                height: 1.2,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          _buildStudyModeRow(),
+          const SizedBox(height: 10),
+          _buildLessonsCollapseHeader(),
+          if (lessonsExpanded) ...[
+            const SizedBox(height: 10),
+            _buildLessonsPicker(),
+          ],
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -2816,10 +2901,234 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               _smallActionButton(
                 icon: Icons.menu_book_rounded,
                 label: 'Session details',
-                onTap: _openNextSessionDetails,
+                onTap: () => _openSessionDetails(_targetSessionNo),
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLessonsCollapseHeader() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => lessonsExpanded = !lessonsExpanded),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.view_stream_rounded, size: 18, color: primaryBlue),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Lesson choices',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryBlue,
+                ),
+              ),
+            ),
+            Icon(
+              lessonsExpanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              color: Colors.grey.shade700,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _smallStatPill(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFB),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(
+          fontWeight: FontWeight.w900,
+          color: primaryBlue,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStudyModeRow() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _chip(
+          'Follow next',
+          studyMode == 'follow',
+          () => setState(() {
+            studyMode = 'follow';
+            selectedSessionNo = currentSession;
+          }),
+        ),
+        _chip(
+          'Study custom',
+          studyMode == 'custom',
+          () => setState(() {
+            studyMode = 'custom';
+            selectedSessionNo = _targetSessionNo;
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLessonsPicker() {
+    final total = _effectiveTotalSessions;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Lessons',
+            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 140,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: total,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final sessionNo = i + 1;
+                final isTarget = sessionNo == _targetSessionNo;
+                final done = sessionNo < currentSession;
+                final title = _sessionTitleFor(sessionNo);
+                final enabled = studyMode == 'custom';
+
+                return SizedBox(
+                  width: 138,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: enabled
+                        ? () => setState(() => selectedSessionNo = sessionNo)
+                        : null,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isTarget
+                            ? actionOrange.withValues(alpha: 0.12)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isTarget
+                              ? actionOrange.withValues(alpha: 0.4)
+                              : uiBorder.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Session $sessionNo',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: primaryBlue,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(999),
+                                onTap: () => _openSessionDetails(sessionNo),
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: uiBorder.withValues(alpha: 0.9),
+                                    ),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      '!',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: primaryBlue,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            done
+                                ? 'Done'
+                                : (sessionNo == currentSession
+                                      ? 'Next'
+                                      : 'Upcoming'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: done
+                                  ? const Color(0xFF157A3D)
+                                  : actionOrange,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            title.isEmpty ? 'No title yet' : title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (studyMode != 'custom')
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Tip: enable "Study custom" to choose a lesson directly.',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2863,15 +3172,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   Widget _teacherMiniTile(_Slot s) {
     final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
+    final targetSession = _targetSessionNo;
 
     final bookedByMe = s.bookedByMe;
     final isClosed = _isBookingLockedForNewBooking(s);
     final peerGroup = _isPeerGroup(s);
     final otherSession =
-        (s.groupSessionNo != null && s.groupSessionNo != currentSession) &&
+        (s.groupSessionNo != null && s.groupSessionNo != targetSession) &&
         !bookedByMe;
     final fullButMySession =
-        !bookedByMe && s.groupSessionNo == currentSession && s.isFull;
+        !bookedByMe && s.groupSessionNo == targetSession && s.isFull;
 
     final bg = bookedByMe
         ? bookedBg
@@ -3046,13 +3356,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
                 return Container(
                   height: rowHeight,
-                  alignment: Alignment.topLeft,
+                  alignment: Alignment.topCenter,
                   padding: const EdgeInsets.symmetric(
                     vertical: 14,
-                    horizontal: 8,
+                    horizontal: 4,
                   ),
                   child: Text(
-                    t,
+                    _verticalTimeLabel(t),
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: primaryBlue,

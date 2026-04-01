@@ -37,6 +37,7 @@ import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
+import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 
 class AdminClassesScreen extends StatefulWidget {
@@ -62,6 +63,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool _loadingCourses = true;
   List<Map<String, dynamic>> _courses = [];
   late final Future<void> _bootFuture;
+  Future<DataSnapshot>? _classesFuture;
 
   // ===== Learners cache (ALL learners) =====
   bool _loadingLearners = true;
@@ -88,6 +90,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   String _searchQuery = "";
   Timer? _searchDebounce;
 
+  final TextEditingController _flexSearchCtrl = TextEditingController();
+  String _flexSearch = "";
+  String _flexStatusFilter = 'all';
+  Future<List<_FlexCourseSummary>>? _flexSummaryFuture;
+
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
   bool? _openFilter; // null = all, true=open only, false=closed only
@@ -112,7 +119,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     // IMPORTANT: load teachers first, then courses
     _bootFuture = _loadTeachers().then((_) => _loadCourses());
+    _classesFuture = _classesRef.get();
     _loadAllLearners();
+    _flexSummaryFuture = _loadFlexibleAttendanceSummaries();
 
     _searchCtrl.addListener(() {
       _searchDebounce?.cancel();
@@ -121,12 +130,18 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
       });
     });
+
+    _flexSearchCtrl.addListener(() {
+      if (!mounted) return;
+      setState(() => _flexSearch = _flexSearchCtrl.text.trim().toLowerCase());
+    });
   }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
     _searchCtrl.dispose();
+    _flexSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -2139,14 +2154,25 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         _buildTopFilters(),
         const SizedBox(height: 12),
         Expanded(
-          child: StreamBuilder<DatabaseEvent>(
-            stream: _classesRef.onValue,
+          child: FutureBuilder<DataSnapshot>(
+            future: _classesFuture,
             builder: (context, snap) {
+              if (snap.hasError) {
+                return Center(
+                  child: Text(
+                    'Could not load classes right now.',
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                );
+              }
               if (snap.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final data = snap.data?.snapshot.value;
+              final data = snap.data?.value;
               if (data == null || data is! Map) {
                 return const Center(child: Text("No classes yet."));
               }
@@ -2191,12 +2217,27 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    summary,
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          summary,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Refresh classes',
+                        onPressed: () {
+                          setState(() {
+                            _classesFuture = _classesRef.get();
+                          });
+                        },
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   Expanded(
@@ -2356,6 +2397,393 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
+  bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
+    if (expiresAt <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = expiresAt - now;
+    if (diff < 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
+  }
+
+  String _fmtDateOnlyMs(int ms) {
+    if (ms <= 0) return 'No deadline';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$mm-$dd';
+  }
+
+  int _effectiveFlexReminder({
+    required int sessionsPaidTotal,
+    required int remindBeforeSession,
+  }) {
+    final fallback = remindBeforeSession > 0 ? remindBeforeSession : 2;
+    return normalizeReminderForSessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      remindBeforeSession: fallback,
+    );
+  }
+
+  String _flexPaymentStatusLabel({
+    required int sessionsPaidTotal,
+    required int sessionsPresent,
+    required int remindBeforeSession,
+    required int expiresAt,
+  }) {
+    if (sessionsPaidTotal <= 0) return 'No session package';
+    if (expiresAt > 0 && DateTime.now().millisecondsSinceEpoch >= expiresAt) {
+      return 'Expired';
+    }
+    if (isPaymentDueBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsPresent,
+    )) {
+      return 'Due now';
+    }
+    if (expiresAt > 0 && _isNearExpiryMs(expiresAt, days: 10)) {
+      return 'Near expiry';
+    }
+    if (isPaymentWarningBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsPresent,
+      remindBeforeSession: _effectiveFlexReminder(
+        sessionsPaidTotal: sessionsPaidTotal,
+        remindBeforeSession: remindBeforeSession,
+      ),
+    )) {
+      return 'Due soon';
+    }
+    return 'OK';
+  }
+
+  Color _flexStatusColor(String status) {
+    switch (status) {
+      case 'Due now':
+      case 'Expired':
+        return Colors.red.shade700;
+      case 'Due soon':
+      case 'Near expiry':
+        return Colors.orange.shade700;
+      case 'No session package':
+        return Colors.blueGrey.shade700;
+      default:
+        return Colors.green.shade700;
+    }
+  }
+
+  Future<List<_FlexCourseSummary>> _loadFlexibleAttendanceSummaries() async {
+    final usersSnap = await _usersRef.get();
+    if (!usersSnap.exists || usersSnap.value is! Map) return const [];
+
+    final courseTitleById = <String, String>{};
+    for (final c in _courses) {
+      final cid = (c['id'] ?? '').toString().trim();
+      if (cid.isEmpty) continue;
+      courseTitleById[cid] = (c['title'] ?? '').toString().trim();
+    }
+
+    final allUsers = Map<dynamic, dynamic>.from(usersSnap.value as Map);
+    final out = <_FlexCourseSummary>[];
+
+    for (final userEntry in allUsers.entries) {
+      final uid = userEntry.key.toString();
+      final raw = userEntry.value;
+      if (raw is! Map) continue;
+
+      final user = Map<String, dynamic>.from(raw);
+      if (!_isLearnerRole(user['role'])) continue;
+
+      final first = (user['first_name'] ?? '').toString().trim();
+      final last = (user['last_name'] ?? '').toString().trim();
+      final fullName = '$first $last'.trim().isEmpty
+          ? 'Learner'
+          : '$first $last'.trim();
+      final courses = (user['courses'] is Map)
+          ? Map<dynamic, dynamic>.from(user['courses'])
+          : <dynamic, dynamic>{};
+
+      for (final cEntry in courses.entries) {
+        final courseKey = cEntry.key.toString();
+        final cRaw = cEntry.value;
+        if (cRaw is! Map) continue;
+
+        final cm = Map<String, dynamic>.from(cRaw);
+        final variantKey = _normalizeVariantKey(
+          (cm['variantKey'] ?? cm['variant'] ?? '').toString(),
+        );
+        if (variantKey != 'flexible') continue;
+
+        final courseId = (cm['id'] ?? cm['courseId'] ?? cm['course_id'] ?? '')
+            .toString()
+            .trim();
+        if (courseId.isEmpty) continue;
+
+        final courseTitleRaw = (cm['title'] ?? '').toString().trim();
+        final mappedTitle = (courseTitleById[courseId] ?? '').trim();
+        final courseTitle = courseTitleRaw.isNotEmpty
+            ? courseTitleRaw
+            : (mappedTitle.isNotEmpty ? mappedTitle : 'Unknown course');
+
+        DataSnapshot? progressSnap;
+        try {
+          progressSnap = await _db
+              .child('booking_progress/$uid/$courseId/online_attendance')
+              .get();
+        } catch (_) {
+          progressSnap = null;
+        }
+
+        final presentRows = <_FlexAttendanceRow>[];
+        if (progressSnap != null &&
+            progressSnap.exists &&
+            progressSnap.value is Map) {
+          final att = Map<dynamic, dynamic>.from(progressSnap.value as Map);
+          att.forEach((key, value) {
+            if (value is! Map) return;
+            final m = Map<String, dynamic>.from(value);
+            if (m['present'] != true) return;
+            final tsRaw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
+            int ts = 0;
+            if (tsRaw is int) {
+              ts = tsRaw;
+            } else if (tsRaw is num) {
+              ts = tsRaw.toInt();
+            } else {
+              ts = int.tryParse(tsRaw?.toString() ?? '') ?? 0;
+            }
+
+            presentRows.add(
+              _FlexAttendanceRow(
+                bookingKey: key.toString(),
+                sessionNo: _asInt(m['sessionNo']),
+                dayKey: (m['dayKey'] ?? '').toString().trim(),
+                time: (m['time'] ?? '').toString().trim(),
+                startAt: ts,
+                teacherName: (m['teacherName'] ?? 'Teacher').toString().trim(),
+              ),
+            );
+          });
+        }
+
+        presentRows.sort((a, b) => b.sortTs.compareTo(a.sortTs));
+
+        final summaryMap = (cm['payment_summary'] is Map)
+            ? Map<String, dynamic>.from(cm['payment_summary'])
+            : <String, dynamic>{};
+        final sessionsPaidTotal = _asInt(summaryMap['sessionsPaidTotal']);
+        final remindBeforeSession = _asInt(summaryMap['remindBeforeSession']);
+
+        final accessMap = (cm['flexible_access'] is Map)
+            ? Map<String, dynamic>.from(cm['flexible_access'])
+            : <String, dynamic>{};
+        final expiresAt = _asInt(accessMap['expiresAt']);
+
+        final consumed = presentRows.length;
+        final statusLabel = _flexPaymentStatusLabel(
+          sessionsPaidTotal: sessionsPaidTotal,
+          sessionsPresent: consumed,
+          remindBeforeSession: remindBeforeSession,
+          expiresAt: expiresAt,
+        );
+
+        out.add(
+          _FlexCourseSummary(
+            uid: uid,
+            learnerName: fullName,
+            learnerSerial: '',
+            assignedCourses: const <String>[],
+            courseKey: courseKey,
+            courseId: courseId,
+            courseTitle: courseTitle,
+            sessionsPaidTotal: sessionsPaidTotal,
+            consumed: consumed,
+            expiresAt: expiresAt,
+            statusLabel: statusLabel,
+            rows: presentRows,
+          ),
+        );
+      }
+    }
+
+    out.sort((a, b) {
+      final ta = a.latestTs;
+      final tb = b.latestTs;
+      if (ta != tb) return tb.compareTo(ta);
+      return a.learnerName.compareTo(b.learnerName);
+    });
+
+    return out;
+  }
+
+  Widget _buildFlexibleAttendanceTab() {
+    return FutureBuilder<List<_FlexCourseSummary>>(
+      future: _flexSummaryFuture,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Text(
+              'Could not load flexible attendance.',
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final all = snap.data ?? const <_FlexCourseSummary>[];
+        final shown = all.where((item) {
+          final statusOk =
+              _flexStatusFilter == 'all' ||
+              item.statusLabel.toLowerCase() == _flexStatusFilter;
+          if (!statusOk) return false;
+
+          if (_flexSearch.isEmpty) return true;
+          final q = _flexSearch;
+          return item.learnerName.toLowerCase().contains(q) ||
+              item.courseTitle.toLowerCase().contains(q);
+        }).toList();
+
+        int rowCount = 0;
+        for (final s in shown) {
+          rowCount += s.rows.length;
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _flexSearchCtrl,
+              decoration: const InputDecoration(
+                isDense: true,
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Search learner / course',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final item in const <String>[
+                    'all',
+                    'due now',
+                    'due soon',
+                    'near expiry',
+                    'expired',
+                    'no session package',
+                  ]) ...[
+                    ChoiceChip(
+                      label: Text(
+                        item == 'all'
+                            ? 'All'
+                            : item[0].toUpperCase() + item.substring(1),
+                      ),
+                      selected: _flexStatusFilter == item,
+                      onSelected: (_) {
+                        setState(() => _flexStatusFilter = item);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Showing ${shown.length} learner-course items • $rowCount consumed sessions',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh flexible attendance',
+                  onPressed: () {
+                    setState(() {
+                      _flexSummaryFuture = _loadFlexibleAttendanceSummaries();
+                    });
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: shown.isEmpty
+                  ? const Center(child: Text('No flexible attendance found.'))
+                  : ListView.separated(
+                      itemCount: shown.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final item = shown[i];
+                        return Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(
+                              color: Colors.grey.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.learnerName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF1A2B48),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Course: ${item.courseTitle}',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Consumed: ${item.consumed}${item.sessionsPaidTotal > 0 ? ' / ${item.sessionsPaidTotal}' : ''}',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Deadline: ${_fmtDateOnlyMs(item.expiresAt)}',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // -------------------- Build --------------------
 
   @override
@@ -2367,20 +2795,29 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       line: 'هذه الشاشة تعرض كل الصفوف وتسمح باضافة صف جديد او تعديل صف موجود.',
     );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Classes'),
-        actions: [
-          const SizedBox.shrink(),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _buildClassesList(),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openClassEditor(existingClass: null),
-        child: const Icon(Icons.add),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Classes'),
+          actions: [const SizedBox.shrink()],
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Classes'),
+              Tab(text: 'Flexible Attendance'),
+            ],
+          ),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: TabBarView(
+            children: [_buildClassesList(), _buildFlexibleAttendanceTab()],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _openClassEditor(existingClass: null),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -2414,4 +2851,78 @@ class _ClassProg {
     totalSessions: 0,
     sessionsHeld: 0,
   );
+}
+
+class _FlexAttendanceRow {
+  final String bookingKey;
+  final int sessionNo;
+  final String dayKey;
+  final String time;
+  final int startAt;
+  final String teacherName;
+
+  const _FlexAttendanceRow({
+    required this.bookingKey,
+    required this.sessionNo,
+    required this.dayKey,
+    required this.time,
+    required this.startAt,
+    required this.teacherName,
+  });
+
+  int get sortTs {
+    if (startAt > 0) return startAt;
+    final parsed = DateTime.tryParse('$dayKey $time');
+    if (parsed == null) return 0;
+    return parsed.millisecondsSinceEpoch;
+  }
+
+  String get whenLabel {
+    if (dayKey.isNotEmpty && time.isNotEmpty) return '$dayKey $time';
+    if (dayKey.isNotEmpty) return dayKey;
+    if (startAt > 0) {
+      final d = DateTime.fromMillisecondsSinceEpoch(startAt);
+      final mm = d.month.toString().padLeft(2, '0');
+      final dd = d.day.toString().padLeft(2, '0');
+      final hh = d.hour.toString().padLeft(2, '0');
+      final mi = d.minute.toString().padLeft(2, '0');
+      return '${d.year}-$mm-$dd $hh:$mi';
+    }
+    return '-';
+  }
+}
+
+class _FlexCourseSummary {
+  final String uid;
+  final String learnerName;
+  final String learnerSerial;
+  final List<String> assignedCourses;
+  final String courseKey;
+  final String courseId;
+  final String courseTitle;
+  final int sessionsPaidTotal;
+  final int consumed;
+  final int expiresAt;
+  final String statusLabel;
+  final List<_FlexAttendanceRow> rows;
+
+  const _FlexCourseSummary({
+    required this.uid,
+    required this.learnerName,
+    required this.learnerSerial,
+    required this.assignedCourses,
+    required this.courseKey,
+    required this.courseId,
+    required this.courseTitle,
+    required this.sessionsPaidTotal,
+    required this.consumed,
+    required this.expiresAt,
+    required this.statusLabel,
+    required this.rows,
+  });
+
+  int get latestTs {
+    if (rows.isEmpty) return 0;
+    return rows.first.sortTs;
+  }
 }
