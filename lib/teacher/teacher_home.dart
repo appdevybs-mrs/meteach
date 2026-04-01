@@ -845,9 +845,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             const SizedBox.shrink(),
             const SizedBox.shrink(),
             IconButton(
-              tooltip: 'Theme',
-              icon: Icon(Icons.palette_rounded, color: p.accent),
-              onPressed: _openThemeSheet,
+              tooltip: 'Logout',
+              icon: Icon(Icons.logout_rounded, color: p.accent),
+              onPressed: () => _logout(context),
             ),
           ],
         ),
