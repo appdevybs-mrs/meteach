@@ -2498,7 +2498,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           final raw = Map<dynamic, dynamic>.from(snap.value as Map);
           for (final entry in raw.entries) {
             if (entry.value is! Map) continue;
-            list.add(Map<String, dynamic>.from(entry.value as Map));
+            final m = Map<String, dynamic>.from(entry.value as Map);
+            m['paymentId'] = entry.key.toString();
+            list.add(m);
           }
         }
       } catch (_) {}
@@ -2513,7 +2515,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               if (v is! Map) continue;
               final m = Map<String, dynamic>.from(v);
               final payUid = (m['uid'] ?? '').toString().trim();
-              if (payUid == uid) list.add(m);
+              if (payUid == uid) {
+                m['paymentId'] = entry.key.toString();
+                list.add(m);
+              }
             }
           }
         } catch (_) {}
@@ -2643,6 +2648,31 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             ? courseTitleRaw
             : (mappedTitle.isNotEmpty ? mappedTitle : 'Unknown course');
 
+        final syllabusTitleBySession = <int, String>{};
+        try {
+          final ss = await _db.child('syllabi/$courseId/flexible').get();
+          if (ss.exists && ss.value is Map) {
+            final rm = Map<dynamic, dynamic>.from(ss.value as Map);
+            for (final e in rm.entries) {
+              if (e.value is! Map) continue;
+              final sm = Map<String, dynamic>.from(e.value as Map);
+              final keyNo = int.tryParse(e.key.toString()) ?? 0;
+              final no = _asInt(sm['sessionNo']);
+              final order = _asInt(sm['order']);
+              final finalNo = no > 0
+                  ? no
+                  : (order > 0 ? order : (keyNo > 0 ? keyNo : 0));
+              if (finalNo <= 0) continue;
+              final title = (sm['sessionTitle'] ?? sm['title'] ?? '')
+                  .toString()
+                  .trim();
+              if (title.isNotEmpty) {
+                syllabusTitleBySession[finalNo] = title;
+              }
+            }
+          }
+        } catch (_) {}
+
         DataSnapshot? progressSnap;
         try {
           progressSnap = await _db
@@ -2679,6 +2709,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                 time: (m['time'] ?? '').toString().trim(),
                 startAt: ts,
                 teacherName: (m['teacherName'] ?? 'Teacher').toString().trim(),
+                lessonTitle:
+                    syllabusTitleBySession[_asInt(m['sessionNo'])] ?? '',
               ),
             );
           });
@@ -2714,6 +2746,110 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         }
 
         final consumed = presentRows.length;
+
+        final paymentsForUser = await loadPaymentsForUid(uid);
+        bool paymentMatches(Map<String, dynamic> p) {
+          final payVariant = _normalizeVariantKey(
+            (p['variantKey'] ?? p['variant'] ?? '').toString(),
+          );
+          if (payVariant != 'flexible') return false;
+
+          final payCourseKey = (p['courseKey'] ?? '').toString().trim();
+          final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
+              .toString()
+              .trim();
+          final payCourseTitle = (p['course_title'] ?? p['courseTitle'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+          final payCourseCode = (p['course_code'] ?? p['courseCode'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+
+          return (payCourseKey.isNotEmpty && payCourseKey == courseKey) ||
+              (payCourseId.isNotEmpty && payCourseId == courseId) ||
+              (payCourseTitle.isNotEmpty &&
+                  payCourseTitle == courseTitle.toLowerCase()) ||
+              (payCourseCode.isNotEmpty &&
+                  payCourseCode == courseCodeRaw.toLowerCase());
+        }
+
+        final matchedPayments = paymentsForUser.where(paymentMatches).toList()
+          ..sort((a, b) {
+            final ta = _asInt(a['paidAt']) > 0
+                ? _asInt(a['paidAt'])
+                : _asInt(a['createdAt']);
+            final tb = _asInt(b['paidAt']) > 0
+                ? _asInt(b['paidAt'])
+                : _asInt(b['createdAt']);
+            return ta.compareTo(tb);
+          });
+
+        final attendanceAsc = [...presentRows]
+          ..sort((a, b) => a.sortTs.compareTo(b.sortTs));
+        int ptr = 0;
+        final paymentBlocks = <_FlexPaymentBlock>[];
+        for (final p in matchedPayments) {
+          final sessionsPaid = _asInt(p['sessionsPaid']);
+          final amount = _asInt(p['amount']);
+          final paidAt = _asInt(p['paidAt']) > 0
+              ? _asInt(p['paidAt'])
+              : _asInt(p['createdAt']);
+          final expiresAtPay = _asInt(p['expiresAt']);
+          final expiryMonthsPay = _asInt(p['expiryMonths']);
+
+          final allocated = <_FlexAttendanceRow>[];
+          var quota = sessionsPaid > 0 ? sessionsPaid : 0;
+          while (ptr < attendanceAsc.length && quota > 0) {
+            allocated.add(attendanceAsc[ptr]);
+            ptr += 1;
+            quota -= 1;
+          }
+
+          paymentBlocks.add(
+            _FlexPaymentBlock(
+              paymentId: (p['paymentId'] ?? '').toString(),
+              paidAt: paidAt,
+              amount: amount,
+              sessionsPaid: sessionsPaid,
+              expiresAt: expiresAtPay,
+              expiryMonths: expiryMonthsPay,
+              rows: allocated,
+            ),
+          );
+        }
+
+        if (ptr < attendanceAsc.length) {
+          final unallocated = attendanceAsc.sublist(ptr);
+          if (paymentBlocks.isNotEmpty) {
+            final last = paymentBlocks.removeLast();
+            paymentBlocks.add(
+              _FlexPaymentBlock(
+                paymentId: last.paymentId,
+                paidAt: last.paidAt,
+                amount: last.amount,
+                sessionsPaid: last.sessionsPaid,
+                expiresAt: last.expiresAt,
+                expiryMonths: last.expiryMonths,
+                rows: [...last.rows, ...unallocated],
+              ),
+            );
+          } else {
+            paymentBlocks.add(
+              _FlexPaymentBlock(
+                paymentId: '',
+                paidAt: 0,
+                amount: 0,
+                sessionsPaid: 0,
+                expiresAt: expiresAt,
+                expiryMonths: 0,
+                rows: unallocated,
+              ),
+            );
+          }
+        }
+
         final statusLabel = _flexPaymentStatusLabel(
           sessionsPaidTotal: sessionsPaidTotal,
           sessionsPresent: consumed,
@@ -2735,6 +2871,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             expiresAt: expiresAt,
             statusLabel: statusLabel,
             rows: presentRows,
+            paymentBlocks: paymentBlocks,
           ),
         );
       }
@@ -2902,6 +3039,90 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
+                                const SizedBox(height: 8),
+                                if (item.paymentBlocks.isEmpty)
+                                  Text(
+                                    'No payment rows found for this course yet.',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade700,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  )
+                                else
+                                  ...item.paymentBlocks.asMap().entries.map((
+                                    e,
+                                  ) {
+                                    final idx = e.key;
+                                    final block = e.value;
+                                    final paidDate = block.paidAt > 0
+                                        ? _fmtDateOnlyMs(block.paidAt)
+                                        : '-';
+                                    final blockDeadline = block.expiresAt > 0
+                                        ? _fmtDateOnlyMs(block.expiresAt)
+                                        : _fmtDateOnlyMs(item.expiresAt);
+
+                                    return Container(
+                                      margin: const EdgeInsets.only(top: 8),
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFB),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.grey.withValues(
+                                            alpha: 0.25,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Payment ${idx + 1} • Paid: $paidDate • Amount: ${block.amount} • Studied: ${block.rows.length}${block.sessionsPaid > 0 ? ' / ${block.sessionsPaid}' : ''} • Deadline: $blockDeadline',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: Color(0xFF1A2B48),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          if (block.rows.isEmpty)
+                                            Text(
+                                              'No studied sessions allocated to this payment yet.',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade700,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            )
+                                          else
+                                            ...block.rows.asMap().entries.map((
+                                              r,
+                                            ) {
+                                              final count = r.key + 1;
+                                              final row = r.value;
+                                              final lesson =
+                                                  row.lessonTitle.isEmpty
+                                                  ? '-'
+                                                  : row.lessonTitle;
+                                              return Padding(
+                                                padding: const EdgeInsets.only(
+                                                  bottom: 4,
+                                                ),
+                                                child: Text(
+                                                  '$count) Session ${row.sessionNo <= 0 ? '-' : row.sessionNo} • $lesson • ${row.whenLabel} • ${row.teacherName.isEmpty ? 'Teacher' : row.teacherName}',
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade800,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              );
+                                            }),
+                                        ],
+                                      ),
+                                    );
+                                  }),
                               ],
                             ),
                           ),
@@ -2991,6 +3212,7 @@ class _FlexAttendanceRow {
   final String time;
   final int startAt;
   final String teacherName;
+  final String lessonTitle;
 
   const _FlexAttendanceRow({
     required this.bookingKey,
@@ -2999,6 +3221,7 @@ class _FlexAttendanceRow {
     required this.time,
     required this.startAt,
     required this.teacherName,
+    required this.lessonTitle,
   });
 
   int get sortTs {
@@ -3036,6 +3259,7 @@ class _FlexCourseSummary {
   final int expiresAt;
   final String statusLabel;
   final List<_FlexAttendanceRow> rows;
+  final List<_FlexPaymentBlock> paymentBlocks;
 
   const _FlexCourseSummary({
     required this.uid,
@@ -3050,10 +3274,31 @@ class _FlexCourseSummary {
     required this.expiresAt,
     required this.statusLabel,
     required this.rows,
+    required this.paymentBlocks,
   });
 
   int get latestTs {
     if (rows.isEmpty) return 0;
     return rows.first.sortTs;
   }
+}
+
+class _FlexPaymentBlock {
+  final String paymentId;
+  final int paidAt;
+  final int amount;
+  final int sessionsPaid;
+  final int expiresAt;
+  final int expiryMonths;
+  final List<_FlexAttendanceRow> rows;
+
+  const _FlexPaymentBlock({
+    required this.paymentId,
+    required this.paidAt,
+    required this.amount,
+    required this.sessionsPaid,
+    required this.expiresAt,
+    required this.expiryMonths,
+    required this.rows,
+  });
 }
