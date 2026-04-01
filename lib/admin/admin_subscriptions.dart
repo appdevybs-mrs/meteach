@@ -352,11 +352,9 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               _line('Name', sub.displayName),
               _phoneLine(context, sub.phone),
               _line('Course', sub.courseTitle),
-              _line('CourseId', sub.courseId),
               _line('Study type', sub.studyTypeDisplay),
               _line('Date of birth', sub.dob),
               _line('Email', sub.email),
-              _line('Delivery key', sub.deliveryKey),
               _line('Study mode', sub.studyModeLabel),
               _line(
                 'Selected fee',
@@ -364,7 +362,6 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                     ? ''
                     : '${sub.selectedFee!.toStringAsFixed(0)} DA',
               ),
-              _line('Access mode', sub.accessMode),
               _line(
                 'Access months',
                 sub.accessDurationMonths == null
@@ -374,7 +371,6 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               _line('Access label', sub.accessLabel),
               _line('Additional info', sub.additionalInfo),
               _line('CreatedAt', formatTimestamp(sub.createdAt)),
-              _line('SubscriptionId', sub.id),
             ],
           ),
         ),

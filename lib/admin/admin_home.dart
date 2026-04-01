@@ -1407,6 +1407,7 @@ class _SubscriptionsDashCard extends StatelessWidget {
           subtitle: subtitle,
           icon: Icons.how_to_reg_rounded,
           color: AdminHome.accentAmber,
+          badgeCount: count,
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminSubscriptionsScreen()),
