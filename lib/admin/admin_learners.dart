@@ -1,19 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:http/http.dart' as http;
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/screen_help_guide.dart';
+import '../shared/ybs_busy_logo.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
+import '../services/backend_api.dart';
 import 'admin_learner_mail_topics_screen.dart';
 import '../shared/admin_tour_guide.dart';
 
@@ -308,8 +312,81 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     );
     if (!ok) return;
 
-    await fromRef.child(uid).remove();
-    _toast('Deleted permanently ✅');
+    var loadingShown = false;
+    try {
+      if (mounted) {
+        loadingShown = true;
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const PopScope(
+            canPop: false,
+            child: AlertDialog(
+              content: Row(
+                children: [
+                  YbsBusyLogo(size: 28),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Deleting learner...')),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      await _deleteAuthUserOnServer(uid);
+      await fromRef.child(uid).remove();
+
+      await _usersRef.child(uid).remove();
+      await _deletedRef.child(uid).remove();
+      await _blockedRef.child(uid).remove();
+
+      _toast('Deleted permanently ✅');
+    } catch (e) {
+      _toast(toHumanError(e));
+    } finally {
+      if (loadingShown && mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _deleteAuthUserOnServer(String targetUid) async {
+    final uri = await BackendApi.withAuthQuery(
+      BackendApi.uri('delete_auth_user_secure.php'),
+    );
+    final headers = await BackendApi.authHeaders();
+    final authFields = await BackendApi.authFormFields();
+
+    final response = await http
+        .post(
+          uri,
+          headers: headers,
+          body: <String, String>{...authFields, 'targetUid': targetUid},
+        )
+        .timeout(const Duration(seconds: 18));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Auth delete failed (HTTP ${response.statusCode}). ${response.body}',
+      );
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception('Auth delete failed: invalid server response.');
+    }
+
+    if (decoded is! Map || decoded['success'] != true) {
+      final message = decoded is Map
+          ? (decoded['message']?.toString().trim() ?? 'Auth delete failed.')
+          : 'Auth delete failed.';
+      throw Exception(message);
+    }
   }
 
   // ---------- UI ----------
@@ -469,14 +546,6 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
                   await _restoreFromDeleted(uid, learner);
                   break;
                 case _RowAction.deleteForever:
-                  // ✅ Only allow permanent delete after self delete done
-                  if (!learner.selfDeleteDone) {
-                    _toast(
-                      'Cannot delete forever yet. The learner must login once so the app can remove the Auth account.',
-                    );
-                    return;
-                  }
-
                   await _deletePermanently(uid, _deletedRef);
                   break;
 
@@ -2070,9 +2139,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(

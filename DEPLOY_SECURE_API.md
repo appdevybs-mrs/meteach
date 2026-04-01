@@ -12,6 +12,7 @@ Upload `backend/php_secure_api/*` to your server path (recommended):
 - `/app/secure/delete_item_secure.php`
 - `/app/secure/upload_file_secure.php`
 - `/app/secure/delete_file_secure.php`
+- `/app/secure/delete_auth_user_secure.php`
 
 Also upload shared files:
 

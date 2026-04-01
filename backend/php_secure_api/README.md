@@ -33,5 +33,6 @@ composer require kreait/firebase-php
 - `delete_item_secure.php`
 - `upload_file_secure.php`
 - `delete_file_secure.php`
+- `delete_auth_user_secure.php`
 
 All endpoints require `Authorization: Bearer <Firebase ID token>`.
