@@ -125,7 +125,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   static String _two(int n) => n < 10 ? '0$n' : '$n';
 
-  DateTime? _parseSlotStart(String dayKey, String hhmm) {
+  DateTime? _parseSlotStartCore(String dayKey, String hhmm) {
     try {
       final dp = dayKey.split('-');
       if (dp.length != 3) return null;
@@ -1088,62 +1088,97 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
           for (final timeEntry in byTime.entries) {
             final hhmm = timeEntry.key.toString();
+            final dt = _parseSlotStartCore(dayKey, hhmm);
+            if (dt == null) continue;
+
+            Future<void> ingestSlot(
+              Map<String, dynamic> slot, {
+              String fallbackTeacherId = '',
+            }) async {
+              final teacherId = _safeStr(
+                slot['teacherId'] ??
+                    slot['teacherUid'] ??
+                    slot['teacher_id'] ??
+                    fallbackTeacherId,
+              );
+              if (teacherId != _teacherUid) return;
+
+              final learnersRaw = slot['learners'];
+              final List<String> learnerUids = [];
+              if (learnersRaw is Map) {
+                final lm = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
+                for (final uid in lm.keys) {
+                  learnerUids.add(uid);
+                }
+              }
+
+              final teacherNameFromSlot = _safeStr(slot['teacherName']);
+              final sessionNo = _asInt(slot['sessionNo']);
+              final createdAt = slot['createdAt'];
+
+              final meta = await _loadAvailMeta(teacherId, courseId);
+              final courseTitle = await _loadCourseTitle(courseId, learnerUids);
+
+              final bookingKey = _OnlineBooking.makeKey(courseId, dayKey, hhmm);
+
+              out.add(
+                _OnlineBooking(
+                  bookingKey: bookingKey,
+                  courseId: courseId,
+                  courseTitle: courseTitle,
+                  dayKey: dayKey,
+                  time: hhmm,
+                  startAtMillis: dt.millisecondsSinceEpoch,
+                  teacherId: teacherId,
+                  teacherName: meta.teacherName.isNotEmpty
+                      ? meta.teacherName
+                      : (teacherNameFromSlot.isNotEmpty
+                            ? teacherNameFromSlot
+                            : (_teacherName.isNotEmpty
+                                  ? _teacherName
+                                  : 'Teacher')),
+                  learnerUids: learnerUids,
+                  sessionNo: sessionNo,
+                  createdAtRaw: createdAt,
+                  meetUrl: meta.meetUrl,
+                  durationMinutes: meta.durationMinutes <= 0
+                      ? 60
+                      : meta.durationMinutes,
+                ),
+              );
+            }
+
             final slotNode = timeEntry.value;
             if (slotNode is! Map) continue;
 
-            final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
+            final firstMapValue = slotNode.values.isNotEmpty
+                ? slotNode.values.first
+                : null;
+            final looksLikeDirectSlot =
+                slotNode.containsKey('teacherId') ||
+                slotNode.containsKey('teacherUid') ||
+                slotNode.containsKey('teacher_id') ||
+                slotNode.containsKey('learners') ||
+                slotNode.containsKey('sessionNo');
 
-            final teacherId = _safeStr(
-              slot['teacherId'] ?? slot['teacherUid'] ?? slot['teacher_id'],
-            );
-            if (teacherId != _teacherUid) continue;
-
-            final dt = _parseSlotStart(dayKey, hhmm);
-            if (dt == null) continue;
-
-            final learnersRaw = slot['learners'];
-            final List<String> learnerUids = [];
-            if (learnersRaw is Map) {
-              final lm = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
-              for (final uid in lm.keys) {
-                learnerUids.add(uid);
-              }
+            if (looksLikeDirectSlot) {
+              await ingestSlot(
+                slotNode.map((k, v) => MapEntry(k.toString(), v)),
+              );
+              continue;
             }
 
-            final teacherNameFromSlot = _safeStr(slot['teacherName']);
-            final sessionNo = _asInt(slot['sessionNo']);
-            final createdAt = slot['createdAt'];
-
-            final meta = await _loadAvailMeta(teacherId, courseId);
-            final courseTitle = await _loadCourseTitle(courseId, learnerUids);
-
-            final bookingKey = _OnlineBooking.makeKey(courseId, dayKey, hhmm);
-
-            out.add(
-              _OnlineBooking(
-                bookingKey: bookingKey,
-                courseId: courseId,
-                courseTitle: courseTitle,
-                dayKey: dayKey,
-                time: hhmm,
-                startAtMillis: dt.millisecondsSinceEpoch,
-                teacherId: teacherId,
-                teacherName: meta.teacherName.isNotEmpty
-                    ? meta.teacherName
-                    : (teacherNameFromSlot.isNotEmpty
-                          ? teacherNameFromSlot
-                          : (_teacherName.isNotEmpty
-                                ? _teacherName
-                                : 'Teacher')),
-                learnerUids: learnerUids,
-                sessionNo: sessionNo,
-                createdAtRaw: createdAt,
-                meetUrl: meta.meetUrl,
-                durationMinutes: meta.durationMinutes <= 0
-                    ? 60
-                    : meta.durationMinutes,
-              ),
-            );
+            if (firstMapValue is Map) {
+              final nestedByTeacher = Map<dynamic, dynamic>.from(slotNode);
+              for (final teacherEntry in nestedByTeacher.entries) {
+                final nestedSlotRaw = teacherEntry.value;
+                if (nestedSlotRaw is! Map) continue;
+                await ingestSlot(
+                  nestedSlotRaw.map((k, v) => MapEntry(k.toString(), v)),
+                  fallbackTeacherId: teacherEntry.key.toString(),
+                );
+              }
+            }
           }
         }
       }
@@ -2148,29 +2183,71 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.fact_check_rounded),
-                    label: const Text("Take"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: p.accent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => OnlineTakeAttendanceScreen(
-                            booking: b,
-                            teacherUid: _teacherUid,
-                            teacherName: _teacherName.isEmpty
-                                ? 'Teacher'
-                                : _teacherName,
+                  child: FutureBuilder<DataSnapshot>(
+                    future: _db
+                        .child('$onlineAttendanceNode/${b.bookingKey}')
+                        .get(),
+                    builder: (context, snap) {
+                      bool hasAttendance = false;
+                      bool mine = true;
+                      if (snap.hasData &&
+                          snap.data!.exists &&
+                          snap.data!.value is Map) {
+                        hasAttendance = true;
+                        final rec = Map<String, dynamic>.from(
+                          snap.data!.value as Map,
+                        );
+                        final owner = _safeStr(rec['teacherUid']);
+                        mine = owner.isEmpty || owner == _teacherUid;
+                      }
+
+                      final label = hasAttendance
+                          ? (mine ? 'Edit' : 'View')
+                          : 'Take';
+                      final icon = hasAttendance
+                          ? (mine
+                                ? Icons.edit_note_rounded
+                                : Icons.visibility_rounded)
+                          : Icons.fact_check_rounded;
+
+                      return ElevatedButton.icon(
+                        icon: Icon(icon),
+                        label: Text(label),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: p.accent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
+                        onPressed: () {
+                          if (!mine && hasAttendance) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => OnlineAttendanceHistoryScreen(
+                                  booking: b,
+                                  teacherUid: _teacherUid,
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OnlineTakeAttendanceScreen(
+                                booking: b,
+                                teacherUid: _teacherUid,
+                                teacherName: _teacherName.isEmpty
+                                    ? 'Teacher'
+                                    : _teacherName,
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -2465,6 +2542,9 @@ class _OnlineTakeAttendanceScreenState
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool saving = false;
+  bool loadingExisting = false;
+  bool canEditCurrent = true;
+  String lockReason = '';
 
   final Map<String, bool> presentMap = {};
 
@@ -2477,6 +2557,7 @@ class _OnlineTakeAttendanceScreenState
     for (final uid in widget.booking.learnerUids) {
       presentMap[uid] = true;
     }
+    _loadExistingBookingAttendance();
   }
 
   @override
@@ -2557,7 +2638,53 @@ class _OnlineTakeAttendanceScreenState
     '${_TeacherClassesScreenState.bookingProgressNode}/$learnerUid/${widget.booking.courseId}/online_attendance/${widget.booking.bookingKey}',
   );
 
+  int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  String _safeStr(dynamic v) => (v ?? '').toString().trim();
+
+  Future<void> _loadExistingBookingAttendance() async {
+    setState(() => loadingExisting = true);
+    try {
+      final snap = await _teacherAttendanceRef().get();
+      if (snap.exists && snap.value is Map) {
+        final m = Map<String, dynamic>.from(snap.value as Map);
+        final ownerUid = _safeStr(m['teacherUid']);
+        if (ownerUid.isNotEmpty && ownerUid != widget.teacherUid) {
+          canEditCurrent = false;
+          lockReason = 'Attendance was recorded by another teacher.';
+        }
+
+        final learners = m['learners'];
+        if (learners is Map) {
+          final lm = learners.map((k, v) => MapEntry(k.toString(), v));
+          for (final uid in widget.booking.learnerUids) {
+            final raw = lm[uid];
+            bool present = false;
+            if (raw is Map) {
+              final mm = raw.map((k, vv) => MapEntry(k.toString(), vv));
+              present = mm['present'] == true;
+            }
+            presentMap[uid] = present;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => loadingExisting = false);
+  }
+
   Future<void> _save() async {
+    if (!canEditCurrent) {
+      _toast(
+        lockReason.isEmpty
+            ? 'You can edit only your own attendance records.'
+            : lockReason,
+      );
+      return;
+    }
     setState(() => saving = true);
     final int sessionNo = widget.booking.sessionNo;
 
@@ -2591,6 +2718,17 @@ class _OnlineTakeAttendanceScreenState
         : <Map<String, dynamic>>[];
 
     try {
+      final currentSnap = await _teacherAttendanceRef().get();
+      if (currentSnap.exists && currentSnap.value is Map) {
+        final m = Map<String, dynamic>.from(currentSnap.value as Map);
+        final owner = _safeStr(m['teacherUid']);
+        if (owner.isNotEmpty && owner != widget.teacherUid) {
+          throw Exception(
+            'Only the teacher who saved this attendance can edit it.',
+          );
+        }
+      }
+
       final Map<String, dynamic> learners = {};
       for (final uid in widget.booking.learnerUids) {
         learners[uid] = {'present': presentMap[uid] == true};
@@ -2627,6 +2765,7 @@ class _OnlineTakeAttendanceScreenState
           'startAt': widget.booking.startAtMillis,
           'teacherUid': widget.teacherUid,
           'teacherName': widget.teacherName,
+          'sessionNo': widget.booking.sessionNo,
           'present': isPresent,
           'taughtItems': taughtItems,
           'updatedAt': ServerValue.timestamp,
@@ -2706,7 +2845,9 @@ class _OnlineTakeAttendanceScreenState
         actions: [
           IconButton(
             tooltip: 'Save',
-            onPressed: saving ? null : _save,
+            onPressed: (saving || loadingExisting || !canEditCurrent)
+                ? null
+                : _save,
             icon: saving
                 ? SizedBox(
                     width: 18,
@@ -2758,6 +2899,52 @@ class _OnlineTakeAttendanceScreenState
                     color: p.text.withValues(alpha: 0.62),
                   ),
                 ),
+                if (loadingExisting) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: p.accent,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Loading existing attendance…',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: p.text.withValues(alpha: 0.72),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (!canEditCurrent) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Text(
+                      lockReason.isEmpty
+                          ? 'Read-only: only the teacher who created this attendance can edit it.'
+                          : 'Read-only: $lockReason',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2831,8 +3018,9 @@ class _OnlineTakeAttendanceScreenState
                           const SizedBox(width: 10),
                           Switch(
                             value: v,
-                            onChanged: (x) =>
-                                setState(() => presentMap[uid] = x),
+                            onChanged: (!canEditCurrent || loadingExisting)
+                                ? null
+                                : (x) => setState(() => presentMap[uid] = x),
                             activeThumbColor: p.accent,
                           ),
                         ],
@@ -2877,6 +3065,8 @@ class OnlineAttendanceHistoryScreen extends StatefulWidget {
 
 class _OnlineAttendanceHistoryScreenState
     extends State<OnlineAttendanceHistoryScreen> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
   @override
   void initState() {
     super.initState();
@@ -2896,12 +3086,180 @@ class _OnlineAttendanceHistoryScreenState
 
   AppPalette get p => appThemeController.palette;
 
+  int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  String _safeStr(dynamic v) => (v ?? '').toString().trim();
+
+  String _formatWhen(Map<String, dynamic> rec) {
+    final day = _safeStr(rec['dayKey']);
+    final time = _safeStr(rec['time']);
+    if (day.isNotEmpty && time.isNotEmpty) return '$day $time';
+    if (day.isNotEmpty) return day;
+    final ts = _toInt(rec['startAt']);
+    if (ts <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ts);
+    return '${d.year}-${_TeacherClassesScreenState._two(d.month)}-${_TeacherClassesScreenState._two(d.day)} ${_TeacherClassesScreenState._two(d.hour)}:${_TeacherClassesScreenState._two(d.minute)}';
+  }
+
+  int _sessionNoFromRecord(Map<String, dynamic> rec) {
+    final direct = _toInt(rec['sessionNo']);
+    if (direct > 0) return direct;
+    final taught = rec['taughtItems'];
+    if (taught is List) {
+      for (final it in taught) {
+        if (it is! Map) continue;
+        final m = it.map((k, v) => MapEntry(k.toString(), v));
+        final sn = _toInt(m['sessionNumber']);
+        if (sn > 0) return sn;
+      }
+    }
+    return 0;
+  }
+
+  Future<Map<String, dynamic>?> _loadSyllabusSessionByNo(
+    String courseId,
+    int sessionNo,
+  ) async {
+    if (courseId.isEmpty || sessionNo <= 0) return null;
+    try {
+      final snap = await _db.child('syllabi/$courseId/flexible').get();
+      if (!snap.exists || snap.value is! Map) return null;
+      final root = Map<dynamic, dynamic>.from(snap.value as Map);
+      for (final e in root.entries) {
+        final keyNo = int.tryParse(e.key.toString()) ?? 0;
+        final raw = e.value;
+        if (raw is! Map) continue;
+        final m = raw.map((k, v) => MapEntry(k.toString(), v));
+        final sn = _toInt(m['sessionNo']);
+        final order = _toInt(m['order']);
+        if (keyNo == sessionNo || sn == sessionNo || order == sessionNo) {
+          return Map<String, dynamic>.from(m);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _openSessionDetails(String courseId, int sessionNo) async {
+    if (sessionNo <= 0) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Session details are not available for this record.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final info = await _loadSyllabusSessionByNo(courseId, sessionNo);
+    if (info == null) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Session details are not available for this record.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final title = _safeStr(info['sessionTitle']).isNotEmpty
+        ? _safeStr(info['sessionTitle'])
+        : _safeStr(info['title']);
+    final objective = _safeStr(info['objective']);
+    final content = _safeStr(info['content']);
+    final homework = _safeStr(info['homework']);
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title.isEmpty
+                        ? 'Session $sessionNo'
+                        : 'Session $sessionNo — $title',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Objective',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    objective.isEmpty ? '-' : objective,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Lesson content',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    content.isEmpty ? '-' : content,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Homework',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    homework.isEmpty ? '-' : homework,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ref = FirebaseDatabase.instance.ref(
-      '${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}',
-    );
-
     TeacherTourGuide.schedule(
       context,
       screenId: 'teacher_online_attendance_history',
@@ -2927,160 +3285,155 @@ class _OnlineAttendanceHistoryScreenState
         ),
       ),
       body: FutureBuilder<DataSnapshot>(
-        future: ref.get(),
+        future: _db
+            .child(_TeacherClassesScreenState.onlineAttendanceNode)
+            .get(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator(color: p.accent));
           }
-          if (!snap.hasData || !snap.data!.exists || snap.data!.value == null) {
+
+          final rows = <Map<String, dynamic>>[];
+          if (snap.hasData && snap.data!.exists && snap.data!.value is Map) {
+            final m = Map<dynamic, dynamic>.from(snap.data!.value as Map);
+            for (final e in m.entries) {
+              final raw = e.value;
+              if (raw is! Map) continue;
+              final rec = Map<String, dynamic>.from(raw);
+              final teacherUid = _safeStr(rec['teacherUid']);
+              final courseId = _safeStr(rec['courseId']);
+              if (teacherUid != widget.teacherUid) continue;
+              if (courseId != widget.booking.courseId) continue;
+              rows.add({'bookingKey': e.key.toString(), ...rec});
+            }
+          }
+
+          rows.sort(
+            (a, b) => _toInt(b['startAt']).compareTo(_toInt(a['startAt'])),
+          );
+
+          if (rows.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  'No online attendance found yet.',
+                  'No online attendance history found yet.',
                   style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
                 ),
               ),
             );
           }
 
-          final data = (snap.data!.value is Map)
-              ? Map<String, dynamic>.from(snap.data!.value as Map)
-              : <String, dynamic>{};
-
-          final learners = data['learners'];
-
           return ListView(
             padding: const EdgeInsets.all(14),
-            children: [
-              _box(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Course: ${widget.booking.courseTitle.trim().isEmpty ? widget.booking.courseId : widget.booking.courseTitle}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Learners:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (learners is Map && learners.isNotEmpty)
-                      ...learners.entries.map((e) {
-                        final uid = e.key.toString();
-                        final v = e.value;
-                        bool present = false;
-                        if (v is Map) {
-                          final m = v.map(
-                            (k, vv) => MapEntry(k.toString(), vv),
-                          );
-                          present = m['present'] == true;
-                        }
+            children: rows.map((rec) {
+              final sessionNo = _sessionNoFromRecord(rec);
+              final when = _formatWhen(rec);
+              final learners = rec['learners'];
 
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: FutureBuilder<DataSnapshot>(
-                            future: FirebaseDatabase.instance
-                                .ref(
-                                  '${_TeacherClassesScreenState.usersNode}/$uid',
-                                )
-                                .get(),
-                            builder: (context, userSnap) {
-                              String fullName = 'Learner';
-                              String profilePhotoUrl = '';
-
-                              if (userSnap.hasData &&
-                                  userSnap.data!.exists &&
-                                  userSnap.data!.value is Map) {
-                                final um = (userSnap.data!.value as Map).map(
-                                  (k, vv) => MapEntry(k.toString(), vv),
-                                );
-                                final fn = (um['first_name'] ?? '')
-                                    .toString()
-                                    .trim();
-                                final ln = (um['last_name'] ?? '')
-                                    .toString()
-                                    .trim();
-                                final f = ('$fn $ln').trim();
-                                if (f.isNotEmpty) fullName = f;
-
-                                profilePhotoUrl = (um['profile_photo'] ?? '')
-                                    .toString()
-                                    .trim();
-                              }
-
-                              return Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: p.soft.withValues(alpha: 0.24),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: p.border.withValues(alpha: 0.8),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 34,
-                                      height: 34,
-                                      decoration: BoxDecoration(
-                                        color: p.soft,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: profilePhotoUrl.isNotEmpty
-                                          ? Image.network(
-                                              profilePhotoUrl,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, _, _) => Icon(
-                                                Icons.person_rounded,
-                                                size: 16,
-                                                color: p.primary,
-                                              ),
-                                            )
-                                          : Icon(
-                                              Icons.person_rounded,
-                                              size: 16,
-                                              color: p.primary,
-                                            ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        '$fullName  —  ${present ? "Present" : "Absent"}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: p.text,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _box(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Session ${sessionNo <= 0 ? '-' : sessionNo} • $when',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: p.primary,
+                              ),
+                            ),
                           ),
-                        );
-                      })
-                    else
-                      Text(
-                        'No learners map saved.',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: p.text.withValues(alpha: 0.72),
-                        ),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _openSessionDetails(
+                              _safeStr(rec['courseId']),
+                              sessionNo,
+                            ),
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: p.border.withValues(alpha: 0.82),
+                                ),
+                              ),
+                              child: Text(
+                                '!',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: p.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                  ],
+                      const SizedBox(height: 8),
+                      if (learners is Map && learners.isNotEmpty)
+                        ...learners.entries.map((entry) {
+                          final uid = entry.key.toString();
+                          final raw = entry.value;
+                          bool present = false;
+                          if (raw is Map) {
+                            final mm = raw.map(
+                              (k, vv) => MapEntry(k.toString(), vv),
+                            );
+                            present = mm['present'] == true;
+                          }
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: FutureBuilder<DataSnapshot>(
+                              future: _db
+                                  .child(
+                                    '${_TeacherClassesScreenState.usersNode}/$uid',
+                                  )
+                                  .get(),
+                              builder: (context, userSnap) {
+                                var name = 'Learner';
+                                if (userSnap.hasData &&
+                                    userSnap.data!.exists &&
+                                    userSnap.data!.value is Map) {
+                                  final um = (userSnap.data!.value as Map).map(
+                                    (k, v) => MapEntry(k.toString(), v),
+                                  );
+                                  final fn = _safeStr(um['first_name']);
+                                  final ln = _safeStr(um['last_name']);
+                                  final full = ('$fn $ln').trim();
+                                  if (full.isNotEmpty) name = full;
+                                }
+
+                                return Text(
+                                  '$name — ${present ? 'Present' : 'Absent'}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: p.text.withValues(alpha: 0.8),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        })
+                      else
+                        Text(
+                          'No learners map saved.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withValues(alpha: 0.72),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              );
+            }).toList(),
           );
         },
       ),

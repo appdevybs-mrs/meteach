@@ -278,24 +278,48 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             final hhmm = timeEntry.key.toString();
             final slotNode = timeEntry.value;
             if (slotNode is! Map) continue;
-
-            final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
-
-            final teacherId =
-                (slot['teacherId'] ??
-                        slot['teacherUid'] ??
-                        slot['teacher_id'] ??
-                        '')
-                    .toString()
-                    .trim();
-
-            if (teacherId != teacherUid) continue;
-
             final dt = _parseBookingSlotStart(dayKey, hhmm);
             if (dt == null) continue;
 
-            if (dt.isAfter(now)) {
-              count += 1;
+            bool isTeacherSlot(
+              Map<dynamic, dynamic> rawSlot,
+              String fallbackId,
+            ) {
+              final teacherId =
+                  (rawSlot['teacherId'] ??
+                          rawSlot['teacherUid'] ??
+                          rawSlot['teacher_id'] ??
+                          fallbackId)
+                      .toString()
+                      .trim();
+              return teacherId == teacherUid;
+            }
+
+            final slot = Map<dynamic, dynamic>.from(slotNode);
+            final looksLikeDirectSlot =
+                slot.containsKey('teacherId') ||
+                slot.containsKey('teacherUid') ||
+                slot.containsKey('teacher_id') ||
+                slot.containsKey('learners') ||
+                slot.containsKey('sessionNo');
+
+            if (looksLikeDirectSlot) {
+              if (isTeacherSlot(slot, '') && dt.isAfter(now)) {
+                count += 1;
+              }
+              continue;
+            }
+
+            for (final teacherEntry in slot.entries) {
+              final nested = teacherEntry.value;
+              if (nested is! Map) continue;
+              if (isTeacherSlot(
+                    Map<dynamic, dynamic>.from(nested),
+                    teacherEntry.key.toString(),
+                  ) &&
+                  dt.isAfter(now)) {
+                count += 1;
+              }
             }
           }
         }

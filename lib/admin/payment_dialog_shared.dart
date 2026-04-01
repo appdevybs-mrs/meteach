@@ -451,6 +451,9 @@ class PaymentDialogShared {
     int latestAmount = 0;
     int latestRemind = 0;
     String latestVariantKey = '';
+    int latestExpiresAt = 0;
+    int latestExpiryMonths = 0;
+    int latestDurationMonths = 0;
 
     if (allForUidRaw is Map) {
       allForUidRaw.forEach((payId, payVal) {
@@ -501,6 +504,9 @@ class PaymentDialogShared {
           latestAmount = amount;
           latestRemind = _asInt(p['remindBeforeSession']);
           latestVariantKey = effectiveVariant;
+          latestExpiresAt = _asInt(p['expiresAt']);
+          latestExpiryMonths = _asInt(p['expiryMonths']);
+          latestDurationMonths = _asInt(p['durationMonths']);
         }
       });
     }
@@ -524,6 +530,15 @@ class PaymentDialogShared {
       'lastMethod': latestMethod,
       'lastAmount': latestAmount,
       'lastPaymentAt': latestPaidAt,
+      'expiresAt': _variantUsesExpiry(latestVariantKey)
+          ? latestExpiresAt
+          : null,
+      'expiryMonths': _variantIsFlexible(latestVariantKey)
+          ? latestExpiryMonths
+          : null,
+      'durationMonths': _variantIsRecorded(latestVariantKey)
+          ? latestDurationMonths
+          : null,
       'updatedAt': ServerValue.timestamp,
     });
   }

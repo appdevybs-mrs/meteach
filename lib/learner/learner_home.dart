@@ -2882,6 +2882,29 @@ class _BookingTopCardState extends State<_BookingTopCard>
     final now = DateTime.now();
     _NextBooking? best;
 
+    final Map<String, Set<String>> attendedBookingKeysByCourse = {};
+
+    Future<Set<String>> loadAttendedBookingKeys(String courseId) async {
+      final cached = attendedBookingKeysByCourse[courseId];
+      if (cached != null) return cached;
+
+      final out = <String>{};
+      try {
+        final snap = await _db
+            .child('booking_progress/$uid/$courseId/online_attendance')
+            .get();
+        if (snap.exists && snap.value is Map) {
+          final m = Map<dynamic, dynamic>.from(snap.value as Map);
+          for (final k in m.keys) {
+            out.add(k.toString());
+          }
+        }
+      } catch (_) {}
+
+      attendedBookingKeysByCourse[courseId] = out;
+      return out;
+    }
+
     const daysAhead = 14;
 
     for (final c in courses) {
@@ -3020,10 +3043,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
           final sm = Map<dynamic, dynamic>.from(node);
 
-          void considerCandidate(
+          Future<void> considerCandidate(
             Map<dynamic, dynamic> slotLike,
             String teacherKey,
-          ) {
+          ) async {
             final learners = slotLike['learners'];
             if (learners is! Map) return;
 
@@ -3049,6 +3072,12 @@ class _BookingTopCardState extends State<_BookingTopCard>
               teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
             );
 
+            final bookingKey = _bookingKey(cid, dk, hhmm);
+            final attendedKeys = await loadAttendedBookingKeys(cid);
+            if (attendedKeys.contains(bookingKey)) {
+              return;
+            }
+
             final bestNow = best;
             if (bestNow == null || candidate.start.isBefore(bestNow.start)) {
               best = candidate;
@@ -3057,7 +3086,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
           // Flat legacy shape: /{day}/{time} => {learners:{...}, ...}
           if (sm['learners'] is Map) {
-            considerCandidate(sm, '');
+            await considerCandidate(sm, '');
             continue;
           }
 
@@ -3066,7 +3095,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
             final teacherKey = te.key.toString();
             final teacherNode = te.value;
             if (teacherNode is! Map) continue;
-            considerCandidate(
+            await considerCandidate(
               Map<dynamic, dynamic>.from(teacherNode),
               teacherKey,
             );

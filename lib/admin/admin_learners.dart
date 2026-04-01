@@ -2784,16 +2784,25 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     required int summaryTotalPaid,
     required int summaryLastPaymentAt,
     required int summaryLastAmount,
+    required int summaryExpiresAt,
+    required int summaryExpiryMonths,
+    required int summaryDurationMonths,
     required int derivedSessionsPaidTotal,
     required int derivedTotalPaid,
     required int derivedLastPaymentAt,
     required int derivedLastAmount,
+    required int derivedExpiresAt,
+    required int derivedExpiryMonths,
+    required int derivedDurationMonths,
   }) {
     final mismatch =
         summarySessionsPaidTotal != derivedSessionsPaidTotal ||
         summaryTotalPaid != derivedTotalPaid ||
         summaryLastPaymentAt != derivedLastPaymentAt ||
-        summaryLastAmount != derivedLastAmount;
+        summaryLastAmount != derivedLastAmount ||
+        summaryExpiresAt != derivedExpiresAt ||
+        summaryExpiryMonths != derivedExpiryMonths ||
+        summaryDurationMonths != derivedDurationMonths;
     if (!mismatch) {
       _summaryRepairQueued.remove(courseKey);
       return;
@@ -3586,6 +3595,103 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     );
   }
 
+  String _normToken(String s) => s.trim().toLowerCase();
+
+  bool _paymentMatchesCourse({
+    required Map<String, dynamic> payment,
+    required String courseKey,
+    required String courseId,
+    required String courseTitle,
+    required String courseCode,
+  }) {
+    final payCourseKey = (payment['courseKey'] ?? '').toString();
+    final payCourseId = (payment['course_id'] ?? payment['courseId'] ?? '')
+        .toString();
+    final payCourseTitle =
+        (payment['course_title'] ?? payment['courseTitle'] ?? '').toString();
+    final payCourseCode =
+        (payment['course_code'] ?? payment['courseCode'] ?? '').toString();
+
+    final keyMatch =
+        courseKey.trim().isNotEmpty &&
+        _normToken(payCourseKey) == _normToken(courseKey);
+    final idMatch =
+        courseId.trim().isNotEmpty &&
+        _normToken(payCourseId) == _normToken(courseId);
+    final titleMatch =
+        courseTitle.trim().isNotEmpty &&
+        _normToken(payCourseTitle) == _normToken(courseTitle);
+    final codeMatch =
+        courseCode.trim().isNotEmpty &&
+        _normToken(payCourseCode) == _normToken(courseCode);
+
+    return keyMatch || idMatch || titleMatch || codeMatch;
+  }
+
+  Future<Map<String, int>> _latestPaymentExpiryForCourse({
+    required String uid,
+    required String courseKey,
+    required String courseId,
+    required String courseTitle,
+    required String courseCode,
+    required String variantKey,
+  }) async {
+    final out = <String, int>{
+      'expiresAt': 0,
+      'expiryMonths': 0,
+      'durationMonths': 0,
+      'sessionsPaidTotal': 0,
+    };
+
+    try {
+      final snap = await _paymentsRef.orderByChild('uid').equalTo(uid).get();
+      if (!snap.exists || snap.value is! Map) return out;
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      var latestStamp = 0;
+      for (final entry in raw.entries) {
+        if (entry.value is! Map) continue;
+        final p = Map<String, dynamic>.from(entry.value as Map);
+        if (!_paymentMatchesCourse(
+          payment: p,
+          courseKey: courseKey,
+          courseId: courseId,
+          courseTitle: courseTitle,
+          courseCode: courseCode,
+        )) {
+          continue;
+        }
+
+        final payVariant = _normalizeVariantKey(
+          (p['variantKey'] ?? p['variant'] ?? '').toString(),
+        );
+        final sameVariant = payVariant == variantKey;
+        final maybeLegacyExpiryRow =
+            payVariant.isEmpty && (_asInt(p['expiresAt']) > 0);
+        if (!(sameVariant || maybeLegacyExpiryRow)) continue;
+
+        if (_variantUsesSessions(variantKey)) {
+          out['sessionsPaidTotal'] =
+              (out['sessionsPaidTotal'] ?? 0) + _asInt(p['sessionsPaid']);
+        }
+
+        final paidAt = _asInt(p['paidAt']);
+        final createdAt = _asInt(p['createdAt']);
+        final stamp = paidAt > 0 ? paidAt : createdAt;
+        if (stamp < latestStamp) continue;
+
+        latestStamp = stamp;
+        out['expiresAt'] = _asInt(p['expiresAt']);
+        out['expiryMonths'] = _asInt(p['expiryMonths']);
+        out['durationMonths'] = _asInt(p['durationMonths']);
+      }
+    } catch (_) {
+      return out;
+    }
+
+    return out;
+  }
+
   Future<int> _sessionsConsumedForCourse({
     required String uid,
     required String courseId,
@@ -3735,451 +3841,593 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             final totalSessions = _parseTotalSessions(
               courseMap['duration']?.toString() ?? '',
             );
+            final courseTitleForMatch =
+                (courseNode['title'] ?? courseMap['title'] ?? '').toString();
+            final courseCodeForMatch =
+                (courseNode['course_code'] ?? courseMap['course_code'] ?? '')
+                    .toString();
             final pricePerLevel = _asInt(courseMap['price_per_level']);
             final pricePerMonth = _asInt(courseMap['price_per_month']);
+            final latestPaymentMetaFuture = _latestPaymentExpiryForCourse(
+              uid: widget.uid,
+              courseKey: courseKey,
+              courseId: courseId,
+              courseTitle: courseTitleForMatch,
+              courseCode: courseCodeForMatch,
+              variantKey: variantKey,
+            );
 
-            return FutureBuilder<DataSnapshot>(
-              key: ValueKey('payment-sum-$courseKey'),
-              future: _paymentSummaryFuture(courseKey),
-              builder: (context, sumSnap) {
-                final sumRaw = sumSnap.data?.value;
-                final sum = sumRaw is Map
-                    ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
-                    : <String, dynamic>{};
+            return FutureBuilder<Map<String, int>>(
+              future: latestPaymentMetaFuture,
+              builder: (context, payMetaSnap) {
+                final payMeta = payMetaSnap.data ?? const <String, int>{};
 
-                final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
-                final remindBeforeSession = _asInt(sum['remindBeforeSession']);
-                final totalPaid = _asInt(sum['totalPaid']);
-                final lastAmount = _asInt(sum['lastAmount']);
-                final lastPaymentAt = _asInt(sum['lastPaymentAt']);
-                final hasPaymentHistory =
-                    totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
-                final effectiveSessionsPaidTotal = sessionsPaidTotal > 0
-                    ? sessionsPaidTotal
-                    : (hasPaymentHistory &&
-                              (variantKey == 'private' ||
-                                  variantKey == 'inclass')
-                          ? 8
-                          : 0);
-
-                final flexibleExpiresAt = _asInt(flexibleAccess['expiresAt']);
-                final flexibleExpiryMonths = _asInt(
-                  flexibleAccess['expiryMonths'],
-                );
-
-                final recordedExpiresAt = _asInt(recordedAccess['expiresAt']);
-                final recordedDurationMonths = _asInt(
-                  recordedAccess['durationMonths'],
-                );
-
-                final usesSessions = _variantUsesSessions(variantKey);
-                final usesReminder = _variantUsesReminder(variantKey);
-                final usesExpiry = _variantUsesExpiry(variantKey);
-
-                final due = usesReminder
-                    ? _isSessionDue(
-                        sessionsPaidTotal: effectiveSessionsPaidTotal,
-                        sessionsDone: sessionsDone,
-                        remindBeforeSession: remindBeforeSession > 0
-                            ? remindBeforeSession
-                            : 1,
+                return StreamBuilder<DatabaseEvent>(
+                  key: ValueKey('payment-sum-$courseKey'),
+                  stream: widget.db
+                      .ref(
+                        'users/${widget.uid}/courses/$courseKey/payment_summary',
                       )
-                    : false;
+                      .onValue,
+                  builder: (context, sumSnap) {
+                    final sumRaw = sumSnap.data?.snapshot.value;
+                    final sum = sumRaw is Map
+                        ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
+                        : <String, dynamic>{};
 
-                final sessionsLeft =
-                    (effectiveSessionsPaidTotal - sessionsDone) < 0
-                    ? 0
-                    : (effectiveSessionsPaidTotal - sessionsDone);
+                    final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
+                    final remindBeforeSession = _asInt(
+                      sum['remindBeforeSession'],
+                    );
+                    final totalPaid = _asInt(sum['totalPaid']);
+                    final lastAmount = _asInt(sum['lastAmount']);
+                    final lastPaymentAt = _asInt(sum['lastPaymentAt']);
+                    final hasPaymentHistory =
+                        totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
+                    final effectiveSessionsPaidTotal = sessionsPaidTotal > 0
+                        ? sessionsPaidTotal
+                        : (hasPaymentHistory &&
+                                  (variantKey == 'private' ||
+                                      variantKey == 'inclass')
+                              ? 8
+                              : 0);
 
-                final expiresAt = _variantIsRecorded(variantKey)
-                    ? recordedExpiresAt
-                    : flexibleExpiresAt;
-                final monthsValue = _variantIsRecorded(variantKey)
-                    ? recordedDurationMonths
-                    : flexibleExpiryMonths;
-                final expiryText = expiresAt > 0 ? _fmtDateMs(expiresAt) : '—';
-                final expired = usesExpiry ? _isExpiredMs(expiresAt) : false;
-                final nearExpiry = usesExpiry
-                    ? _isNearExpiryMs(expiresAt)
-                    : false;
+                    final flexibleExpiresAt = _asInt(
+                      flexibleAccess['expiresAt'],
+                    );
+                    final flexibleExpiryMonths = _asInt(
+                      flexibleAccess['expiryMonths'],
+                    );
 
-                return _miniCard(
-                  bg: Colors.white,
-                  borderColor: AdminLearnersScreen.uiBorders,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                    final recordedExpiresAt = _asInt(
+                      recordedAccess['expiresAt'],
+                    );
+                    final recordedDurationMonths = _asInt(
+                      recordedAccess['durationMonths'],
+                    );
+
+                    final summaryExpiresAt = _asInt(sum['expiresAt']);
+                    final summaryExpiryMonths = _asInt(sum['expiryMonths']);
+                    final summaryDurationMonths = _asInt(sum['durationMonths']);
+                    final paymentExpiresAt = _asInt(payMeta['expiresAt']);
+                    final paymentExpiryMonths = _asInt(payMeta['expiryMonths']);
+                    final paymentDurationMonths = _asInt(
+                      payMeta['durationMonths'],
+                    );
+                    final paymentSessionsPaidTotal = _asInt(
+                      payMeta['sessionsPaidTotal'],
+                    );
+
+                    final usesSessions = _variantUsesSessions(variantKey);
+                    final usesReminder = _variantUsesReminder(variantKey);
+                    final usesExpiry = _variantUsesExpiry(variantKey);
+
+                    final due = usesReminder
+                        ? _isSessionDue(
+                            sessionsPaidTotal: effectiveSessionsPaidTotal,
+                            sessionsDone: sessionsDone,
+                            remindBeforeSession: remindBeforeSession > 0
+                                ? remindBeforeSession
+                                : 1,
+                          )
+                        : false;
+
+                    final sessionsLeft =
+                        (effectiveSessionsPaidTotal - sessionsDone) < 0
+                        ? 0
+                        : (effectiveSessionsPaidTotal - sessionsDone);
+
+                    final effectivePaidTotalForDisplay =
+                        effectiveSessionsPaidTotal > 0
+                        ? effectiveSessionsPaidTotal
+                        : (paymentSessionsPaidTotal > 0
+                              ? paymentSessionsPaidTotal
+                              : effectiveSessionsPaidTotal);
+
+                    final expiresAt = _variantIsRecorded(variantKey)
+                        ? (recordedExpiresAt > 0
+                              ? recordedExpiresAt
+                              : (summaryExpiresAt > 0
+                                    ? summaryExpiresAt
+                                    : paymentExpiresAt))
+                        : (flexibleExpiresAt > 0
+                              ? flexibleExpiresAt
+                              : (summaryExpiresAt > 0
+                                    ? summaryExpiresAt
+                                    : paymentExpiresAt));
+                    final monthsValue = _variantIsRecorded(variantKey)
+                        ? (recordedDurationMonths > 0
+                              ? recordedDurationMonths
+                              : (summaryDurationMonths > 0
+                                    ? summaryDurationMonths
+                                    : paymentDurationMonths))
+                        : (flexibleExpiryMonths > 0
+                              ? flexibleExpiryMonths
+                              : (summaryExpiryMonths > 0
+                                    ? summaryExpiryMonths
+                                    : paymentExpiryMonths));
+                    final expiryText = expiresAt > 0
+                        ? _fmtDateMs(expiresAt)
+                        : '—';
+                    final expired = usesExpiry
+                        ? _isExpiredMs(expiresAt)
+                        : false;
+                    final nearExpiry = usesExpiry
+                        ? _isNearExpiryMs(expiresAt)
+                        : false;
+
+                    return _miniCard(
+                      bg: Colors.white,
+                      borderColor: AdminLearnersScreen.uiBorders,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _miniPill('Type: $variantText'),
-                          if (usesSessions)
-                            _miniPill(
-                              totalSessions > 0
-                                  ? 'Sessions: $sessionsDone / $totalSessions'
-                                  : 'Sessions done: $sessionsDone',
-                            ),
-                          if (!usesSessions && _variantIsRecorded(variantKey))
-                            _miniPill('Recorded access'),
-                          if (pricePerMonth > 0)
-                            _miniPill('Month fee: $pricePerMonth'),
-                          if (pricePerLevel > 0)
-                            _miniPill('Level fee: $pricePerLevel'),
-                          if (totalPaid > 0)
-                            _miniPill('Total paid: $totalPaid'),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AdminLearnersScreen.appBg,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: AdminLearnersScreen.uiBorders,
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _miniPill('Type: $variantText'),
+                              if (usesSessions)
+                                _miniPill(
+                                  totalSessions > 0
+                                      ? 'Sessions: $sessionsDone / $totalSessions'
+                                      : 'Sessions done: $sessionsDone',
+                                ),
+                              if (!usesSessions &&
+                                  _variantIsRecorded(variantKey))
+                                _miniPill('Recorded access'),
+                              if (pricePerMonth > 0)
+                                _miniPill('Month fee: $pricePerMonth'),
+                              if (pricePerLevel > 0)
+                                _miniPill('Level fee: $pricePerLevel'),
+                              if (totalPaid > 0)
+                                _miniPill('Total paid: $totalPaid'),
+                            ],
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Payment summary',
-                              style: TextStyle(fontWeight: FontWeight.w900),
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AdminLearnersScreen.appBg,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: AdminLearnersScreen.uiBorders,
+                              ),
                             ),
-                            const SizedBox(height: 6),
-                            if (usesSessions)
-                              Text(
-                                'Sessions paid total: $effectiveSessionsPaidTotal',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.75),
-                                  fontWeight: FontWeight.w700,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Payment summary',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
                                 ),
-                              ),
-                            if (usesSessions)
-                              Text(
-                                'Sessions left: $sessionsLeft',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.75),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            if (usesReminder)
-                              Text(
-                                'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.75),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            if (usesSessions &&
-                                sessionsPaidTotal <= 0 &&
-                                hasPaymentHistory)
-                              Text(
-                                'Sessions are restored from payment history (legacy rows without sessions).',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.62),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            if (usesExpiry)
-                              Text(
-                                _variantIsRecorded(variantKey)
-                                    ? 'Duration: ${monthsValue > 0 ? monthsValue : 0} month(s)'
-                                    : 'Expiry window: ${monthsValue > 0 ? monthsValue : 0} month(s)',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.75),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            if (usesExpiry)
-                              Text(
-                                'Expires on: $expiryText',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.75),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            if (due) ...[
-                              const SizedBox(height: 8),
-                              const Text(
-                                '⚠️ Payment is due now (all paid sessions consumed).',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                            ],
-                            if (expired) ...[
-                              const SizedBox(height: 8),
-                              const Text(
-                                '⛔ Access expired.',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                            ] else if (nearExpiry) ...[
-                              const SizedBox(height: 8),
-                              const Text(
-                                '⚠️ Access is near expiry.',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'History',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: 160,
-                        child: StreamBuilder<DatabaseEvent>(
-                          stream: _paymentsRef
-                              .orderByChild('uid')
-                              .equalTo(widget.uid)
-                              .onValue,
-                          builder: (context, snap) {
-                            final v = snap.data?.snapshot.value;
-                            final items = <Map<String, dynamic>>[];
-
-                            if (v is Map) {
-                              v.forEach((k, val) {
-                                if (val is Map) {
-                                  final m = val.map(
-                                    (kk, vv) => MapEntry(kk.toString(), vv),
-                                  );
-                                  if ((m['courseKey'] ?? '').toString() !=
-                                      courseKey) {
-                                    return;
-                                  }
-                                  items.add({'paymentId': k.toString(), ...m});
-                                }
-                              });
-                            }
-
-                            items.sort(
-                              (a, b) => _asInt(
-                                b['paidAt'],
-                              ).compareTo(_asInt(a['paidAt'])),
-                            );
-
-                            if (items.isEmpty) {
-                              return const _MiniState(text: 'No payments yet.');
-                            }
-
-                            int effectiveSessionsForPayment(
-                              Map<String, dynamic> pay,
-                            ) {
-                              final payVariant = _normalizeVariantKey(
-                                (pay['variantKey'] ??
-                                        pay['deliveryKey'] ??
-                                        pay['variant'] ??
-                                        variantKey)
-                                    .toString(),
-                              );
-                              if (!_variantUsesSessions(payVariant)) return 0;
-
-                              var sp = _asInt(pay['sessionsPaid']);
-                              final amount = _asInt(pay['amount']);
-                              if (sp <= 0 &&
-                                  amount > 0 &&
-                                  (payVariant == 'private' ||
-                                      payVariant == 'inclass')) {
-                                sp = 8;
-                              }
-                              return sp;
-                            }
-
-                            final oldestFirst = [...items]
-                              ..sort(
-                                (a, b) => _asInt(
-                                  a['paidAt'],
-                                ).compareTo(_asInt(b['paidAt'])),
-                              );
-
-                            var remainingToConsume = sessionsDone;
-                            final perPaymentLeft = <String, int>{};
-                            var derivedSessionsPaidTotal = 0;
-                            var derivedTotalPaid = 0;
-                            var derivedLastPaymentAt = 0;
-                            var derivedLastAmount = 0;
-                            for (final pay in oldestFirst) {
-                              final pid = (pay['paymentId'] ?? '').toString();
-                              if (pid.isEmpty) continue;
-
-                              final sp = effectiveSessionsForPayment(pay);
-                              derivedSessionsPaidTotal += sp;
-                              final amount = _asInt(pay['amount']);
-                              derivedTotalPaid += amount;
-                              final paidAt = _asInt(pay['paidAt']);
-                              if (paidAt >= derivedLastPaymentAt) {
-                                derivedLastPaymentAt = paidAt;
-                                derivedLastAmount = amount;
-                              }
-
-                              final consumed = remainingToConsume <= 0
-                                  ? 0
-                                  : (remainingToConsume >= sp
-                                        ? sp
-                                        : remainingToConsume);
-                              final leftAfterAllocation = sp - consumed;
-                              perPaymentLeft[pid] = leftAfterAllocation < 0
-                                  ? 0
-                                  : leftAfterAllocation;
-                              remainingToConsume -= consumed;
-                            }
-
-                            _scheduleSummaryRepairIfNeeded(
-                              courseKey: courseKey,
-                              summarySessionsPaidTotal: sessionsPaidTotal,
-                              summaryTotalPaid: totalPaid,
-                              summaryLastPaymentAt: lastPaymentAt,
-                              summaryLastAmount: lastAmount,
-                              derivedSessionsPaidTotal:
-                                  derivedSessionsPaidTotal,
-                              derivedTotalPaid: derivedTotalPaid,
-                              derivedLastPaymentAt: derivedLastPaymentAt,
-                              derivedLastAmount: derivedLastAmount,
-                            );
-
-                            return ListView.builder(
-                              padding: EdgeInsets.zero,
-                              itemCount: items.length,
-                              itemBuilder: (context, i) {
-                                final p = items[i];
-                                final fee = _asInt(p['amount']);
-                                final method = (p['method'] ?? '').toString();
-                                final notes = (p['notes'] ?? '').toString();
-
-                                final payVariant = _normalizeVariantKey(
-                                  (p['variantKey'] ?? variantKey).toString(),
-                                );
-                                final payStudyMode = (p['studyMode'] ?? '')
-                                    .toString();
-                                final paidAt = _fmtDateMs(_asInt(p['paidAt']));
-                                final startDate = (p['startDate'] ?? '')
-                                    .toString()
-                                    .trim();
-                                final expiresAt = _fmtDateMs(
-                                  _asInt(p['expiresAt']),
-                                );
-                                final sp = _asInt(p['sessionsPaid']);
-                                final durationMonths = _asInt(
-                                  p['durationMonths'],
-                                );
-                                final expiryMonths = _asInt(p['expiryMonths']);
-                                final paymentId = (p['paymentId'] ?? '')
-                                    .toString();
-
-                                final variantBadge =
-                                    payVariant == 'private' &&
-                                        payStudyMode.trim().isNotEmpty
-                                    ? '${_variantLabel(payVariant)} • ${_studyModeLabel(payStudyMode)}'
-                                    : _variantLabel(payVariant);
-
-                                final left = perPaymentLeft[paymentId] ?? 0;
-
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: _miniCard(
-                                    bg: Colors.white,
-                                    borderColor: AdminLearnersScreen.uiBorders,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: [
-                                            _miniPill('Type: $variantBadge'),
-                                            _miniPill('Fee: $fee'),
-                                            _miniPill(
-                                              'Paid: ${paidAt.isEmpty ? '-' : paidAt}',
-                                            ),
-                                            if (_variantUsesSessions(
-                                              payVariant,
-                                            ))
-                                              _miniPill('Sessions: $sp'),
-                                            if (_variantUsesReminder(
-                                              payVariant,
-                                            ))
-                                              _miniPill(
-                                                'Left in this payment: $left',
-                                              ),
-                                            if (_variantUsesStartDate(
-                                              payVariant,
-                                            ))
-                                              _miniPill(
-                                                'Start: ${startDate.isEmpty ? '-' : startDate}',
-                                              ),
-                                            if (_variantIsFlexible(payVariant))
-                                              _miniPill(
-                                                'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
-                                              ),
-                                            if (_variantIsFlexible(payVariant))
-                                              _miniPill(
-                                                'Window: ${expiryMonths > 0 ? expiryMonths : 0} month(s)',
-                                              ),
-                                            if (_variantIsRecorded(payVariant))
-                                              _miniPill(
-                                                'Duration: ${durationMonths > 0 ? durationMonths : 0} month(s)',
-                                              ),
-                                            if (_variantIsRecorded(payVariant))
-                                              _miniPill(
-                                                'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
-                                              ),
-                                          ],
-                                        ),
-                                        if (method.trim().isNotEmpty ||
-                                            notes.trim().isNotEmpty) ...[
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            [
-                                              if (method.trim().isNotEmpty)
-                                                method,
-                                              if (notes.trim().isNotEmpty)
-                                                notes,
-                                            ].join(' • '),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.65,
-                                              ),
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                        if (i == 0 &&
-                                            usesSessions &&
-                                            derivedSessionsPaidTotal > 0 &&
-                                            derivedSessionsPaidTotal !=
-                                                effectiveSessionsPaidTotal) ...[
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            'Summary mismatch detected. History sessions: $derivedSessionsPaidTotal, summary: $effectiveSessionsPaidTotal.',
-                                            style: TextStyle(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.62,
-                                              ),
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
+                                const SizedBox(height: 6),
+                                if (usesSessions)
+                                  Text(
+                                    'Sessions paid total: $effectivePaidTotalForDisplay',
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
+                                if (usesSessions)
+                                  Text(
+                                    'Sessions left: $sessionsLeft',
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                if (usesReminder)
+                                  Text(
+                                    'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                if (usesSessions &&
+                                    sessionsPaidTotal <= 0 &&
+                                    hasPaymentHistory)
+                                  Text(
+                                    'Sessions are restored from payment history (legacy rows without sessions).',
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.62,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                if (usesExpiry)
+                                  Text(
+                                    _variantIsRecorded(variantKey)
+                                        ? (monthsValue > 0
+                                              ? 'Duration: $monthsValue months'
+                                              : 'Duration: -')
+                                        : (monthsValue > 0
+                                              ? 'Expiry window: $monthsValue months'
+                                              : 'Expiry window: -'),
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                if (usesExpiry)
+                                  Text(
+                                    'Expires on: $expiryText',
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                if (due) ...[
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '⚠️ Payment is due now (all paid sessions consumed).',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                                if (expired) ...[
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '⛔ Access expired.',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ] else if (nearExpiry) ...[
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '⚠️ Access is near expiry.',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'History',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 160,
+                            child: StreamBuilder<DatabaseEvent>(
+                              stream: _paymentsRef
+                                  .orderByChild('uid')
+                                  .equalTo(widget.uid)
+                                  .onValue,
+                              builder: (context, snap) {
+                                final v = snap.data?.snapshot.value;
+                                final items = <Map<String, dynamic>>[];
+
+                                if (v is Map) {
+                                  v.forEach((k, val) {
+                                    if (val is Map) {
+                                      final m = val.map(
+                                        (kk, vv) => MapEntry(kk.toString(), vv),
+                                      );
+                                      if (!_paymentMatchesCourse(
+                                        payment: m.cast<String, dynamic>(),
+                                        courseKey: courseKey,
+                                        courseId: courseId,
+                                        courseTitle: courseTitleForMatch,
+                                        courseCode: courseCodeForMatch,
+                                      )) {
+                                        return;
+                                      }
+                                      items.add({
+                                        'paymentId': k.toString(),
+                                        ...m,
+                                      });
+                                    }
+                                  });
+                                }
+
+                                items.sort(
+                                  (a, b) => _asInt(
+                                    b['paidAt'],
+                                  ).compareTo(_asInt(a['paidAt'])),
+                                );
+
+                                if (items.isEmpty) {
+                                  return const _MiniState(
+                                    text: 'No payments yet.',
+                                  );
+                                }
+
+                                int effectiveSessionsForPayment(
+                                  Map<String, dynamic> pay,
+                                ) {
+                                  final payVariant = _normalizeVariantKey(
+                                    (pay['variantKey'] ??
+                                            pay['deliveryKey'] ??
+                                            pay['variant'] ??
+                                            variantKey)
+                                        .toString(),
+                                  );
+                                  if (!_variantUsesSessions(payVariant))
+                                    return 0;
+
+                                  var sp = _asInt(pay['sessionsPaid']);
+                                  final amount = _asInt(pay['amount']);
+                                  if (sp <= 0 &&
+                                      amount > 0 &&
+                                      (payVariant == 'private' ||
+                                          payVariant == 'inclass')) {
+                                    sp = 8;
+                                  }
+                                  return sp;
+                                }
+
+                                final oldestFirst = [...items]
+                                  ..sort(
+                                    (a, b) => _asInt(
+                                      a['paidAt'],
+                                    ).compareTo(_asInt(b['paidAt'])),
+                                  );
+
+                                var remainingToConsume = sessionsDone;
+                                final perPaymentLeft = <String, int>{};
+                                var derivedSessionsPaidTotal = 0;
+                                var derivedTotalPaid = 0;
+                                var derivedLastPaymentAt = 0;
+                                var derivedLastAmount = 0;
+                                var derivedLastExpiresAt = 0;
+                                var derivedLastExpiryMonths = 0;
+                                var derivedLastDurationMonths = 0;
+                                for (final pay in oldestFirst) {
+                                  final pid = (pay['paymentId'] ?? '')
+                                      .toString();
+                                  if (pid.isEmpty) continue;
+
+                                  final sp = effectiveSessionsForPayment(pay);
+                                  derivedSessionsPaidTotal += sp;
+                                  final amount = _asInt(pay['amount']);
+                                  derivedTotalPaid += amount;
+                                  final paidAt = _asInt(pay['paidAt']);
+                                  if (paidAt >= derivedLastPaymentAt) {
+                                    derivedLastPaymentAt = paidAt;
+                                    derivedLastAmount = amount;
+                                    derivedLastExpiresAt = _asInt(
+                                      pay['expiresAt'],
+                                    );
+                                    derivedLastExpiryMonths = _asInt(
+                                      pay['expiryMonths'],
+                                    );
+                                    derivedLastDurationMonths = _asInt(
+                                      pay['durationMonths'],
+                                    );
+                                  }
+
+                                  final consumed = remainingToConsume <= 0
+                                      ? 0
+                                      : (remainingToConsume >= sp
+                                            ? sp
+                                            : remainingToConsume);
+                                  final leftAfterAllocation = sp - consumed;
+                                  perPaymentLeft[pid] = leftAfterAllocation < 0
+                                      ? 0
+                                      : leftAfterAllocation;
+                                  remainingToConsume -= consumed;
+                                }
+
+                                _scheduleSummaryRepairIfNeeded(
+                                  courseKey: courseKey,
+                                  summarySessionsPaidTotal: sessionsPaidTotal,
+                                  summaryTotalPaid: totalPaid,
+                                  summaryLastPaymentAt: lastPaymentAt,
+                                  summaryLastAmount: lastAmount,
+                                  summaryExpiresAt: summaryExpiresAt,
+                                  summaryExpiryMonths: summaryExpiryMonths,
+                                  summaryDurationMonths: summaryDurationMonths,
+                                  derivedSessionsPaidTotal:
+                                      derivedSessionsPaidTotal,
+                                  derivedTotalPaid: derivedTotalPaid,
+                                  derivedLastPaymentAt: derivedLastPaymentAt,
+                                  derivedLastAmount: derivedLastAmount,
+                                  derivedExpiresAt: derivedLastExpiresAt,
+                                  derivedExpiryMonths: derivedLastExpiryMonths,
+                                  derivedDurationMonths:
+                                      derivedLastDurationMonths,
+                                );
+
+                                return ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  itemCount: items.length,
+                                  itemBuilder: (context, i) {
+                                    final p = items[i];
+                                    final fee = _asInt(p['amount']);
+                                    final method = (p['method'] ?? '')
+                                        .toString();
+                                    final notes = (p['notes'] ?? '').toString();
+
+                                    final payVariant = _normalizeVariantKey(
+                                      (p['variantKey'] ?? variantKey)
+                                          .toString(),
+                                    );
+                                    final payStudyMode = (p['studyMode'] ?? '')
+                                        .toString();
+                                    final paidAt = _fmtDateMs(
+                                      _asInt(p['paidAt']),
+                                    );
+                                    final startDate = (p['startDate'] ?? '')
+                                        .toString()
+                                        .trim();
+                                    final expiresAt = _fmtDateMs(
+                                      _asInt(p['expiresAt']),
+                                    );
+                                    final sp = _asInt(p['sessionsPaid']);
+                                    final durationMonths = _asInt(
+                                      p['durationMonths'],
+                                    );
+                                    final expiryMonths = _asInt(
+                                      p['expiryMonths'],
+                                    );
+                                    final paymentId = (p['paymentId'] ?? '')
+                                        .toString();
+
+                                    final variantBadge =
+                                        payVariant == 'private' &&
+                                            payStudyMode.trim().isNotEmpty
+                                        ? '${_variantLabel(payVariant)} • ${_studyModeLabel(payStudyMode)}'
+                                        : _variantLabel(payVariant);
+
+                                    final left = perPaymentLeft[paymentId] ?? 0;
+
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: _miniCard(
+                                        bg: Colors.white,
+                                        borderColor:
+                                            AdminLearnersScreen.uiBorders,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: [
+                                                _miniPill(
+                                                  'Type: $variantBadge',
+                                                ),
+                                                _miniPill('Fee: $fee'),
+                                                _miniPill(
+                                                  'Paid: ${paidAt.isEmpty ? '-' : paidAt}',
+                                                ),
+                                                if (_variantUsesSessions(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill('Sessions: $sp'),
+                                                if (_variantUsesReminder(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill(
+                                                    'Left in this payment: $left',
+                                                  ),
+                                                if (_variantUsesStartDate(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill(
+                                                    'Start: ${startDate.isEmpty ? '-' : startDate}',
+                                                  ),
+                                                if (_variantIsFlexible(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill(
+                                                    'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                                  ),
+                                                if (_variantIsFlexible(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill(
+                                                    expiryMonths > 0
+                                                        ? 'Window: $expiryMonths months'
+                                                        : 'Window: -',
+                                                  ),
+                                                if (_variantIsRecorded(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill(
+                                                    durationMonths > 0
+                                                        ? 'Duration: $durationMonths months'
+                                                        : 'Duration: -',
+                                                  ),
+                                                if (_variantIsRecorded(
+                                                  payVariant,
+                                                ))
+                                                  _miniPill(
+                                                    'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                                  ),
+                                              ],
+                                            ),
+                                            if (method.trim().isNotEmpty ||
+                                                notes.trim().isNotEmpty) ...[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                [
+                                                  if (method.trim().isNotEmpty)
+                                                    method,
+                                                  if (notes.trim().isNotEmpty)
+                                                    notes,
+                                                ].join(' • '),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.65),
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                            if (i == 0 &&
+                                                usesSessions &&
+                                                derivedSessionsPaidTotal > 0 &&
+                                                derivedSessionsPaidTotal !=
+                                                    effectiveSessionsPaidTotal) ...[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                'Summary mismatch detected. History sessions: $derivedSessionsPaidTotal, summary: $effectiveSessionsPaidTotal.',
+                                                style: TextStyle(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.62),
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 );
                               },
-                            );
-                          },
-                        ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             );
@@ -4471,11 +4719,29 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     final learnerBySid = _attendanceBySessionId(learnerAttendance);
 
     if (classId.isEmpty && _variantIsFlexible(variantKey)) {
+      final totalSessions = _parseTotalSessions(
+        (courseNode['duration'] ?? '').toString(),
+      );
+
       return FutureBuilder<DataSnapshot>(
-        key: ValueKey('attendance-course-$courseId'),
-        future: _courseSnapshotFuture(courseId),
-        builder: (context, cs) {
-          if (!cs.hasData) {
+        key: ValueKey('attendance-online-${widget.uid}-$courseId'),
+        future: widget.db
+            .ref('booking_progress/${widget.uid}/$courseId/online_attendance')
+            .get(),
+        builder: (context, progressSnap) {
+          if (progressSnap.hasError) {
+            return ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _coursePicker(keys),
+                const SizedBox(height: 8),
+                const _MiniState(
+                  text: 'No attendance recorded yet for this learner.',
+                ),
+              ],
+            );
+          }
+          if (!progressSnap.hasData) {
             return ListView(
               padding: EdgeInsets.zero,
               children: const [
@@ -4485,174 +4751,138 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             );
           }
 
-          final cRaw = cs.data?.value;
-          final cMap = cRaw is Map
-              ? cRaw.map((k, v) => MapEntry(k.toString(), v))
-              : <String, dynamic>{};
-          final totalSessions = _parseTotalSessions(
-            cMap['duration']?.toString() ?? '',
-          );
+          final onlineRaw = progressSnap.data?.value;
+          final presentRows = <Map<String, dynamic>>[];
+          if (onlineRaw is Map) {
+            onlineRaw.forEach((_, value) {
+              if (value is! Map) return;
+              final m = value
+                  .map((k, v) => MapEntry(k.toString(), v))
+                  .cast<String, dynamic>();
+              if (m['present'] != true) return;
+              presentRows.add(m);
+            });
+          }
 
-          return FutureBuilder<DataSnapshot>(
-            key: ValueKey('attendance-online-${widget.uid}-$courseId'),
-            future: widget.db
-                .ref(
-                  'booking_progress/${widget.uid}/$courseId/online_attendance',
-                )
-                .get(),
-            builder: (context, progressSnap) {
-              if (!progressSnap.hasData) {
-                return ListView(
-                  padding: EdgeInsets.zero,
-                  children: const [
-                    SizedBox(height: 8),
-                    Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                  ],
-                );
-              }
+          int toTs(Map<String, dynamic> m) {
+            final raw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
+            if (raw is int) return raw;
+            if (raw is num) return raw.toInt();
+            return int.tryParse(raw?.toString() ?? '') ?? 0;
+          }
 
-              final onlineRaw = progressSnap.data?.value;
-              final presentRows = <Map<String, dynamic>>[];
-              if (onlineRaw is Map) {
-                onlineRaw.forEach((_, value) {
-                  if (value is! Map) return;
-                  final m = value
-                      .map((k, v) => MapEntry(k.toString(), v))
-                      .cast<String, dynamic>();
-                  if (m['present'] != true) return;
-                  presentRows.add(m);
-                });
-              }
+          presentRows.sort((a, b) => toTs(a).compareTo(toTs(b)));
 
-              int toTs(Map<String, dynamic> m) {
-                final raw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
-                if (raw is int) return raw;
-                if (raw is num) return raw.toInt();
-                return int.tryParse(raw?.toString() ?? '') ?? 0;
-              }
+          String formatWhen(Map<String, dynamic> m) {
+            final dayKey = (m['dayKey'] ?? '').toString().trim();
+            final time = (m['time'] ?? '').toString().trim();
+            if (dayKey.isNotEmpty && time.isNotEmpty) return '$dayKey $time';
+            if (dayKey.isNotEmpty) return dayKey;
 
-              presentRows.sort((a, b) => toTs(a).compareTo(toTs(b)));
+            final ts = toTs(m);
+            if (ts > 0) {
+              final d = DateTime.fromMillisecondsSinceEpoch(ts);
+              final mm = d.month.toString().padLeft(2, '0');
+              final dd = d.day.toString().padLeft(2, '0');
+              final hh = d.hour.toString().padLeft(2, '0');
+              final mi = d.minute.toString().padLeft(2, '0');
+              return '${d.year}-$mm-$dd $hh:$mi';
+            }
+            return '-';
+          }
 
-              String formatWhen(Map<String, dynamic> m) {
-                final dayKey = (m['dayKey'] ?? '').toString().trim();
-                final time = (m['time'] ?? '').toString().trim();
-                if (dayKey.isNotEmpty && time.isNotEmpty)
-                  return '$dayKey $time';
-                if (dayKey.isNotEmpty) return dayKey;
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _coursePicker(keys),
+              const SizedBox(height: 8),
+              _miniCard(
+                child: Text(
+                  totalSessions > 0
+                      ? 'Flexible consumed sessions: ${presentRows.length} / $totalSessions'
+                      : 'Flexible consumed sessions: ${presentRows.length}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (presentRows.isEmpty)
+                const _MiniState(text: 'No present attendance recorded yet.')
+              else
+                ...presentRows.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final m = entry.value;
+                  final when = formatWhen(m);
+                  final sessionNo = _asInt(m['sessionNo']);
+                  final teacher = (m['teacherName'] ?? '').toString().trim();
 
-                final ts = toTs(m);
-                if (ts > 0) {
-                  final d = DateTime.fromMillisecondsSinceEpoch(ts);
-                  final mm = d.month.toString().padLeft(2, '0');
-                  final dd = d.day.toString().padLeft(2, '0');
-                  final hh = d.hour.toString().padLeft(2, '0');
-                  final mi = d.minute.toString().padLeft(2, '0');
-                  return '${d.year}-$mm-$dd $hh:$mi';
-                }
-                return '-';
-              }
-
-              return ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  _coursePicker(keys),
-                  const SizedBox(height: 8),
-                  _miniCard(
-                    child: Text(
-                      totalSessions > 0
-                          ? 'Flexible consumed sessions: ${presentRows.length} / $totalSessions'
-                          : 'Flexible consumed sessions: ${presentRows.length}',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (presentRows.isEmpty)
-                    const _MiniState(
-                      text: 'No present attendance recorded yet.',
-                    )
-                  else
-                    ...presentRows.asMap().entries.map((entry) {
-                      final i = entry.key;
-                      final m = entry.value;
-                      final when = formatWhen(m);
-                      final sessionNo = _asInt(m['sessionNo']);
-                      final teacher = (m['teacherName'] ?? '')
-                          .toString()
-                          .trim();
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(
-                              0xFF157A3D,
-                            ).withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: AdminLearnersScreen.uiBorders,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF157A3D).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AdminLearnersScreen.uiBorders,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 58,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF157A3D),
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(16),
+                                bottomLeft: Radius.circular(16),
+                              ),
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 58,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF157A3D),
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: Radius.circular(16),
-                                    bottomLeft: Radius.circular(16),
-                                  ),
-                                ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                                horizontal: 6,
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                    horizontal: 6,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '#${i + 1}  Session ${sessionNo <= 0 ? '-' : sessionNo} — present',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '#${i + 1}  Session ${sessionNo <= 0 ? '-' : sessionNo} — present',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    [
+                                      when,
+                                      if (teacher.isNotEmpty)
+                                        'Teacher: $teacher',
+                                    ].join(' • '),
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.65,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        [
-                                          when,
-                                          if (teacher.isNotEmpty)
-                                            'Teacher: $teacher',
-                                        ].join(' • '),
-                                        style: TextStyle(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.65,
-                                          ),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      );
-                    }),
-                ],
-              );
-            },
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
           );
         },
       );

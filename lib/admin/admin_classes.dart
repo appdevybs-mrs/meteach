@@ -93,7 +93,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   final TextEditingController _flexSearchCtrl = TextEditingController();
   String _flexSearch = "";
   String _flexStatusFilter = 'all';
-  Future<List<_FlexCourseSummary>>? _flexSummaryFuture;
 
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
@@ -121,7 +120,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     _bootFuture = _loadTeachers().then((_) => _loadCourses());
     _classesFuture = _classesRef.get();
     _loadAllLearners();
-    _flexSummaryFuture = _loadFlexibleAttendanceSummaries();
 
     _searchCtrl.addListener(() {
       _searchDebounce?.cancel();
@@ -2484,6 +2482,126 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     final allUsers = Map<dynamic, dynamic>.from(usersSnap.value as Map);
     final out = <_FlexCourseSummary>[];
+    final paymentsByUid = <String, List<Map<String, dynamic>>>{};
+
+    Future<List<Map<String, dynamic>>> loadPaymentsForUid(String uid) async {
+      final cached = paymentsByUid[uid];
+      if (cached != null) return cached;
+      final list = <Map<String, dynamic>>[];
+      try {
+        final snap = await _db
+            .child('payments')
+            .orderByChild('uid')
+            .equalTo(uid)
+            .get();
+        if (snap.exists && snap.value is Map) {
+          final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+          for (final entry in raw.entries) {
+            if (entry.value is! Map) continue;
+            list.add(Map<String, dynamic>.from(entry.value as Map));
+          }
+        }
+      } catch (_) {}
+
+      if (list.isEmpty) {
+        try {
+          final allSnap = await _db.child('payments').get();
+          if (allSnap.exists && allSnap.value is Map) {
+            final raw = Map<dynamic, dynamic>.from(allSnap.value as Map);
+            for (final entry in raw.entries) {
+              final v = entry.value;
+              if (v is! Map) continue;
+              final m = Map<String, dynamic>.from(v);
+              final payUid = (m['uid'] ?? '').toString().trim();
+              if (payUid == uid) list.add(m);
+            }
+          }
+        } catch (_) {}
+      }
+
+      paymentsByUid[uid] = list;
+      return list;
+    }
+
+    int latestFlexibleExpiryFromPayments({
+      required List<Map<String, dynamic>> payments,
+      required String courseKey,
+      required String courseId,
+      required String courseTitle,
+      required String courseCode,
+    }) {
+      String norm(String s) => s.trim().toLowerCase();
+      final wantedKey = norm(courseKey);
+      final wantedId = norm(courseId);
+      final wantedTitle = norm(courseTitle);
+      final wantedCode = norm(courseCode);
+
+      int ymdToMs(String ymd) {
+        final t = ymd.trim();
+        if (t.isEmpty) return 0;
+        final parts = t.split('-');
+        if (parts.length != 3) return 0;
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        final d = int.tryParse(parts[2]);
+        if (y == null || m == null || d == null) return 0;
+        return DateTime(y, m, d).millisecondsSinceEpoch;
+      }
+
+      int addMonthsToMs(int baseMs, int months) {
+        if (baseMs <= 0 || months <= 0) return 0;
+        final d = DateTime.fromMillisecondsSinceEpoch(baseMs);
+        return DateTime(d.year, d.month + months, d.day).millisecondsSinceEpoch;
+      }
+
+      var latestStamp = 0;
+      var latestExpiresAt = 0;
+      for (final p in payments) {
+        final payVariant = _normalizeVariantKey(
+          (p['variantKey'] ?? p['variant'] ?? '').toString(),
+        );
+        if (payVariant != 'flexible') continue;
+        final payCourseKey = (p['courseKey'] ?? '').toString().trim();
+        final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
+            .toString()
+            .trim();
+        final payCourseTitle = (p['course_title'] ?? p['courseTitle'] ?? '')
+            .toString()
+            .trim();
+        final payCourseCode = (p['course_code'] ?? p['courseCode'] ?? '')
+            .toString()
+            .trim();
+
+        final keyMatch =
+            wantedKey.isNotEmpty && norm(payCourseKey) == wantedKey;
+        final idMatch = wantedId.isNotEmpty && norm(payCourseId) == wantedId;
+        final titleMatch =
+            wantedTitle.isNotEmpty && norm(payCourseTitle) == wantedTitle;
+        final codeMatch =
+            wantedCode.isNotEmpty && norm(payCourseCode) == wantedCode;
+
+        if (!(keyMatch || idMatch || titleMatch || codeMatch)) {
+          continue;
+        }
+        final paidAt = _asInt(p['paidAt']);
+        final startDate = (p['startDate'] ?? '').toString();
+        final expiryMonths = _asInt(p['expiryMonths']);
+
+        var expiresAt = _asInt(p['expiresAt']);
+        if (expiresAt <= 0 && startDate.trim().isNotEmpty && expiryMonths > 0) {
+          final baseMs = ymdToMs(startDate);
+          expiresAt = addMonthsToMs(baseMs, expiryMonths);
+        }
+        if (expiresAt <= 0) continue;
+
+        final stamp = paidAt > 0 ? paidAt : _asInt(p['createdAt']);
+        if (stamp >= latestStamp) {
+          latestStamp = stamp;
+          latestExpiresAt = expiresAt;
+        }
+      }
+      return latestExpiresAt;
+    }
 
     for (final userEntry in allUsers.entries) {
       final uid = userEntry.key.toString();
@@ -2519,6 +2637,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         if (courseId.isEmpty) continue;
 
         final courseTitleRaw = (cm['title'] ?? '').toString().trim();
+        final courseCodeRaw = (cm['course_code'] ?? '').toString().trim();
         final mappedTitle = (courseTitleById[courseId] ?? '').trim();
         final courseTitle = courseTitleRaw.isNotEmpty
             ? courseTitleRaw
@@ -2576,7 +2695,23 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final accessMap = (cm['flexible_access'] is Map)
             ? Map<String, dynamic>.from(cm['flexible_access'])
             : <String, dynamic>{};
-        final expiresAt = _asInt(accessMap['expiresAt']);
+        int expiresAt = _asInt(accessMap['expiresAt']);
+        if (expiresAt <= 0) {
+          final sumMap = (cm['payment_summary'] is Map)
+              ? Map<String, dynamic>.from(cm['payment_summary'])
+              : <String, dynamic>{};
+          expiresAt = _asInt(sumMap['expiresAt']);
+        }
+        if (expiresAt <= 0) {
+          final payments = await loadPaymentsForUid(uid);
+          expiresAt = latestFlexibleExpiryFromPayments(
+            payments: payments,
+            courseKey: courseKey,
+            courseId: courseId,
+            courseTitle: courseTitle,
+            courseCode: courseCodeRaw,
+          );
+        }
 
         final consumed = presentRows.length;
         final statusLabel = _flexPaymentStatusLabel(
@@ -2617,7 +2752,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Widget _buildFlexibleAttendanceTab() {
     return FutureBuilder<List<_FlexCourseSummary>>(
-      future: _flexSummaryFuture,
+      future: _loadFlexibleAttendanceSummaries(),
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
@@ -2707,11 +2842,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                 ),
                 IconButton(
                   tooltip: 'Refresh flexible attendance',
-                  onPressed: () {
-                    setState(() {
-                      _flexSummaryFuture = _loadFlexibleAttendanceSummaries();
-                    });
-                  },
+                  onPressed: () => setState(() {}),
                   icon: const Icon(Icons.refresh_rounded),
                 ),
               ],

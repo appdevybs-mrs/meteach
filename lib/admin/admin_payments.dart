@@ -443,6 +443,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     int lastAmount = 0;
     int lastRemind = 0;
     String lastVariantKey = '';
+    int lastExpiresAt = 0;
+    int lastExpiryMonths = 0;
+    int lastDurationMonths = 0;
 
     if (v is Map) {
       for (final entry in v.entries) {
@@ -494,6 +497,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           lastAmount = amount;
           lastRemind = remind;
           lastVariantKey = effectiveVariant;
+          lastExpiresAt = _asInt(m['expiresAt']);
+          lastExpiryMonths = _asInt(m['expiryMonths']);
+          lastDurationMonths = _asInt(m['durationMonths']);
         }
       }
     }
@@ -517,6 +523,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       'lastPaymentId': lastPaymentId,
       'lastMethod': lastMethod,
       'lastAmount': lastAmount,
+      'expiresAt': _variantUsesExpiry(lastVariantKey) ? lastExpiresAt : null,
+      'expiryMonths': _variantIsFlexible(lastVariantKey)
+          ? lastExpiryMonths
+          : null,
+      'durationMonths': _variantIsRecorded(lastVariantKey)
+          ? lastDurationMonths
+          : null,
       'updatedAt': ServerValue.timestamp,
     });
   }
@@ -1567,7 +1580,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             ),
                             Expanded(
                               child: ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(0, 0, 0, 18),
+                                padding: EdgeInsets.fromLTRB(
+                                  0,
+                                  0,
+                                  0,
+                                  MediaQuery.of(context).padding.bottom + 28,
+                                ),
                                 itemCount: visible.length,
                                 separatorBuilder: (_, _) => Divider(
                                   height: 1,
@@ -2478,24 +2496,34 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             );
                           }
 
-                          await _sendPaymentReceiptMail(
-                            learnerUid: pickedUid!,
-                            learnerName: learnerName.isEmpty
-                                ? 'Learner'
-                                : learnerName,
-                            courseTitle: courseTitle,
-                            amount: fee,
-                            sessionsPaid: usesSessions ? sessionsPaid : 0,
-                            paidDateYmd: paidDateYmd,
-                            variantKey: pickedVariantKey,
-                            durationMonths: _variantIsRecorded(pickedVariantKey)
-                                ? durationMonths
-                                : 0,
-                            expiresAt: expiresAt,
-                          );
+                          String postWarning = '';
+                          try {
+                            await _sendPaymentReceiptMail(
+                              learnerUid: pickedUid!,
+                              learnerName: learnerName.isEmpty
+                                  ? 'Learner'
+                                  : learnerName,
+                              courseTitle: courseTitle,
+                              amount: fee,
+                              sessionsPaid: usesSessions ? sessionsPaid : 0,
+                              paidDateYmd: paidDateYmd,
+                              variantKey: pickedVariantKey,
+                              durationMonths:
+                                  _variantIsRecorded(pickedVariantKey)
+                                  ? durationMonths
+                                  : 0,
+                              expiresAt: expiresAt,
+                            );
+                          } catch (mailErr) {
+                            postWarning =
+                                'Payment saved, but receipt mail failed (${humanizeUiMessage(mailErr.toString())}).';
+                          }
 
                           if (context.mounted) Navigator.pop(context);
                           _toast('Payment saved ✅');
+                          if (postWarning.isNotEmpty) {
+                            _toast(postWarning);
+                          }
                         } catch (e) {
                           saveLocked = false;
                           setD(() => isSaving = false);
@@ -2825,22 +2853,31 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             'updatedAt': ServerValue.timestamp,
                           });
 
+                          String postWarning = '';
                           if (oldUid.isNotEmpty && oldCourseKey.isNotEmpty) {
-                            await _rebuildLearnerSummaryFromPayments(
-                              uid: oldUid,
-                              courseKey: oldCourseKey,
-                            );
-                            if (_variantUsesExpiry(variantKey)) {
-                              await _rebuildVariantAccessFromPayments(
+                            try {
+                              await _rebuildLearnerSummaryFromPayments(
                                 uid: oldUid,
                                 courseKey: oldCourseKey,
-                                variantKey: variantKey,
                               );
+                              if (_variantUsesExpiry(variantKey)) {
+                                await _rebuildVariantAccessFromPayments(
+                                  uid: oldUid,
+                                  courseKey: oldCourseKey,
+                                  variantKey: variantKey,
+                                );
+                              }
+                            } catch (syncErr) {
+                              postWarning =
+                                  'Payment updated, but summary sync failed (${humanizeUiMessage(syncErr.toString())}).';
                             }
                           }
 
                           if (context.mounted) Navigator.pop(context);
                           _toast('Updated ✅');
+                          if (postWarning.isNotEmpty) {
+                            _toast(postWarning);
+                          }
                         } catch (e) {
                           saveLocked = false;
                           setD(() => isSaving = false);
