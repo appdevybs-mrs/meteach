@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -950,13 +951,19 @@ class _AdminTeacherRemindersScreenState
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _topFilters(),
-          Expanded(
-            child: _isSingleTeacherMode ? _buildSingleMode() : _buildAllMode(),
-          ),
-        ],
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1500,
+        child: Column(
+          children: [
+            _topFilters(),
+            Expanded(
+              child: _isSingleTeacherMode
+                  ? _buildSingleMode()
+                  : _buildAllMode(),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAddDialog,

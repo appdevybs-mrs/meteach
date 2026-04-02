@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -1597,229 +1598,232 @@ class _AdminTeacherAvailabilityOverviewScreenState
           const SizedBox(width: 4),
         ],
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
-              children: [
-                _buildSection(
-                  title: 'Overview',
-                  expanded: overviewExpanded,
-                  onToggle: () {
-                    setState(() => overviewExpanded = !overviewExpanded);
-                  },
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: searchC,
-                        decoration: InputDecoration(
-                          hintText: 'Search teacher / course / code / email',
-                          isDense: true,
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: searchC.text.trim().isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () => searchC.clear(),
-                                  icon: const Icon(Icons.close_rounded),
-                                ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: uiBorder),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      GridView.count(
-                        crossAxisCount: MediaQuery.of(context).size.width >= 900
-                            ? 3
-                            : 2,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 2.5,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          _summaryCard(
-                            title: 'Total teachers',
-                            value: '$totalTeachers',
-                            icon: Icons.badge_rounded,
-                            color: primaryBlue,
-                          ),
-                          _summaryCard(
-                            title: 'Teachers ON',
-                            value: '$teachersOn',
-                            icon: Icons.toggle_on_rounded,
-                            color: successGreen,
-                          ),
-                          _summaryCard(
-                            title: 'Teachers OFF',
-                            value: '$teachersOff',
-                            icon: Icons.toggle_off_rounded,
-                            color: Colors.grey.shade700,
-                          ),
-                          _summaryCard(
-                            title: 'ON • no courses',
-                            value: '$teachersOnNoCourses',
-                            icon: Icons.warning_amber_rounded,
-                            color: actionOrange,
-                          ),
-                          _summaryCard(
-                            title: 'Covered flexible',
-                            value: '$coveredFlexibleCourses',
-                            icon: Icons.check_circle_rounded,
-                            color: successGreen,
-                          ),
-                          _summaryCard(
-                            title: 'Uncovered flexible',
-                            value: '$uncoveredFlexibleCourses',
-                            icon: Icons.error_outline_rounded,
-                            color: Colors.red,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _buildSection(
-                  title: 'Attention',
-                  expanded: attentionExpanded,
-                  onToggle: () {
-                    setState(() => attentionExpanded = !attentionExpanded);
-                  },
-                  child: _buildAttentionBox(),
-                ),
-                const SizedBox(height: 10),
-                _buildSection(
-                  title: 'Course coverage',
-                  expanded: coursesExpanded,
-                  onToggle: () {
-                    setState(() => coursesExpanded = !coursesExpanded);
-                  },
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: primaryBlue.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${flexibleCourses.length}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Tap a course card to view teachers covering it.',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                          color: mutedText,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _buildCoveredCourseCards(),
-                      const SizedBox(height: 6),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: uiBorder),
-                        ),
-                        child: Text(
-                          'Courses needing teacher • ${_filteredUncoveredCourses().length}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: Colors.red,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildUncoveredCourses(),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _buildSection(
-                  title: 'Teachers',
-                  expanded: teachersExpanded,
-                  onToggle: () {
-                    setState(() => teachersExpanded = !teachersExpanded);
-                  },
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: primaryBlue.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${filteredTeachers.length}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                  child: filteredTeachers.isEmpty
-                      ? Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: uiBorder),
-                          ),
-                          child: const Text(
-                            'No teachers match your search.',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: primaryBlue,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1620,
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
+                children: [
+                  _buildSection(
+                    title: 'Overview',
+                    expanded: overviewExpanded,
+                    onToggle: () {
+                      setState(() => overviewExpanded = !overviewExpanded);
+                    },
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: searchC,
+                          decoration: InputDecoration(
+                            hintText: 'Search teacher / course / code / email',
+                            isDense: true,
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: searchC.text.trim().isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () => searchC.clear(),
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: uiBorder),
                             ),
                           ),
-                        )
-                      : Column(
-                          children: filteredTeachers
-                              .map(_buildTeacherCard)
-                              .toList(),
                         ),
-                ),
-                if (teachersOnNoSlots > 0) ...[
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Text(
-                      'Note: $teachersOnNoSlots teacher${teachersOnNoSlots == 1 ? '' : 's'} are ON with active courses but zero merged weekly slots.',
-                      style: const TextStyle(
-                        color: mutedText,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
+                        const SizedBox(height: 10),
+                        GridView.count(
+                          crossAxisCount:
+                              MediaQuery.of(context).size.width >= 900 ? 3 : 2,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 2.5,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            _summaryCard(
+                              title: 'Total teachers',
+                              value: '$totalTeachers',
+                              icon: Icons.badge_rounded,
+                              color: primaryBlue,
+                            ),
+                            _summaryCard(
+                              title: 'Teachers ON',
+                              value: '$teachersOn',
+                              icon: Icons.toggle_on_rounded,
+                              color: successGreen,
+                            ),
+                            _summaryCard(
+                              title: 'Teachers OFF',
+                              value: '$teachersOff',
+                              icon: Icons.toggle_off_rounded,
+                              color: Colors.grey.shade700,
+                            ),
+                            _summaryCard(
+                              title: 'ON • no courses',
+                              value: '$teachersOnNoCourses',
+                              icon: Icons.warning_amber_rounded,
+                              color: actionOrange,
+                            ),
+                            _summaryCard(
+                              title: 'Covered flexible',
+                              value: '$coveredFlexibleCourses',
+                              icon: Icons.check_circle_rounded,
+                              color: successGreen,
+                            ),
+                            _summaryCard(
+                              title: 'Uncovered flexible',
+                              value: '$uncoveredFlexibleCourses',
+                              icon: Icons.error_outline_rounded,
+                              color: Colors.red,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  _buildSection(
+                    title: 'Attention',
+                    expanded: attentionExpanded,
+                    onToggle: () {
+                      setState(() => attentionExpanded = !attentionExpanded);
+                    },
+                    child: _buildAttentionBox(),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildSection(
+                    title: 'Course coverage',
+                    expanded: coursesExpanded,
+                    onToggle: () {
+                      setState(() => coursesExpanded = !coursesExpanded);
+                    },
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: primaryBlue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${flexibleCourses.length}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Tap a course card to view teachers covering it.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: mutedText,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildCoveredCourseCards(),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: uiBorder),
+                          ),
+                          child: Text(
+                            'Courses needing teacher • ${_filteredUncoveredCourses().length}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildUncoveredCourses(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildSection(
+                    title: 'Teachers',
+                    expanded: teachersExpanded,
+                    onToggle: () {
+                      setState(() => teachersExpanded = !teachersExpanded);
+                    },
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: primaryBlue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${filteredTeachers.length}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    child: filteredTeachers.isEmpty
+                        ? Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: uiBorder),
+                            ),
+                            child: const Text(
+                              'No teachers match your search.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: primaryBlue,
+                              ),
+                            ),
+                          )
+                        : Column(
+                            children: filteredTeachers
+                                .map(_buildTeacherCard)
+                                .toList(),
+                          ),
+                  ),
+                  if (teachersOnNoSlots > 0) ...[
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Text(
+                        'Note: $teachersOnNoSlots teacher${teachersOnNoSlots == 1 ? '' : 's'} are ON with active courses but zero merged weekly slots.',
+                        style: const TextStyle(
+                          color: mutedText,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
-            ),
+              ),
+      ),
     );
   }
 }

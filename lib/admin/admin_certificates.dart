@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_service.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart' show AppToast, AppToastType;
 import '../shared/screen_help_guide.dart';
 
@@ -335,11 +336,15 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildSearchAndFilters(),
-          Expanded(child: _buildCertificatesList()),
-        ],
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1660,
+        child: Column(
+          children: [
+            _buildSearchAndFilters(),
+            Expanded(child: _buildCertificatesList()),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddCertificateForm,

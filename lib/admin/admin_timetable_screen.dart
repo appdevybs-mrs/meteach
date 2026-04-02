@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:dream_english_academy/admin/admin_classes.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/screen_help_guide.dart';
 
 class AdminTimetableScreen extends StatefulWidget {
@@ -54,6 +55,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // NEW: filter panel collapsed by default
   bool _filtersExpanded = false;
+  double _webZoom = 1.0;
 
   // Scroll controllers
   final ScrollController _hBodyCtrl = ScrollController();
@@ -674,9 +676,14 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   _Sizes _calcSizes(BoxConstraints c) {
     final w = c.maxWidth;
-    final timeGutterW = (w * 0.16).clamp(56.0, 80.0);
-    final dayColW = (w * 0.34).clamp(120.0, 180.0);
-    final slotH = (w * 0.085).clamp(28.0, 44.0);
+    final baseTimeGutterW = (w * 0.16).clamp(56.0, 80.0);
+    final baseDayColW = (w * 0.34).clamp(120.0, 180.0);
+    final baseSlotH = (w * 0.085).clamp(28.0, 44.0);
+
+    final zoom = isWebDesktop(context) ? _webZoom : 1.0;
+    final timeGutterW = (baseTimeGutterW * zoom).clamp(56.0, 96.0);
+    final dayColW = (baseDayColW * zoom).clamp(120.0, 240.0);
+    final slotH = (baseSlotH * zoom).clamp(24.0, 62.0);
 
     return _Sizes(timeGutterW: timeGutterW, dayColW: dayColW, slotH: slotH);
   }
@@ -972,6 +979,20 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                     : Icons.keyboard_arrow_down_rounded,
               ),
             ),
+            if (isWebDesktop(context))
+              SegmentedButton<double>(
+                segments: const [
+                  ButtonSegment(value: 0.85, label: Text('85%')),
+                  ButtonSegment(value: 1.0, label: Text('100%')),
+                  ButtonSegment(value: 1.2, label: Text('120%')),
+                ],
+                selected: <double>{_webZoom},
+                onSelectionChanged: (v) {
+                  setState(() {
+                    _webZoom = v.first;
+                  });
+                },
+              ),
           ],
         ),
       ),
@@ -1154,129 +1175,134 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: StreamBuilder<DatabaseEvent>(
-          stream: _classesRef.onValue,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _classesRef.onValue,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-            final classes = _parseClasses(snap.data?.snapshot.value);
-            if (classes.isEmpty)
-              return const Center(child: Text("No classes found."));
+              final classes = _parseClasses(snap.data?.snapshot.value);
+              if (classes.isEmpty)
+                return const Center(child: Text("No classes found."));
 
-            final levelTitles = _extractLevelTitles(classes);
-            final studyTypes = _extractStudyTypeFilters(classes);
-            final filtered = classes.where(_matchesFilters).toList();
+              final levelTitles = _extractLevelTitles(classes);
+              final studyTypes = _extractStudyTypeFilters(classes);
+              final filtered = classes.where(_matchesFilters).toList();
 
-            return LayoutBuilder(
-              builder: (context, c) {
-                final s = _calcSizes(c);
+              return LayoutBuilder(
+                builder: (context, c) {
+                  final s = _calcSizes(c);
 
-                final gridH = _visibleSlots * s.slotH;
-                final fullW = s.timeGutterW + (_weekDays.length * s.dayColW);
+                  final gridH = _visibleSlots * s.slotH;
+                  final fullW = s.timeGutterW + (_weekDays.length * s.dayColW);
 
-                return Column(
-                  children: [
-                    _topCompactBar(shownCount: filtered.length),
-                    if (_filtersExpanded) const SizedBox(height: 8),
-                    _filtersCard(
-                      levelTitles: levelTitles,
-                      studyTypes: studyTypes,
-                      maxWidth: c.maxWidth,
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          _stickyHeader(fullW, s),
-                          Expanded(
-                            child: Scrollbar(
-                              controller: _vCtrl,
-                              thumbVisibility: true,
-                              child: SingleChildScrollView(
+                  return Column(
+                    children: [
+                      _topCompactBar(shownCount: filtered.length),
+                      if (_filtersExpanded) const SizedBox(height: 8),
+                      _filtersCard(
+                        levelTitles: levelTitles,
+                        studyTypes: studyTypes,
+                        maxWidth: c.maxWidth,
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _stickyHeader(fullW, s),
+                            Expanded(
+                              child: Scrollbar(
                                 controller: _vCtrl,
-                                child: Scrollbar(
-                                  controller: _hBodyCtrl,
-                                  thumbVisibility: true,
-                                  notificationPredicate: (n) =>
-                                      n.metrics.axis == Axis.horizontal,
-                                  child: SingleChildScrollView(
+                                thumbVisibility: true,
+                                child: SingleChildScrollView(
+                                  controller: _vCtrl,
+                                  child: Scrollbar(
                                     controller: _hBodyCtrl,
-                                    scrollDirection: Axis.horizontal,
-                                    child: SizedBox(
-                                      width: fullW,
-                                      height: gridH,
-                                      child: Stack(
-                                        children: [
-                                          _gridBackground(gridH, fullW, s),
-                                          Positioned(
-                                            left: 0,
-                                            top: 0,
-                                            bottom: 0,
-                                            width: s.timeGutterW,
-                                            child: Column(
-                                              children: List.generate(
-                                                _visibleSlots,
-                                                (i) {
-                                                  final minutes =
-                                                      _visibleStartMin +
-                                                      (i * _minutesStep);
-                                                  final isHour =
-                                                      (minutes % 60) == 0;
+                                    thumbVisibility: true,
+                                    notificationPredicate: (n) =>
+                                        n.metrics.axis == Axis.horizontal,
+                                    child: SingleChildScrollView(
+                                      controller: _hBodyCtrl,
+                                      scrollDirection: Axis.horizontal,
+                                      child: SizedBox(
+                                        width: fullW,
+                                        height: gridH,
+                                        child: Stack(
+                                          children: [
+                                            _gridBackground(gridH, fullW, s),
+                                            Positioned(
+                                              left: 0,
+                                              top: 0,
+                                              bottom: 0,
+                                              width: s.timeGutterW,
+                                              child: Column(
+                                                children: List.generate(
+                                                  _visibleSlots,
+                                                  (i) {
+                                                    final minutes =
+                                                        _visibleStartMin +
+                                                        (i * _minutesStep);
+                                                    final isHour =
+                                                        (minutes % 60) == 0;
 
-                                                  return SizedBox(
-                                                    height: s.slotH,
-                                                    child: Align(
-                                                      alignment:
-                                                          Alignment.topLeft,
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                              left: 8,
-                                                              top: 2,
+                                                    return SizedBox(
+                                                      height: s.slotH,
+                                                      child: Align(
+                                                        alignment:
+                                                            Alignment.topLeft,
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.only(
+                                                                left: 8,
+                                                                top: 2,
+                                                              ),
+                                                          child: Text(
+                                                            isHour
+                                                                ? _minutesToLabel(
+                                                                    minutes,
+                                                                  )
+                                                                : "",
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w800,
+                                                              color: Colors
+                                                                  .grey
+                                                                  .shade800,
                                                             ),
-                                                        child: Text(
-                                                          isHour
-                                                              ? _minutesToLabel(
-                                                                  minutes,
-                                                                )
-                                                              : "",
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                            color: Colors
-                                                                .grey
-                                                                .shade800,
                                                           ),
                                                         ),
                                                       ),
-                                                    ),
-                                                  );
-                                                },
+                                                    );
+                                                  },
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                          ..._buildBlocks(filtered, s),
-                                        ],
+                                            ..._buildBlocks(filtered, s),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );

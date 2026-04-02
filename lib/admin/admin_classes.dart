@@ -34,6 +34,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -3160,10 +3161,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             ],
           ),
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: TabBarView(
-            children: [_buildClassesList(), _buildFlexibleAttendanceTab()],
+        body: adminWebBodyFrame(
+          context: context,
+          maxWidth: 1560,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: TabBarView(
+              children: [_buildClassesList(), _buildFlexibleAttendanceTab()],
+            ),
           ),
         ),
         floatingActionButton: FloatingActionButton(

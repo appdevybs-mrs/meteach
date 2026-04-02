@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/media_download.dart';
@@ -1391,9 +1392,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           'Gallery',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
         bottom: TabBar(
           controller: _tab,
           labelColor: primaryBlue,
@@ -1406,14 +1405,18 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           ],
         ),
       ),
-      body: SafeArea(
-        child: TabBarView(
-          controller: _tab,
-          children: [
-            _buildPublicTeasersTab(),
-            _buildLearnerGalleriesTab(),
-            _buildTeacherGalleryTab(),
-          ],
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: SafeArea(
+          child: TabBarView(
+            controller: _tab,
+            children: [
+              _buildPublicTeasersTab(),
+              _buildLearnerGalleriesTab(),
+              _buildTeacherGalleryTab(),
+            ],
+          ),
         ),
       ),
     );
@@ -1713,157 +1716,161 @@ class _AdminTeacherProfileGalleryScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    teacher.name,
-                    style: const TextStyle(
-                      color: primaryBlue,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 17,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Teacher profile media (photos and intro video).',
-                    style: TextStyle(
-                      color: mainText.withValues(alpha: 0.7),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _AdminCountPill(label: '${items.length} total'),
-                      _AdminCountPill(label: '$photos photos'),
-                      _AdminCountPill(label: '$videos videos'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            if (items.isEmpty)
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                 ),
-                child: const Text(
-                  'No teacher profile media yet.',
-                  style: TextStyle(
-                    color: mainText,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              )
-            else
-              GridView.builder(
-                itemCount: items.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.92,
-                ),
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final type = (item['type'] ?? '').toString();
-                  final url = (item['url'] ?? '').toString();
-
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => _AdminLearnerGalleryViewerScreen(
-                            itemId: (item['id'] ?? '').toString(),
-                            type: type,
-                            url: url,
-                            uploaderName: teacher.name,
-                            learnerName: teacher.name,
-                            createdAt: 'Teacher profile media',
-                            onDelete: null,
-                            subjectLabel: 'Teacher',
-                          ),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: uiBorder.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (type == 'video')
-                              _AdminVideoTile(url: url)
-                            else
-                              Image.network(
-                                url,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  color: Colors.grey.shade200,
-                                  alignment: Alignment.center,
-                                  child: const Icon(
-                                    Icons.broken_image_outlined,
-                                  ),
-                                ),
-                              ),
-                            Positioned(
-                              left: 8,
-                              top: 8,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.55),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  type == 'video' ? 'Video' : 'Photo',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      teacher.name,
+                      style: const TextStyle(
+                        color: primaryBlue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
                       ),
                     ),
-                  );
-                },
+                    const SizedBox(height: 6),
+                    Text(
+                      'Teacher profile media (photos and intro video).',
+                      style: TextStyle(
+                        color: mainText.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _AdminCountPill(label: '${items.length} total'),
+                        _AdminCountPill(label: '$photos photos'),
+                        _AdminCountPill(label: '$videos videos'),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-          ],
+              const SizedBox(height: 14),
+              if (items.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                  ),
+                  child: const Text(
+                    'No teacher profile media yet.',
+                    style: TextStyle(
+                      color: mainText,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              else
+                GridView.builder(
+                  itemCount: items.length,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.92,
+                  ),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final type = (item['type'] ?? '').toString();
+                    final url = (item['url'] ?? '').toString();
+
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _AdminLearnerGalleryViewerScreen(
+                              itemId: (item['id'] ?? '').toString(),
+                              type: type,
+                              url: url,
+                              uploaderName: teacher.name,
+                              learnerName: teacher.name,
+                              createdAt: 'Teacher profile media',
+                              onDelete: null,
+                              subjectLabel: 'Teacher',
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: uiBorder.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (type == 'video')
+                                _AdminVideoTile(url: url)
+                              else
+                                Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Container(
+                                    color: Colors.grey.shade200,
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.broken_image_outlined,
+                                    ),
+                                  ),
+                                ),
+                              Positioned(
+                                left: 8,
+                                top: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    type == 'video' ? 'Video' : 'Photo',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2285,168 +2292,34 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
-      body: SafeArea(
-        child: StreamBuilder<DatabaseEvent>(
-          stream: _galleryRef().onValue,
-          builder: (context, snap) {
-            final items = _itemsFromSnapshot(snap.data?.snapshot.value);
-            final photoCount = items
-                .where(
-                  (e) => (e['type'] ?? '').toString().toLowerCase() == 'photo',
-                )
-                .length;
-            final videoCount = items
-                .where(
-                  (e) => (e['type'] ?? '').toString().toLowerCase() == 'video',
-                )
-                .length;
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: SafeArea(
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _galleryRef().onValue,
+            builder: (context, snap) {
+              final items = _itemsFromSnapshot(snap.data?.snapshot.value);
+              final photoCount = items
+                  .where(
+                    (e) =>
+                        (e['type'] ?? '').toString().toLowerCase() == 'photo',
+                  )
+                  .length;
+              final videoCount = items
+                  .where(
+                    (e) =>
+                        (e['type'] ?? '').toString().toLowerCase() == 'video',
+                  )
+                  .length;
 
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.learnerName,
-                        style: const TextStyle(
-                          color: primaryBlue,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Manage this learner gallery individually from admin.',
-                        style: TextStyle(
-                          color: mainText.withValues(alpha: 0.78),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _AdminCountPill(label: '${items.length} total'),
-                          _AdminCountPill(label: '$photoCount photos'),
-                          _AdminCountPill(label: '$videoCount videos'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        icon: _uploadingPhoto
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.add_photo_alternate_rounded),
-                        label: Text(
-                          _uploadingPhoto
-                              ? 'Uploading ${((_uploadPhotoProgress ?? 0) * 100).toStringAsFixed(0)}%'
-                              : 'Upload Photo',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: actionOrange,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: (_uploadingPhoto || _uploadingVideo)
-                            ? null
-                            : _pickAndUploadPhoto,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: _uploadingVideo
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.video_call_rounded),
-                        label: Text(
-                          _uploadingVideo
-                              ? 'Uploading ${((_uploadVideoProgress ?? 0) * 100).toStringAsFixed(0)}%'
-                              : 'Upload Video',
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: primaryBlue,
-                          side: BorderSide(
-                            color: uiBorder.withValues(alpha: 0.9),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: (_uploadingPhoto || _uploadingVideo)
-                            ? null
-                            : _pickAndUploadVideo,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                if (_error != null) ...[
-                  Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (_ok != null) ...[
-                  Text(
-                    _ok!,
-                    style: const TextStyle(
-                      color: primaryBlue,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                const Text(
-                  'Gallery Items',
-                  style: TextStyle(
-                    color: primaryBlue,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (items.isEmpty)
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
@@ -2454,172 +2327,315 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                         color: uiBorder.withValues(alpha: 0.85),
                       ),
                     ),
-                    child: const Text(
-                      'No learner gallery items yet.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.learnerName,
+                          style: const TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Manage this learner gallery individually from admin.',
+                          style: TextStyle(
+                            color: mainText.withValues(alpha: 0.78),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _AdminCountPill(label: '${items.length} total'),
+                            _AdminCountPill(label: '$photoCount photos'),
+                            _AdminCountPill(label: '$videoCount videos'),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: _uploadingPhoto
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.add_photo_alternate_rounded),
+                          label: Text(
+                            _uploadingPhoto
+                                ? 'Uploading ${((_uploadPhotoProgress ?? 0) * 100).toStringAsFixed(0)}%'
+                                : 'Upload Photo',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: actionOrange,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: (_uploadingPhoto || _uploadingVideo)
+                              ? null
+                              : _pickAndUploadPhoto,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: _uploadingVideo
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.video_call_rounded),
+                          label: Text(
+                            _uploadingVideo
+                                ? 'Uploading ${((_uploadVideoProgress ?? 0) * 100).toStringAsFixed(0)}%'
+                                : 'Upload Video',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: primaryBlue,
+                            side: BorderSide(
+                              color: uiBorder.withValues(alpha: 0.9),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: (_uploadingPhoto || _uploadingVideo)
+                              ? null
+                              : _pickAndUploadVideo,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  if (_error != null) ...[
+                    Text(
+                      _error!,
                       style: TextStyle(
-                        color: mainText,
-                        fontWeight: FontWeight.w800,
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  )
-                else
-                  GridView.builder(
-                    itemCount: items.length,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.92,
-                        ),
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      final type = (item['type'] ?? '')
-                          .toString()
-                          .trim()
-                          .toLowerCase();
-                      final url = (item['url'] ?? '').toString().trim();
-                      final createdAt = _fmtDate(item['createdAt']);
-                      final uploader = _displayUploader(item);
-
-                      return InkWell(
+                    const SizedBox(height: 10),
+                  ],
+                  if (_ok != null) ...[
+                    Text(
+                      _ok!,
+                      style: const TextStyle(
+                        color: primaryBlue,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  const Text(
+                    'Gallery Items',
+                    style: TextStyle(
+                      color: primaryBlue,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (items.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(18),
-                        onTap: () => _openViewer(item),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: uiBorder.withValues(alpha: 0.85),
-                            ),
+                        border: Border.all(
+                          color: uiBorder.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      child: const Text(
+                        'No learner gallery items yet.',
+                        style: TextStyle(
+                          color: mainText,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    )
+                  else
+                    GridView.builder(
+                      itemCount: items.length,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.92,
                           ),
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(18),
-                                  ),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      if (type == 'video')
-                                        _AdminVideoTile(url: url)
-                                      else
-                                        Image.network(
-                                          url,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => Container(
-                                            color: Colors.grey.shade200,
-                                            alignment: Alignment.center,
-                                            child: const Icon(
-                                              Icons.broken_image_outlined,
-                                            ),
-                                          ),
-                                        ),
-                                      Positioned(
-                                        left: 8,
-                                        top: 8,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.58,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                type == 'video'
-                                                    ? Icons
-                                                          .play_circle_fill_rounded
-                                                    : Icons.photo_rounded,
-                                                color: Colors.white,
-                                                size: 14,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                type == 'video'
-                                                    ? 'Video'
-                                                    : 'Photo',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        final type = (item['type'] ?? '')
+                            .toString()
+                            .trim()
+                            .toLowerCase();
+                        final url = (item['url'] ?? '').toString().trim();
+                        final createdAt = _fmtDate(item['createdAt']);
+                        final uploader = _displayUploader(item);
+
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () => _openViewer(item),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: uiBorder.withValues(alpha: 0.85),
                               ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  10,
-                                  10,
-                                  10,
-                                  12,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      createdAt,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: mainText.withValues(alpha: 0.72),
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 11,
-                                      ),
+                            ),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(18),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Row(
+                                    child: Stack(
+                                      fit: StackFit.expand,
                                       children: [
-                                        const Icon(
-                                          Icons.person_rounded,
-                                          size: 14,
-                                          color: primaryBlue,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            uploader,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: primaryBlue,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 12,
+                                        if (type == 'video')
+                                          _AdminVideoTile(url: url)
+                                        else
+                                          Image.network(
+                                            url,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, _, _) =>
+                                                Container(
+                                                  color: Colors.grey.shade200,
+                                                  alignment: Alignment.center,
+                                                  child: const Icon(
+                                                    Icons.broken_image_outlined,
+                                                  ),
+                                                ),
+                                          ),
+                                        Positioned(
+                                          left: 8,
+                                          top: 8,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.58,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  type == 'video'
+                                                      ? Icons
+                                                            .play_circle_fill_rounded
+                                                      : Icons.photo_rounded,
+                                                  color: Colors.white,
+                                                  size: 14,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  type == 'video'
+                                                      ? 'Video'
+                                                      : 'Photo',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    10,
+                                    10,
+                                    10,
+                                    12,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        createdAt,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: mainText.withValues(
+                                            alpha: 0.72,
+                                          ),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.person_rounded,
+                                            size: 14,
+                                            color: primaryBlue,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              uploader,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: primaryBlue,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            );
-          },
+                        );
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -3081,93 +3097,97 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: isVideo
-                          ? _AdminVideoPreviewCard(url: url)
-                          : InteractiveViewer(
-                              minScale: 0.8,
-                              maxScale: 4,
-                              child: Image.network(
-                                url,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, _, _) => const SizedBox(
-                                  height: 260,
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      color: Colors.white,
-                                      size: 44,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                        child: isVideo
+                            ? _AdminVideoPreviewCard(url: url)
+                            : InteractiveViewer(
+                                minScale: 0.8,
+                                maxScale: 4,
+                                child: Image.network(
+                                  url,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) => const SizedBox(
+                                    height: 260,
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.white,
+                                        size: 44,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.12),
                             ),
-                    ),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isVideo ? 'Video' : 'Photo',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Uploaded by: $displayUploader',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Added: $createdAt',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 10,
+                                height: 1.15,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isVideo ? 'Video' : 'Photo',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Uploaded by: $displayUploader',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Added: $createdAt',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                              height: 1.15,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -3252,105 +3272,109 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: isVideo
-                          ? _AdminVideoPreviewCard(url: url)
-                          : InteractiveViewer(
-                              minScale: 0.8,
-                              maxScale: 4,
-                              child: Image.network(
-                                url,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, _, _) => const SizedBox(
-                                  height: 260,
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      color: Colors.white,
-                                      size: 44,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                        child: isVideo
+                            ? _AdminVideoPreviewCard(url: url)
+                            : InteractiveViewer(
+                                minScale: 0.8,
+                                maxScale: 4,
+                                child: Image.network(
+                                  url,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) => const SizedBox(
+                                    height: 260,
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.white,
+                                        size: 44,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.12),
                             ),
-                    ),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isVideo ? 'Video' : 'Photo',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$subjectLabel: $learnerName',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Uploaded by: $displayUploader',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Added: $createdAt',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 10,
+                                height: 1.15,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isVideo ? 'Video' : 'Photo',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$subjectLabel: $learnerName',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Uploaded by: $displayUploader',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Added: $createdAt',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                              height: 1.15,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

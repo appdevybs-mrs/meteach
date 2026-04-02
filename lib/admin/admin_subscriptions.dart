@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/screen_help_guide.dart';
 
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
@@ -68,134 +69,152 @@ class AdminSubscriptionsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _subsRef.onValue,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return const Center(child: Text('Error loading subscriptions.'));
-          }
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1380,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _subsRef.onValue,
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const Center(child: Text('Error loading subscriptions.'));
+            }
 
-          final v = snap.data?.snapshot.value;
-          final items = parseSubscriptions(v);
+            final v = snap.data?.snapshot.value;
+            final items = parseSubscriptions(v);
 
-          if (items.isEmpty) {
-            return const Center(child: Text('No subscriptions yet.'));
-          }
+            if (items.isEmpty) {
+              return const Center(child: Text('No subscriptions yet.'));
+            }
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, i) {
-              final s = items[i];
+            final webWide = isWebDesktop(context, minWidth: 1100);
 
-              final deliveryText = s.studyTypeDisplay;
-
-              final subtitleParts = <String>[
-                if (s.courseTitle.trim().isNotEmpty) s.courseTitle,
-                if (deliveryText.trim().isNotEmpty) deliveryText,
-                if (s.phone.trim().isNotEmpty) s.phone,
-              ];
-
-              return InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => SubscriptionDetailsScreen(sub: s),
-                  ),
+            if (webWide) {
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 3.4,
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: uiBorder),
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: appBg,
-                        child: Text(
-                          (s.displayName.isNotEmpty
-                              ? s.displayName[0].toUpperCase()
-                              : 'S'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              s.displayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: primaryBlue,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitleParts.isEmpty
-                                  ? '-'
-                                  : subtitleParts.join('  •  '),
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black.withValues(alpha: 0.65),
-                                fontSize: 12,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (s.selectedFee != null ||
-                                s.accessLabel.trim().isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  if (s.selectedFee != null)
-                                    _pill(
-                                      label:
-                                          '${s.selectedFee!.toStringAsFixed(0)} DA',
-                                      bg: actionOrange.withValues(alpha: 0.10),
-                                      fg: actionOrange,
-                                    ),
-                                  if (s.accessLabel.trim().isNotEmpty)
-                                    _pill(
-                                      label: s.accessLabel,
-                                      bg: primaryBlue.withValues(alpha: 0.08),
-                                      fg: primaryBlue,
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Call',
-                        icon: const Icon(Icons.call, color: actionOrange),
-                        onPressed: s.phone.trim().isEmpty
-                            ? null
-                            : () => callPhone(s.phone),
-                      ),
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        color: primaryBlue,
-                      ),
-                    ],
-                  ),
-                ),
+                itemCount: items.length,
+                itemBuilder: (context, i) {
+                  final s = items[i];
+                  return _buildSubscriptionTile(context, s);
+                },
               );
-            },
-          );
-        },
+            }
+
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, i) {
+                final s = items[i];
+                return _buildSubscriptionTile(context, s);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionTile(BuildContext context, SubscriptionItem s) {
+    final deliveryText = s.studyTypeDisplay;
+
+    final subtitleParts = <String>[
+      if (s.courseTitle.trim().isNotEmpty) s.courseTitle,
+      if (deliveryText.trim().isNotEmpty) deliveryText,
+      if (s.phone.trim().isNotEmpty) s.phone,
+    ];
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => SubscriptionDetailsScreen(sub: s)),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: uiBorder),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: appBg,
+              child: Text(
+                (s.displayName.isNotEmpty
+                    ? s.displayName[0].toUpperCase()
+                    : 'S'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryBlue,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.displayName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primaryBlue,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitleParts.isEmpty ? '-' : subtitleParts.join('  •  '),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black.withValues(alpha: 0.65),
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (s.selectedFee != null ||
+                      s.accessLabel.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (s.selectedFee != null)
+                          _pill(
+                            label: '${s.selectedFee!.toStringAsFixed(0)} DA',
+                            bg: actionOrange.withValues(alpha: 0.10),
+                            fg: actionOrange,
+                          ),
+                        if (s.accessLabel.trim().isNotEmpty)
+                          _pill(
+                            label: s.accessLabel,
+                            bg: primaryBlue.withValues(alpha: 0.08),
+                            fg: primaryBlue,
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Call',
+              icon: const Icon(Icons.call, color: actionOrange),
+              onPressed: s.phone.trim().isEmpty
+                  ? null
+                  : () => callPhone(s.phone),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: primaryBlue),
+          ],
+        ),
       ),
     );
   }
@@ -343,35 +362,39 @@ class SubscriptionDetailsScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: _card(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _line('Name', sub.displayName),
-              _phoneLine(context, sub.phone),
-              _line('Course', sub.courseTitle),
-              _line('Study type', sub.studyTypeDisplay),
-              _line('Date of birth', sub.dob),
-              _line('Email', sub.email),
-              _line('Study mode', sub.studyModeLabel),
-              _line(
-                'Selected fee',
-                sub.selectedFee == null
-                    ? ''
-                    : '${sub.selectedFee!.toStringAsFixed(0)} DA',
-              ),
-              _line(
-                'Access months',
-                sub.accessDurationMonths == null
-                    ? ''
-                    : sub.accessDurationMonths.toString(),
-              ),
-              _line('Access label', sub.accessLabel),
-              _line('Additional info', sub.additionalInfo),
-              _line('CreatedAt', formatTimestamp(sub.createdAt)),
-            ],
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 980,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: _card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _line('Name', sub.displayName),
+                _phoneLine(context, sub.phone),
+                _line('Course', sub.courseTitle),
+                _line('Study type', sub.studyTypeDisplay),
+                _line('Date of birth', sub.dob),
+                _line('Email', sub.email),
+                _line('Study mode', sub.studyModeLabel),
+                _line(
+                  'Selected fee',
+                  sub.selectedFee == null
+                      ? ''
+                      : '${sub.selectedFee!.toStringAsFixed(0)} DA',
+                ),
+                _line(
+                  'Access months',
+                  sub.accessDurationMonths == null
+                      ? ''
+                      : sub.accessDurationMonths.toString(),
+                ),
+                _line('Access label', sub.accessLabel),
+                _line('Additional info', sub.additionalInfo),
+                _line('CreatedAt', formatTimestamp(sub.createdAt)),
+              ],
+            ),
           ),
         ),
       ),
@@ -656,56 +679,91 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: uiBorder),
-          ),
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 980,
+        child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              TextField(
-                controller: firstNameC,
-                decoration: const InputDecoration(labelText: 'First name'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: lastNameC,
-                decoration: const InputDecoration(labelText: 'Last name'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: phoneC,
-                decoration: const InputDecoration(labelText: 'Phone'),
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: dobC,
-                decoration: const InputDecoration(labelText: 'Date of birth'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: emailC,
-                decoration: const InputDecoration(
-                  labelText: 'Email (optional)',
-                ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _pickCourse,
-                icon: const Icon(Icons.school_rounded),
-                label: Text(
-                  selectedCourseId == null
-                      ? 'Pick course'
-                      : 'Course: $selectedCourseTitle',
-                ),
-              ),
-            ],
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: uiBorder),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final twoCols =
+                    isWebDesktop(context, minWidth: 900) && c.maxWidth >= 700;
+                final fieldWidth = twoCols ? (c.maxWidth - 10) / 2 : c.maxWidth;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: firstNameC,
+                        decoration: const InputDecoration(
+                          labelText: 'First name',
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: lastNameC,
+                        decoration: const InputDecoration(
+                          labelText: 'Last name',
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: phoneC,
+                        decoration: const InputDecoration(labelText: 'Phone'),
+                        keyboardType: TextInputType.phone,
+                      ),
+                    ),
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: dobC,
+                        decoration: const InputDecoration(
+                          labelText: 'Date of birth',
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: emailC,
+                        decoration: const InputDecoration(
+                          labelText: 'Email (optional)',
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                    ),
+                    SizedBox(
+                      width: twoCols ? c.maxWidth : fieldWidth,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: _pickCourse,
+                          icon: const Icon(Icons.school_rounded),
+                          label: Text(
+                            selectedCourseId == null
+                                ? 'Pick course'
+                                : 'Course: $selectedCourseTitle',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),

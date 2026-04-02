@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'admin_teacher_mail_thread_screen.dart'; // reuse your existing thread screen
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -83,83 +84,88 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _stream,
-        builder: (_, snap) {
-          if (snap.hasError)
-            return const Center(child: Text('Failed to load inbox.'));
-          final rows = _parse(snap.data?.snapshot.value);
-          if (rows.isEmpty) return const Center(child: Text('Inbox is empty.'));
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1400,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _stream,
+          builder: (_, snap) {
+            if (snap.hasError)
+              return const Center(child: Text('Failed to load inbox.'));
+            final rows = _parse(snap.data?.snapshot.value);
+            if (rows.isEmpty)
+              return const Center(child: Text('Inbox is empty.'));
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: rows.length,
-            itemBuilder: (_, i) {
-              final row = rows[i];
-              final item = row.item;
+            return ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: rows.length,
+              itemBuilder: (_, i) {
+                final row = rows[i];
+                final item = row.item;
 
-              return Card(
-                child: ListTile(
-                  title: Text(
-                    item.subject.isEmpty ? '(No subject)' : item.subject,
-                  ),
-                  subtitle: Text(
-                    '${item.peerName.isEmpty ? 'User' : item.peerName}\n${item.lastMessage}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  isThreeLine: true,
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (v) async {
-                      if (v == 'delete') {
-                        await _deleteForMe(row.threadId);
-                      }
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete (for me)'),
-                      ),
-                    ],
-                  ),
-                  onTap: () async {
-                    // This opens your existing thread screen.
-                    // We need teacherUid + teacher object.
-                    // Since inbox only stores peerUid/peerName, we must fetch Staff from /users/{peerUid}.
-                    final peerUid = item.peerUid.trim();
-                    if (peerUid.isEmpty) return;
-
-                    final userSnap = await _db.ref('users/$peerUid').get();
-                    final v = userSnap.value;
-
-                    if (v is! Map) {
-                      _snack('Could not load user.');
-                      return;
-                    }
-
-                    // build a minimal "teacher" object shape expected by your screen
-                    final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-                    final teacher = _MinimalStaff(
-                      firstName: (m['first_name'] ?? '').toString(),
-                      lastName: (m['last_name'] ?? '').toString(),
-                      email: (m['email'] ?? '').toString(),
-                    );
-
-                    if (!mounted) return;
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => AdminTeacherMailThreadScreen(
-                          teacherUid: peerUid,
-                          teacher: teacher,
+                return Card(
+                  child: ListTile(
+                    title: Text(
+                      item.subject.isEmpty ? '(No subject)' : item.subject,
+                    ),
+                    subtitle: Text(
+                      '${item.peerName.isEmpty ? 'User' : item.peerName}\n${item.lastMessage}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    isThreeLine: true,
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (v) async {
+                        if (v == 'delete') {
+                          await _deleteForMe(row.threadId);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete (for me)'),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          );
-        },
+                      ],
+                    ),
+                    onTap: () async {
+                      // This opens your existing thread screen.
+                      // We need teacherUid + teacher object.
+                      // Since inbox only stores peerUid/peerName, we must fetch Staff from /users/{peerUid}.
+                      final peerUid = item.peerUid.trim();
+                      if (peerUid.isEmpty) return;
+
+                      final userSnap = await _db.ref('users/$peerUid').get();
+                      final v = userSnap.value;
+
+                      if (v is! Map) {
+                        _snack('Could not load user.');
+                        return;
+                      }
+
+                      // build a minimal "teacher" object shape expected by your screen
+                      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+                      final teacher = _MinimalStaff(
+                        firstName: (m['first_name'] ?? '').toString(),
+                        lastName: (m['last_name'] ?? '').toString(),
+                        email: (m['email'] ?? '').toString(),
+                      );
+
+                      if (!mounted) return;
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AdminTeacherMailThreadScreen(
+                            teacherUid: peerUid,
+                            teacher: teacher,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

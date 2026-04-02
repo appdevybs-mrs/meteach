@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../services/push_client.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 
@@ -451,7 +452,10 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
     if (_myUid == null || _myUid!.trim().isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Admin TODOs')),
-        body: const Center(child: Text('Not logged in.')),
+        body: adminWebBodyFrame(
+          context: context,
+          child: const Center(child: Text('Not logged in.')),
+        ),
       );
     }
 
@@ -477,308 +481,317 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _todosStream,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return const Center(child: Text('Could not load TODOs.'));
-          }
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1450,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _todosStream,
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const Center(child: Text('Could not load TODOs.'));
+            }
 
-          if (snap.connectionState == ConnectionState.waiting &&
-              !snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+            if (snap.connectionState == ConnectionState.waiting &&
+                !snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final rows = _parseTodoRows(snap.data?.snapshot.value);
-          final filtered = _applyFilters(rows);
-          final now = DateTime.now().millisecondsSinceEpoch;
+            final rows = _parseTodoRows(snap.data?.snapshot.value);
+            final filtered = _applyFilters(rows);
+            final now = DateTime.now().millisecondsSinceEpoch;
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                child: TextField(
-                  onChanged: (v) => setState(() => _search = v),
-                  decoration: InputDecoration(
-                    hintText: 'Search TODOs...',
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: TextField(
+                    onChanged: (v) => setState(() => _search = v),
+                    decoration: InputDecoration(
+                      hintText: 'Search TODOs...',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                child: SizedBox(
-                  height: 36,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      ChoiceChip(
-                        selected: _filter == _TodoFilter.all,
-                        onSelected: (_) =>
-                            setState(() => _filter = _TodoFilter.all),
-                        label: const Text('All'),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        selected: _filter == _TodoFilter.newOnly,
-                        onSelected: (_) =>
-                            setState(() => _filter = _TodoFilter.newOnly),
-                        label: const Text('New'),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        selected: _filter == _TodoFilter.seenOnly,
-                        onSelected: (_) =>
-                            setState(() => _filter = _TodoFilter.seenOnly),
-                        label: const Text('Seen'),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        selected: _filter == _TodoFilter.doneOnly,
-                        onSelected: (_) =>
-                            setState(() => _filter = _TodoFilter.doneOnly),
-                        label: const Text('Done'),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        selected: _filter == _TodoFilter.overdueOnly,
-                        onSelected: (_) =>
-                            setState(() => _filter = _TodoFilter.overdueOnly),
-                        label: const Text('Overdue'),
-                      ),
-                    ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  child: SizedBox(
+                    height: 36,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        ChoiceChip(
+                          selected: _filter == _TodoFilter.all,
+                          onSelected: (_) =>
+                              setState(() => _filter = _TodoFilter.all),
+                          label: const Text('All'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          selected: _filter == _TodoFilter.newOnly,
+                          onSelected: (_) =>
+                              setState(() => _filter = _TodoFilter.newOnly),
+                          label: const Text('New'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          selected: _filter == _TodoFilter.seenOnly,
+                          onSelected: (_) =>
+                              setState(() => _filter = _TodoFilter.seenOnly),
+                          label: const Text('Seen'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          selected: _filter == _TodoFilter.doneOnly,
+                          onSelected: (_) =>
+                              setState(() => _filter = _TodoFilter.doneOnly),
+                          label: const Text('Done'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          selected: _filter == _TodoFilter.overdueOnly,
+                          onSelected: (_) =>
+                              setState(() => _filter = _TodoFilter.overdueOnly),
+                          label: const Text('Overdue'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                child: _buildHeaderChips(rows),
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: filtered.isEmpty
-                    ? const Center(child: Text('No TODOs for you yet.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final row = filtered[i];
-                          final t = row.todo;
-                          final isExpanded = _expanded.contains(row.id);
-                          final isOverdue = _isOverdue(t, now);
-                          final statusColor = _statusColor(
-                            t.status,
-                            isOverdue: isOverdue,
-                          );
-                          final statusLabel = _statusLabel(
-                            t.status,
-                            isOverdue: isOverdue,
-                          );
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  child: _buildHeaderChips(rows),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? const Center(child: Text('No TODOs for you yet.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final row = filtered[i];
+                            final t = row.todo;
+                            final isExpanded = _expanded.contains(row.id);
+                            final isOverdue = _isOverdue(t, now);
+                            final statusColor = _statusColor(
+                              t.status,
+                              isOverdue: isOverdue,
+                            );
+                            final statusLabel = _statusLabel(
+                              t.status,
+                              isOverdue: isOverdue,
+                            );
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: statusColor.withValues(alpha: 0.24),
-                              ),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(18),
-                              child: InkWell(
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
                                 borderRadius: BorderRadius.circular(18),
-                                onTap: () async {
-                                  setState(() {
-                                    if (isExpanded) {
-                                      _expanded.remove(row.id);
-                                    } else {
-                                      _expanded.add(row.id);
-                                    }
-                                  });
+                                border: Border.all(
+                                  color: statusColor.withValues(alpha: 0.24),
+                                ),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(18),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(18),
+                                  onTap: () async {
+                                    setState(() {
+                                      if (isExpanded) {
+                                        _expanded.remove(row.id);
+                                      } else {
+                                        _expanded.add(row.id);
+                                      }
+                                    });
 
-                                  if (!isExpanded) {
-                                    await _markSeenIfNeeded(row.id, t);
-                                  }
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            width: 12,
-                                            height: 12,
-                                            margin: const EdgeInsets.only(
-                                              top: 5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: statusColor,
-                                              shape: BoxShape.circle,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  t.title.isEmpty
-                                                      ? '(No title)'
-                                                      : t.title,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF1A2B48),
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 15,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 7),
-                                                Wrap(
-                                                  spacing: 8,
-                                                  runSpacing: 8,
-                                                  children: [
-                                                    _TodoMetaChip(
-                                                      icon: Icons.event_rounded,
-                                                      text:
-                                                          'Due: ${_fmtDate(t.dueAtMs ?? 0)}',
-                                                    ),
-                                                    _TodoMetaChip(
-                                                      icon:
-                                                          Icons.person_rounded,
-                                                      text:
-                                                          'From: ${t.createdByName.isEmpty ? 'Admin' : t.createdByName}',
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 9,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: statusColor.withValues(
-                                                alpha: 0.12,
+                                    if (!isExpanded) {
+                                      await _markSeenIfNeeded(row.id, t);
+                                    }
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Container(
+                                              width: 12,
+                                              height: 12,
+                                              margin: const EdgeInsets.only(
+                                                top: 5,
                                               ),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                            ),
-                                            child: Text(
-                                              statusLabel,
-                                              style: TextStyle(
+                                              decoration: BoxDecoration(
                                                 color: statusColor,
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 11,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    t.title.isEmpty
+                                                        ? '(No title)'
+                                                        : t.title,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF1A2B48),
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 15,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 7),
+                                                  Wrap(
+                                                    spacing: 8,
+                                                    runSpacing: 8,
+                                                    children: [
+                                                      _TodoMetaChip(
+                                                        icon:
+                                                            Icons.event_rounded,
+                                                        text:
+                                                            'Due: ${_fmtDate(t.dueAtMs ?? 0)}',
+                                                      ),
+                                                      _TodoMetaChip(
+                                                        icon: Icons
+                                                            .person_rounded,
+                                                        text:
+                                                            'From: ${t.createdByName.isEmpty ? 'Admin' : t.createdByName}',
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 9,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: statusColor.withValues(
+                                                  alpha: 0.12,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                statusLabel,
+                                                style: TextStyle(
+                                                  color: statusColor,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Icon(
+                                              isExpanded
+                                                  ? Icons.expand_less_rounded
+                                                  : Icons.expand_more_rounded,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.4,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (isExpanded) ...[
+                                          const SizedBox(height: 12),
+                                          Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              t.description.trim().isEmpty
+                                                  ? 'No description'
+                                                  : t.description.trim(),
+                                              style: TextStyle(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.72,
+                                                ),
+                                                fontWeight: FontWeight.w600,
+                                                height: 1.35,
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(width: 6),
-                                          Icon(
-                                            isExpanded
-                                                ? Icons.expand_less_rounded
-                                                : Icons.expand_more_rounded,
-                                            color: Colors.black.withValues(
-                                              alpha: 0.4,
+                                          const SizedBox(height: 12),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: FilledButton.icon(
+                                              onPressed:
+                                                  (t.status
+                                                              .toLowerCase()
+                                                              .trim() ==
+                                                          'done' ||
+                                                      _updatingIds.contains(
+                                                        row.id,
+                                                      ))
+                                                  ? null
+                                                  : () => _markDone(row.id, t),
+                                              icon:
+                                                  _updatingIds.contains(row.id)
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            color: Colors.white,
+                                                          ),
+                                                    )
+                                                  : const Icon(
+                                                      Icons
+                                                          .check_circle_rounded,
+                                                    ),
+                                              label: Text(
+                                                t.status.toLowerCase().trim() ==
+                                                        'done'
+                                                    ? 'Done'
+                                                    : (_updatingIds.contains(
+                                                            row.id,
+                                                          )
+                                                          ? 'Updating...'
+                                                          : 'Mark done'),
+                                              ),
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: const Color(
+                                                  0xFF1A2B48,
+                                                ),
+                                                foregroundColor: Colors.white,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 12,
+                                                    ),
+                                              ),
                                             ),
                                           ),
                                         ],
-                                      ),
-                                      if (isExpanded) ...[
-                                        const SizedBox(height: 12),
-                                        Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: Text(
-                                            t.description.trim().isEmpty
-                                                ? 'No description'
-                                                : t.description.trim(),
-                                            style: TextStyle(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.72,
-                                              ),
-                                              fontWeight: FontWeight.w600,
-                                              height: 1.35,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        SizedBox(
-                                          width: double.infinity,
-                                          child: FilledButton.icon(
-                                            onPressed:
-                                                (t.status
-                                                            .toLowerCase()
-                                                            .trim() ==
-                                                        'done' ||
-                                                    _updatingIds.contains(
-                                                      row.id,
-                                                    ))
-                                                ? null
-                                                : () => _markDone(row.id, t),
-                                            icon: _updatingIds.contains(row.id)
-                                                ? const SizedBox(
-                                                    width: 16,
-                                                    height: 16,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          color: Colors.white,
-                                                        ),
-                                                  )
-                                                : const Icon(
-                                                    Icons.check_circle_rounded,
-                                                  ),
-                                            label: Text(
-                                              t.status.toLowerCase().trim() ==
-                                                      'done'
-                                                  ? 'Done'
-                                                  : (_updatingIds.contains(
-                                                          row.id,
-                                                        )
-                                                        ? 'Updating...'
-                                                        : 'Mark done'),
-                                            ),
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: const Color(
-                                                0xFF1A2B48,
-                                              ),
-                                              foregroundColor: Colors.white,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 12,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
                                       ],
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreateTodoDialog,

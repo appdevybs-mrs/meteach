@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/screen_help_guide.dart';
 
 class AdminBookingScreen extends StatefulWidget {
@@ -41,11 +42,36 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   String teacherFilter = 'all';
   String dateFilter = 'all'; // all | today | thisWeek | future
   bool onlyMultiLearner = false;
+  final ScrollController _bookingRowsMain = ScrollController();
+  final ScrollController _bookingRowsFrozen = ScrollController();
+  bool _syncingBookingRows = false;
 
   @override
   void initState() {
     super.initState();
     _loadCourses();
+    _bookingRowsMain.addListener(() {
+      if (_syncingBookingRows || !_bookingRowsFrozen.hasClients) return;
+      _syncingBookingRows = true;
+      _bookingRowsFrozen.jumpTo(
+        _bookingRowsMain.offset.clamp(
+          _bookingRowsFrozen.position.minScrollExtent,
+          _bookingRowsFrozen.position.maxScrollExtent,
+        ),
+      );
+      _syncingBookingRows = false;
+    });
+    _bookingRowsFrozen.addListener(() {
+      if (_syncingBookingRows || !_bookingRowsMain.hasClients) return;
+      _syncingBookingRows = true;
+      _bookingRowsMain.jumpTo(
+        _bookingRowsFrozen.offset.clamp(
+          _bookingRowsMain.position.minScrollExtent,
+          _bookingRowsMain.position.maxScrollExtent,
+        ),
+      );
+      _syncingBookingRows = false;
+    });
     searchC.addListener(() {
       if (mounted) setState(() {});
     });
@@ -54,6 +80,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   @override
   void dispose() {
     searchC.dispose();
+    _bookingRowsMain.dispose();
+    _bookingRowsFrozen.dispose();
     super.dispose();
   }
 
@@ -1518,6 +1546,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     final futureCount = filtered
         .where((s) => s.start.isAfter(DateTime.now()))
         .length;
+    final webDesktop = isWebDesktop(context);
 
     return Scaffold(
       backgroundColor: appBg,
@@ -1544,345 +1573,585 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       ),
       body: loadingCourses
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
-              children: [
-                _Card(
-                  title: course == null
-                      ? 'All booked sessions (all courses)'
-                      : 'Booked sessions • ${course.title}',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildCompactSelectors(),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _StatPill(
-                            label: 'Rows',
-                            value: '${filtered.length}',
-                            icon: Icons.table_rows_rounded,
-                          ),
-                          _StatPill(
-                            label: 'Lrnrs',
-                            value: '$totalLearners',
-                            icon: Icons.people_alt_rounded,
-                          ),
-                          _StatPill(
-                            label: 'Up',
-                            value: '$futureCount',
-                            icon: Icons.schedule_rounded,
-                          ),
-                        ],
-                      ),
-                    ],
+          : adminWebBodyFrame(
+              context: context,
+              maxWidth: 1680,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
+                children: [
+                  _Card(
+                    title: course == null
+                        ? 'All booked sessions (all courses)'
+                        : 'Booked sessions • ${course.title}',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCompactSelectors(),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _StatPill(
+                              label: 'Rows',
+                              value: '${filtered.length}',
+                              icon: Icons.table_rows_rounded,
+                            ),
+                            _StatPill(
+                              label: 'Lrnrs',
+                              value: '$totalLearners',
+                              icon: Icons.people_alt_rounded,
+                            ),
+                            _StatPill(
+                              label: 'Up',
+                              value: '$futureCount',
+                              icon: Icons.schedule_rounded,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                _Card(
-                  title: 'Filters',
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: searchC,
-                        decoration: InputDecoration(
-                          hintText:
-                              'Search teacher / date / time / session / status',
-                          isDense: true,
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: searchC.text.trim().isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () => searchC.clear(),
-                                  icon: const Icon(Icons.close_rounded),
-                                ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: uiBorder),
+                  const SizedBox(height: 10),
+                  _Card(
+                    title: 'Filters',
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: searchC,
+                          decoration: InputDecoration(
+                            hintText:
+                                'Search teacher / date / time / session / status',
+                            isDense: true,
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: searchC.text.trim().isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () => searchC.clear(),
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: uiBorder),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _smallDropdown(
-                            width: 160,
-                            value: teacherFilter,
-                            items: [
-                              const DropdownMenuItem(
-                                value: 'all',
-                                child: Text('All teachers'),
-                              ),
-                              ...teacherIds.map(
-                                (id) => DropdownMenuItem(
-                                  value: id,
-                                  child: Text(
-                                    teacherMap[id] ?? 'Teacher',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _smallDropdown(
+                              width: 160,
+                              value: teacherFilter,
+                              items: [
+                                const DropdownMenuItem(
+                                  value: 'all',
+                                  child: Text('All teachers'),
+                                ),
+                                ...teacherIds.map(
+                                  (id) => DropdownMenuItem(
+                                    value: id,
+                                    child: Text(
+                                      teacherMap[id] ?? 'Teacher',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                            onChanged: (v) {
-                              if (v == null) return;
-                              setState(() => teacherFilter = v);
-                            },
-                          ),
-                          _smallDropdown(
-                            width: 130,
-                            value: dateFilter,
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'all',
-                                child: Text('All'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'today',
-                                child: Text('Today'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'thisWeek',
-                                child: Text('This week'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'future',
-                                child: Text('Upcoming'),
-                              ),
-                            ],
-                            onChanged: (v) {
-                              if (v == null) return;
-                              setState(() => dateFilter = v);
-                            },
-                          ),
-                          _togglePill(
-                            label: 'Group only',
-                            value: onlyMultiLearner,
-                            onChanged: (v) =>
-                                setState(() => onlyMultiLearner = v),
-                          ),
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryBlue,
-                              side: BorderSide(
-                                color: primaryBlue.withValues(alpha: 0.20),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setState(() => teacherFilter = v);
+                              },
                             ),
-                            onPressed: _clearFilters,
-                            icon: const Icon(
-                              Icons.filter_alt_off_rounded,
-                              size: 18,
-                            ),
-                            label: const Text(
-                              'Clear',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _Card(
-                  title: 'All bookings',
-                  child: loadingBookings
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      : filtered.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            'No bookings found for this course.',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: primaryBlue,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  horizontalMargin: 10,
-                                  columnSpacing: 14,
-                                  headingRowHeight: 38,
-                                  dataRowMinHeight: 48,
-                                  dataRowMaxHeight: 56,
-                                  columns: const [
-                                    DataColumn(label: Text('Day')),
-                                    DataColumn(label: Text('Time')),
-                                    DataColumn(label: Text('Course')),
-                                    DataColumn(label: Text('Teacher')),
-                                    DataColumn(label: Text('Sess')),
-                                    DataColumn(label: Text('Lrnrs')),
-                                    DataColumn(label: Text('Status')),
-                                    DataColumn(label: Text('Act')),
-                                  ],
-                                  rows: filtered.map((s) {
-                                    final statusColor = _statusColorForSlot(s);
-                                    final isPast = s.start.isBefore(
-                                      DateTime.now(),
-                                    );
-
-                                    return DataRow(
-                                      cells: [
-                                        DataCell(
-                                          Text(
-                                            _friendlyDate(s.start),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            s.time,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 12,
-                                              color: isPast
-                                                  ? Colors.grey.shade700
-                                                  : actionOrange,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          ConstrainedBox(
-                                            constraints: const BoxConstraints(
-                                              maxWidth: 150,
-                                            ),
-                                            child: Text(
-                                              _courseTitle(s.courseId),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          ConstrainedBox(
-                                            constraints: const BoxConstraints(
-                                              maxWidth: 110,
-                                            ),
-                                            child: Text(
-                                              s.teacherName,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            s.sessionNo <= 0
-                                                ? '—'
-                                                : '${s.sessionNo}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            '${s.learnerCount}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 7,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: statusColor.withValues(
-                                                alpha: 0.10,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                            ),
-                                            child: Text(
-                                              _statusLabelForSlot(s),
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: statusColor,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          TextButton(
-                                            onPressed: () =>
-                                                _openSlotDetails(s),
-                                            style: TextButton.styleFrom(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 6,
-                                                  ),
-                                              minimumSize: Size.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                            child: const Text(
-                                              'View',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }).toList(),
+                            _smallDropdown(
+                              width: 130,
+                              value: dateFilter,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'all',
+                                  child: Text('All'),
                                 ),
+                                DropdownMenuItem(
+                                  value: 'today',
+                                  child: Text('Today'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'thisWeek',
+                                  child: Text('This week'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'future',
+                                  child: Text('Upcoming'),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setState(() => dateFilter = v);
+                              },
+                            ),
+                            _togglePill(
+                              label: 'Group only',
+                              value: onlyMultiLearner,
+                              onChanged: (v) =>
+                                  setState(() => onlyMultiLearner = v),
+                            ),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: primaryBlue,
+                                side: BorderSide(
+                                  color: primaryBlue.withValues(alpha: 0.20),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                              ),
+                              onPressed: _clearFilters,
+                              icon: const Icon(
+                                Icons.filter_alt_off_rounded,
+                                size: 18,
+                              ),
+                              label: const Text(
+                                'Clear',
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                             ),
                           ],
                         ),
-                ),
-              ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _Card(
+                    title: 'All bookings',
+                    child: loadingBookings
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        : filtered.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'No bookings found for this course.',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              webDesktop
+                                  ? _buildWebFrozenBookingsTable(filtered)
+                                  : ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: DataTable(
+                                          horizontalMargin: 10,
+                                          columnSpacing: 14,
+                                          headingRowHeight: 38,
+                                          dataRowMinHeight: 48,
+                                          dataRowMaxHeight: 56,
+                                          columns: const [
+                                            DataColumn(label: Text('Day')),
+                                            DataColumn(label: Text('Time')),
+                                            DataColumn(label: Text('Course')),
+                                            DataColumn(label: Text('Teacher')),
+                                            DataColumn(label: Text('Sess')),
+                                            DataColumn(label: Text('Lrnrs')),
+                                            DataColumn(label: Text('Status')),
+                                            DataColumn(label: Text('Act')),
+                                          ],
+                                          rows: filtered.map((s) {
+                                            final statusColor =
+                                                _statusColorForSlot(s);
+                                            final isPast = s.start.isBefore(
+                                              DateTime.now(),
+                                            );
+
+                                            return DataRow(
+                                              cells: [
+                                                DataCell(
+                                                  Text(
+                                                    _friendlyDate(s.start),
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Text(
+                                                    s.time,
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 12,
+                                                      color: isPast
+                                                          ? Colors.grey.shade700
+                                                          : actionOrange,
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  ConstrainedBox(
+                                                    constraints:
+                                                        const BoxConstraints(
+                                                          maxWidth: 150,
+                                                        ),
+                                                    child: Text(
+                                                      _courseTitle(s.courseId),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  ConstrainedBox(
+                                                    constraints:
+                                                        const BoxConstraints(
+                                                          maxWidth: 110,
+                                                        ),
+                                                    child: Text(
+                                                      s.teacherName,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Text(
+                                                    s.sessionNo <= 0
+                                                        ? '—'
+                                                        : '${s.sessionNo}',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Text(
+                                                    '${s.learnerCount}',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 7,
+                                                          vertical: 4,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: statusColor
+                                                          .withValues(
+                                                            alpha: 0.10,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      _statusLabelForSlot(s),
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: statusColor,
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        _openSlotDetails(s),
+                                                    style: TextButton.styleFrom(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 6,
+                                                          ),
+                                                      minimumSize: Size.zero,
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                    ),
+                                                    child: const Text(
+                                                      'View',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ),
+                                    ),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
             ),
+    );
+  }
+
+  Widget _buildWebFrozenBookingsTable(List<_AdminBookedSlot> filtered) {
+    const frozenWidth = 250.0;
+    const rightWidth = 900.0;
+
+    Widget headCell(String text, double width) {
+      return SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget rowCell(
+      String text,
+      double width, {
+      Color? color,
+      bool strong = false,
+    }) {
+      return SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+              color: color ?? primaryBlue.withValues(alpha: 0.9),
+              fontSize: 12,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget frozenRow(_AdminBookedSlot s, int i) {
+      final rowBg = i.isEven ? Colors.white : appBg.withValues(alpha: 0.7);
+      return Container(
+        height: 44,
+        color: rowBg,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            rowCell(_friendlyDate(s.start), 132, strong: true),
+            rowCell(
+              s.time,
+              98,
+              strong: true,
+              color: s.start.isBefore(DateTime.now())
+                  ? Colors.grey.shade700
+                  : actionOrange,
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget rightRow(_AdminBookedSlot s, int i) {
+      final rowBg = i.isEven ? Colors.white : appBg.withValues(alpha: 0.7);
+      final statusColor = _statusColorForSlot(s);
+      return Container(
+        height: 44,
+        color: rowBg,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            rowCell(_courseTitle(s.courseId), 190),
+            rowCell(s.teacherName, 150),
+            rowCell(s.sessionNo <= 0 ? '—' : '${s.sessionNo}', 76),
+            rowCell('${s.learnerCount}', 76, strong: true),
+            SizedBox(
+              width: 150,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _statusLabelForSlot(s),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: statusColor,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 90,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => _openSlotDetails(s),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'View',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 520,
+        child: Row(
+          children: [
+            SizedBox(
+              width: frozenWidth,
+              child: Column(
+                children: [
+                  Container(
+                    height: 40,
+                    color: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Row(
+                      children: [headCell('Day', 132), headCell('Time', 98)],
+                    ),
+                  ),
+                  Divider(
+                    height: 1,
+                    color: Colors.black.withValues(alpha: 0.07),
+                  ),
+                  Expanded(
+                    child: ListView.separated(
+                      controller: _bookingRowsFrozen,
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, _) => Divider(
+                        height: 1,
+                        color: Colors.black.withValues(alpha: 0.07),
+                      ),
+                      itemBuilder: (_, i) => frozenRow(filtered[i], i),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: rightWidth,
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 40,
+                        color: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Row(
+                          children: [
+                            headCell('Course', 190),
+                            headCell('Teacher', 150),
+                            headCell('Sess', 76),
+                            headCell('Lrnrs', 76),
+                            headCell('Status', 150),
+                            headCell('Act', 90),
+                          ],
+                        ),
+                      ),
+                      Divider(
+                        height: 1,
+                        color: Colors.black.withValues(alpha: 0.07),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          controller: _bookingRowsMain,
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) => Divider(
+                            height: 1,
+                            color: Colors.black.withValues(alpha: 0.07),
+                          ),
+                          itemBuilder: (_, i) => rightRow(filtered[i], i),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

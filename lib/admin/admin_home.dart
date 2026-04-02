@@ -31,6 +31,7 @@ import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/payment_status.dart';
 import '../shared/screen_help_guide.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
@@ -567,6 +568,157 @@ class _AdminHomeState extends State<AdminHome> {
         .map((c) => c.child)
         .toList();
 
+    final dashboardPanel = webPageFrame(
+      maxWidth: 1500,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              height: _showSearch ? 56 : 0,
+              curve: Curves.easeOutCubic,
+              child: _showSearch
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: TextField(
+                        onChanged: (v) => setState(() => _homeSearch = v),
+                        decoration: InputDecoration(
+                          hintText: 'Search dashboard tools...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0,
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            _AdminTodoHomeCard(
+              isReceptionistStyle: !_isAdminMode,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AdminAdminTodosScreen(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: KeyedSubtree(
+                key: _cardsGridKey,
+                child: visibleCards.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No tools matched "$q"',
+                          style: const TextStyle(
+                            color: AdminHome.softText,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _refreshHome,
+                        child: GridView.count(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          crossAxisCount: crossAxisCount,
+                          mainAxisSpacing: gridGap,
+                          crossAxisSpacing: gridGap,
+                          childAspectRatio: cardRatio,
+                          children: visibleCards,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                _isAdminMode
+                    ? 'Your Bridge School • Admin View'
+                    : 'Your Bridge School • Receptionist View',
+                style: const TextStyle(
+                  color: AdminHome.softText,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final webDesktop = isWebDesktop(context);
+
+    final webRail = Container(
+      width: 250,
+      margin: const EdgeInsets.fromLTRB(12, 10, 0, 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AdminHome.uiBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Quick Navigation',
+            style: TextStyle(
+              color: AdminHome.primaryBlue,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _DrawerTile(
+            icon: Icons.school_rounded,
+            title: 'Learners',
+            subtitle: 'Open learner management',
+            color: AdminHome.primaryBlue,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            ),
+          ),
+          _DrawerTile(
+            icon: Icons.payments_rounded,
+            title: 'Payments',
+            subtitle: 'Financial records',
+            color: AdminHome.actionOrange,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            ),
+          ),
+          _DrawerTile(
+            icon: Icons.class_rounded,
+            title: 'Classes',
+            subtitle: 'Classes and attendance',
+            color: AdminHome.accentIndigo,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+            ),
+          ),
+          const Spacer(),
+          _DrawerTile(
+            icon: Icons.logout_rounded,
+            title: 'Logout',
+            subtitle: 'Sign out from this account',
+            color: _isAdminMode
+                ? AdminHome.primaryBlue
+                : AdminHome.actionOrange,
+            onTap: () => _logout(context),
+          ),
+        ],
+      ),
+    );
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -710,96 +862,14 @@ class _AdminHomeState extends State<AdminHome> {
               ),
             ),
             SafeArea(
-              child: webPageFrame(
-                maxWidth: 1500,
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        height: _showSearch ? 56 : 0,
-                        curve: Curves.easeOutCubic,
-                        child: _showSearch
-                            ? Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: TextField(
-                                  onChanged: (v) =>
-                                      setState(() => _homeSearch = v),
-                                  decoration: InputDecoration(
-                                    hintText: 'Search dashboard tools...',
-                                    prefixIcon: const Icon(
-                                      Icons.search_rounded,
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      vertical: 0,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                      _AdminTodoHomeCard(
-                        isReceptionistStyle: !_isAdminMode,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const AdminAdminTodosScreen(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: KeyedSubtree(
-                          key: _cardsGridKey,
-                          child: visibleCards.isEmpty
-                              ? Center(
-                                  child: Text(
-                                    'No tools matched "$q"',
-                                    style: const TextStyle(
-                                      color: AdminHome.softText,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                )
-                              : RefreshIndicator(
-                                  onRefresh: _refreshHome,
-                                  child: GridView.count(
-                                    physics:
-                                        const AlwaysScrollableScrollPhysics(),
-                                    crossAxisCount: crossAxisCount,
-                                    mainAxisSpacing: gridGap,
-                                    crossAxisSpacing: gridGap,
-                                    childAspectRatio: cardRatio,
-                                    children: visibleCards,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: Text(
-                          _isAdminMode
-                              ? 'Your Bridge School • Admin View'
-                              : 'Your Bridge School • Receptionist View',
-                          style: const TextStyle(
-                            color: AdminHome.softText,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              child: webDesktop
+                  ? Row(
+                      children: [
+                        webRail,
+                        Expanded(child: dashboardPanel),
+                      ],
+                    )
+                  : dashboardPanel,
             ),
           ],
         ),

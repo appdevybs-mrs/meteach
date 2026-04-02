@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,7 @@ import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/profile_avatar.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/ybs_busy_logo.dart';
 
@@ -54,6 +56,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   String _search = '';
   LearnerStatus? _statusFilter; // only used on Users tab
   Timer? _searchDebounce;
+  bool _webDenseMode = false;
 
   DatabaseReference get _usersRef => _db.ref(_usersPath);
   DatabaseReference get _deletedRef => _db.ref(_deletedPath);
@@ -441,6 +444,17 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
               ).push(MaterialPageRoute(builder: (_) => AdminPaymentsScreen()));
             },
           ),
+          if (kIsWeb)
+            IconButton(
+              tooltip: _webDenseMode ? 'Comfort mode' : 'Dense mode',
+              icon: Icon(
+                _webDenseMode
+                    ? Icons.view_agenda_rounded
+                    : Icons.density_small_rounded,
+                color: AdminLearnersScreen.primaryBlue,
+              ),
+              onPressed: () => setState(() => _webDenseMode = !_webDenseMode),
+            ),
           AnimatedBuilder(
             animation: _tab,
             builder: (_, _) {
@@ -466,123 +480,138 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          _LearnersList(
-            titleHint: 'Search learners…',
-            stream: _usersStream,
-            search: _search,
-            statusFilter: _statusFilter,
-            onSearchChanged: _onSearchChanged,
-            onStatusFilterChanged: (s) => setState(() => _statusFilter = s),
-            onEdit: (uid, learner) async {
-              final updated = await Navigator.of(context).push<Learner?>(
-                MaterialPageRoute(
-                  builder: (_) => LearnerEditorScreen(
-                    mode: EditorMode.edit,
-                    uid: uid,
-                    initial: learner,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1560,
+        child: TabBarView(
+          controller: _tab,
+          children: [
+            _LearnersList(
+              titleHint: 'Search learners…',
+              stream: _usersStream,
+              webDenseMode: _webDenseMode,
+              search: _search,
+              statusFilter: _statusFilter,
+              onSearchChanged: _onSearchChanged,
+              onStatusFilterChanged: (s) => setState(() => _statusFilter = s),
+              onEdit: (uid, learner) async {
+                final updated = await Navigator.of(context).push<Learner?>(
+                  MaterialPageRoute(
+                    builder: (_) => LearnerEditorScreen(
+                      mode: EditorMode.edit,
+                      uid: uid,
+                      initial: learner,
+                    ),
+                  ),
+                );
+                if (updated != null) _toast('Learner updated ✅');
+              },
+              actionsBuilder: (uid, learner) => [
+                PopupMenuItem(
+                  value: _RowAction.pause,
+                  child: Text(
+                    learner.status == LearnerStatus.paused
+                        ? 'Activate'
+                        : 'Pause',
                   ),
                 ),
-              );
-              if (updated != null) _toast('Learner updated ✅');
-            },
-            actionsBuilder: (uid, learner) => [
-              PopupMenuItem(
-                value: _RowAction.pause,
-                child: Text(
-                  learner.status == LearnerStatus.paused ? 'Activate' : 'Pause',
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: _RowAction.block,
+                  child: Text('Block'),
                 ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: _RowAction.block,
-                child: Text('Block'),
-              ),
-              const PopupMenuItem(
-                value: _RowAction.delete,
-                child: Text('Delete (move to deleted)'),
-              ),
-            ],
-            onAction: (uid, learner, action) async {
-              switch (action) {
-                case _RowAction.pause:
-                  if (learner.status == LearnerStatus.paused) {
-                    await _activateLearner(uid);
-                  } else {
-                    await _pauseLearner(uid);
-                  }
-                  break;
-                case _RowAction.block:
-                  await _moveToBlocked(uid, learner);
-                  break;
-                case _RowAction.delete:
-                  await _moveToDeleted(uid, learner);
-                  break;
-                default:
-                  break;
-              }
-            },
-          ),
-          _LearnersList(
-            titleHint: 'Search deleted…',
-            stream: _deletedStream,
-            search: _search,
-            statusFilter: null,
-            onSearchChanged: _onSearchChanged,
-            onStatusFilterChanged: (_) {},
-            actionsBuilder: (_, _) => const [
-              PopupMenuItem(value: _RowAction.restore, child: Text('Restore')),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: _RowAction.deleteForever,
-                child: Text('Delete permanently'),
-              ),
-            ],
-            onAction: (uid, learner, action) async {
-              switch (action) {
-                case _RowAction.restore:
-                  await _restoreFromDeleted(uid, learner);
-                  break;
-                case _RowAction.deleteForever:
-                  await _deletePermanently(uid, _deletedRef);
-                  break;
+                const PopupMenuItem(
+                  value: _RowAction.delete,
+                  child: Text('Delete (move to deleted)'),
+                ),
+              ],
+              onAction: (uid, learner, action) async {
+                switch (action) {
+                  case _RowAction.pause:
+                    if (learner.status == LearnerStatus.paused) {
+                      await _activateLearner(uid);
+                    } else {
+                      await _pauseLearner(uid);
+                    }
+                    break;
+                  case _RowAction.block:
+                    await _moveToBlocked(uid, learner);
+                    break;
+                  case _RowAction.delete:
+                    await _moveToDeleted(uid, learner);
+                    break;
+                  default:
+                    break;
+                }
+              },
+            ),
+            _LearnersList(
+              titleHint: 'Search deleted…',
+              stream: _deletedStream,
+              webDenseMode: _webDenseMode,
+              search: _search,
+              statusFilter: null,
+              onSearchChanged: _onSearchChanged,
+              onStatusFilterChanged: (_) {},
+              actionsBuilder: (_, _) => const [
+                PopupMenuItem(
+                  value: _RowAction.restore,
+                  child: Text('Restore'),
+                ),
+                PopupMenuDivider(),
+                PopupMenuItem(
+                  value: _RowAction.deleteForever,
+                  child: Text('Delete permanently'),
+                ),
+              ],
+              onAction: (uid, learner, action) async {
+                switch (action) {
+                  case _RowAction.restore:
+                    await _restoreFromDeleted(uid, learner);
+                    break;
+                  case _RowAction.deleteForever:
+                    await _deletePermanently(uid, _deletedRef);
+                    break;
 
-                default:
-                  break;
-              }
-            },
-          ),
-          _LearnersList(
-            titleHint: 'Search blocked…',
-            stream: _blockedStream,
-            search: _search,
-            statusFilter: null,
-            onSearchChanged: _onSearchChanged,
-            onStatusFilterChanged: (_) {},
-            actionsBuilder: (_, _) => const [
-              PopupMenuItem(value: _RowAction.restore, child: Text('Unblock')),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: _RowAction.deleteForever,
-                child: Text('Delete permanently'),
-              ),
-            ],
-            onAction: (uid, learner, action) async {
-              switch (action) {
-                case _RowAction.restore:
-                  await _restoreFromBlocked(uid, learner);
-                  break;
-                case _RowAction.deleteForever:
-                  await _deletePermanently(uid, _blockedRef);
-                  break;
-                default:
-                  break;
-              }
-            },
-          ),
-        ],
+                  default:
+                    break;
+                }
+              },
+            ),
+            _LearnersList(
+              titleHint: 'Search blocked…',
+              stream: _blockedStream,
+              webDenseMode: _webDenseMode,
+              search: _search,
+              statusFilter: null,
+              onSearchChanged: _onSearchChanged,
+              onStatusFilterChanged: (_) {},
+              actionsBuilder: (_, _) => const [
+                PopupMenuItem(
+                  value: _RowAction.restore,
+                  child: Text('Unblock'),
+                ),
+                PopupMenuDivider(),
+                PopupMenuItem(
+                  value: _RowAction.deleteForever,
+                  child: Text('Delete permanently'),
+                ),
+              ],
+              onAction: (uid, learner, action) async {
+                switch (action) {
+                  case _RowAction.restore:
+                    await _restoreFromBlocked(uid, learner);
+                    break;
+                  case _RowAction.deleteForever:
+                    await _deletePermanently(uid, _blockedRef);
+                    break;
+                  default:
+                    break;
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -600,6 +629,7 @@ class _LearnersList extends StatefulWidget {
   const _LearnersList({
     required this.titleHint,
     required this.stream,
+    required this.webDenseMode,
     required this.search,
     required this.statusFilter,
     required this.onSearchChanged,
@@ -611,6 +641,7 @@ class _LearnersList extends StatefulWidget {
 
   final String titleHint;
   final Stream<DatabaseEvent> stream;
+  final bool webDenseMode;
 
   final String search;
   final LearnerStatus? statusFilter;
@@ -1363,11 +1394,13 @@ class _LearnersListState extends State<_LearnersList>
                         return parts.join('  •  ');
                       }
 
+                      final dense = widget.webDenseMode && kIsWeb;
+
                       return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
+                        margin: EdgeInsets.only(bottom: dense ? 7 : 10),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(dense ? 12 : 16),
                           border: Border.all(
                             color: AdminLearnersScreen.uiBorders,
                           ),
@@ -1386,7 +1419,7 @@ class _LearnersListState extends State<_LearnersList>
                                 }
                               },
                               child: Padding(
-                                padding: const EdgeInsets.all(12),
+                                padding: EdgeInsets.all(dense ? 9 : 12),
                                 child: Row(
                                   children: [
                                     GestureDetector(
@@ -1405,7 +1438,7 @@ class _LearnersListState extends State<_LearnersList>
                                           ProfileAvatar(
                                             name: l.fullName,
                                             photoUrl: l.primaryProfilePhoto,
-                                            radius: 20,
+                                            radius: dense ? 17 : 20,
                                             fallbackBg: avatarBg,
                                             fallbackFg: avatarFg,
                                             borderColor: avatarBg.withValues(
@@ -1421,7 +1454,7 @@ class _LearnersListState extends State<_LearnersList>
                                         ],
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
+                                    SizedBox(width: dense ? 9 : 12),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
@@ -1454,7 +1487,7 @@ class _LearnersListState extends State<_LearnersList>
                                                 ),
                                             ],
                                           ),
-                                          const SizedBox(height: 6),
+                                          SizedBox(height: dense ? 4 : 6),
                                           if (l.phone1.trim().isNotEmpty)
                                             Row(
                                               children: [
@@ -1485,7 +1518,7 @@ class _LearnersListState extends State<_LearnersList>
                                                   child: Text(
                                                     '📞 ${l.phone1}',
                                                     style: TextStyle(
-                                                      fontSize: 12,
+                                                      fontSize: dense ? 11 : 12,
                                                       fontWeight:
                                                           FontWeight.w800,
                                                       color: AdminLearnersScreen
@@ -1506,7 +1539,9 @@ class _LearnersListState extends State<_LearnersList>
                                                     child: Text(
                                                       '✉ ${l.email.trim()}',
                                                       style: TextStyle(
-                                                        fontSize: 12,
+                                                        fontSize: dense
+                                                            ? 11
+                                                            : 12,
                                                         fontWeight:
                                                             FontWeight.w800,
                                                         color: Colors.black
@@ -1533,8 +1568,9 @@ class _LearnersListState extends State<_LearnersList>
                                                 ),
                                               ),
                                             ),
-                                          const SizedBox(height: 4),
-                                          if (compactLine2().isNotEmpty)
+                                          if (!dense) const SizedBox(height: 4),
+                                          if (!dense &&
+                                              compactLine2().isNotEmpty)
                                             Text(
                                               compactLine2(),
                                               style: TextStyle(
@@ -2121,6 +2157,34 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     }
   }
 
+  Widget _buildResponsiveSections(List<Widget> sections) {
+    final webWide = isWebDesktop(context, minWidth: 1200);
+    if (!webWide) {
+      return Column(
+        children: [
+          for (int i = 0; i < sections.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            sections[i],
+          ],
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final itemWidth = ((c.maxWidth - 12) / 2).clamp(300.0, 620.0);
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final section in sections)
+              SizedBox(width: itemWidth, child: section),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
@@ -2168,8 +2232,10 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
         child: Form(
           key: _formKey,
-          child: Column(
-            children: [
+          child: adminWebBodyFrame(
+            context: context,
+            maxWidth: 1380,
+            child: _buildResponsiveSections([
               _SectionCard(
                 title: 'Personal details',
                 child: Column(
@@ -2266,7 +2332,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Contact',
                 child: Column(
@@ -2359,7 +2424,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Status',
                 child: DropdownButtonFormField<LearnerStatus>(
@@ -2384,8 +2448,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   },
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
+            ]),
           ),
         ),
       ),

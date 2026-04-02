@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
@@ -127,101 +128,107 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Shared Files'),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _sharedRef.onValue,
-        builder: (context, snap) {
-          final raw = snap.data?.snapshot.value;
-          final items = <Map<String, dynamic>>[];
-          if (raw is Map) {
-            final m = Map<dynamic, dynamic>.from(raw);
-            for (final e in m.entries) {
-              if (e.value is! Map) continue;
-              final item = Map<String, dynamic>.from(e.value as Map);
-              item['id'] = item['id'] ?? e.key.toString();
-              items.add(item);
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1450,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _sharedRef.onValue,
+          builder: (context, snap) {
+            final raw = snap.data?.snapshot.value;
+            final items = <Map<String, dynamic>>[];
+            if (raw is Map) {
+              final m = Map<dynamic, dynamic>.from(raw);
+              for (final e in m.entries) {
+                if (e.value is! Map) continue;
+                final item = Map<String, dynamic>.from(e.value as Map);
+                item['id'] = item['id'] ?? e.key.toString();
+                items.add(item);
+              }
             }
-          }
 
-          items.sort((a, b) {
-            final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
-            final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
-            return bb.compareTo(aa);
-          });
+            items.sort((a, b) {
+              final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
+              final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
+              return bb.compareTo(aa);
+            });
 
-          if (items.isEmpty) {
-            return const Center(child: Text('No shared files found.'));
-          }
+            if (items.isEmpty) {
+              return const Center(child: Text('No shared files found.'));
+            }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, i) {
-              final item = items[i];
-              final title = (item['title'] ?? '').toString().trim();
-              final name = (item['name'] ?? 'Document').toString();
-              final desc = (item['description'] ?? '').toString().trim();
-              final owner = (item['ownerName'] ?? '').toString().trim();
-              final url = (item['url'] ?? '').toString().trim();
+            return ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, i) {
+                final item = items[i];
+                final title = (item['title'] ?? '').toString().trim();
+                final name = (item['name'] ?? 'Document').toString();
+                final desc = (item['description'] ?? '').toString().trim();
+                final owner = (item['ownerName'] ?? '').toString().trim();
+                final url = (item['url'] ?? '').toString().trim();
 
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title.isEmpty ? name : title,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      if (desc.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(desc),
-                      ],
-                      const SizedBox(height: 6),
-                      Text(
-                        owner.isEmpty ? 'Owner: -' : 'Owner: $owner',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title.isEmpty ? name : title,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: url.isEmpty ? null : () => _openUrl(url),
-                            icon: const Icon(Icons.open_in_new_rounded),
-                            label: const Text('Open'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: url.isEmpty ? null : () => _openUrl(url),
-                            icon: const Icon(Icons.download_rounded),
-                            label: const Text('Download'),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            tooltip: 'Delete file',
-                            onPressed: () => _deleteAny(item),
-                            icon: const Icon(
-                              Icons.delete_rounded,
-                              color: Colors.red,
-                            ),
-                          ),
+                        if (desc.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(desc),
                         ],
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(
+                          owner.isEmpty ? 'Owner: -' : 'Owner: $owner',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: url.isEmpty
+                                  ? null
+                                  : () => _openUrl(url),
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              label: const Text('Open'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: url.isEmpty
+                                  ? null
+                                  : () => _openUrl(url),
+                              icon: const Icon(Icons.download_rounded),
+                              label: const Text('Download'),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              tooltip: 'Delete file',
+                              onPressed: () => _deleteAny(item),
+                              icon: const Icon(
+                                Icons.delete_rounded,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

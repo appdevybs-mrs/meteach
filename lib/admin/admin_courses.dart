@@ -12,6 +12,7 @@ import 'package:dream_english_academy/shared/human_error.dart';
 import 'package:dream_english_academy/services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/screen_help_guide.dart';
 
 class AdminCoursesScreen extends StatefulWidget {
@@ -1855,9 +1856,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -1879,8 +1878,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
         child: Form(
           key: _formKey,
-          child: Column(
-            children: [
+          child: adminWebBodyFrame(
+            context: context,
+            maxWidth: 1420,
+            child: _buildResponsiveSections([
               _SectionCard(
                 title: 'Basic info',
                 child: Column(
@@ -1924,7 +1925,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Structure',
                 child: Column(
@@ -2002,7 +2002,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Status',
                 child: Column(
@@ -2014,7 +2013,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Requirements & tags',
                 child: Column(
@@ -2034,7 +2032,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   ],
                 ),
               ),
-            ],
+            ]),
           ),
         ),
       ),
@@ -2242,6 +2240,34 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final t = input.trim();
     if (t.isEmpty) return null;
     return int.tryParse(t);
+  }
+
+  Widget _buildResponsiveSections(List<Widget> sections) {
+    final webWide = isWebDesktop(context, minWidth: 1200);
+    if (!webWide) {
+      return Column(
+        children: [
+          for (int i = 0; i < sections.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            sections[i],
+          ],
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final itemWidth = ((c.maxWidth - 12) / 2).clamp(320.0, 640.0);
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final section in sections)
+              SizedBox(width: itemWidth, child: section),
+          ],
+        );
+      },
+    );
   }
 }
 

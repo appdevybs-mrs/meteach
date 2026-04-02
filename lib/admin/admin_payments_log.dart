@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
 
@@ -45,173 +46,175 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
-      body: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            child: TextField(
-              onChanged: (v) => setState(() => _search = v),
-              decoration: InputDecoration(
-                hintText: 'Search (learner uid / course code / title)…',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: AdminPaymentsLogScreen.appBg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1650,
+        child: Column(
+          children: [
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: TextField(
+                onChanged: (v) => setState(() => _search = v),
+                decoration: InputDecoration(
+                  hintText: 'Search (learner uid / course code / title)…',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: AdminPaymentsLogScreen.appBg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
-          ),
-          Expanded(
-            child: StreamBuilder<DatabaseEvent>(
-              stream: _paymentsRef
-                  .orderByChild('paidAt')
-                  .limitToLast(_paymentsWindowSize)
-                  .onValue,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Error loading payments.'));
-                }
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            Expanded(
+              child: StreamBuilder<DatabaseEvent>(
+                stream: _paymentsRef
+                    .orderByChild('paidAt')
+                    .limitToLast(_paymentsWindowSize)
+                    .onValue,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Error loading payments.'));
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                final v = snapshot.data?.snapshot.value;
-                final list = <Map<String, dynamic>>[];
+                  final v = snapshot.data?.snapshot.value;
+                  final list = <Map<String, dynamic>>[];
 
-                if (v is Map) {
-                  v.forEach((k, val) {
-                    if (val is Map) {
-                      final m = val.map(
-                        (kk, vv) => MapEntry(kk.toString(), vv),
-                      );
-                      m['paymentId'] = k.toString();
-                      list.add(m.cast<String, dynamic>());
-                    }
-                  });
-                }
+                  if (v is Map) {
+                    v.forEach((k, val) {
+                      if (val is Map) {
+                        final m = val.map(
+                          (kk, vv) => MapEntry(kk.toString(), vv),
+                        );
+                        m['paymentId'] = k.toString();
+                        list.add(m.cast<String, dynamic>());
+                      }
+                    });
+                  }
 
-                // Sort newest first
-                list.sort(
-                  (a, b) => (b['paidAt'] as int? ?? 0).compareTo(
-                    a['paidAt'] as int? ?? 0,
-                  ),
-                );
+                  // Sort newest first
+                  list.sort(
+                    (a, b) => (b['paidAt'] as int? ?? 0).compareTo(
+                      a['paidAt'] as int? ?? 0,
+                    ),
+                  );
 
-                final s = _search.trim().toLowerCase();
-                final filtered = s.isEmpty
-                    ? list
-                    : list.where((p) {
-                        final uid = (p['uid'] ?? '').toString().toLowerCase();
-                        final code = (p['course_code'] ?? '')
-                            .toString()
-                            .toLowerCase();
-                        final title = (p['course_title'] ?? '')
-                            .toString()
-                            .toLowerCase();
-                        return uid.contains(s) ||
-                            code.contains(s) ||
-                            title.contains(s);
-                      }).toList();
+                  final s = _search.trim().toLowerCase();
+                  final filtered = s.isEmpty
+                      ? list
+                      : list.where((p) {
+                          final uid = (p['uid'] ?? '').toString().toLowerCase();
+                          final code = (p['course_code'] ?? '')
+                              .toString()
+                              .toLowerCase();
+                          final title = (p['course_title'] ?? '')
+                              .toString()
+                              .toLowerCase();
+                          return uid.contains(s) ||
+                              code.contains(s) ||
+                              title.contains(s);
+                        }).toList();
 
-                if (filtered.isEmpty) {
-                  return const Center(child: Text('No payments found.'));
-                }
+                  if (filtered.isEmpty) {
+                    return const Center(child: Text('No payments found.'));
+                  }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, i) {
-                    final p = filtered[i];
-                    final amount = p['amount'];
-                    final sessionsPaid = p['sessionsPaid'];
-                    final code = (p['course_code'] ?? '').toString();
-                    final title = (p['course_title'] ?? '').toString();
-                    final uid = (p['uid'] ?? '').toString();
-                    final variantKey = (p['variantKey'] ?? '')
-                        .toString()
-                        .trim();
-                    final studyTypeText = _studyTypeText(p);
-                    final usesSessions = _variantUsesSessions(variantKey);
-                    return Card(
-                      elevation: 0,
-                      color: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '$code — $title',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: AdminPaymentsLogScreen.primaryBlue,
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, i) {
+                      final p = filtered[i];
+                      final amount = p['amount'];
+                      final sessionsPaid = p['sessionsPaid'];
+                      final code = (p['course_code'] ?? '').toString();
+                      final title = (p['course_title'] ?? '').toString();
+                      final uid = (p['uid'] ?? '').toString();
+                      final variantKey = (p['variantKey'] ?? '')
+                          .toString()
+                          .trim();
+                      final studyTypeText = _studyTypeText(p);
+                      final usesSessions = _variantUsesSessions(variantKey);
+                      return Card(
+                        elevation: 0,
+                        color: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$code — $title',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: AdminPaymentsLogScreen.primaryBlue,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Learner UID: $uid',
-                              style: TextStyle(
-                                color: Colors.black.withValues(alpha: 0.7),
-                              ),
-                            ),
-                            if (studyTypeText.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
-                                'Study type: $studyTypeText',
+                                'Learner UID: $uid',
                                 style: TextStyle(
                                   color: Colors.black.withValues(alpha: 0.7),
-                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            ],
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _pill('Amount: $amount'),
-                                if (usesSessions)
-                                  _pill('Sessions paid: $sessionsPaid'),
-                                if ((p['method'] ?? '')
-                                    .toString()
-                                    .trim()
-                                    .isNotEmpty)
-                                  _pill('Method: ${p['method']}'),
+                              if (studyTypeText.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Study type: $studyTypeText',
+                                  style: TextStyle(
+                                    color: Colors.black.withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ],
-                            ),
-                            if ((p['notes'] ?? '')
-                                .toString()
-                                .trim()
-                                .isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                'Notes: ${p['notes']}',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.7),
-                                ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _pill('Amount: $amount'),
+                                  if (usesSessions)
+                                    _pill('Sessions paid: $sessionsPaid'),
+                                  if ((p['method'] ?? '')
+                                      .toString()
+                                      .trim()
+                                      .isNotEmpty)
+                                    _pill('Method: ${p['method']}'),
+                                ],
                               ),
+                              if ((p['notes'] ?? '')
+                                  .toString()
+                                  .trim()
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Notes: ${p['notes']}',
+                                  style: TextStyle(
+                                    color: Colors.black.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

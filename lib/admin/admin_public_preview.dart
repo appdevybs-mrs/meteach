@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../main.dart'; // adjust if your main.dart path is different
+import '../shared/admin_web_layout.dart';
 import '../shared/admin_tour_guide.dart';
 
 class AdminPublicPreview extends StatelessWidget {
@@ -14,6 +15,11 @@ class AdminPublicPreview extends StatelessWidget {
       line: 'تعرض هذه الشاشة شكل الصفحة العامة كما يراها الزائر.',
     );
 
-    return const Scaffold(body: SafeArea(child: AssistantHome()));
+    return Scaffold(
+      body: adminWebBodyFrame(
+        context: context,
+        child: const SafeArea(child: AssistantHome()),
+      ),
+    );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -1108,68 +1109,72 @@ class _AdminAttendanceOverviewScreenState
           const SizedBox(width: 6),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? _errorState()
-          : ListView(
-              padding: const EdgeInsets.all(14),
-              children: [
-                _rangePickerCard(),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _topCard(
-                        title: 'Present',
-                        value: '${rangeStats.present}',
-                        icon: Icons.check_circle_rounded,
-                        onTap: () => _openDetails(
-                          title: '$rangeTitle - Present',
-                          rows: _rangeRows,
-                          statusFilter: 'present',
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1560,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? _errorState()
+            : ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  _rangePickerCard(),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _topCard(
+                          title: 'Present',
+                          value: '${rangeStats.present}',
+                          icon: Icons.check_circle_rounded,
+                          onTap: () => _openDetails(
+                            title: '$rangeTitle - Present',
+                            rows: _rangeRows,
+                            statusFilter: 'present',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _topCard(
-                        title: 'Absent',
-                        value: '${rangeStats.absent}',
-                        icon: Icons.cancel_rounded,
-                        onTap: () => _openDetails(
-                          title: '$rangeTitle - Absent',
-                          rows: _rangeRows,
-                          statusFilter: 'absent',
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _topCard(
+                          title: 'Absent',
+                          value: '${rangeStats.absent}',
+                          icon: Icons.cancel_rounded,
+                          onTap: () => _openDetails(
+                            title: '$rangeTitle - Absent',
+                            rows: _rangeRows,
+                            statusFilter: 'absent',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _topCard(
-                        title: 'Records',
-                        value: '${_rangeRows.length}',
-                        icon: Icons.event_rounded,
-                        onTap: () => _openDetails(
-                          title: '$rangeTitle - All',
-                          rows: _rangeRows,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _topCard(
+                          title: 'Records',
+                          value: '${_rangeRows.length}',
+                          icon: Icons.event_rounded,
+                          onTap: () => _openDetails(
+                            title: '$rangeTitle - All',
+                            rows: _rangeRows,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _summarySection(
-                  title: rangeTitle,
-                  data: rangeStats,
-                  inClass: rangeInClass,
-                  online: rangeOnline,
-                  rows: _rangeRows,
-                ),
-                const SizedBox(height: 14),
-                _missingSection(),
-              ],
-            ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _summarySection(
+                    title: rangeTitle,
+                    data: rangeStats,
+                    inClass: rangeInClass,
+                    online: rangeOnline,
+                    rows: _rangeRows,
+                  ),
+                  const SizedBox(height: 14),
+                  _missingSection(),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -1226,105 +1231,111 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: sorted.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'No attendance details found.',
-                  style: TextStyle(
-                    color: mainText,
-                    fontWeight: FontWeight.w800,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1320,
+        child: sorted.isEmpty
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'No attendance details found.',
+                    style: TextStyle(
+                      color: mainText,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(14),
-              itemCount: sorted.length,
-              itemBuilder: (_, i) {
-                final row = sorted[i];
-                final color = _statusColor(row.status);
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(14),
+                itemCount: sorted.length,
+                itemBuilder: (_, i) {
+                  final row = sorted[i];
+                  final color = _statusColor(row.status);
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: color.withValues(alpha: 0.10),
-                            child: Icon(
-                              row.status == 'present'
-                                  ? Icons.check
-                                  : Icons.close,
-                              color: color,
-                              size: 18,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              row.learnerName,
-                              style: const TextStyle(
-                                color: primaryBlue,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: color.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: color.withValues(alpha: 0.25),
-                              ),
-                            ),
-                            child: Text(
-                              row.status == 'present' ? 'Present' : 'Absent',
-                              style: TextStyle(
-                                color: color,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        ],
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: uiBorder.withValues(alpha: 0.85),
                       ),
-                      const SizedBox(height: 10),
-                      _detailLine('Teacher', row.teacherName),
-                      const SizedBox(height: 4),
-                      _detailLine('Class / Course', row.classOrCourseTitle),
-                      if (row.classId.trim().isNotEmpty) ...[
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: color.withValues(alpha: 0.10),
+                              child: Icon(
+                                row.status == 'present'
+                                    ? Icons.check
+                                    : Icons.close,
+                                color: color,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                row.learnerName,
+                                style: const TextStyle(
+                                  color: primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: color.withValues(alpha: 0.25),
+                                ),
+                              ),
+                              child: Text(
+                                row.status == 'present' ? 'Present' : 'Absent',
+                                style: TextStyle(
+                                  color: color,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _detailLine('Teacher', row.teacherName),
                         const SizedBox(height: 4),
-                        _detailLine('Class ID', row.classId),
-                      ],
-                      if (row.learnerSerial.trim().isNotEmpty) ...[
+                        _detailLine('Class / Course', row.classOrCourseTitle),
+                        if (row.classId.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _detailLine('Class ID', row.classId),
+                        ],
+                        if (row.learnerSerial.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _detailLine('Serial', row.learnerSerial),
+                        ],
                         const SizedBox(height: 4),
-                        _detailLine('Serial', row.learnerSerial),
+                        _detailLine('Source', row.source),
+                        const SizedBox(height: 4),
+                        _detailLine('Date', row.dateStr),
                       ],
-                      const SizedBox(height: 4),
-                      _detailLine('Source', row.source),
-                      const SizedBox(height: 4),
-                      _detailLine('Date', row.dateStr),
-                    ],
-                  ),
-                );
-              },
-            ),
+                    ),
+                  );
+                },
+              ),
+      ),
     );
   }
 
@@ -1404,81 +1415,87 @@ class AdminMissingAttendanceScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: sorted.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'No missing attendance found.',
-                  style: TextStyle(
-                    color: mainText,
-                    fontWeight: FontWeight.w800,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1320,
+        child: sorted.isEmpty
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'No missing attendance found.',
+                    style: TextStyle(
+                      color: mainText,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(14),
-              itemCount: sorted.length,
-              itemBuilder: (_, i) {
-                final row = sorted[i];
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(14),
+                itemCount: sorted.length,
+                itemBuilder: (_, i) {
+                  final row = sorted[i];
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orange,
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Attendance not submitted',
-                              style: TextStyle(
-                                color: primaryBlue,
-                                fontWeight: FontWeight.w900,
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: uiBorder.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Attendance not submitted',
+                                style: TextStyle(
+                                  color: primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      _detailLine('Class / Course', row.classTitle),
-                      const SizedBox(height: 4),
-                      _detailLine('Class ID', row.classId),
-                      const SizedBox(height: 4),
-                      _detailLine('Teacher', row.teacherName),
-                      const SizedBox(height: 4),
-                      _detailLine('Date', row.dateStr),
-                      const SizedBox(height: 4),
-                      _detailLine(
-                        'Time',
-                        row.startTime.isEmpty ? '-' : row.startTime,
-                      ),
-                      const SizedBox(height: 4),
-                      _detailLine(
-                        'Duration',
-                        row.durationMin.isEmpty
-                            ? '-'
-                            : '${row.durationMin} min',
-                      ),
-                      const SizedBox(height: 4),
-                      _detailLine('Learners', '${row.learnerCount}'),
-                    ],
-                  ),
-                );
-              },
-            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _detailLine('Class / Course', row.classTitle),
+                        const SizedBox(height: 4),
+                        _detailLine('Class ID', row.classId),
+                        const SizedBox(height: 4),
+                        _detailLine('Teacher', row.teacherName),
+                        const SizedBox(height: 4),
+                        _detailLine('Date', row.dateStr),
+                        const SizedBox(height: 4),
+                        _detailLine(
+                          'Time',
+                          row.startTime.isEmpty ? '-' : row.startTime,
+                        ),
+                        const SizedBox(height: 4),
+                        _detailLine(
+                          'Duration',
+                          row.durationMin.isEmpty
+                              ? '-'
+                              : '${row.durationMin} min',
+                        ),
+                        const SizedBox(height: 4),
+                        _detailLine('Learners', '${row.learnerCount}'),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
     );
   }
 

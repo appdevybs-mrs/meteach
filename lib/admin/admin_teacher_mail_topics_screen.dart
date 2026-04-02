@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'mail_topic_thread_screen.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -222,79 +223,83 @@ class _AdminTeacherMailTopicsScreenState
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _topicsStream,
-        builder: (_, snap) {
-          final rows = _parseIndex(snap.data?.snapshot.value);
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1400,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _topicsStream,
+          builder: (_, snap) {
+            final rows = _parseIndex(snap.data?.snapshot.value);
 
-          if (rows.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.mail_outline, size: 42),
-                    const SizedBox(height: 10),
-                    const Text('No topics yet.'),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _createNewTopic,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Create a topic'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: rows.length,
-            itemBuilder: (_, i) {
-              final t = rows[i];
-
-              return Card(
-                elevation: 0,
-                child: ListTile(
-                  title: Text(
-                    t.subject.isEmpty ? '(No subject)' : t.subject,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text(
-                    t.lastMessage.isEmpty ? 'No messages yet' : t.lastMessage,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: t.unreadCount > 0
-                      ? CircleAvatar(
-                          radius: 12,
-                          child: Text(
-                            '${t.unreadCount}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => MailTopicThreadScreen(
-                          threadId: t.threadId,
-                          peerUid: widget.teacherUid,
-                          peerName: teacherName,
-                        ),
+            if (rows.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.mail_outline, size: 42),
+                      const SizedBox(height: 10),
+                      const Text('No topics yet.'),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _createNewTopic,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create a topic'),
                       ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
               );
-            },
-          );
-        },
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: rows.length,
+              itemBuilder: (_, i) {
+                final t = rows[i];
+
+                return Card(
+                  elevation: 0,
+                  child: ListTile(
+                    title: Text(
+                      t.subject.isEmpty ? '(No subject)' : t.subject,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      t.lastMessage.isEmpty ? 'No messages yet' : t.lastMessage,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: t.unreadCount > 0
+                        ? CircleAvatar(
+                            radius: 12,
+                            child: Text(
+                              '${t.unreadCount}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MailTopicThreadScreen(
+                            threadId: t.threadId,
+                            peerUid: widget.teacherUid,
+                            peerName: teacherName,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

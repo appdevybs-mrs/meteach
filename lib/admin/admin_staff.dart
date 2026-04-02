@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -13,6 +14,7 @@ import '../shared/profile_avatar.dart';
 import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/screen_help_guide.dart';
 
 class AdminStaffScreen extends StatefulWidget {
@@ -48,6 +50,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
   String _search = '';
   StaffStatus? _statusFilter; // only Users tab
   StaffRole? _roleFilter; // only Users tab
+  bool _webDenseMode = false;
 
   DatabaseReference get _usersRef => _db.ref(_usersPath);
   DatabaseReference get _deletedRef => _db.ref(_deletedPath);
@@ -338,6 +341,17 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
         ),
         actions: [
           const SizedBox.shrink(),
+          if (kIsWeb)
+            IconButton(
+              tooltip: _webDenseMode ? 'Comfort mode' : 'Dense mode',
+              icon: Icon(
+                _webDenseMode
+                    ? Icons.view_agenda_rounded
+                    : Icons.density_small_rounded,
+                color: AdminStaffScreen.primaryBlue,
+              ),
+              onPressed: () => setState(() => _webDenseMode = !_webDenseMode),
+            ),
           AnimatedBuilder(
             animation: _tab,
             builder: (_, _) {
@@ -363,128 +377,141 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          _StaffList(
-            titleHint: 'Search staff…',
-            stream: _usersStream,
-            search: _search,
-            statusFilter: _statusFilter,
-            roleFilter: _roleFilter,
-            onSearchChanged: (v) => setState(() => _search = v),
-            onStatusFilterChanged: (s) => setState(() => _statusFilter = s),
-            onRoleFilterChanged: (r) => setState(() => _roleFilter = r),
-            onEdit: (uid, staff) async {
-              final updated = await Navigator.of(context).push<Staff?>(
-                MaterialPageRoute(
-                  builder: (_) => StaffEditorScreen(
-                    mode: EditorMode.edit,
-                    uid: uid,
-                    initial: staff,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1560,
+        child: TabBarView(
+          controller: _tab,
+          children: [
+            _StaffList(
+              titleHint: 'Search staff…',
+              stream: _usersStream,
+              webDenseMode: _webDenseMode,
+              search: _search,
+              statusFilter: _statusFilter,
+              roleFilter: _roleFilter,
+              onSearchChanged: (v) => setState(() => _search = v),
+              onStatusFilterChanged: (s) => setState(() => _statusFilter = s),
+              onRoleFilterChanged: (r) => setState(() => _roleFilter = r),
+              onEdit: (uid, staff) async {
+                final updated = await Navigator.of(context).push<Staff?>(
+                  MaterialPageRoute(
+                    builder: (_) => StaffEditorScreen(
+                      mode: EditorMode.edit,
+                      uid: uid,
+                      initial: staff,
+                    ),
+                  ),
+                );
+                if (updated != null) _snack('Staff updated ✅');
+              },
+              actionsBuilder: (uid, staff) => [
+                PopupMenuItem(
+                  value: _RowAction.pause,
+                  child: Text(
+                    staff.status == StaffStatus.paused ? 'Activate' : 'Pause',
                   ),
                 ),
-              );
-              if (updated != null) _snack('Staff updated ✅');
-            },
-            actionsBuilder: (uid, staff) => [
-              PopupMenuItem(
-                value: _RowAction.pause,
-                child: Text(
-                  staff.status == StaffStatus.paused ? 'Activate' : 'Pause',
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: _RowAction.block,
+                  child: Text('Block'),
                 ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: _RowAction.block,
-                child: Text('Block'),
-              ),
-              const PopupMenuItem(
-                value: _RowAction.delete,
-                child: Text('Delete (move to deleted)'),
-              ),
-            ],
-            onAction: (uid, staff, action) async {
-              switch (action) {
-                case _RowAction.pause:
-                  if (staff.status == StaffStatus.paused) {
-                    await _activateStaff(uid);
-                  } else {
-                    await _pauseStaff(uid);
-                  }
-                  break;
-                case _RowAction.block:
-                  await _moveToBlocked(uid, staff);
-                  break;
-                case _RowAction.delete:
-                  await _moveToDeleted(uid, staff);
-                  break;
-                default:
-                  break;
-              }
-            },
-          ),
-          _StaffList(
-            titleHint: 'Search deleted…',
-            stream: _deletedStream,
-            search: _search,
-            statusFilter: null,
-            roleFilter: null,
-            onSearchChanged: (v) => setState(() => _search = v),
-            onStatusFilterChanged: (_) {},
-            onRoleFilterChanged: (_) {},
-            actionsBuilder: (_, _) => const [
-              PopupMenuItem(value: _RowAction.restore, child: Text('Restore')),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: _RowAction.deleteForever,
-                child: Text('Delete permanently'),
-              ),
-            ],
-            onAction: (uid, staff, action) async {
-              switch (action) {
-                case _RowAction.restore:
-                  await _restoreFromDeleted(uid, staff);
-                  break;
-                case _RowAction.deleteForever:
-                  await _deletePermanently(uid, _deletedRef);
-                  break;
-                default:
-                  break;
-              }
-            },
-          ),
-          _StaffList(
-            titleHint: 'Search blocked…',
-            stream: _blockedStream,
-            search: _search,
-            statusFilter: null,
-            roleFilter: null,
-            onSearchChanged: (v) => setState(() => _search = v),
-            onStatusFilterChanged: (_) {},
-            onRoleFilterChanged: (_) {},
-            actionsBuilder: (_, _) => const [
-              PopupMenuItem(value: _RowAction.restore, child: Text('Unblock')),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: _RowAction.deleteForever,
-                child: Text('Delete permanently'),
-              ),
-            ],
-            onAction: (uid, staff, action) async {
-              switch (action) {
-                case _RowAction.restore:
-                  await _restoreFromBlocked(uid, staff);
-                  break;
-                case _RowAction.deleteForever:
-                  await _deletePermanently(uid, _blockedRef);
-                  break;
-                default:
-                  break;
-              }
-            },
-          ),
-        ],
+                const PopupMenuItem(
+                  value: _RowAction.delete,
+                  child: Text('Delete (move to deleted)'),
+                ),
+              ],
+              onAction: (uid, staff, action) async {
+                switch (action) {
+                  case _RowAction.pause:
+                    if (staff.status == StaffStatus.paused) {
+                      await _activateStaff(uid);
+                    } else {
+                      await _pauseStaff(uid);
+                    }
+                    break;
+                  case _RowAction.block:
+                    await _moveToBlocked(uid, staff);
+                    break;
+                  case _RowAction.delete:
+                    await _moveToDeleted(uid, staff);
+                    break;
+                  default:
+                    break;
+                }
+              },
+            ),
+            _StaffList(
+              titleHint: 'Search deleted…',
+              stream: _deletedStream,
+              webDenseMode: _webDenseMode,
+              search: _search,
+              statusFilter: null,
+              roleFilter: null,
+              onSearchChanged: (v) => setState(() => _search = v),
+              onStatusFilterChanged: (_) {},
+              onRoleFilterChanged: (_) {},
+              actionsBuilder: (_, _) => const [
+                PopupMenuItem(
+                  value: _RowAction.restore,
+                  child: Text('Restore'),
+                ),
+                PopupMenuDivider(),
+                PopupMenuItem(
+                  value: _RowAction.deleteForever,
+                  child: Text('Delete permanently'),
+                ),
+              ],
+              onAction: (uid, staff, action) async {
+                switch (action) {
+                  case _RowAction.restore:
+                    await _restoreFromDeleted(uid, staff);
+                    break;
+                  case _RowAction.deleteForever:
+                    await _deletePermanently(uid, _deletedRef);
+                    break;
+                  default:
+                    break;
+                }
+              },
+            ),
+            _StaffList(
+              titleHint: 'Search blocked…',
+              stream: _blockedStream,
+              webDenseMode: _webDenseMode,
+              search: _search,
+              statusFilter: null,
+              roleFilter: null,
+              onSearchChanged: (v) => setState(() => _search = v),
+              onStatusFilterChanged: (_) {},
+              onRoleFilterChanged: (_) {},
+              actionsBuilder: (_, _) => const [
+                PopupMenuItem(
+                  value: _RowAction.restore,
+                  child: Text('Unblock'),
+                ),
+                PopupMenuDivider(),
+                PopupMenuItem(
+                  value: _RowAction.deleteForever,
+                  child: Text('Delete permanently'),
+                ),
+              ],
+              onAction: (uid, staff, action) async {
+                switch (action) {
+                  case _RowAction.restore:
+                    await _restoreFromBlocked(uid, staff);
+                    break;
+                  case _RowAction.deleteForever:
+                    await _deletePermanently(uid, _blockedRef);
+                    break;
+                  default:
+                    break;
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -500,6 +527,7 @@ class _StaffList extends StatefulWidget {
   const _StaffList({
     required this.titleHint,
     required this.stream,
+    required this.webDenseMode,
     required this.search,
     required this.statusFilter,
     required this.roleFilter,
@@ -513,6 +541,7 @@ class _StaffList extends StatefulWidget {
 
   final String titleHint;
   final Stream<DatabaseEvent> stream;
+  final bool webDenseMode;
 
   final String search;
   final StaffStatus? statusFilter;
@@ -817,16 +846,17 @@ class _StaffListState extends State<_StaffList>
                       : u.phone2.trim();
                   final canOpenProfile = u.role == StaffRole.teacher;
                   final profilePhoto = u.primaryProfilePhoto;
+                  final dense = widget.webDenseMode && kIsWeb;
 
                   return Card(
-                    margin: const EdgeInsets.only(bottom: 10),
+                    margin: EdgeInsets.only(bottom: dense ? 7 : 10),
                     elevation: 0,
                     color: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(dense ? 12 : 16),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
+                      padding: EdgeInsets.all(dense ? 9 : 12),
                       child: Row(
                         children: [
                           GestureDetector(
@@ -840,12 +870,12 @@ class _StaffListState extends State<_StaffList>
                               clipBehavior: Clip.none,
                               children: [
                                 CircleAvatar(
-                                  radius: 21,
+                                  radius: dense ? 18 : 21,
                                   backgroundColor: Colors.transparent,
                                   child: ProfileAvatar(
                                     name: u.fullName,
                                     photoUrl: profilePhoto,
-                                    radius: 21,
+                                    radius: dense ? 18 : 21,
                                     fallbackBg: AdminStaffScreen.appBg,
                                     fallbackFg: AdminStaffScreen.primaryBlue,
                                     borderColor: AdminStaffScreen.uiBorders
@@ -959,7 +989,7 @@ class _StaffListState extends State<_StaffList>
                               ],
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          SizedBox(width: dense ? 9 : 12),
                           Expanded(
                             child: InkWell(
                               borderRadius: BorderRadius.circular(12),
@@ -991,14 +1021,14 @@ class _StaffListState extends State<_StaffList>
                                     Text(
                                       u.email.isEmpty ? '(No email)' : u.email,
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: dense ? 11 : 12,
                                         fontWeight: FontWeight.w700,
                                         color: Colors.black.withValues(
                                           alpha: 0.55,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
+                                    SizedBox(height: dense ? 4 : 6),
                                     Wrap(
                                       spacing: 8,
                                       runSpacing: 8,
@@ -1013,7 +1043,8 @@ class _StaffListState extends State<_StaffList>
                                           _Pill(label: '🎂 ${u.dob}'),
                                       ],
                                     ),
-                                    if (u.role == StaffRole.teacher &&
+                                    if (!dense &&
+                                        u.role == StaffRole.teacher &&
                                         phoneMain.isNotEmpty) ...[
                                       const SizedBox(height: 8),
                                       GestureDetector(
@@ -1028,7 +1059,8 @@ class _StaffListState extends State<_StaffList>
                                         ),
                                       ),
                                     ],
-                                    if (u.role == StaffRole.teacher) ...[
+                                    if (!dense &&
+                                        u.role == StaffRole.teacher) ...[
                                       const SizedBox(height: 8),
                                       Wrap(
                                         spacing: 8,
@@ -2099,6 +2131,34 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     }
   }
 
+  Widget _buildResponsiveSections(List<Widget> sections) {
+    final webWide = isWebDesktop(context, minWidth: 1200);
+    if (!webWide) {
+      return Column(
+        children: [
+          for (int i = 0; i < sections.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            sections[i],
+          ],
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final itemWidth = ((c.maxWidth - 12) / 2).clamp(300.0, 620.0);
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final section in sections)
+              SizedBox(width: itemWidth, child: section),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
@@ -2145,8 +2205,10 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
         child: Form(
           key: _formKey,
-          child: Column(
-            children: [
+          child: adminWebBodyFrame(
+            context: context,
+            maxWidth: 1380,
+            child: _buildResponsiveSections([
               _SectionCard(
                 title: 'Personal details',
                 child: Column(
@@ -2186,7 +2248,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Contact',
                 child: Column(
@@ -2259,7 +2320,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Role & status',
                 child: Column(
@@ -2361,7 +2421,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               _SectionCard(
                 title: 'Assign Courses',
                 child: _loadingCourses
@@ -2427,7 +2486,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         ],
                       ),
               ),
-            ],
+            ]),
           ),
         ),
       ),

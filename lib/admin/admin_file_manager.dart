@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/backend_api.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
@@ -49,9 +50,7 @@ class _AdminFileManagerState extends State<AdminFileManager>
     return Scaffold(
       appBar: AppBar(
         title: const Text('File Manager'),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
@@ -60,12 +59,16 @@ class _AdminFileManagerState extends State<AdminFileManager>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabs,
-        children: const [
-          _FileBrowser(key: PageStorageKey('courses_tab'), root: 'courses'),
-          _AdminGamesManager(key: PageStorageKey('games_tab')),
-        ],
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1650,
+        child: TabBarView(
+          controller: _tabs,
+          children: const [
+            _FileBrowser(key: PageStorageKey('courses_tab'), root: 'courses'),
+            _AdminGamesManager(key: PageStorageKey('games_tab')),
+          ],
+        ),
       ),
     );
   }
@@ -649,37 +652,41 @@ class _FileBrowserState extends State<_FileBrowser>
     );
 
     return Scaffold(
-      body: Column(
-        children: [
-          _buildPathBar(),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () => load(),
-              child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : items.isEmpty
-                  ? ListView(
-                      children: const [
-                        SizedBox(height: 120),
-                        Center(
-                          child: Text(
-                            'No files or folders here',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black54,
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1600,
+        child: Column(
+          children: [
+            _buildPathBar(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () => load(),
+                child: isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : items.isEmpty
+                    ? ListView(
+                        children: const [
+                          SizedBox(height: 120),
+                          Center(
+                            child: Text(
+                              'No files or folders here',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black54,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    )
-                  : ListView.separated(
-                      itemCount: items.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (_, i) => _buildItemTile(items[i]),
-                    ),
+                        ],
+                      )
+                    : ListView.separated(
+                        itemCount: items.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, i) => _buildItemTile(items[i]),
+                      ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -2305,134 +2312,138 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Game'),
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _gamesRef.onValue,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting &&
-              snap.data == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1600,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _gamesRef.onValue,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting &&
+                snap.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final value = snap.data?.snapshot.value;
-          final knownTags = _extractAllKnownTags(value);
-          final categories = _extractAllCategories(value);
+            final value = snap.data?.snapshot.value;
+            final knownTags = _extractAllKnownTags(value);
+            final categories = _extractAllCategories(value);
 
-          if (value == null || value is! Map) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.sports_esports_rounded, size: 48),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'No games added yet.',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Tap "Add Game" to create the first game.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _saving
-                          ? null
-                          : () => _showGameForm(knownTags: knownTags),
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('Add Game'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final raw = Map<dynamic, dynamic>.from(value);
-          final items = raw.entries.map((entry) {
-            final gameId = entry.key.toString();
-            final gameValue = entry.value;
-
-            final game = gameValue is Map
-                ? Map<String, dynamic>.from(gameValue)
-                : <String, dynamic>{};
-
-            return MapEntry(gameId, game);
-          }).toList();
-
-          final visibleItems = _applyFiltersAndSort(items: items);
-
-          return Column(
-            children: [
-              _buildFilterBar(categories),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Total games: ${visibleItems.length} • Uploaded by this admin: ${_adminOwnedGamesCount(items)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black54,
+            if (value == null || value is! Map) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.sports_esports_rounded, size: 48),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'No games added yet.',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Tap "Add Game" to create the first game.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: _saving
+                            ? null
+                            : () => _showGameForm(knownTags: knownTags),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add Game'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async {
-                    await _gamesRef.get();
-                  },
-                  child: visibleItems.isEmpty
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                          children: const [
-                            Center(
-                              child: Text(
-                                'No games match your filters.',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.black54,
+              );
+            }
+
+            final raw = Map<dynamic, dynamic>.from(value);
+            final items = raw.entries.map((entry) {
+              final gameId = entry.key.toString();
+              final gameValue = entry.value;
+
+              final game = gameValue is Map
+                  ? Map<String, dynamic>.from(gameValue)
+                  : <String, dynamic>{};
+
+              return MapEntry(gameId, game);
+            }).toList();
+
+            final visibleItems = _applyFiltersAndSort(items: items);
+
+            return Column(
+              children: [
+                _buildFilterBar(categories),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Total games: ${visibleItems.length} • Uploaded by this admin: ${_adminOwnedGamesCount(items)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      await _gamesRef.get();
+                    },
+                    child: visibleItems.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                            children: const [
+                              Center(
+                                child: Text(
+                                  'No games match your filters.',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        )
-                      : GridView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: 0.56,
-                              ),
-                          itemCount: visibleItems.length,
+                            ],
+                          )
+                        : GridView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.56,
+                                ),
+                            itemCount: visibleItems.length,
 
-                          itemBuilder: (context, index) {
-                            final item = visibleItems[index];
-                            return _buildGameCard(
-                              gameId: item.key,
-                              game: item.value,
-                              knownTags: knownTags,
-                            );
-                          },
-                        ),
+                            itemBuilder: (context, index) {
+                              final item = visibleItems[index];
+                              return _buildGameCard(
+                                gameId: item.key,
+                                game: item.value,
+                                knownTags: knownTags,
+                              );
+                            },
+                          ),
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

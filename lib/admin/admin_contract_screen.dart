@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
@@ -606,27 +607,31 @@ class _AdminContractScreenState extends State<AdminContractScreen>
         label: Text('Add ($activeLabel)'),
       ),
 
-      body: _ensuring
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tab,
-              children: [
-                _ContractsTab(
-                  root: _teacherRoot,
-                  kindLabel: 'Teachers',
-                  emptyIcon: Icons.badge_rounded,
-                  openActions: _openContractActionsSheet,
-                  emptyState: _emptyState,
-                ),
-                _ContractsTab(
-                  root: _learnerRoot,
-                  kindLabel: 'Learners',
-                  emptyIcon: Icons.school_rounded,
-                  openActions: _openContractActionsSheet,
-                  emptyState: _emptyState,
-                ),
-              ],
-            ),
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1500,
+        child: _ensuring
+            ? const Center(child: CircularProgressIndicator())
+            : TabBarView(
+                controller: _tab,
+                children: [
+                  _ContractsTab(
+                    root: _teacherRoot,
+                    kindLabel: 'Teachers',
+                    emptyIcon: Icons.badge_rounded,
+                    openActions: _openContractActionsSheet,
+                    emptyState: _emptyState,
+                  ),
+                  _ContractsTab(
+                    root: _learnerRoot,
+                    kindLabel: 'Learners',
+                    emptyIcon: Icons.school_rounded,
+                    openActions: _openContractActionsSheet,
+                    emptyState: _emptyState,
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

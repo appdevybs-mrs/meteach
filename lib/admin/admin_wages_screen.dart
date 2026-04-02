@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'admin_wages_export_excel.dart';
+import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
@@ -485,211 +486,219 @@ class AdminWagesScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: paymentsRef
-            .orderByChild('paidAt')
-            .limitToLast(_paymentsWindowSize)
-            .onValue,
-        builder: (context, paySnap) {
-          final payRaw = paySnap.data?.snapshot.value;
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: paymentsRef
+              .orderByChild('paidAt')
+              .limitToLast(_paymentsWindowSize)
+              .onValue,
+          builder: (context, paySnap) {
+            final payRaw = paySnap.data?.snapshot.value;
 
-          if (paySnap.hasError) {
-            return const Center(child: Text('Could not load wages.'));
-          }
-          if (!paySnap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (payRaw is! Map) {
-            return const Center(child: Text('No payments found.'));
-          }
+            if (paySnap.hasError) {
+              return const Center(child: Text('Could not load wages.'));
+            }
+            if (!paySnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (payRaw is! Map) {
+              return const Center(child: Text('No payments found.'));
+            }
 
-          // Payments list
-          final payments = <Map<String, dynamic>>[];
-          payRaw.forEach((k, v) {
-            if (k == null || v == null) return;
-            if (v is! Map) return;
-            final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-            payments.add({'paymentId': k.toString(), ...m});
-          });
-
-          // Sort newest first by paidAt
-          payments.sort(
-            (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
-          );
-
-          // Group (NEW): teacherId -> list of payments (NO MONTH GROUPING)
-          final Map<String, List<Map<String, dynamic>>> groupedByTeacher = {};
-          for (final p in payments) {
-            final teacherId = (p['teacherId'] ?? '').toString().trim();
-            final teacherKey = teacherId.isEmpty ? 'Unknown' : teacherId;
-            groupedByTeacher.putIfAbsent(teacherKey, () => []);
-            groupedByTeacher[teacherKey]!.add(p);
-          }
-
-          final teacherKeys = groupedByTeacher.keys.toList()
-            ..sort((a, b) {
-              final aName =
-                  (groupedByTeacher[a]!.isNotEmpty
-                          ? (groupedByTeacher[a]!.first['teacherName'] ?? '')
-                          : '')
-                      .toString()
-                      .trim();
-              final bName =
-                  (groupedByTeacher[b]!.isNotEmpty
-                          ? (groupedByTeacher[b]!.first['teacherName'] ?? '')
-                          : '')
-                      .toString()
-                      .trim();
-              final aa = aName.isEmpty ? a : aName;
-              final bb = bName.isEmpty ? b : bName;
-              return aa.toLowerCase().compareTo(bb.toLowerCase());
+            // Payments list
+            final payments = <Map<String, dynamic>>[];
+            payRaw.forEach((k, v) {
+              if (k == null || v == null) return;
+              if (v is! Map) return;
+              final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+              payments.add({'paymentId': k.toString(), ...m});
             });
 
-          if (teacherKeys.isEmpty) {
-            return const Center(child: Text('No payments found.'));
-          }
+            // Sort newest first by paidAt
+            payments.sort(
+              (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
+            );
 
-          return StreamBuilder<DatabaseEvent>(
-            stream: classesRef.onValue,
-            builder: (context, classSnap) {
-              final classRaw = classSnap.data?.snapshot.value;
+            // Group (NEW): teacherId -> list of payments (NO MONTH GROUPING)
+            final Map<String, List<Map<String, dynamic>>> groupedByTeacher = {};
+            for (final p in payments) {
+              final teacherId = (p['teacherId'] ?? '').toString().trim();
+              final teacherKey = teacherId.isEmpty ? 'Unknown' : teacherId;
+              groupedByTeacher.putIfAbsent(teacherKey, () => []);
+              groupedByTeacher[teacherKey]!.add(p);
+            }
 
-              final studyingByTeacher = _parseStudyingFromClasses(classRaw);
-              final studyingAll = <String>{};
-              for (final s in studyingByTeacher.values) {
-                studyingAll.addAll(s);
-              }
+            final teacherKeys = groupedByTeacher.keys.toList()
+              ..sort((a, b) {
+                final aName =
+                    (groupedByTeacher[a]!.isNotEmpty
+                            ? (groupedByTeacher[a]!.first['teacherName'] ?? '')
+                            : '')
+                        .toString()
+                        .trim();
+                final bName =
+                    (groupedByTeacher[b]!.isNotEmpty
+                            ? (groupedByTeacher[b]!.first['teacherName'] ?? '')
+                            : '')
+                        .toString()
+                        .trim();
+                final aa = aName.isEmpty ? a : aName;
+                final bb = bName.isEmpty ? b : bName;
+                return aa.toLowerCase().compareTo(bb.toLowerCase());
+              });
 
-              return StreamBuilder<DatabaseEvent>(
-                stream: learnersRef.onValue,
-                builder: (context, learnersSnap) {
-                  final learnersRaw = learnersSnap.data?.snapshot.value;
-                  final learnerMap = _parseLearners(learnersRaw);
+            if (teacherKeys.isEmpty) {
+              return const Center(child: Text('No payments found.'));
+            }
 
-                  // Stats header: still shows THIS MONTH global stats (same as before)
-                  final nowMonthKey = _monthKeyNow();
-                  final monthPayments = payments.where((p) {
-                    final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
-                    return mk == nowMonthKey;
-                  }).toList();
+            return StreamBuilder<DatabaseEvent>(
+              stream: classesRef.onValue,
+              builder: (context, classSnap) {
+                final classRaw = classSnap.data?.snapshot.value;
 
-                  final stats = _StatsData.fromMonth(
-                    monthLabel: _prettyMonthLabel(nowMonthKey),
-                    monthPayments: monthPayments,
-                    studyingAllUids: studyingAll,
-                    asInt: _asInt,
-                    asBool: _asBool,
-                  );
+                final studyingByTeacher = _parseStudyingFromClasses(classRaw);
+                final studyingAll = <String>{};
+                for (final s in studyingByTeacher.values) {
+                  studyingAll.addAll(s);
+                }
 
-                  // Missing uids (global) for this month
-                  final paidUidsThisMonth = <String>{};
-                  for (final p in monthPayments) {
-                    final uid = (p['uid'] ?? '').toString().trim();
-                    if (uid.isNotEmpty) paidUidsThisMonth.add(uid);
-                  }
-                  final missingUidsThisMonth = <String>{...studyingAll}
-                    ..removeAll(paidUidsThisMonth);
+                return StreamBuilder<DatabaseEvent>(
+                  stream: learnersRef.onValue,
+                  builder: (context, learnersSnap) {
+                    final learnersRaw = learnersSnap.data?.snapshot.value;
+                    final learnerMap = _parseLearners(learnersRaw);
 
-                  List<_LearnerInfo> missingGlobalList() {
-                    final list = <_LearnerInfo>[];
-                    for (final uid in missingUidsThisMonth) {
-                      list.add(
-                        learnerMap[uid] ??
-                            const _LearnerInfo(uid: '', name: '', serial: ''),
-                      );
-                      if (list.last.uid.isEmpty) {
-                        list[list.length - 1] = _LearnerInfo(
-                          uid: uid,
-                          name: '',
-                          serial: '',
-                        );
-                      }
+                    // Stats header: still shows THIS MONTH global stats (same as before)
+                    final nowMonthKey = _monthKeyNow();
+                    final monthPayments = payments.where((p) {
+                      final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
+                      return mk == nowMonthKey;
+                    }).toList();
+
+                    final stats = _StatsData.fromMonth(
+                      monthLabel: _prettyMonthLabel(nowMonthKey),
+                      monthPayments: monthPayments,
+                      studyingAllUids: studyingAll,
+                      asInt: _asInt,
+                      asBool: _asBool,
+                    );
+
+                    // Missing uids (global) for this month
+                    final paidUidsThisMonth = <String>{};
+                    for (final p in monthPayments) {
+                      final uid = (p['uid'] ?? '').toString().trim();
+                      if (uid.isNotEmpty) paidUidsThisMonth.add(uid);
                     }
-                    list.sort((a, b) {
-                      final aa = a.name.trim().isEmpty ? a.uid : a.name.trim();
-                      final bb = b.name.trim().isEmpty ? b.uid : b.name.trim();
-                      return aa.toLowerCase().compareTo(bb.toLowerCase());
-                    });
-                    return list;
-                  }
+                    final missingUidsThisMonth = <String>{...studyingAll}
+                      ..removeAll(paidUidsThisMonth);
 
-                  return ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-                    itemCount: teacherKeys.length + 1,
-                    itemBuilder: (context, i) {
-                      if (i == 0) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _StatsHeaderCard(
-                            data: stats,
-                            onTapMissing: () {
-                              _showMissingBottomSheet(
-                                context: context,
-                                title: 'Not paid yet • ${stats.monthLabel}',
-                                learners: missingGlobalList(),
-                              );
-                            },
+                    List<_LearnerInfo> missingGlobalList() {
+                      final list = <_LearnerInfo>[];
+                      for (final uid in missingUidsThisMonth) {
+                        list.add(
+                          learnerMap[uid] ??
+                              const _LearnerInfo(uid: '', name: '', serial: ''),
+                        );
+                        if (list.last.uid.isEmpty) {
+                          list[list.length - 1] = _LearnerInfo(
+                            uid: uid,
+                            name: '',
+                            serial: '',
+                          );
+                        }
+                      }
+                      list.sort((a, b) {
+                        final aa = a.name.trim().isEmpty
+                            ? a.uid
+                            : a.name.trim();
+                        final bb = b.name.trim().isEmpty
+                            ? b.uid
+                            : b.name.trim();
+                        return aa.toLowerCase().compareTo(bb.toLowerCase());
+                      });
+                      return list;
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+                      itemCount: teacherKeys.length + 1,
+                      itemBuilder: (context, i) {
+                        if (i == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _StatsHeaderCard(
+                              data: stats,
+                              onTapMissing: () {
+                                _showMissingBottomSheet(
+                                  context: context,
+                                  title: 'Not paid yet • ${stats.monthLabel}',
+                                  learners: missingGlobalList(),
+                                );
+                              },
+                            ),
+                          );
+                        }
+
+                        final tKey = teacherKeys[i - 1];
+                        final teacherPayments =
+                            groupedByTeacher[tKey] ?? const [];
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: uiBorder.withValues(alpha: 0.8),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 10,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: _TeacherSection(
+                            teacherId: tKey,
+                            payments: teacherPayments,
+                            nowMonthKey: nowMonthKey,
+                            studyingLearnerUids:
+                                studyingByTeacher[tKey] ??
+                                _tryMatchStudyingByTeacherName(
+                                  teacherName:
+                                      (teacherPayments.isNotEmpty
+                                              ? (teacherPayments
+                                                        .first['teacherName'] ??
+                                                    '')
+                                              : '')
+                                          .toString()
+                                          .trim(),
+                                  studyingByTeacher: studyingByTeacher,
+                                ),
+                            learnerMap: learnerMap,
+                            onTogglePaid: (paymentId, makePaid) => _togglePaid(
+                              context: context,
+                              paymentId: paymentId,
+                              makePaid: makePaid,
+                            ),
+                            onRemoveTeacherConfirm: (paymentId) =>
+                                _adminRemoveTeacherConfirmation(
+                                  context: context,
+                                  paymentId: paymentId,
+                                ),
                           ),
                         );
-                      }
-
-                      final tKey = teacherKeys[i - 1];
-                      final teacherPayments =
-                          groupedByTeacher[tKey] ?? const [];
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: uiBorder.withValues(alpha: 0.8),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
-                              blurRadius: 10,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: _TeacherSection(
-                          teacherId: tKey,
-                          payments: teacherPayments,
-                          nowMonthKey: nowMonthKey,
-                          studyingLearnerUids:
-                              studyingByTeacher[tKey] ??
-                              _tryMatchStudyingByTeacherName(
-                                teacherName:
-                                    (teacherPayments.isNotEmpty
-                                            ? (teacherPayments
-                                                      .first['teacherName'] ??
-                                                  '')
-                                            : '')
-                                        .toString()
-                                        .trim(),
-                                studyingByTeacher: studyingByTeacher,
-                              ),
-                          learnerMap: learnerMap,
-                          onTogglePaid: (paymentId, makePaid) => _togglePaid(
-                            context: context,
-                            paymentId: paymentId,
-                            makePaid: makePaid,
-                          ),
-                          onRemoveTeacherConfirm: (paymentId) =>
-                              _adminRemoveTeacherConfirmation(
-                                context: context,
-                                paymentId: paymentId,
-                              ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          );
-        },
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

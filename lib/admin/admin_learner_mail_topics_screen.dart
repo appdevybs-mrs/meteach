@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../shared/human_error.dart';
 
 import 'mail_topic_thread_screen.dart'; // the topic thread screen you already have
+import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
@@ -201,69 +202,75 @@ class _AdminLearnerMailTopicsScreenState
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _stream,
-        builder: (_, snap) {
-          if (snap.hasError)
-            return const Center(child: Text('Failed to load mail.'));
-          final rows = _parseAndFilter(snap.data?.snapshot.value);
-          if (rows.isEmpty)
-            return const Center(
-              child: Text('No topics yet. Tap + to create one.'),
-            );
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1400,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _stream,
+          builder: (_, snap) {
+            if (snap.hasError)
+              return const Center(child: Text('Failed to load mail.'));
+            final rows = _parseAndFilter(snap.data?.snapshot.value);
+            if (rows.isEmpty)
+              return const Center(
+                child: Text('No topics yet. Tap + to create one.'),
+              );
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: rows.length,
-            itemBuilder: (_, i) {
-              final row = rows[i];
-              final item = row.item;
-              final hasUnread = item.unreadCount > 0;
+            return ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: rows.length,
+              itemBuilder: (_, i) {
+                final row = rows[i];
+                final item = row.item;
+                final hasUnread = item.unreadCount > 0;
 
-              return Card(
-                child: ListTile(
-                  title: Text(
-                    item.subject.isEmpty ? '(No subject)' : item.subject,
-                    style: TextStyle(
-                      fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w400,
+                return Card(
+                  child: ListTile(
+                    title: Text(
+                      item.subject.isEmpty ? '(No subject)' : item.subject,
+                      style: TextStyle(
+                        fontWeight: hasUnread
+                            ? FontWeight.w800
+                            : FontWeight.w400,
+                      ),
                     ),
-                  ),
-                  subtitle: Text(
-                    item.lastMessage.isEmpty
-                        ? 'No messages yet'
-                        : item.lastMessage,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: hasUnread
-                      ? Center(
-                          widthFactor: 1,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              '${item.unreadCount}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
+                    subtitle: Text(
+                      item.lastMessage.isEmpty
+                          ? 'No messages yet'
+                          : item.lastMessage,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: hasUnread
+                        ? Center(
+                            widthFactor: 1,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${item.unreadCount}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
-                          ),
-                        )
-                      : null,
+                          )
+                        : null,
 
-                  onTap: () => _openThread(row),
-                ),
-              );
-            },
-          );
-        },
+                    onTap: () => _openThread(row),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
