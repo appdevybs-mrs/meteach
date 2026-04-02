@@ -7,6 +7,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherOnlineCircleScreen extends StatefulWidget {
   const TeacherOnlineCircleScreen({super.key});
@@ -441,185 +442,194 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
               : 'Save Circle',
         ),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (_busy)
-              LinearProgressIndicator(color: p.accent, backgroundColor: p.soft),
-            _statusBanner(),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
-                children: [
-                  _sectionCard(
-                    title: 'Circle Details',
-                    subtitle: 'Set topic, schedule, duration and visibility',
-                    child: Form(
-                      key: _formKey,
-                      autovalidateMode: AutovalidateMode.onUserInteraction,
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            controller: _meetingUrlCtrl,
-                            readOnly: true,
-                            decoration: _dec(
-                              'Meeting URL',
-                              hintText: 'Loaded from teacher profile',
-                            ),
-                            validator: (v) {
-                              final value = (v ?? '').trim();
-                              if (value.isEmpty) {
-                                return 'No meeting URL found in teacher profile';
-                              }
-
-                              final uri = Uri.tryParse(value);
-                              if (uri == null || !uri.isAbsolute) {
-                                return 'Meeting URL is invalid';
-                              }
-
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _topicCtrl,
-                            decoration: _dec('Topic'),
-                            validator: (v) {
-                              if ((v ?? '').trim().isEmpty) {
-                                return 'Topic is required';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _descriptionCtrl,
-                            minLines: 3,
-                            maxLines: 5,
-                            decoration: _dec('Description'),
-                            validator: (v) {
-                              if ((v ?? '').trim().isEmpty) {
-                                return 'Description is required';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: _busy ? null : _pickDateTime,
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 16,
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1120,
+        child: SafeArea(
+          child: Column(
+            children: [
+              if (_busy)
+                LinearProgressIndicator(
+                  color: p.accent,
+                  backgroundColor: p.soft,
+                ),
+              _statusBanner(),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+                  children: [
+                    _sectionCard(
+                      title: 'Circle Details',
+                      subtitle: 'Set topic, schedule, duration and visibility',
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          children: [
+                            TextFormField(
+                              controller: _meetingUrlCtrl,
+                              readOnly: true,
+                              decoration: _dec(
+                                'Meeting URL',
+                                hintText: 'Loaded from teacher profile',
                               ),
+                              validator: (v) {
+                                final value = (v ?? '').trim();
+                                if (value.isEmpty) {
+                                  return 'No meeting URL found in teacher profile';
+                                }
+
+                                final uri = Uri.tryParse(value);
+                                if (uri == null || !uri.isAbsolute) {
+                                  return 'Meeting URL is invalid';
+                                }
+
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _topicCtrl,
+                              decoration: _dec('Topic'),
+                              validator: (v) {
+                                if ((v ?? '').trim().isEmpty) {
+                                  return 'Topic is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _descriptionCtrl,
+                              minLines: 3,
+                              maxLines: 5,
+                              decoration: _dec('Description'),
+                              validator: (v) {
+                                if ((v ?? '').trim().isEmpty) {
+                                  return 'Description is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: _busy ? null : _pickDateTime,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 16,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: p.cardBg,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: p.border.withValues(alpha: 0.95),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.calendar_month_rounded,
+                                      color: p.primary,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        _formattedDateTime(),
+                                        style: TextStyle(
+                                          color: _selectedDateTime == null
+                                              ? p.text.withValues(alpha: 0.65)
+                                              : p.text,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _durationCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: _dec(
+                                'Duration (minutes)',
+                                hintText: 'e.g. 60',
+                              ),
+                              validator: (v) {
+                                final value = int.tryParse((v ?? '').trim());
+                                if (value == null || value <= 0) {
+                                  return 'Enter a valid duration';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            Container(
+                              padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: p.cardBg,
+                                color: p.soft.withValues(alpha: 0.55),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: p.border.withValues(alpha: 0.95),
+                                  color: p.border.withValues(alpha: 0.85),
                                 ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(
-                                    Icons.calendar_month_rounded,
-                                    color: p.primary,
-                                  ),
-                                  const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text(
-                                      _formattedDateTime(),
-                                      style: TextStyle(
-                                        color: _selectedDateTime == null
-                                            ? p.text.withValues(alpha: 0.65)
-                                            : p.text,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Circle Status',
+                                          style: TextStyle(
+                                            color: p.primary,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _isOpen
+                                              ? 'This circle is currently open'
+                                              : 'This circle is currently closed',
+                                          style: TextStyle(
+                                            color: p.text.withValues(
+                                              alpha: 0.68,
+                                            ),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
                                     ),
+                                  ),
+                                  Switch(
+                                    value: _isOpen,
+                                    activeThumbColor: p.accent,
+                                    onChanged: _busy
+                                        ? null
+                                        : (v) {
+                                            setState(() {
+                                              _isOpen = v;
+                                            });
+                                          },
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _durationCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: _dec(
-                              'Duration (minutes)',
-                              hintText: 'e.g. 60',
-                            ),
-                            validator: (v) {
-                              final value = int.tryParse((v ?? '').trim());
-                              if (value == null || value <= 0) {
-                                return 'Enter a valid duration';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: p.soft.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: p.border.withValues(alpha: 0.85),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Circle Status',
-                                        style: TextStyle(
-                                          color: p.primary,
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 15,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _isOpen
-                                            ? 'This circle is currently open'
-                                            : 'This circle is currently closed',
-                                        style: TextStyle(
-                                          color: p.text.withValues(alpha: 0.68),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Switch(
-                                  value: _isOpen,
-                                  activeThumbColor: p.accent,
-                                  onChanged: _busy
-                                      ? null
-                                      : (v) {
-                                          setState(() {
-                                            _isOpen = v;
-                                          });
-                                        },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

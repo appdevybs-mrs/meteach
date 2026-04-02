@@ -23,6 +23,7 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
   const TeacherMailThreadScreen({
@@ -4087,249 +4088,260 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 ),
               ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<DatabaseEvent>(
-              stream: _msgStream,
-              builder: (_, snap) {
-                final msgsAll = _parseMessages(snap.data?.snapshot.value);
-                final msgs = _applyLocalSearch(msgsAll);
-                _visibleMessages = msgs;
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1520,
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<DatabaseEvent>(
+                stream: _msgStream,
+                builder: (_, snap) {
+                  final msgsAll = _parseMessages(snap.data?.snapshot.value);
+                  final msgs = _applyLocalSearch(msgsAll);
+                  _visibleMessages = msgs;
 
-                if (msgsAll.isEmpty)
-                  return const Center(child: Text('No mail yet.'));
-                if (msgs.isEmpty)
-                  return const Center(
-                    child: Text('No results in this thread.'),
-                  );
-
-                return ListView.builder(
-                  reverse: true,
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                  itemCount: msgs.length,
-                  itemBuilder: (_, i) {
-                    final m = msgs[i];
-                    final mine = m.fromUid == _meUid;
-
-                    final thisDateLabel = _dateLabel(m.createdAtMs);
-                    String? nextDateLabel;
-                    if (i + 1 < msgs.length)
-                      nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
-                    final showDate =
-                        (i == msgs.length - 1) ||
-                        (nextDateLabel != thisDateLabel);
-
-                    final grouped = _isSameSenderNearby(msgs, i);
-
-                    return Column(
-                      children: [
-                        if (showDate) _dateSeparator(thisDateLabel),
-                        Padding(
-                          padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
-                          child: Align(
-                            alignment: mine
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: GestureDetector(
-                              onLongPress: () => _toggleMessageSelection(m),
-                              onTap: _selectionMode
-                                  ? () => _toggleMessageSelection(m)
-                                  : null,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: mine
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: _selectedMessageIds.contains(m.id)
-                                          ? Border.all(
-                                              color: _orange,
-                                              width: 1.5,
-                                            )
-                                          : null,
-                                    ),
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        maxWidth: _messageMaxWidth(m),
-                                      ),
-                                      child: _buildMessageBubble(m, mine: mine),
-                                    ),
-                                  ),
-                                  if (m.reactions.isNotEmpty)
-                                    _buildReactionsRow(m, mine: mine),
-                                  _buildMessageMeta(m, mine: mine),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  if (msgsAll.isEmpty)
+                    return const Center(child: Text('No mail yet.'));
+                  if (msgs.isEmpty)
+                    return const Center(
+                      child: Text('No results in this thread.'),
                     );
-                  },
-                );
-              },
-            ),
-          ),
 
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                children: [
-                  if (_attachments.isNotEmpty)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _attachments.map((a) {
-                          return Chip(
-                            label: Text(a['name'] ?? 'file'),
-                            onDeleted: _composerBusy
-                                ? null
-                                : () => setState(() => _attachments.remove(a)),
-                          );
-                        }).toList(),
-                      ),
-                    ),
+                  return ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    itemCount: msgs.length,
+                    itemBuilder: (_, i) {
+                      final m = msgs[i];
+                      final mine = m.fromUid == _meUid;
 
-                  if (_uploadingItems.isNotEmpty) ...[
-                    _buildComposerUploads(),
-                    const SizedBox(height: 8),
-                  ],
+                      final thisDateLabel = _dateLabel(m.createdAtMs);
+                      String? nextDateLabel;
+                      if (i + 1 < msgs.length)
+                        nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
+                      final showDate =
+                          (i == msgs.length - 1) ||
+                          (nextDateLabel != thisDateLabel);
 
-                  _buildRecordingBar(),
+                      final grouped = _isSameSenderNearby(msgs, i);
 
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Camera',
-                        onPressed: _disableAttachActions
-                            ? null
-                            : _takePhotoAndAttach,
-                        icon: Icon(
-                          Icons.photo_camera_rounded,
-                          color: _navy.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Attach',
-                        onPressed: _disableAttachActions
-                            ? null
-                            : _pickAndUploadAttachment,
-                        icon: Icon(
-                          Icons.attach_file,
-                          color: _navy.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _bodyC,
-                          onChanged: (_) => setState(() {}),
-                          minLines: 1,
-                          maxLines: 4,
-                          enabled: !_disableTextInput,
-                          decoration: InputDecoration(
-                            hintText: _hasPendingUploads
-                                ? 'Wait for upload to finish…'
-                                : ((_recRecording ||
-                                          _recStarting ||
-                                          _recUploading)
-                                      ? 'Recording…'
-                                      : 'Message…'),
-                            filled: true,
-                            fillColor: Colors.white.withValues(alpha: 0.92),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(
-                                color: _navy.withValues(alpha: 0.15),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(
-                                color: _navy.withValues(alpha: 0.12),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(
-                                color: _orange.withValues(alpha: 0.65),
-                                width: 1.2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (_bodyC.text.trim().isNotEmpty ||
-                          _attachments.isNotEmpty)
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _navy,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                          ),
-                          onPressed: _disableSendAction ? null : _send,
-                          child: Text(
-                            _sending
-                                ? 'Sending…'
-                                : (_hasPendingUploads ? 'Uploading…' : 'Send'),
-                          ),
-                        )
-                      else
-                        (_disableMicAction
-                            ? _buildDisabledMicButton()
-                            : _buildActiveMicButton()),
-                    ],
-                  ),
-
-                  if ((_recRecording || _recStarting) &&
-                      !_recLocked &&
-                      !_recUploading)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Row(
+                      return Column(
                         children: [
-                          Icon(
-                            Icons.info_outline_rounded,
-                            size: 16,
-                            color: _navy.withValues(alpha: 0.55),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Hold to record • Swipe left to cancel • Slide up to lock',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                                color: _navy.withValues(alpha: 0.55),
+                          if (showDate) _dateSeparator(thisDateLabel),
+                          Padding(
+                            padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
+                            child: Align(
+                              alignment: mine
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              child: GestureDetector(
+                                onLongPress: () => _toggleMessageSelection(m),
+                                onTap: _selectionMode
+                                    ? () => _toggleMessageSelection(m)
+                                    : null,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: mine
+                                      ? CrossAxisAlignment.end
+                                      : CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(14),
+                                        border:
+                                            _selectedMessageIds.contains(m.id)
+                                            ? Border.all(
+                                                color: _orange,
+                                                width: 1.5,
+                                              )
+                                            : null,
+                                      ),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: _messageMaxWidth(m),
+                                        ),
+                                        child: _buildMessageBubble(
+                                          m,
+                                          mine: mine,
+                                        ),
+                                      ),
+                                    ),
+                                    if (m.reactions.isNotEmpty)
+                                      _buildReactionsRow(m, mine: mine),
+                                    _buildMessageMeta(m, mine: mine),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
-          ),
-        ],
+
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Column(
+                  children: [
+                    if (_attachments.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _attachments.map((a) {
+                            return Chip(
+                              label: Text(a['name'] ?? 'file'),
+                              onDeleted: _composerBusy
+                                  ? null
+                                  : () =>
+                                        setState(() => _attachments.remove(a)),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+
+                    if (_uploadingItems.isNotEmpty) ...[
+                      _buildComposerUploads(),
+                      const SizedBox(height: 8),
+                    ],
+
+                    _buildRecordingBar(),
+
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Camera',
+                          onPressed: _disableAttachActions
+                              ? null
+                              : _takePhotoAndAttach,
+                          icon: Icon(
+                            Icons.photo_camera_rounded,
+                            color: _navy.withValues(alpha: 0.9),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Attach',
+                          onPressed: _disableAttachActions
+                              ? null
+                              : _pickAndUploadAttachment,
+                          icon: Icon(
+                            Icons.attach_file,
+                            color: _navy.withValues(alpha: 0.9),
+                          ),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _bodyC,
+                            onChanged: (_) => setState(() {}),
+                            minLines: 1,
+                            maxLines: 4,
+                            enabled: !_disableTextInput,
+                            decoration: InputDecoration(
+                              hintText: _hasPendingUploads
+                                  ? 'Wait for upload to finish…'
+                                  : ((_recRecording ||
+                                            _recStarting ||
+                                            _recUploading)
+                                        ? 'Recording…'
+                                        : 'Message…'),
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.92),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: BorderSide(
+                                  color: _navy.withValues(alpha: 0.15),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: BorderSide(
+                                  color: _navy.withValues(alpha: 0.12),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: BorderSide(
+                                  color: _orange.withValues(alpha: 0.65),
+                                  width: 1.2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (_bodyC.text.trim().isNotEmpty ||
+                            _attachments.isNotEmpty)
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _navy,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            onPressed: _disableSendAction ? null : _send,
+                            child: Text(
+                              _sending
+                                  ? 'Sending…'
+                                  : (_hasPendingUploads
+                                        ? 'Uploading…'
+                                        : 'Send'),
+                            ),
+                          )
+                        else
+                          (_disableMicAction
+                              ? _buildDisabledMicButton()
+                              : _buildActiveMicButton()),
+                      ],
+                    ),
+
+                    if ((_recRecording || _recStarting) &&
+                        !_recLocked &&
+                        !_recUploading)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                              color: _navy.withValues(alpha: 0.55),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Hold to record • Swipe left to cancel • Slide up to lock',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  color: _navy.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

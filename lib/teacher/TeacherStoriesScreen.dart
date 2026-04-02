@@ -15,6 +15,7 @@ import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
   const TeacherStoriesScreen({super.key});
@@ -3159,9 +3160,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stories'),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
@@ -3170,143 +3169,147 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Story'),
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _storiesRef.onValue,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting &&
-              snap.data == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1600,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _storiesRef.onValue,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting &&
+                snap.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final value = snap.data?.snapshot.value;
-          final knownTags = _extractAllKnownTags(value);
-          final genres = _extractAllGenres(value);
+            final value = snap.data?.snapshot.value;
+            final knownTags = _extractAllKnownTags(value);
+            final genres = _extractAllGenres(value);
 
-          if (value == null || value is! Map) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Container(
-                  width: double.infinity,
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: cs.outline.withValues(alpha: 0.22),
+            if (value == null || value is! Map) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: cs.outline.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.menu_book_rounded,
+                          size: 48,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No stories added yet.',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Tap "Add Story" to create the first story.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _showStoryForm(knownTags: knownTags),
+                          icon: const Icon(Icons.add_rounded),
+                          label: const Text('Add Story'),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                ),
+              );
+            }
+
+            final raw = Map<dynamic, dynamic>.from(value);
+            final items = raw.entries.map((entry) {
+              final storyId = entry.key.toString();
+              final storyValue = entry.value;
+
+              final story = storyValue is Map
+                  ? Map<String, dynamic>.from(storyValue)
+                  : <String, dynamic>{};
+
+              return MapEntry(storyId, story);
+            }).toList();
+
+            final visibleItems = _applyFiltersAndSort(items: items);
+
+            return Column(
+              children: [
+                _buildCompactToolbar(genres),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
                     children: [
-                      Icon(
-                        Icons.menu_book_rounded,
-                        size: 48,
-                        color: cs.primary,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'No stories added yet.',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                      Expanded(
+                        child: Text(
+                          'Total stories: ${visibleItems.length} • My stories: ${_myStoriesCount(items)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black54,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Tap "Add Story" to create the first story.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: _saving
-                            ? null
-                            : () => _showStoryForm(knownTags: knownTags),
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('Add Story'),
                       ),
                     ],
                   ),
                 ),
-              ),
-            );
-          }
-
-          final raw = Map<dynamic, dynamic>.from(value);
-          final items = raw.entries.map((entry) {
-            final storyId = entry.key.toString();
-            final storyValue = entry.value;
-
-            final story = storyValue is Map
-                ? Map<String, dynamic>.from(storyValue)
-                : <String, dynamic>{};
-
-            return MapEntry(storyId, story);
-          }).toList();
-
-          final visibleItems = _applyFiltersAndSort(items: items);
-
-          return Column(
-            children: [
-              _buildCompactToolbar(genres),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Total stories: ${visibleItems.length} • My stories: ${_myStoriesCount(items)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async {
-                    await _storiesRef.get();
-                  },
-                  child: visibleItems.isEmpty
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                          children: [
-                            Center(
-                              child: Text(
-                                'No stories match your filters.',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.textTheme.bodyMedium?.color
-                                      ?.withValues(alpha: 0.65),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      await _storiesRef.get();
+                    },
+                    child: visibleItems.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                            children: [
+                              Center(
+                                child: Text(
+                                  'No stories match your filters.',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.textTheme.bodyMedium?.color
+                                        ?.withValues(alpha: 0.65),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        )
-                      : ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                          itemCount: visibleItems.length,
-                          itemBuilder: (context, index) {
-                            final item = visibleItems[index];
-                            return _buildStoryCard(
-                              storyId: item.key,
-                              story: item.value,
-                              knownTags: knownTags,
-                            );
-                          },
-                        ),
+                            ],
+                          )
+                        : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                            itemCount: visibleItems.length,
+                            itemBuilder: (context, index) {
+                              final item = visibleItems[index];
+                              return _buildStoryCard(
+                                storyId: item.key,
+                                story: item.value,
+                                knownTags: knownTags,
+                              );
+                            },
+                          ),
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

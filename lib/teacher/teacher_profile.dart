@@ -16,6 +16,7 @@ import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 enum _LeaveChoice { save, discard, cancel }
 
@@ -1864,43 +1865,47 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ],
           ),
         ),
-        body: SafeArea(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.045,
-                    child: Center(
-                      child: FractionallySizedBox(
-                        widthFactor: 0.76,
-                        child: Image.asset(
-                          'assets/images/ybs_logo.png',
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1400,
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 0.045,
+                      child: Center(
+                        child: FractionallySizedBox(
+                          widthFactor: 0.76,
+                          child: Image.asset(
+                            'assets/images/ybs_logo.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Column(
-                children: [
-                  if (_busy)
-                    LinearProgressIndicator(
-                      color: p.accent,
-                      backgroundColor: p.soft,
+                Column(
+                  children: [
+                    if (_busy)
+                      LinearProgressIndicator(
+                        color: p.accent,
+                        backgroundColor: p.soft,
+                      ),
+                    _statusBanner(),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [_buildCredentialsTab(), _buildMediaTab()],
+                      ),
                     ),
-                  _statusBanner(),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [_buildCredentialsTab(), _buildMediaTab()],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

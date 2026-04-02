@@ -7,6 +7,7 @@ import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import 'take_attendance_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/teacher_web_layout.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -906,42 +907,46 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.04,
-                child: Center(
-                  child: Icon(
-                    Icons.fact_check_rounded,
-                    size: 220,
-                    color: p.primary.withValues(alpha: 0.12),
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1400,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.04,
+                  child: Center(
+                    child: Icon(
+                      Icons.fact_check_rounded,
+                      size: 220,
+                      color: p.primary.withValues(alpha: 0.12),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          _busy
-              ? Center(child: CircularProgressIndicator(color: p.primary))
-              : _error != null
-              ? _buildError(p)
-              : _sessions.isEmpty
-              ? _buildEmpty(p)
-              : RefreshIndicator(
-                  color: p.primary,
-                  onRefresh: _loadHistory,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-                    children: [
-                      _topSummaryCard(p, totalSessions),
-                      const SizedBox(height: 14),
-                      ..._sessions.map((s) => _buildSessionCard(p, s)),
-                    ],
+            _busy
+                ? Center(child: CircularProgressIndicator(color: p.primary))
+                : _error != null
+                ? _buildError(p)
+                : _sessions.isEmpty
+                ? _buildEmpty(p)
+                : RefreshIndicator(
+                    color: p.primary,
+                    onRefresh: _loadHistory,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                      children: [
+                        _topSummaryCard(p, totalSessions),
+                        const SizedBox(height: 14),
+                        ..._sessions.map((s) => _buildSessionCard(p, s)),
+                      ],
+                    ),
                   ),
-                ),
-        ],
+          ],
+        ),
       ),
     );
   }

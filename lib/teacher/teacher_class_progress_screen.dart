@@ -7,6 +7,7 @@ import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherClassProgressScreen extends StatefulWidget {
   final String classId;
@@ -432,43 +433,47 @@ class _TeacherClassProgressScreenState
             ),
           ],
         ),
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.04,
-                  child: Center(
-                    child: Icon(
-                      Icons.auto_graph_rounded,
-                      size: 220,
-                      color: p.primary.withValues(alpha: 0.12),
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1480,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.04,
+                    child: Center(
+                      child: Icon(
+                        Icons.auto_graph_rounded,
+                        size: 220,
+                        color: p.primary.withValues(alpha: 0.12),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            _busy
-                ? Center(child: CircularProgressIndicator(color: p.primary))
-                : _error != null
-                ? _buildErrorState(p)
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      _headerHeroCard(p),
-                      const SizedBox(height: 12),
-                      _viewModeCard(p),
-                      const SizedBox(height: 12),
-                      if (_learners.isNotEmpty) ...[
-                        _learnerPickerCard(p),
+              _busy
+                  ? Center(child: CircularProgressIndicator(color: p.primary))
+                  : _error != null
+                  ? _buildErrorState(p)
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _headerHeroCard(p),
                         const SizedBox(height: 12),
+                        _viewModeCard(p),
+                        const SizedBox(height: 12),
+                        if (_learners.isNotEmpty) ...[
+                          _learnerPickerCard(p),
+                          const SizedBox(height: 12),
+                        ],
+                        _progressOverviewCard(p),
+                        const SizedBox(height: 12),
+                        _unitsProgressCard(p),
                       ],
-                      _progressOverviewCard(p),
-                      const SizedBox(height: 12),
-                      _unitsProgressCard(p),
-                    ],
-                  ),
-          ],
+                    ),
+            ],
+          ),
         ),
       ),
     );

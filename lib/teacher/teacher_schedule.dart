@@ -22,6 +22,7 @@ import '../services/notification_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 import 'attendance_history_screen.dart';
 import 'take_attendance_screen.dart';
 
@@ -349,150 +350,158 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             ],
           ),
         ),
-        body: StreamBuilder<DatabaseEvent>(
-          stream: _classesRef.onValue,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting ||
-                !_prefsReady) {
-              return Center(child: CircularProgressIndicator(color: p.accent));
-            }
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1560,
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _classesRef.onValue,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting ||
+                  !_prefsReady) {
+                return Center(
+                  child: CircularProgressIndicator(color: p.accent),
+                );
+              }
 
-            final data = snap.data?.snapshot.value;
-            if (data == null) {
-              return _EmptyState(
-                palette: p,
-                icon: Icons.school_outlined,
-                title: 'No classes found',
-                subtitle: 'There are no class records available yet.',
-              );
-            }
+              final data = snap.data?.snapshot.value;
+              if (data == null) {
+                return _EmptyState(
+                  palette: p,
+                  icon: Icons.school_outlined,
+                  title: 'No classes found',
+                  subtitle: 'There are no class records available yet.',
+                );
+              }
 
-            final rawClasses = <Map<String, dynamic>>[];
-            if (data is Map) {
-              for (final v in data.values) {
-                if (v is Map) {
-                  rawClasses.add(Map<String, dynamic>.from(v));
+              final rawClasses = <Map<String, dynamic>>[];
+              if (data is Map) {
+                for (final v in data.values) {
+                  if (v is Map) {
+                    rawClasses.add(Map<String, dynamic>.from(v));
+                  }
                 }
               }
-            }
 
-            if (rawClasses.isEmpty) {
-              return _EmptyState(
-                palette: p,
-                icon: Icons.event_busy_rounded,
-                title: 'No classes found',
-                subtitle: 'There are no class records available yet.',
-              );
-            }
-
-            final currentUser = FirebaseAuth.instance.currentUser;
-            final myUid = currentUser?.uid;
-
-            if (myUid == null || myUid.isEmpty) {
-              return _EmptyState(
-                palette: p,
-                icon: Icons.lock_outline_rounded,
-                title: 'No logged-in user found',
-                subtitle: 'Please log out and log in again.',
-              );
-            }
-
-            final roleRef = FirebaseDatabase.instance.ref('users/$myUid/role');
-
-            return FutureBuilder<DataSnapshot>(
-              future: roleRef.get(),
-              builder: (context, roleSnap) {
-                if (!roleSnap.hasData) {
-                  return Center(
-                    child: CircularProgressIndicator(color: p.accent),
-                  );
-                }
-
-                final role = (roleSnap.data?.value ?? '')
-                    .toString()
-                    .toLowerCase()
-                    .trim();
-                final isAdmin = role == 'admin';
-
-                final teacherOnlyClasses = rawClasses.where((c) {
-                  final instructorCurrent = c['instructor_current'];
-                  if (instructorCurrent is Map) {
-                    final ic = Map<String, dynamic>.from(instructorCurrent);
-                    final uid = ic['uid']?.toString();
-                    return uid == myUid;
-                  }
-                  return false;
-                }).toList();
-
-                final visibleClasses = isAdmin
-                    ? rawClasses
-                    : teacherOnlyClasses;
-
-                if (!isAdmin && visibleClasses.isEmpty) {
-                  return _EmptyState(
-                    palette: p,
-                    icon: Icons.groups_rounded,
-                    title: 'No classes assigned',
-                    subtitle: 'No classes are assigned to this teacher yet.',
-                  );
-                }
-
-                final allOcc = <_Occ>[];
-                for (final cls in visibleClasses) {
-                  allOcc.addAll(_generateOccurrences(cls));
-                }
-                allOcc.sort((a, b) => a.start.compareTo(b.start));
-
-                final now = DateTime.now();
-                final twoDaysAgo = now.subtract(const Duration(days: 2));
-                final recentAndUpcoming = allOcc
-                    .where((o) => o.end.isAfter(twoDaysAgo))
-                    .toList();
-
-                _latestAllOcc = allOcc;
-                _latestUpcoming = recentAndUpcoming;
-
-                if (_prefsReady && !_didAutoApply) {
-                  _didAutoApply = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    _queueApplyAllReminders(
-                      upcoming: recentAndUpcoming,
-                      allOcc: allOcc,
-                    );
-                  });
-                }
-
-                return Column(
-                  children: [
-                    _ScheduleTopSummary(
-                      palette: p,
-                      totalClasses: visibleClasses.length,
-                      totalSessions: recentAndUpcoming.length,
-                      remindersOn: _sessionEnabled || _dailyEnabled,
-                      isAdmin: isAdmin,
-                    ),
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          _buildGroupedSchedule(
-                            recentAndUpcoming,
-                            allOcc,
-                            visibleClasses,
-                          ),
-                          _buildCalendarView(
-                            allOcc,
-                            recentAndUpcoming,
-                            visibleClasses,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              if (rawClasses.isEmpty) {
+                return _EmptyState(
+                  palette: p,
+                  icon: Icons.event_busy_rounded,
+                  title: 'No classes found',
+                  subtitle: 'There are no class records available yet.',
                 );
-              },
-            );
-          },
+              }
+
+              final currentUser = FirebaseAuth.instance.currentUser;
+              final myUid = currentUser?.uid;
+
+              if (myUid == null || myUid.isEmpty) {
+                return _EmptyState(
+                  palette: p,
+                  icon: Icons.lock_outline_rounded,
+                  title: 'No logged-in user found',
+                  subtitle: 'Please log out and log in again.',
+                );
+              }
+
+              final roleRef = FirebaseDatabase.instance.ref(
+                'users/$myUid/role',
+              );
+
+              return FutureBuilder<DataSnapshot>(
+                future: roleRef.get(),
+                builder: (context, roleSnap) {
+                  if (!roleSnap.hasData) {
+                    return Center(
+                      child: CircularProgressIndicator(color: p.accent),
+                    );
+                  }
+
+                  final role = (roleSnap.data?.value ?? '')
+                      .toString()
+                      .toLowerCase()
+                      .trim();
+                  final isAdmin = role == 'admin';
+
+                  final teacherOnlyClasses = rawClasses.where((c) {
+                    final instructorCurrent = c['instructor_current'];
+                    if (instructorCurrent is Map) {
+                      final ic = Map<String, dynamic>.from(instructorCurrent);
+                      final uid = ic['uid']?.toString();
+                      return uid == myUid;
+                    }
+                    return false;
+                  }).toList();
+
+                  final visibleClasses = isAdmin
+                      ? rawClasses
+                      : teacherOnlyClasses;
+
+                  if (!isAdmin && visibleClasses.isEmpty) {
+                    return _EmptyState(
+                      palette: p,
+                      icon: Icons.groups_rounded,
+                      title: 'No classes assigned',
+                      subtitle: 'No classes are assigned to this teacher yet.',
+                    );
+                  }
+
+                  final allOcc = <_Occ>[];
+                  for (final cls in visibleClasses) {
+                    allOcc.addAll(_generateOccurrences(cls));
+                  }
+                  allOcc.sort((a, b) => a.start.compareTo(b.start));
+
+                  final now = DateTime.now();
+                  final twoDaysAgo = now.subtract(const Duration(days: 2));
+                  final recentAndUpcoming = allOcc
+                      .where((o) => o.end.isAfter(twoDaysAgo))
+                      .toList();
+
+                  _latestAllOcc = allOcc;
+                  _latestUpcoming = recentAndUpcoming;
+
+                  if (_prefsReady && !_didAutoApply) {
+                    _didAutoApply = true;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      _queueApplyAllReminders(
+                        upcoming: recentAndUpcoming,
+                        allOcc: allOcc,
+                      );
+                    });
+                  }
+
+                  return Column(
+                    children: [
+                      _ScheduleTopSummary(
+                        palette: p,
+                        totalClasses: visibleClasses.length,
+                        totalSessions: recentAndUpcoming.length,
+                        remindersOn: _sessionEnabled || _dailyEnabled,
+                        isAdmin: isAdmin,
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _buildGroupedSchedule(
+                              recentAndUpcoming,
+                              allOcc,
+                              visibleClasses,
+                            ),
+                            _buildCalendarView(
+                              allOcc,
+                              recentAndUpcoming,
+                              visibleClasses,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );

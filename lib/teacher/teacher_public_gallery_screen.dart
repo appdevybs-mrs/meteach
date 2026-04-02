@@ -14,6 +14,7 @@ import '../shared/human_error.dart';
 import '../shared/media_download.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
@@ -1185,9 +1186,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           'Gallery',
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
         bottom: TabBar(
           controller: _tab,
           labelColor: p.primary,
@@ -1199,10 +1198,14 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           ],
         ),
       ),
-      body: SafeArea(
-        child: TabBarView(
-          controller: _tab,
-          children: [_buildMyGalleryTab(), _buildTeachersTab()],
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1640,
+        child: SafeArea(
+          child: TabBarView(
+            controller: _tab,
+            children: [_buildMyGalleryTab(), _buildTeachersTab()],
+          ),
         ),
       ),
     );
@@ -1760,77 +1763,67 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: isVideo
-                          ? _TeacherPublicVideoPreviewCard(url: url)
-                          : InteractiveViewer(
-                              minScale: 0.8,
-                              maxScale: 4,
-                              child: Image.network(
-                                url,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, _, _) => const SizedBox(
-                                  height: 260,
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      color: Colors.white,
-                                      size: 44,
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1700,
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                        child: isVideo
+                            ? _TeacherPublicVideoPreviewCard(url: url)
+                            : InteractiveViewer(
+                                minScale: 0.8,
+                                maxScale: 4,
+                                child: Image.network(
+                                  url,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) => const SizedBox(
+                                    height: 260,
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.white,
+                                        size: 44,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.12),
                             ),
-                    ),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isVideo ? 'Video' : 'Photo',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Uploaded by: $uploaderName',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              height: 1.2,
-                            ),
-                          ),
-                          if (learnerName.trim().isNotEmpty) ...[
-                            const SizedBox(height: 3),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             Text(
-                              'Learner: $learnerName',
+                              isVideo ? 'Video' : 'Photo',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Uploaded by: $uploaderName',
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -1840,41 +1833,55 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
                                 height: 1.2,
                               ),
                             ),
-                          ],
-                          if (classTitle.trim().isNotEmpty) ...[
+                            if (learnerName.trim().isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                'Learner: $learnerName',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ],
+                            if (classTitle.trim().isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                'Class: $classTitle',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 3),
                             Text(
-                              'Class: $classTitle',
-                              maxLines: 2,
+                              'Added: $createdAt',
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: Colors.white70,
+                                color: Colors.white60,
                                 fontWeight: FontWeight.w700,
-                                fontSize: 11,
-                                height: 1.2,
+                                fontSize: 10,
+                                height: 1.15,
                               ),
                             ),
                           ],
-                          const SizedBox(height: 3),
-                          Text(
-                            'Added: $createdAt',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                              height: 1.15,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

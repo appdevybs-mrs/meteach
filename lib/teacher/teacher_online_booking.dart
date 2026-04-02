@@ -7,6 +7,7 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherOnlineBookingScreen extends StatefulWidget {
   const TeacherOnlineBookingScreen({super.key});
@@ -998,251 +999,257 @@ class _TeacherOnlineBookingScreenState
           const SizedBox(width: 4),
         ],
       ),
-      body: loading
-          ? Center(child: CircularProgressIndicator(color: p.accent))
-          : ListView(
-              padding: const EdgeInsets.all(14),
-              children: [
-                _HeroAvailabilityCard(
-                  palette: p,
-                  teacherName: myName,
-                  selectedCourseTitle: _selectedCoursesSummary,
-                  teacherOnlineEnabled: teacherOnlineEnabled,
-                  selectedCourseCount: selectedCount,
-                  weeklySlots: weeklySlots,
-                ),
-                const SizedBox(height: 12),
-                _CardBox(
-                  palette: p,
-                  title: '1) Status',
-                  trailing: _MiniHelpButton(
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1320,
+        child: loading
+            ? Center(child: CircularProgressIndicator(color: p.accent))
+            : ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  _HeroAvailabilityCard(
                     palette: p,
-                    onTap: () => _showHelp(
-                      'Teacher status',
-                      'Turn this ON to accept bookings.\n'
-                          'Turning it OFF is blocked if you still have upcoming bookings.',
-                    ),
+                    teacherName: myName,
+                    selectedCourseTitle: _selectedCoursesSummary,
+                    teacherOnlineEnabled: teacherOnlineEnabled,
+                    selectedCourseCount: selectedCount,
+                    weeklySlots: weeklySlots,
                   ),
-                  child: Column(
-                    children: [
-                      _ToggleRowCard(
-                        palette: p,
-                        title: 'Teacher booking',
-                        subtitle: teacherOnlineEnabled ? 'ON' : 'OFF',
-                        value: teacherOnlineEnabled,
-                        busy: togglingTeacher,
-                        onChanged: _toggleTeacherOnline,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _CardBox(
-                  palette: p,
-                  title: '2) Courses',
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _MiniHelpButton(
-                        palette: p,
-                        onTap: () => _showHelp(
-                          'Courses',
-                          'Tick the courses you want to teach.\n'
-                              'All checked courses will use the same schedule and Meet link when you save.',
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: () {
-                          setState(() {
-                            _coursesExpanded = !_coursesExpanded;
-                          });
-                        },
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: p.soft.withValues(alpha: 0.65),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
-                            ),
-                          ),
-                          child: Icon(
-                            _coursesExpanded
-                                ? Icons.keyboard_arrow_up_rounded
-                                : Icons.keyboard_arrow_down_rounded,
-                            size: 20,
-                            color: p.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  child: myCourses.isEmpty
-                      ? _InfoBox(
-                          palette: p,
-                          text: 'No booking-enabled courses assigned to you.',
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            InkWell(
-                              borderRadius: BorderRadius.circular(14),
-                              onTap: () {
-                                setState(() {
-                                  _coursesExpanded = !_coursesExpanded;
-                                });
-                              },
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: p.cardBg,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: p.border.withValues(alpha: 0.85),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        _selectedCoursesLabel(),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: p.primary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      _coursesExpanded
-                                          ? Icons.keyboard_arrow_up_rounded
-                                          : Icons.keyboard_arrow_down_rounded,
-                                      color: p.primary,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (_coursesExpanded) ...[
-                              const SizedBox(height: 8),
-                              _CoursesChecklist(
-                                palette: p,
-                                courses: myCourses,
-                                selectedCourseIds: selectedCourseIds,
-                                enabled: !saving,
-                                onChanged: _toggleCourseSelection,
-                              ),
-                            ],
-                          ],
-                        ),
-                ),
-                const SizedBox(height: 10),
-                _CardBox(
-                  palette: p,
-                  title: '3) Session setup',
-                  trailing: _MiniHelpButton(
+                  const SizedBox(height: 12),
+                  _CardBox(
                     palette: p,
-                    onTap: () => _showHelp(
-                      'Session setup',
-                      'This Meet link and duration are saved for all checked courses.',
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _MeetLinkCard(
-                        palette: p,
-                        controller: _meetCtrl,
-                        durationMinutes: _durationMinutes,
-                        enabled: _slotEditingEnabled,
-                        onDurationChanged: (v) =>
-                            setState(() => _durationMinutes = v),
+                    title: '1) Status',
+                    trailing: _MiniHelpButton(
+                      palette: p,
+                      onTap: () => _showHelp(
+                        'Teacher status',
+                        'Turn this ON to accept bookings.\n'
+                            'Turning it OFF is blocked if you still have upcoming bookings.',
                       ),
-                      if (!_slotEditingEnabled) ...[
-                        const SizedBox(height: 8),
-                        _InfoBox(
+                    ),
+                    child: Column(
+                      children: [
+                        _ToggleRowCard(
                           palette: p,
-                          text: teacherOnlineEnabled
-                              ? 'Select at least one course to edit the schedule.'
-                              : 'Turn ON teacher booking first.',
+                          title: 'Teacher booking',
+                          subtitle: teacherOnlineEnabled ? 'ON' : 'OFF',
+                          value: teacherOnlineEnabled,
+                          busy: togglingTeacher,
+                          onChanged: _toggleTeacherOnline,
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _CardBox(
-                  palette: p,
-                  title: '4) Weekly timetable',
-                  trailing: _MiniHelpButton(
-                    palette: p,
-                    onTap: () => _showHelp(
-                      'Weekly timetable',
-                      'Pick the 1-hour slots you want to offer every week.\n'
-                          'There is no minimum coverage rule here anymore.',
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _DayChips(
-                        palette: p,
-                        dayKeys: dayKeys,
-                        dayLabels: dayLabels,
-                        weekSlots: weekSlots,
-                        enabled: _slotEditingEnabled,
-                        onTapDay: saving
-                            ? null
-                            : (dk, label) => _openDayEditor(dk, label),
-                      ),
-                      const SizedBox(height: 10),
-                      ...List.generate(7, (i) {
-                        final dk = dayKeys[i];
-                        final label = dayLabels[i];
-                        return _DayCard(
+                  const SizedBox(height: 10),
+                  _CardBox(
+                    palette: p,
+                    title: '2) Courses',
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _MiniHelpButton(
                           palette: p,
-                          label: label,
-                          slotCount: (weekSlots[dk] ?? <int>{}).length,
-                          preview: _previewSlots(weekSlots[dk] ?? <int>{}),
-                          enabled: _slotEditingEnabled,
-                          onTap: (saving || !_slotEditingEnabled)
-                              ? null
-                              : () => _openDayEditor(dk, label),
-                        );
-                      }),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: p.accent,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          onPressed: saving ? null : _saveAvailability,
-                          icon: const Icon(Icons.check_circle_rounded),
-                          label: Text(
-                            saving ? 'Saving…' : 'Save',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          onTap: () => _showHelp(
+                            'Courses',
+                            'Tick the courses you want to teach.\n'
+                                'All checked courses will use the same schedule and Meet link when you save.',
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () {
+                            setState(() {
+                              _coursesExpanded = !_coursesExpanded;
+                            });
+                          },
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: p.soft.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            child: Icon(
+                              _coursesExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
+                              size: 20,
+                              color: p.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    child: myCourses.isEmpty
+                        ? _InfoBox(
+                            palette: p,
+                            text: 'No booking-enabled courses assigned to you.',
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () {
+                                  setState(() {
+                                    _coursesExpanded = !_coursesExpanded;
+                                  });
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: p.cardBg,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: p.border.withValues(alpha: 0.85),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          _selectedCoursesLabel(),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: p.primary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        _coursesExpanded
+                                            ? Icons.keyboard_arrow_up_rounded
+                                            : Icons.keyboard_arrow_down_rounded,
+                                        color: p.primary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (_coursesExpanded) ...[
+                                const SizedBox(height: 8),
+                                _CoursesChecklist(
+                                  palette: p,
+                                  courses: myCourses,
+                                  selectedCourseIds: selectedCourseIds,
+                                  enabled: !saving,
+                                  onChanged: _toggleCourseSelection,
+                                ),
+                              ],
+                            ],
+                          ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(height: 10),
+                  _CardBox(
+                    palette: p,
+                    title: '3) Session setup',
+                    trailing: _MiniHelpButton(
+                      palette: p,
+                      onTap: () => _showHelp(
+                        'Session setup',
+                        'This Meet link and duration are saved for all checked courses.',
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _MeetLinkCard(
+                          palette: p,
+                          controller: _meetCtrl,
+                          durationMinutes: _durationMinutes,
+                          enabled: _slotEditingEnabled,
+                          onDurationChanged: (v) =>
+                              setState(() => _durationMinutes = v),
+                        ),
+                        if (!_slotEditingEnabled) ...[
+                          const SizedBox(height: 8),
+                          _InfoBox(
+                            palette: p,
+                            text: teacherOnlineEnabled
+                                ? 'Select at least one course to edit the schedule.'
+                                : 'Turn ON teacher booking first.',
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _CardBox(
+                    palette: p,
+                    title: '4) Weekly timetable',
+                    trailing: _MiniHelpButton(
+                      palette: p,
+                      onTap: () => _showHelp(
+                        'Weekly timetable',
+                        'Pick the 1-hour slots you want to offer every week.\n'
+                            'There is no minimum coverage rule here anymore.',
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _DayChips(
+                          palette: p,
+                          dayKeys: dayKeys,
+                          dayLabels: dayLabels,
+                          weekSlots: weekSlots,
+                          enabled: _slotEditingEnabled,
+                          onTapDay: saving
+                              ? null
+                              : (dk, label) => _openDayEditor(dk, label),
+                        ),
+                        const SizedBox(height: 10),
+                        ...List.generate(7, (i) {
+                          final dk = dayKeys[i];
+                          final label = dayLabels[i];
+                          return _DayCard(
+                            palette: p,
+                            label: label,
+                            slotCount: (weekSlots[dk] ?? <int>{}).length,
+                            preview: _previewSlots(weekSlots[dk] ?? <int>{}),
+                            enabled: _slotEditingEnabled,
+                            onTap: (saving || !_slotEditingEnabled)
+                                ? null
+                                : () => _openDayEditor(dk, label),
+                          );
+                        }),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: p.accent,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            onPressed: saving ? null : _saveAvailability,
+                            icon: const Icon(Icons.check_circle_rounded),
+                            label: Text(
+                              saving ? 'Saving…' : 'Save',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

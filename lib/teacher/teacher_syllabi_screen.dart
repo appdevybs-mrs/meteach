@@ -5,6 +5,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 import '../shared/watermark_background.dart';
 import 'teacher_syllabus_details_screen.dart';
 
@@ -274,52 +275,56 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
           ),
         ],
       ),
-      body: WatermarkBackground(
-        child: SafeArea(
-          child: _loading
-              ? Center(child: CircularProgressIndicator(color: p.accent))
-              : _error != null
-              ? _ErrorBox(
-                  palette: p,
-                  message: 'Failed to load syllabi.\n$_error',
-                  onRetry: _load,
-                )
-              : _items.isEmpty
-              ? _InfoBox(
-                  palette: p,
-                  title: 'No syllabi',
-                  message: 'No syllabi are available right now.',
-                  icon: Icons.info_rounded,
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-                  children: [
-                    _HeroCard(palette: p, totalCount: _items.length),
-                    const SizedBox(height: 14),
-                    ..._items.map((it) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _SyllabusTile(
-                          palette: p,
-                          title: it.title,
-                          code: it.code,
-                          duration: it.duration,
-                          updatedLabel: _fmtDate(it.updatedAt),
-                          variants: it.variants.map(_variantLabel).toList(),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => TeacherSyllabusDetailsScreen(
-                                  courseId: it.courseId,
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1320,
+        child: WatermarkBackground(
+          child: SafeArea(
+            child: _loading
+                ? Center(child: CircularProgressIndicator(color: p.accent))
+                : _error != null
+                ? _ErrorBox(
+                    palette: p,
+                    message: 'Failed to load syllabi.\n$_error',
+                    onRetry: _load,
+                  )
+                : _items.isEmpty
+                ? _InfoBox(
+                    palette: p,
+                    title: 'No syllabi',
+                    message: 'No syllabi are available right now.',
+                    icon: Icons.info_rounded,
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                    children: [
+                      _HeroCard(palette: p, totalCount: _items.length),
+                      const SizedBox(height: 14),
+                      ..._items.map((it) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _SyllabusTile(
+                            palette: p,
+                            title: it.title,
+                            code: it.code,
+                            duration: it.duration,
+                            updatedLabel: _fmtDate(it.updatedAt),
+                            variants: it.variants.map(_variantLabel).toList(),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => TeacherSyllabusDetailsScreen(
+                                    courseId: it.courseId,
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                      );
-                    }),
-                  ],
-                ),
+                              );
+                            },
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+          ),
         ),
       ),
     );

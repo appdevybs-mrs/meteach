@@ -6,6 +6,7 @@ import '../shared/app_feedback.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/study_variant.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -1456,15 +1457,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
-      body: _busy
-          ? const Center(child: CircularProgressIndicator(color: primaryBlue))
-          : _error != null
-          ? _buildErrorState()
-          : _buildForm(),
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1280,
+        child: _busy
+            ? const Center(child: CircularProgressIndicator(color: primaryBlue))
+            : _error != null
+            ? _buildErrorState()
+            : _buildForm(),
+      ),
     );
   }
 

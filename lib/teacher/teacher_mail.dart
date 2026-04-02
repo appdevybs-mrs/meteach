@@ -7,6 +7,7 @@ import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 import 'teacher_mail_thread_screen.dart';
 import '../shared/app_feedback.dart';
@@ -1140,70 +1141,75 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               ),
             ],
           ),
-          actions: [
-            const SizedBox.shrink(),
-          ],
+          actions: [const SizedBox.shrink()],
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _composeNewTopic,
           icon: const Icon(Icons.edit_rounded),
           label: const Text('New topic'),
         ),
-        body: StreamBuilder<DatabaseEvent>(
-          stream: _stream,
-          builder: (context, snap) {
-            final allRows = _parse(snap.data?.snapshot.value);
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1500,
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _stream,
+            builder: (context, snap) {
+              final allRows = _parse(snap.data?.snapshot.value);
 
-            for (final r in allRows) {
-              final uid = r.peerUid.trim();
-              if (uid.isNotEmpty) {
-                _ensureUserCached(uid);
+              for (final r in allRows) {
+                final uid = r.peerUid.trim();
+                if (uid.isNotEmpty) {
+                  _ensureUserCached(uid);
+                }
               }
-            }
 
-            final learnersCount = _countGroupsForTab(
-              allRows,
-              _InboxTabRole.learners,
-            );
-            final teachersCount = _countGroupsForTab(
-              allRows,
-              _InboxTabRole.teachers,
-            );
-            final adminCount = _countGroupsForTab(allRows, _InboxTabRole.admin);
-            final learnersUnread = _unreadForTab(
-              allRows,
-              _InboxTabRole.learners,
-            );
-            final teachersUnread = _unreadForTab(
-              allRows,
-              _InboxTabRole.teachers,
-            );
-            final adminUnread = _unreadForTab(allRows, _InboxTabRole.admin);
+              final learnersCount = _countGroupsForTab(
+                allRows,
+                _InboxTabRole.learners,
+              );
+              final teachersCount = _countGroupsForTab(
+                allRows,
+                _InboxTabRole.teachers,
+              );
+              final adminCount = _countGroupsForTab(
+                allRows,
+                _InboxTabRole.admin,
+              );
+              final learnersUnread = _unreadForTab(
+                allRows,
+                _InboxTabRole.learners,
+              );
+              final teachersUnread = _unreadForTab(
+                allRows,
+                _InboxTabRole.teachers,
+              );
+              final adminUnread = _unreadForTab(allRows, _InboxTabRole.admin);
 
-            return Column(
-              children: [
-                _buildTopSearch(),
-                _buildTabBarShell(
-                  learnersCount: learnersCount,
-                  teachersCount: teachersCount,
-                  adminCount: adminCount,
-                  learnersUnread: learnersUnread,
-                  teachersUnread: teachersUnread,
-                  adminUnread: adminUnread,
-                ),
-                const SizedBox(height: 2),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _buildTab(_InboxTabRole.learners, allRows),
-                      _buildTab(_InboxTabRole.teachers, allRows),
-                      _buildTab(_InboxTabRole.admin, allRows),
-                    ],
+              return Column(
+                children: [
+                  _buildTopSearch(),
+                  _buildTabBarShell(
+                    learnersCount: learnersCount,
+                    teachersCount: teachersCount,
+                    adminCount: adminCount,
+                    learnersUnread: learnersUnread,
+                    teachersUnread: teachersUnread,
+                    adminUnread: adminUnread,
                   ),
-                ),
-              ],
-            );
-          },
+                  const SizedBox(height: 2),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _buildTab(_InboxTabRole.learners, allRows),
+                        _buildTab(_InboxTabRole.teachers, allRows),
+                        _buildTab(_InboxTabRole.admin, allRows),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

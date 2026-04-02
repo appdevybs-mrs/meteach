@@ -16,6 +16,7 @@ import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherGamesScreen extends StatefulWidget {
   const TeacherGamesScreen({super.key});
@@ -2210,9 +2211,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Games'),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
@@ -2221,143 +2220,147 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Game'),
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _gamesRef.onValue,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting &&
-              snap.data == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1600,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _gamesRef.onValue,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting &&
+                snap.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final value = snap.data?.snapshot.value;
-          final knownTags = _extractAllKnownTags(value);
-          final categories = _extractAllCategories(value);
+            final value = snap.data?.snapshot.value;
+            final knownTags = _extractAllKnownTags(value);
+            final categories = _extractAllCategories(value);
 
-          if (value == null || value is! Map) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Container(
-                  width: double.infinity,
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: cs.outline.withValues(alpha: 0.22),
+            if (value == null || value is! Map) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: cs.outline.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.sports_esports_rounded,
+                          size: 48,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No games added yet.',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Tap "Add Game" to create the first game.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _showGameForm(knownTags: knownTags),
+                          icon: const Icon(Icons.add_rounded),
+                          label: const Text('Add Game'),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                ),
+              );
+            }
+
+            final raw = Map<dynamic, dynamic>.from(value);
+            final items = raw.entries.map((entry) {
+              final gameId = entry.key.toString();
+              final gameValue = entry.value;
+
+              final game = gameValue is Map
+                  ? Map<String, dynamic>.from(gameValue)
+                  : <String, dynamic>{};
+
+              return MapEntry(gameId, game);
+            }).toList();
+
+            final visibleItems = _applyFiltersAndSort(items: items);
+
+            return Column(
+              children: [
+                _buildFilterBar(categories),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
                     children: [
-                      Icon(
-                        Icons.sports_esports_rounded,
-                        size: 48,
-                        color: cs.primary,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'No games added yet.',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                      Expanded(
+                        child: Text(
+                          'Total games: ${visibleItems.length} • My games: ${_myGamesCount(items)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black54,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Tap "Add Game" to create the first game.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: _saving
-                            ? null
-                            : () => _showGameForm(knownTags: knownTags),
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('Add Game'),
                       ),
                     ],
                   ),
                 ),
-              ),
-            );
-          }
-
-          final raw = Map<dynamic, dynamic>.from(value);
-          final items = raw.entries.map((entry) {
-            final gameId = entry.key.toString();
-            final gameValue = entry.value;
-
-            final game = gameValue is Map
-                ? Map<String, dynamic>.from(gameValue)
-                : <String, dynamic>{};
-
-            return MapEntry(gameId, game);
-          }).toList();
-
-          final visibleItems = _applyFiltersAndSort(items: items);
-
-          return Column(
-            children: [
-              _buildFilterBar(categories),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Total games: ${visibleItems.length} • My games: ${_myGamesCount(items)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async {
-                    await _gamesRef.get();
-                  },
-                  child: visibleItems.isEmpty
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                          children: [
-                            Center(
-                              child: Text(
-                                'No games match your filters.',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.textTheme.bodyMedium?.color
-                                      ?.withValues(alpha: 0.65),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      await _gamesRef.get();
+                    },
+                    child: visibleItems.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                            children: [
+                              Center(
+                                child: Text(
+                                  'No games match your filters.',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.textTheme.bodyMedium?.color
+                                        ?.withValues(alpha: 0.65),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        )
-                      : ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                          itemCount: visibleItems.length,
-                          itemBuilder: (context, index) {
-                            final item = visibleItems[index];
-                            return _buildGameCard(
-                              gameId: item.key,
-                              game: item.value,
-                              knownTags: knownTags,
-                            );
-                          },
-                        ),
+                            ],
+                          )
+                        : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                            itemCount: visibleItems.length,
+                            itemBuilder: (context, index) {
+                              final item = visibleItems[index];
+                              return _buildGameCard(
+                                gameId: item.key,
+                                game: item.value,
+                                knownTags: knownTags,
+                              );
+                            },
+                          ),
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

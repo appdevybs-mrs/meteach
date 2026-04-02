@@ -5,6 +5,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class AttendanceStatsScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -479,63 +480,67 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.04,
-                child: Center(
-                  child: Icon(
-                    Icons.analytics_rounded,
-                    size: 220,
-                    color: p.primary.withValues(alpha: 0.12),
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1360,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.04,
+                  child: Center(
+                    child: Icon(
+                      Icons.analytics_rounded,
+                      size: 220,
+                      color: p.primary.withValues(alpha: 0.12),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          SafeArea(
-            child: _busy
-                ? Center(child: CircularProgressIndicator(color: p.primary))
-                : _error != null
-                ? _buildErrorState(p)
-                : rows.isEmpty
-                ? _buildEmptyState(p)
-                : RefreshIndicator(
-                    color: p.primary,
-                    onRefresh: _load,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-                      children: [
-                        _buildHeroCard(
-                          p,
-                          learnersCount: learnersCount,
-                          avgPct: avgPct,
-                          selectedMonthLabel: _month == null
-                              ? 'All months'
-                              : _monthLabel(_monthKey(_month!)),
-                        ),
-                        const SizedBox(height: 14),
-                        _buildQuickStatsRow(
-                          p,
-                          avgPct: avgPct,
-                          excellentCount: excellentCount,
-                          atRiskCount: atRiskCount,
-                        ),
-                        const SizedBox(height: 14),
-                        _buildFilterBar(p),
-                        const SizedBox(height: 14),
-                        ...rows.asMap().entries.map(
-                          (entry) =>
-                              _buildStatsCard(p, entry.key + 1, entry.value),
-                        ),
-                      ],
+            SafeArea(
+              child: _busy
+                  ? Center(child: CircularProgressIndicator(color: p.primary))
+                  : _error != null
+                  ? _buildErrorState(p)
+                  : rows.isEmpty
+                  ? _buildEmptyState(p)
+                  : RefreshIndicator(
+                      color: p.primary,
+                      onRefresh: _load,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                        children: [
+                          _buildHeroCard(
+                            p,
+                            learnersCount: learnersCount,
+                            avgPct: avgPct,
+                            selectedMonthLabel: _month == null
+                                ? 'All months'
+                                : _monthLabel(_monthKey(_month!)),
+                          ),
+                          const SizedBox(height: 14),
+                          _buildQuickStatsRow(
+                            p,
+                            avgPct: avgPct,
+                            excellentCount: excellentCount,
+                            atRiskCount: atRiskCount,
+                          ),
+                          const SizedBox(height: 14),
+                          _buildFilterBar(p),
+                          const SizedBox(height: 14),
+                          ...rows.asMap().entries.map(
+                            (entry) =>
+                                _buildStatsCard(p, entry.key + 1, entry.value),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

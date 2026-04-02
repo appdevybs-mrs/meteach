@@ -28,6 +28,7 @@ import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 import 'teacher_learner_profile_screen.dart';
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
@@ -1268,30 +1269,34 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.045,
-                child: Center(
-                  child: FractionallySizedBox(
-                    widthFactor: 0.76,
-                    child: Image.asset(
-                      'assets/images/ybs_logo.png',
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1640,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.045,
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.76,
+                      child: Image.asset(
+                        'assets/images/ybs_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          TabBarView(
-            controller: _tab,
-            children: [_buildInClassTab(), _buildOnlineTab()],
-          ),
-        ],
+            TabBarView(
+              controller: _tab,
+              children: [_buildInClassTab(), _buildOnlineTab()],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2862,176 +2867,180 @@ class _OnlineTakeAttendanceScreenState
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          _box(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: p.primary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'When: $when',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: p.text.withValues(alpha: 0.72),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Learners: ${b.learnerUids.length}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: p.text.withValues(alpha: 0.72),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: p.text.withValues(alpha: 0.62),
-                  ),
-                ),
-                if (loadingExisting) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: p.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Loading existing attendance…',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: p.text.withValues(alpha: 0.72),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (!canEditCurrent) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.red.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Text(
-                      lockReason.isEmpty
-                          ? 'Read-only: only the teacher who created this attendance can edit it.'
-                          : 'Read-only: $lockReason',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.red.shade700,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _box(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Presence',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: p.primary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (b.learnerUids.isEmpty)
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1180,
+        child: ListView(
+          padding: const EdgeInsets.all(14),
+          children: [
+            _box(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'No learners found in this booking.',
+                    'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'When: $when',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: p.text.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Learners: ${b.learnerUids.length}',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       color: p.text.withValues(alpha: 0.72),
                     ),
-                  )
-                else
-                  ...b.learnerUids.map((uid) {
-                    final v = presentMap[uid] == true;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: p.border.withValues(alpha: 0.85),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: p.text.withValues(alpha: 0.62),
+                    ),
+                  ),
+                  if (loadingExisting) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: p.accent,
+                          ),
                         ),
-                        color: p.soft.withValues(alpha: 0.18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Loading existing attendance…',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: p.text.withValues(alpha: 0.72),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (!canEditCurrent) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.25),
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: FutureBuilder<Map<String, String>>(
-                              future: _loadLearnerMini(uid),
-                              builder: (context, snap) {
-                                final name = (snap.data?['full'] ?? 'Learner')
-                                    .trim();
-                                final profilePhotoUrl =
-                                    (snap.data?['profilePhoto'] ?? '').trim();
+                      child: Text(
+                        lockReason.isEmpty
+                            ? 'Read-only: only the teacher who created this attendance can edit it.'
+                            : 'Read-only: $lockReason',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _box(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Presence',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (b.learnerUids.isEmpty)
+                    Text(
+                      'No learners found in this booking.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: p.text.withValues(alpha: 0.72),
+                      ),
+                    )
+                  else
+                    ...b.learnerUids.map((uid) {
+                      final v = presentMap[uid] == true;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
+                          color: p.soft.withValues(alpha: 0.18),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: FutureBuilder<Map<String, String>>(
+                                future: _loadLearnerMini(uid),
+                                builder: (context, snap) {
+                                  final name = (snap.data?['full'] ?? 'Learner')
+                                      .trim();
+                                  final profilePhotoUrl =
+                                      (snap.data?['profilePhoto'] ?? '').trim();
 
-                                return Row(
-                                  children: [
-                                    _learnerAvatar(
-                                      profilePhotoUrl: profilePhotoUrl,
-                                      size: 36,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        name.isEmpty ? 'Learner' : name,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: p.text,
+                                  return Row(
+                                    children: [
+                                      _learnerAvatar(
+                                        profilePhotoUrl: profilePhotoUrl,
+                                        size: 36,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          name.isEmpty ? 'Learner' : name,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: p.text,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                );
-                              },
+                                    ],
+                                  );
+                                },
+                              ),
                             ),
-                          ),
 
-                          const SizedBox(width: 10),
-                          Switch(
-                            value: v,
-                            onChanged: (!canEditCurrent || loadingExisting)
-                                ? null
-                                : (x) => setState(() => presentMap[uid] = x),
-                            activeThumbColor: p.accent,
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-              ],
+                            const SizedBox(width: 10),
+                            Switch(
+                              value: v,
+                              onChanged: (!canEditCurrent || loadingExisting)
+                                  ? null
+                                  : (x) => setState(() => presentMap[uid] = x),
+                              activeThumbColor: p.accent,
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -3427,141 +3436,148 @@ class _OnlineAttendanceHistoryScreenState
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _loadHistoryRows(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator(color: p.accent));
-          }
-          final rows = snap.data ?? const <Map<String, dynamic>>[];
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1240,
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _loadHistoryRows(),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator(color: p.accent));
+            }
+            final rows = snap.data ?? const <Map<String, dynamic>>[];
 
-          if (rows.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'No online attendance history found yet.',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
+            if (rows.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No online attendance history found yet.',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: p.text,
+                    ),
+                  ),
                 ),
-              ),
-            );
-          }
+              );
+            }
 
-          return ListView(
-            padding: const EdgeInsets.all(14),
-            children: [
-              ...rows.map((rec) {
-                final sessionNo = _toInt(rec['resolvedSessionNo']);
-                final when = _formatWhen(rec);
-                final learners = rec['learners'];
+            return ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                ...rows.map((rec) {
+                  final sessionNo = _toInt(rec['resolvedSessionNo']);
+                  final when = _formatWhen(rec);
+                  final learners = rec['learners'];
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _box(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Session ${sessionNo <= 0 ? '-' : sessionNo} • $when',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: p.primary,
-                                ),
-                              ),
-                            ),
-                            InkWell(
-                              borderRadius: BorderRadius.circular(999),
-                              onTap: () => _openSessionDetails(
-                                _safeStr(rec['courseId']),
-                                sessionNo,
-                              ),
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: p.border.withValues(alpha: 0.82),
-                                  ),
-                                ),
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _box(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
                                 child: Text(
-                                  '!',
+                                  'Session ${sessionNo <= 0 ? '-' : sessionNo} • $when',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w900,
                                     color: p.primary,
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        if (learners is Map && learners.isNotEmpty)
-                          ...learners.entries.map((entry) {
-                            final uid = entry.key.toString();
-                            final raw = entry.value;
-                            bool present = false;
-                            if (raw is Map) {
-                              final mm = raw.map(
-                                (k, vv) => MapEntry(k.toString(), vv),
-                              );
-                              present = mm['present'] == true;
-                            }
-
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: FutureBuilder<DataSnapshot>(
-                                future: _db
-                                    .child(
-                                      '${_TeacherClassesScreenState.usersNode}/$uid',
-                                    )
-                                    .get(),
-                                builder: (context, userSnap) {
-                                  var name = 'Learner';
-                                  if (userSnap.hasData &&
-                                      userSnap.data!.exists &&
-                                      userSnap.data!.value is Map) {
-                                    final um = (userSnap.data!.value as Map)
-                                        .map(
-                                          (k, v) => MapEntry(k.toString(), v),
-                                        );
-                                    final fn = _safeStr(um['first_name']);
-                                    final ln = _safeStr(um['last_name']);
-                                    final full = ('$fn $ln').trim();
-                                    if (full.isNotEmpty) name = full;
-                                  }
-
-                                  return Text(
-                                    '$name — ${present ? 'Present' : 'Absent'}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.8),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(999),
+                                onTap: () => _openSessionDetails(
+                                  _safeStr(rec['courseId']),
+                                  sessionNo,
+                                ),
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: p.border.withValues(alpha: 0.82),
                                     ),
-                                  );
-                                },
+                                  ),
+                                  child: Text(
+                                    '!',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: p.primary,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            );
-                          })
-                        else
-                          Text(
-                            'No learners map saved.',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: p.text.withValues(alpha: 0.72),
-                            ),
+                            ],
                           ),
-                      ],
+                          const SizedBox(height: 8),
+                          if (learners is Map && learners.isNotEmpty)
+                            ...learners.entries.map((entry) {
+                              final uid = entry.key.toString();
+                              final raw = entry.value;
+                              bool present = false;
+                              if (raw is Map) {
+                                final mm = raw.map(
+                                  (k, vv) => MapEntry(k.toString(), vv),
+                                );
+                                present = mm['present'] == true;
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: FutureBuilder<DataSnapshot>(
+                                  future: _db
+                                      .child(
+                                        '${_TeacherClassesScreenState.usersNode}/$uid',
+                                      )
+                                      .get(),
+                                  builder: (context, userSnap) {
+                                    var name = 'Learner';
+                                    if (userSnap.hasData &&
+                                        userSnap.data!.exists &&
+                                        userSnap.data!.value is Map) {
+                                      final um = (userSnap.data!.value as Map)
+                                          .map(
+                                            (k, v) => MapEntry(k.toString(), v),
+                                          );
+                                      final fn = _safeStr(um['first_name']);
+                                      final ln = _safeStr(um['last_name']);
+                                      final full = ('$fn $ln').trim();
+                                      if (full.isNotEmpty) name = full;
+                                    }
+
+                                    return Text(
+                                      '$name — ${present ? 'Present' : 'Absent'}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: p.text.withValues(alpha: 0.8),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            })
+                          else
+                            Text(
+                              'No learners map saved.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: p.text.withValues(alpha: 0.72),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              }),
-            ],
-          );
-        },
+                  );
+                }),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -3777,75 +3793,79 @@ class _OnlineAttendanceStatsScreenState
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
       ),
-      body: loading
-          ? Center(child: CircularProgressIndicator(color: p.accent))
-          : ListView(
-              padding: const EdgeInsets.all(14),
-              children: [
-                _box(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Course: ${widget.courseTitle.trim().isEmpty ? widget.courseId : widget.courseTitle}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: p.primary,
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1040,
+        child: loading
+            ? Center(child: CircularProgressIndicator(color: p.accent))
+            : ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  _box(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Course: ${widget.courseTitle.trim().isEmpty ? widget.courseId : widget.courseTitle}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: p.primary,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _statLine('Sessions with attendance', '$totalSessions'),
-                      const SizedBox(height: 8),
-                      _statLine('Total Present marks', '$presentCount'),
-                      const SizedBox(height: 8),
-                      _statLine('Total Absent marks', '$absentCount'),
-                      const SizedBox(height: 8),
-                      _statLine(
-                        'Unique lessons taught',
-                        '$uniqueSessionsTaught${totalCourseLessons > 0 ? ' / $totalCourseLessons' : ''}',
-                      ),
-                      const SizedBox(height: 8),
-                      _statLine(
-                        'Avg learners per session',
-                        avgLearnersPerSession.toStringAsFixed(1),
-                      ),
-                      const SizedBox(height: 8),
-                      _statLine(
-                        'Last session',
-                        lastSessionAt > 0
-                            ? DateFormat('yyyy-MM-dd HH:mm').format(
-                                DateTime.fromMillisecondsSinceEpoch(
-                                  lastSessionAt,
-                                ),
-                              )
-                            : '-',
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Course progress',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: p.primary,
+                        const SizedBox(height: 12),
+                        _statLine('Sessions with attendance', '$totalSessions'),
+                        const SizedBox(height: 8),
+                        _statLine('Total Present marks', '$presentCount'),
+                        const SizedBox(height: 8),
+                        _statLine('Total Absent marks', '$absentCount'),
+                        const SizedBox(height: 8),
+                        _statLine(
+                          'Unique lessons taught',
+                          '$uniqueSessionsTaught${totalCourseLessons > 0 ? ' / $totalCourseLessons' : ''}',
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          minHeight: 10,
-                          value: (totalCourseLessons <= 0)
-                              ? 0
-                              : (uniqueSessionsTaught / totalCourseLessons)
-                                    .clamp(0, 1),
-                          backgroundColor: p.soft,
-                          color: p.accent,
+                        const SizedBox(height: 8),
+                        _statLine(
+                          'Avg learners per session',
+                          avgLearnersPerSession.toStringAsFixed(1),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        _statLine(
+                          'Last session',
+                          lastSessionAt > 0
+                              ? DateFormat('yyyy-MM-dd HH:mm').format(
+                                  DateTime.fromMillisecondsSinceEpoch(
+                                    lastSessionAt,
+                                  ),
+                                )
+                              : '-',
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Course progress',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: p.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            minHeight: 10,
+                            value: (totalCourseLessons <= 0)
+                                ? 0
+                                : (uniqueSessionsTaught / totalCourseLessons)
+                                      .clamp(0, 1),
+                            backgroundColor: p.soft,
+                            color: p.accent,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+      ),
     );
   }
 

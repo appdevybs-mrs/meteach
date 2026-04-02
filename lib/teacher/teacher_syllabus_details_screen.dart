@@ -18,6 +18,7 @@ import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../shared/teacher_web_layout.dart';
 import '../shared/app_feedback.dart';
 
 class TeacherSyllabusDetailsScreen extends StatefulWidget {
@@ -437,28 +438,32 @@ class _TeacherSyllabusDetailsScreenState
             ),
           ],
         ),
-        body: WatermarkBackground(
-          child: SafeArea(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _ErrorBox(
-                    message: 'Failed to load the syllabus.\n\n$_error',
-                    onRetry: _load,
-                  )
-                : c == null
-                ? const _InfoBox(
-                    title: 'Not found',
-                    message: 'We could not find this course syllabus.',
-                    icon: Icons.info_rounded,
-                  )
-                : TabBarView(
-                    controller: _tabController,
-                    children: _variantKeys.map((key) {
-                      final variant = c.variants[key]!;
-                      return _buildVariantContent(variant);
-                    }).toList(),
-                  ),
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1480,
+          child: WatermarkBackground(
+            child: SafeArea(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                  ? _ErrorBox(
+                      message: 'Failed to load the syllabus.\n\n$_error',
+                      onRetry: _load,
+                    )
+                  : c == null
+                  ? const _InfoBox(
+                      title: 'Not found',
+                      message: 'We could not find this course syllabus.',
+                      icon: Icons.info_rounded,
+                    )
+                  : TabBarView(
+                      controller: _tabController,
+                      children: _variantKeys.map((key) {
+                        final variant = c.variants[key]!;
+                        return _buildVariantContent(variant);
+                      }).toList(),
+                    ),
+            ),
           ),
         ),
       ),

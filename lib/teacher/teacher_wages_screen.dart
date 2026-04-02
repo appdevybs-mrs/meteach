@@ -7,6 +7,7 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherWagesScreen extends StatefulWidget {
   const TeacherWagesScreen({super.key});
@@ -269,122 +270,127 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             ),
           ],
         ),
-        actions: [
-          const SizedBox.shrink(),
-        ],
+        actions: [const SizedBox.shrink()],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: myUid.isEmpty
-            ? const Stream<DatabaseEvent>.empty()
-            : FirebaseDatabase.instance
-                  .ref('payments')
-                  .orderByChild('teacherId')
-                  .equalTo(myUid)
-                  .onValue,
-        builder: (context, snap) {
-          final raw = snap.data?.snapshot.value;
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1540,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: myUid.isEmpty
+              ? const Stream<DatabaseEvent>.empty()
+              : FirebaseDatabase.instance
+                    .ref('payments')
+                    .orderByChild('teacherId')
+                    .equalTo(myUid)
+                    .onValue,
+          builder: (context, snap) {
+            final raw = snap.data?.snapshot.value;
 
-          if (snap.hasError) {
-            return Center(
-              child: Text(
-                'Could not load wages.',
-                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
-              ),
-            );
-          }
-
-          if (!snap.hasData) {
-            return Center(child: CircularProgressIndicator(color: p.accent));
-          }
-
-          if (raw is! Map) {
-            return _EmptyWagesState(palette: p, text: 'No payments found.');
-          }
-
-          final mine = <Map<String, dynamic>>[];
-          raw.forEach((k, v) {
-            if (k == null || v == null) return;
-            if (v is! Map) return;
-
-            final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-            final teacherId = (m['teacherId'] ?? '').toString().trim();
-            if (teacherId != myUid) return;
-
-            mine.add({'paymentId': k.toString(), ...m});
-          });
-
-          if (mine.isEmpty) {
-            return _EmptyWagesState(
-              palette: p,
-              text: 'No payments assigned to you yet.',
-            );
-          }
-
-          mine.sort(
-            (a, b) => TeacherWagesScreen.asInt(
-              b['paidAt'],
-            ).compareTo(TeacherWagesScreen.asInt(a['paidAt'])),
-          );
-
-          final Map<String, List<Map<String, dynamic>>> byMonth = {};
-          for (final payment in mine) {
-            final monthKey = TeacherWagesScreen.monthKeyFromPaidAtMs(
-              TeacherWagesScreen.asInt(payment['paidAt']),
-            );
-            byMonth.putIfAbsent(monthKey, () => []);
-            byMonth[monthKey]!.add(payment);
-          }
-
-          final monthKeys = byMonth.keys.toList()
-            ..sort((a, b) => b.compareTo(a));
-
-          int totalAll = 0;
-          int paidByAdminAll = 0;
-          int confirmedAll = 0;
-
-          for (final payment in mine) {
-            final amt = TeacherWagesScreen.asInt(payment['amount']);
-            totalAll += amt;
-            if (TeacherWagesScreen.asBool(payment['teacherPaid'])) {
-              paidByAdminAll += amt;
-            }
-            if (TeacherWagesScreen.asBool(payment['teacherConfirmed'])) {
-              confirmedAll += amt;
-            }
-          }
-
-          final leftToBePaidByAdmin = totalAll - paidByAdminAll;
-          final leftToBeConfirmed = paidByAdminAll - confirmedAll;
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-            children: [
-              _WagesHeroCard(
-                palette: p,
-                totalAll: totalAll,
-                paidByAdminAll: paidByAdminAll,
-                leftToBeConfirmed: leftToBeConfirmed,
-                leftToBePaidByAdmin: leftToBePaidByAdmin,
-              ),
-              const SizedBox(height: 14),
-              ...monthKeys.map((monthKey) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _MonthSection(
-                    palette: p,
-                    monthKey: monthKey,
-                    payments: byMonth[monthKey] ?? const [],
-                    onConfirmPaid: (paymentId) => _confirmPaidByTeacher(
-                      context: context,
-                      paymentId: paymentId,
-                    ),
+            if (snap.hasError) {
+              return Center(
+                child: Text(
+                  'Could not load wages.',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
                   ),
-                );
-              }),
-            ],
-          );
-        },
+                ),
+              );
+            }
+
+            if (!snap.hasData) {
+              return Center(child: CircularProgressIndicator(color: p.accent));
+            }
+
+            if (raw is! Map) {
+              return _EmptyWagesState(palette: p, text: 'No payments found.');
+            }
+
+            final mine = <Map<String, dynamic>>[];
+            raw.forEach((k, v) {
+              if (k == null || v == null) return;
+              if (v is! Map) return;
+
+              final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+
+              final teacherId = (m['teacherId'] ?? '').toString().trim();
+              if (teacherId != myUid) return;
+
+              mine.add({'paymentId': k.toString(), ...m});
+            });
+
+            if (mine.isEmpty) {
+              return _EmptyWagesState(
+                palette: p,
+                text: 'No payments assigned to you yet.',
+              );
+            }
+
+            mine.sort(
+              (a, b) => TeacherWagesScreen.asInt(
+                b['paidAt'],
+              ).compareTo(TeacherWagesScreen.asInt(a['paidAt'])),
+            );
+
+            final Map<String, List<Map<String, dynamic>>> byMonth = {};
+            for (final payment in mine) {
+              final monthKey = TeacherWagesScreen.monthKeyFromPaidAtMs(
+                TeacherWagesScreen.asInt(payment['paidAt']),
+              );
+              byMonth.putIfAbsent(monthKey, () => []);
+              byMonth[monthKey]!.add(payment);
+            }
+
+            final monthKeys = byMonth.keys.toList()
+              ..sort((a, b) => b.compareTo(a));
+
+            int totalAll = 0;
+            int paidByAdminAll = 0;
+            int confirmedAll = 0;
+
+            for (final payment in mine) {
+              final amt = TeacherWagesScreen.asInt(payment['amount']);
+              totalAll += amt;
+              if (TeacherWagesScreen.asBool(payment['teacherPaid'])) {
+                paidByAdminAll += amt;
+              }
+              if (TeacherWagesScreen.asBool(payment['teacherConfirmed'])) {
+                confirmedAll += amt;
+              }
+            }
+
+            final leftToBePaidByAdmin = totalAll - paidByAdminAll;
+            final leftToBeConfirmed = paidByAdminAll - confirmedAll;
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+              children: [
+                _WagesHeroCard(
+                  palette: p,
+                  totalAll: totalAll,
+                  paidByAdminAll: paidByAdminAll,
+                  leftToBeConfirmed: leftToBeConfirmed,
+                  leftToBePaidByAdmin: leftToBePaidByAdmin,
+                ),
+                const SizedBox(height: 14),
+                ...monthKeys.map((monthKey) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _MonthSection(
+                      palette: p,
+                      monthKey: monthKey,
+                      payments: byMonth[monthKey] ?? const [],
+                      onConfirmPaid: (paymentId) => _confirmPaidByTeacher(
+                        context: context,
+                        paymentId: paymentId,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

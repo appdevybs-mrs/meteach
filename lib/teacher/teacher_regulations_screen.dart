@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 import '../shared/watermark_background.dart';
 
 class TeacherRegulationsScreen extends StatefulWidget {
@@ -335,7 +336,11 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
             ),
           ],
         ),
-        body: WatermarkBackground(child: SafeArea(child: _buildContent())),
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1260,
+          child: WatermarkBackground(child: SafeArea(child: _buildContent())),
+        ),
       ),
     );
   }

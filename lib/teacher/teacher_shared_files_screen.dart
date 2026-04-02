@@ -15,6 +15,7 @@ import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherSharedFilesScreen extends StatefulWidget {
   const TeacherSharedFilesScreen({super.key});
@@ -609,253 +610,262 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _sharedRef.onValue,
-        builder: (context, snap) {
-          final raw = snap.data?.snapshot.value;
-          final items = <Map<String, dynamic>>[];
-          if (raw is Map) {
-            final m = Map<dynamic, dynamic>.from(raw);
-            for (final e in m.entries) {
-              if (e.value is! Map) continue;
-              final item = Map<String, dynamic>.from(e.value as Map);
-              item['id'] = item['id'] ?? e.key.toString();
-              items.add(item);
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1440,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _sharedRef.onValue,
+          builder: (context, snap) {
+            final raw = snap.data?.snapshot.value;
+            final items = <Map<String, dynamic>>[];
+            if (raw is Map) {
+              final m = Map<dynamic, dynamic>.from(raw);
+              for (final e in m.entries) {
+                if (e.value is! Map) continue;
+                final item = Map<String, dynamic>.from(e.value as Map);
+                item['id'] = item['id'] ?? e.key.toString();
+                items.add(item);
+              }
             }
-          }
-          items.sort((a, b) {
-            final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
-            final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
-            return bb.compareTo(aa);
-          });
+            items.sort((a, b) {
+              final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
+              final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
+              return bb.compareTo(aa);
+            });
 
-          final teacherNamesByUid = <String, String>{};
-          for (final item in items) {
-            final uid = (item['ownerUid'] ?? '').toString().trim();
-            if (uid.isEmpty) continue;
-            final name = (item['ownerName'] ?? '').toString().trim();
-            teacherNamesByUid[uid] = name.isEmpty ? 'Teacher' : name;
-          }
-
-          final teacherFilters =
-              <MapEntry<String, String>>[
-                const MapEntry('all', 'All Teachers'),
-                ...teacherNamesByUid.entries,
-              ]..sort((a, b) {
-                if (a.key == 'all') return -1;
-                if (b.key == 'all') return 1;
-                return a.value.toLowerCase().compareTo(b.value.toLowerCase());
-              });
-
-          final activeTeacherFilter =
-              teacherFilters.any((e) => e.key == _teacherFilterUid)
-              ? _teacherFilterUid
-              : 'all';
-
-          final filtered = <Map<String, dynamic>>[];
-          for (final item in items) {
-            final ownerUid = (item['ownerUid'] ?? '').toString().trim();
-            if (activeTeacherFilter != 'all' &&
-                ownerUid != activeTeacherFilter) {
-              continue;
+            final teacherNamesByUid = <String, String>{};
+            for (final item in items) {
+              final uid = (item['ownerUid'] ?? '').toString().trim();
+              if (uid.isEmpty) continue;
+              final name = (item['ownerName'] ?? '').toString().trim();
+              teacherNamesByUid[uid] = name.isEmpty ? 'Teacher' : name;
             }
 
-            final name = (item['name'] ?? '').toString().trim();
-            final title = (item['title'] ?? '').toString().trim();
-            final description = (item['description'] ?? '').toString().trim();
-            final shownTitle = title.isEmpty ? name : title;
-            final score = _searchScore(
-              query: _searchQuery,
-              title: shownTitle,
-              description: description,
-            );
-            if (_searchQuery.trim().isNotEmpty && score <= 0) {
-              continue;
+            final teacherFilters =
+                <MapEntry<String, String>>[
+                  const MapEntry('all', 'All Teachers'),
+                  ...teacherNamesByUid.entries,
+                ]..sort((a, b) {
+                  if (a.key == 'all') return -1;
+                  if (b.key == 'all') return 1;
+                  return a.value.toLowerCase().compareTo(b.value.toLowerCase());
+                });
+
+            final activeTeacherFilter =
+                teacherFilters.any((e) => e.key == _teacherFilterUid)
+                ? _teacherFilterUid
+                : 'all';
+
+            final filtered = <Map<String, dynamic>>[];
+            for (final item in items) {
+              final ownerUid = (item['ownerUid'] ?? '').toString().trim();
+              if (activeTeacherFilter != 'all' &&
+                  ownerUid != activeTeacherFilter) {
+                continue;
+              }
+
+              final name = (item['name'] ?? '').toString().trim();
+              final title = (item['title'] ?? '').toString().trim();
+              final description = (item['description'] ?? '').toString().trim();
+              final shownTitle = title.isEmpty ? name : title;
+              final score = _searchScore(
+                query: _searchQuery,
+                title: shownTitle,
+                description: description,
+              );
+              if (_searchQuery.trim().isNotEmpty && score <= 0) {
+                continue;
+              }
+
+              final row = Map<String, dynamic>.from(item);
+              row['_score'] = score;
+              filtered.add(row);
             }
 
-            final row = Map<String, dynamic>.from(item);
-            row['_score'] = score;
-            filtered.add(row);
-          }
+            filtered.sort((a, b) {
+              final sa = (a['_score'] as num?)?.toInt() ?? 0;
+              final sb = (b['_score'] as num?)?.toInt() ?? 0;
+              if (sa != sb) return sb.compareTo(sa);
+              final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
+              final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
+              return bb.compareTo(aa);
+            });
 
-          filtered.sort((a, b) {
-            final sa = (a['_score'] as num?)?.toInt() ?? 0;
-            final sb = (b['_score'] as num?)?.toInt() ?? 0;
-            if (sa != sb) return sb.compareTo(sa);
-            final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
-            final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
-            return bb.compareTo(aa);
-          });
+            if (items.isEmpty) {
+              return const Center(child: Text('No shared files yet.'));
+            }
 
-          if (items.isEmpty) {
-            return const Center(child: Text('No shared files yet.'));
-          }
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchCtrl,
-                        onChanged: (v) {
-                          setState(() => _searchQuery = v);
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Search title or description',
-                          isDense: true,
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: _searchQuery.trim().isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'Clear search',
-                                  onPressed: () {
-                                    _searchCtrl.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                  icon: const Icon(Icons.close_rounded),
-                                ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchCtrl,
+                          onChanged: (v) {
+                            setState(() => _searchQuery = v);
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Search title or description',
+                            isDense: true,
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _searchQuery.trim().isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Clear search',
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: activeTeacherFilter,
-                        borderRadius: BorderRadius.circular(12),
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _teacherFilterUid = v);
-                        },
-                        items: teacherFilters
-                            .map(
-                              (e) => DropdownMenuItem<String>(
-                                value: e.key,
-                                child: Text(e.value),
-                              ),
-                            )
-                            .toList(),
+                      const SizedBox(width: 10),
+                      DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: activeTeacherFilter,
+                          borderRadius: BorderRadius.circular(12),
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setState(() => _teacherFilterUid = v);
+                          },
+                          items: teacherFilters
+                              .map(
+                                (e) => DropdownMenuItem<String>(
+                                  value: e.key,
+                                  child: Text(e.value),
+                                ),
+                              )
+                              .toList(),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Expanded(
-                child: filtered.isEmpty
-                    ? const Center(
-                        child: Text('No files match your search/filter.'),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) {
-                          final item = filtered[i];
-                          final name = (item['name'] ?? 'Document').toString();
-                          final title = (item['title'] ?? '').toString().trim();
-                          final description = (item['description'] ?? '')
-                              .toString()
-                              .trim();
-                          final ownerUid = (item['ownerUid'] ?? '')
-                              .toString()
-                              .trim();
-                          final ownerName = (item['ownerName'] ?? '')
-                              .toString()
-                              .trim();
-                          final url = (item['url'] ?? '').toString().trim();
-                          final id = (item['id'] ?? '').toString().trim();
-                          final downloading =
-                              id.isNotEmpty && _downloadingIds.contains(id);
+                Expanded(
+                  child: filtered.isEmpty
+                      ? const Center(
+                          child: Text('No files match your search/filter.'),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, i) {
+                            final item = filtered[i];
+                            final name = (item['name'] ?? 'Document')
+                                .toString();
+                            final title = (item['title'] ?? '')
+                                .toString()
+                                .trim();
+                            final description = (item['description'] ?? '')
+                                .toString()
+                                .trim();
+                            final ownerUid = (item['ownerUid'] ?? '')
+                                .toString()
+                                .trim();
+                            final ownerName = (item['ownerName'] ?? '')
+                                .toString()
+                                .trim();
+                            final url = (item['url'] ?? '').toString().trim();
+                            final id = (item['id'] ?? '').toString().trim();
+                            final downloading =
+                                id.isNotEmpty && _downloadingIds.contains(id);
 
-                          return Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    title.isEmpty ? name : title,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title.isEmpty ? name : title,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                      ),
                                     ),
-                                  ),
-                                  if (description.isNotEmpty) ...[
+                                    if (description.isNotEmpty) ...[
+                                      const SizedBox(height: 6),
+                                      Text(description),
+                                    ],
                                     const SizedBox(height: 6),
-                                    Text(description),
-                                  ],
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    ownerName.isEmpty
-                                        ? 'Uploaded by: Teacher'
-                                        : 'Uploaded by: $ownerName',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.black54,
+                                    Text(
+                                      ownerName.isEmpty
+                                          ? 'Uploaded by: Teacher'
+                                          : 'Uploaded by: $ownerName',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.black54,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: url.isEmpty
-                                            ? null
-                                            : () => _openUrl(url),
-                                        icon: const Icon(
-                                          Icons.open_in_new_rounded,
-                                        ),
-                                        label: const Text('Open'),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      OutlinedButton.icon(
-                                        onPressed: (url.isEmpty || downloading)
-                                            ? null
-                                            : () => _downloadFile(item),
-                                        icon: downloading
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              )
-                                            : const Icon(
-                                                Icons.download_rounded,
-                                              ),
-                                        label: Text(
-                                          downloading
-                                              ? 'Downloading...'
-                                              : 'Download',
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      if (ownerUid == _uid)
-                                        IconButton(
-                                          tooltip: 'Delete my file',
-                                          onPressed: () => _deleteOwn(item),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        OutlinedButton.icon(
+                                          onPressed: url.isEmpty
+                                              ? null
+                                              : () => _openUrl(url),
                                           icon: const Icon(
-                                            Icons.delete_rounded,
-                                            color: Colors.red,
+                                            Icons.open_in_new_rounded,
+                                          ),
+                                          label: const Text('Open'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        OutlinedButton.icon(
+                                          onPressed:
+                                              (url.isEmpty || downloading)
+                                              ? null
+                                              : () => _downloadFile(item),
+                                          icon: downloading
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.download_rounded,
+                                                ),
+                                          label: Text(
+                                            downloading
+                                                ? 'Downloading...'
+                                                : 'Download',
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                ],
+                                        const Spacer(),
+                                        if (ownerUid == _uid)
+                                          IconButton(
+                                            tooltip: 'Delete my file',
+                                            onPressed: () => _deleteOwn(item),
+                                            icon: const Icon(
+                                              Icons.delete_rounded,
+                                              color: Colors.red,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

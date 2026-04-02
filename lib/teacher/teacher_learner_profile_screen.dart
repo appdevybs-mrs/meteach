@@ -5,6 +5,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/teacher_web_layout.dart';
 
 class TeacherLearnerProfileScreen extends StatefulWidget {
   const TeacherLearnerProfileScreen({
@@ -950,24 +951,28 @@ class _TeacherLearnerProfileScreenState
           ),
         ],
       ),
-      body: _busy
-          ? Center(child: CircularProgressIndicator(color: p.primary))
-          : _error != null
-          ? _buildErrorState(p)
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildMainProfileCard(p),
-                const SizedBox(height: 14),
-                _buildExtraPhotosCard(p),
-                const SizedBox(height: 14),
-                _buildSummaryCard(p),
-                const SizedBox(height: 14),
-                _buildAboutMeCard(p),
-                const SizedBox(height: 14),
-                _buildAccountCard(p),
-              ],
-            ),
+      body: teacherWebBodyFrame(
+        context: context,
+        maxWidth: 1240,
+        child: _busy
+            ? Center(child: CircularProgressIndicator(color: p.primary))
+            : _error != null
+            ? _buildErrorState(p)
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildMainProfileCard(p),
+                  const SizedBox(height: 14),
+                  _buildExtraPhotosCard(p),
+                  const SizedBox(height: 14),
+                  _buildSummaryCard(p),
+                  const SizedBox(height: 14),
+                  _buildAboutMeCard(p),
+                  const SizedBox(height: 14),
+                  _buildAccountCard(p),
+                ],
+              ),
+      ),
     );
   }
 }
