@@ -36,6 +36,34 @@
       }
     },
 
+    "admin_todo_outbox": {
+      "$creatorUid": {
+        ".read": "auth != null && (auth.uid == $creatorUid || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('admins').child(auth.uid).exists())",
+        "$todoId": {
+          ".write": "auth != null && (auth.uid == $creatorUid || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('admins').child(auth.uid).exists())",
+
+          "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
+          "description": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+          "dueAt": { ".validate": "newData.isNumber()" },
+
+          "status": { ".validate": "newData.isString() && (newData.val() == 'new' || newData.val() == 'seen' || newData.val() == 'done' || newData.val() == 'read')" },
+
+          "createdAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+          "updatedAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+
+          "createdByUid": { ".validate": "newData.isString() && newData.val() == $creatorUid" },
+          "createdByName": { ".validate": "newData.isString()" },
+          "assigneeUid": { ".validate": "newData.isString()" },
+          "assigneeName": { ".validate": "newData.isString()" },
+
+          "seenAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null" },
+          "doneAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null" },
+
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
     "admins": {
       "$uid": {
         ".read": "auth != null",

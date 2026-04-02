@@ -40,6 +40,7 @@ import '../shared/admin_tour_guide.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
+import 'admin_learners.dart';
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
@@ -80,6 +81,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   final Map<String, _ClassProg> _classProgCache = {};
   final Map<String, int> _syllabusSessionCountCache = <String, int>{};
   final Set<String> _progressRequestedClassIds = <String>{};
+  final Set<String> _expandedClassIds = <String>{};
   List<Map<String, String>> get _teachers {
     final list = _teachersByUid.values.toList();
     list.sort((a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""));
@@ -169,6 +171,46 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool _isLearnerRole(dynamic role) {
     final r = (role ?? "").toString().trim().toLowerCase();
     return r == "learner" || r == "learners" || r == "learner(s)";
+  }
+
+  List<Map<String, String>> _classLearnersList(Map<String, dynamic> cls) {
+    final raw = cls['learners'];
+    if (raw is! Map) return const <Map<String, String>>[];
+
+    final out = <Map<String, String>>[];
+    final learnersMap = Map<dynamic, dynamic>.from(raw);
+    learnersMap.forEach((uid, learnerVal) {
+      if (uid == null) return;
+      final uidStr = uid.toString().trim();
+      if (uidStr.isEmpty) return;
+      String serial = '';
+      String name = '';
+      if (learnerVal is Map) {
+        final m = learnerVal.map((k, v) => MapEntry(k.toString(), v));
+        serial = (m['serial'] ?? '').toString().trim();
+        name = (m['name'] ?? '').toString().trim();
+      }
+      out.add({'uid': uidStr, 'serial': serial, 'name': name});
+    });
+
+    out.sort((a, b) {
+      final an = (a['name'] ?? '').toLowerCase();
+      final bn = (b['name'] ?? '').toLowerCase();
+      if (an.isNotEmpty || bn.isNotEmpty) return an.compareTo(bn);
+      return (a['serial'] ?? '').compareTo(b['serial'] ?? '');
+    });
+    return out;
+  }
+
+  void _openLearnerFromClass(Map<String, String> learner) {
+    final serial = (learner['serial'] ?? '').trim();
+    final name = (learner['name'] ?? '').trim();
+    final query = serial.isNotEmpty ? serial : name;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminLearnersScreen(initialSearch: query),
+      ),
+    );
   }
 
   bool _isTeacherRole(dynamic role) {
@@ -2248,6 +2290,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         final cls = filtered[i];
 
                         final id = (cls["class_id"] ?? "").toString();
+                        final classKey = id.isEmpty ? 'class_$i' : id;
+                        final expanded = _expandedClassIds.contains(classKey);
                         final status = (cls["status"] ?? "active").toString();
 
                         final courseTitle = (cls["course_title"] ?? "")
@@ -2266,6 +2310,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             : <String, dynamic>{};
                         final firstDate = (sched["first_session_date"] ?? "")
                             .toString();
+                        final learners = _classLearnersList(cls);
 
                         return Card(
                           elevation: 0,
@@ -2347,6 +2392,31 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                       ],
                                       icon: const Icon(Icons.more_vert_rounded),
                                     ),
+                                    IconButton(
+                                      tooltip: expanded
+                                          ? 'Collapse learners'
+                                          : 'Expand learners',
+                                      onPressed: learners.isEmpty
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                if (expanded) {
+                                                  _expandedClassIds.remove(
+                                                    classKey,
+                                                  );
+                                                } else {
+                                                  _expandedClassIds.add(
+                                                    classKey,
+                                                  );
+                                                }
+                                              });
+                                            },
+                                      icon: Icon(
+                                        expanded
+                                            ? Icons.keyboard_arrow_up_rounded
+                                            : Icons.keyboard_arrow_down_rounded,
+                                      ),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
@@ -2380,6 +2450,76 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Learners: ${learners.length}',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (expanded) ...[
+                                  const SizedBox(height: 6),
+                                  if (learners.isEmpty)
+                                    Text(
+                                      'No learners in this class.',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    )
+                                  else
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxHeight: 220,
+                                      ),
+                                      child: ListView.separated(
+                                        shrinkWrap: true,
+                                        itemCount: learners.length,
+                                        separatorBuilder: (_, _) =>
+                                            const Divider(height: 1),
+                                        itemBuilder: (_, idx) {
+                                          final l = learners[idx];
+                                          final serial = (l['serial'] ?? '')
+                                              .trim();
+                                          final name = (l['name'] ?? '').trim();
+                                          final title = name.isNotEmpty
+                                              ? name
+                                              : (serial.isNotEmpty
+                                                    ? serial
+                                                    : l['uid'] ?? '-');
+                                          final subtitle = serial.isNotEmpty
+                                              ? 'Serial: $serial'
+                                              : null;
+
+                                          return ListTile(
+                                            dense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                ),
+                                            leading: const Icon(
+                                              Icons.person_rounded,
+                                            ),
+                                            title: Text(
+                                              title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            subtitle: subtitle == null
+                                                ? null
+                                                : Text(subtitle),
+                                            trailing: const Icon(
+                                              Icons.open_in_new_rounded,
+                                              size: 18,
+                                            ),
+                                            onTap: () =>
+                                                _openLearnerFromClass(l),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                ],
                               ],
                             ),
                           ),

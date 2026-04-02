@@ -16,15 +16,19 @@ class AdminAdminTodosScreen extends StatefulWidget {
 
 enum _TodoFilter { all, newOnly, seenOnly, doneOnly, overdueOnly }
 
+enum _TodoViewMode { assignedToMe, assignedByMe }
+
 class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
   final _db = FirebaseDatabase.instance;
 
   String _search = '';
   _TodoFilter _filter = _TodoFilter.all;
+  _TodoViewMode _viewMode = _TodoViewMode.assignedToMe;
 
   String? _myUid;
   String _myName = 'Admin';
-  Stream<DatabaseEvent>? _todosStream;
+  Stream<DatabaseEvent>? _inboxTodosStream;
+  Stream<DatabaseEvent>? _outboxTodosStream;
 
   final Set<String> _expanded = <String>{};
   final Set<String> _updatingIds = <String>{};
@@ -34,9 +38,18 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
     super.initState();
     _myUid = FirebaseAuth.instance.currentUser?.uid;
     if (_myUid != null && _myUid!.trim().isNotEmpty) {
-      _todosStream = _db.ref('admin_todos/${_myUid!.trim()}').onValue;
+      final uid = _myUid!.trim();
+      _inboxTodosStream = _db.ref('admin_todos/$uid').onValue;
+      _outboxTodosStream = _db.ref('admin_todo_outbox/$uid').onValue;
       _loadMyName();
+      _backfillOutboxFromInboxes();
     }
+  }
+
+  Stream<DatabaseEvent>? get _activeTodosStream {
+    return _viewMode == _TodoViewMode.assignedByMe
+        ? _outboxTodosStream
+        : _inboxTodosStream;
   }
 
   Future<void> _loadMyName() async {
@@ -57,6 +70,43 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
           : (email.isNotEmpty ? email : 'Admin');
       if (!mounted) return;
       setState(() => _myName = name);
+    } catch (_) {}
+  }
+
+  Future<void> _backfillOutboxFromInboxes() async {
+    final myUid = _myUid?.trim() ?? '';
+    if (myUid.isEmpty) return;
+
+    try {
+      final usersSnap = await _db.ref('users').get();
+      final admins = _parseAdmins(usersSnap.value);
+
+      for (final admin in admins) {
+        final assigneeUid = admin.uid.trim();
+        if (assigneeUid.isEmpty || assigneeUid == myUid) continue;
+
+        final inboxSnap = await _db.ref('admin_todos/$assigneeUid').get();
+        final raw = inboxSnap.value;
+        if (raw is! Map) continue;
+
+        for (final e in raw.entries) {
+          final todoId = e.key.toString().trim();
+          final val = e.value;
+          if (todoId.isEmpty || val is! Map) continue;
+
+          final m = val.map((k, v) => MapEntry(k.toString(), v));
+          final creator = (m['createdByUid'] ?? '').toString().trim();
+          if (creator != myUid) continue;
+
+          m['assigneeUid'] = (m['assigneeUid'] ?? assigneeUid)
+              .toString()
+              .trim();
+          m['assigneeName'] = (m['assigneeName'] ?? admin.name)
+              .toString()
+              .trim();
+          await _db.ref('admin_todo_outbox/$myUid/$todoId').update(m);
+        }
+      }
     } catch (_) {}
   }
 
@@ -227,6 +277,12 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       });
 
       if (tx.committed && updated) {
+        await _syncOutboxCopy(
+          todoId: todoId,
+          source: todo,
+          status: 'seen',
+          seenAt: ServerValue.timestamp,
+        );
         await _notifyCreatorOnUpdate(
           todo: todo,
           todoId: todoId,
@@ -267,6 +323,13 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       });
 
       if (tx.committed && updated) {
+        await _syncOutboxCopy(
+          todoId: todoId,
+          source: todo,
+          status: 'done',
+          seenAt: todo.seenAtMs ?? ServerValue.timestamp,
+          doneAt: ServerValue.timestamp,
+        );
         _snack('Marked done');
         await _notifyCreatorOnUpdate(
           todo: todo,
@@ -279,6 +342,39 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
     } finally {
       if (mounted) setState(() => _updatingIds.remove(todoId));
     }
+  }
+
+  Future<void> _syncOutboxCopy({
+    required String todoId,
+    required _AdminTodo source,
+    String? status,
+    dynamic seenAt,
+    dynamic doneAt,
+  }) async {
+    final creatorUid = source.createdByUid.trim();
+    if (creatorUid.isEmpty || todoId.trim().isEmpty) return;
+
+    final meUid = _myUid?.trim() ?? '';
+    final meName = _myName.trim();
+
+    final update = <String, dynamic>{
+      'title': source.title,
+      'description': source.description,
+      'status': status ?? source.status,
+      'createdByUid': creatorUid,
+      'createdByName': source.createdByName,
+      'assigneeUid': source.assigneeUid.isNotEmpty ? source.assigneeUid : meUid,
+      'assigneeName': source.assigneeName.isNotEmpty
+          ? source.assigneeName
+          : (meName.isNotEmpty ? meName : 'Admin'),
+      'updatedAt': ServerValue.timestamp,
+    };
+    if (source.dueAtMs != null) update['dueAt'] = source.dueAtMs;
+    if (source.createdAtMs != null) update['createdAt'] = source.createdAtMs;
+    if (seenAt != null) update['seenAt'] = seenAt;
+    if (doneAt != null) update['doneAt'] = doneAt;
+
+    await _db.ref('admin_todo_outbox/$creatorUid/$todoId').update(update);
   }
 
   Future<void> _openCreateTodoDialog() async {
@@ -308,7 +404,7 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
         final ref = _db.ref('admin_todos/${assignee.uid}').push();
         final todoId = ref.key ?? '';
 
-        await ref.set({
+        final payload = {
           'title': draft.title.trim(),
           'description': draft.description.trim(),
           'dueAt': draft.dueAtMs,
@@ -321,7 +417,13 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
           'assigneeName': assignee.name,
           'seenAt': null,
           'doneAt': null,
-        });
+        };
+
+        await ref.set(payload);
+
+        if (todoId.isNotEmpty) {
+          await _db.ref('admin_todo_outbox/$myUid/$todoId').set(payload);
+        }
 
         if (todoId.isNotEmpty) {
           await _notifyAssigneeOnCreate(
@@ -350,7 +452,8 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
           ? true
           : t.title.toLowerCase().contains(q) ||
                 t.description.toLowerCase().contains(q) ||
-                t.createdByName.toLowerCase().contains(q);
+                t.createdByName.toLowerCase().contains(q) ||
+                t.assigneeName.toLowerCase().contains(q);
 
       final status = t.status.toLowerCase().trim();
       final statusMatch = switch (_filter) {
@@ -485,7 +588,7 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
         context: context,
         maxWidth: 1450,
         child: StreamBuilder<DatabaseEvent>(
-          stream: _todosStream,
+          stream: _activeTodosStream,
           builder: (context, snap) {
             if (snap.hasError) {
               return const Center(child: Text('Could not load TODOs.'));
@@ -504,6 +607,37 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SegmentedButton<_TodoViewMode>(
+                      segments: const [
+                        ButtonSegment<_TodoViewMode>(
+                          value: _TodoViewMode.assignedToMe,
+                          label: Text('Assigned to me'),
+                          icon: Icon(Icons.inbox_rounded),
+                        ),
+                        ButtonSegment<_TodoViewMode>(
+                          value: _TodoViewMode.assignedByMe,
+                          label: Text('Assigned by me'),
+                          icon: Icon(Icons.outbox_rounded),
+                        ),
+                      ],
+                      selected: {_viewMode},
+                      onSelectionChanged: (selection) {
+                        final next = selection.first;
+                        if (next == _viewMode) return;
+                        setState(() {
+                          _viewMode = next;
+                          _expanded.clear();
+                          _updatingIds.clear();
+                          _filter = _TodoFilter.all;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                   child: TextField(
                     onChanged: (v) => setState(() => _search = v),
                     decoration: InputDecoration(
@@ -519,7 +653,7 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
                   child: SizedBox(
                     height: 36,
                     child: ListView(
@@ -570,7 +704,13 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                 const SizedBox(height: 10),
                 Expanded(
                   child: filtered.isEmpty
-                      ? const Center(child: Text('No TODOs for you yet.'))
+                      ? Center(
+                          child: Text(
+                            _viewMode == _TodoViewMode.assignedByMe
+                                ? 'No TODOs assigned by you yet.'
+                                : 'No TODOs assigned to you yet.',
+                          ),
+                        )
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
                           itemCount: filtered.length,
@@ -611,7 +751,9 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                                       }
                                     });
 
-                                    if (!isExpanded) {
+                                    if (!isExpanded &&
+                                        _viewMode ==
+                                            _TodoViewMode.assignedToMe) {
                                       await _markSeenIfNeeded(row.id, t);
                                     }
                                   },
@@ -669,7 +811,11 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                                                         icon: Icons
                                                             .person_rounded,
                                                         text:
-                                                            'From: ${t.createdByName.isEmpty ? 'Admin' : t.createdByName}',
+                                                            _viewMode ==
+                                                                _TodoViewMode
+                                                                    .assignedByMe
+                                                            ? 'To: ${t.assigneeName.isEmpty ? 'Admin' : t.assigneeName}'
+                                                            : 'From: ${t.createdByName.isEmpty ? 'Admin' : t.createdByName}',
                                                       ),
                                                     ],
                                                   ),
@@ -727,57 +873,66 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(height: 12),
-                                          SizedBox(
-                                            width: double.infinity,
-                                            child: FilledButton.icon(
-                                              onPressed:
-                                                  (t.status
+                                          if (_viewMode ==
+                                              _TodoViewMode.assignedToMe) ...[
+                                            const SizedBox(height: 12),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: FilledButton.icon(
+                                                onPressed:
+                                                    (t.status
+                                                                .toLowerCase()
+                                                                .trim() ==
+                                                            'done' ||
+                                                        _updatingIds.contains(
+                                                          row.id,
+                                                        ))
+                                                    ? null
+                                                    : () =>
+                                                          _markDone(row.id, t),
+                                                icon:
+                                                    _updatingIds.contains(
+                                                      row.id,
+                                                    )
+                                                    ? const SizedBox(
+                                                        width: 16,
+                                                        height: 16,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color:
+                                                                  Colors.white,
+                                                            ),
+                                                      )
+                                                    : const Icon(
+                                                        Icons
+                                                            .check_circle_rounded,
+                                                      ),
+                                                label: Text(
+                                                  t.status
                                                               .toLowerCase()
                                                               .trim() ==
-                                                          'done' ||
-                                                      _updatingIds.contains(
-                                                        row.id,
-                                                      ))
-                                                  ? null
-                                                  : () => _markDone(row.id, t),
-                                              icon:
-                                                  _updatingIds.contains(row.id)
-                                                  ? const SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                            color: Colors.white,
-                                                          ),
-                                                    )
-                                                  : const Icon(
-                                                      Icons
-                                                          .check_circle_rounded,
-                                                    ),
-                                              label: Text(
-                                                t.status.toLowerCase().trim() ==
-                                                        'done'
-                                                    ? 'Done'
-                                                    : (_updatingIds.contains(
-                                                            row.id,
-                                                          )
-                                                          ? 'Updating...'
-                                                          : 'Mark done'),
-                                              ),
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor: const Color(
-                                                  0xFF1A2B48,
+                                                          'done'
+                                                      ? 'Done'
+                                                      : (_updatingIds.contains(
+                                                              row.id,
+                                                            )
+                                                            ? 'Updating...'
+                                                            : 'Mark done'),
                                                 ),
-                                                foregroundColor: Colors.white,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 12,
-                                                    ),
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: const Color(
+                                                    0xFF1A2B48,
+                                                  ),
+                                                  foregroundColor: Colors.white,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 12,
+                                                      ),
+                                                ),
                                               ),
                                             ),
-                                          ),
+                                          ],
                                         ],
                                       ],
                                     ),

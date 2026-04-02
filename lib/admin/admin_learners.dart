@@ -24,7 +24,9 @@ import 'admin_learner_mail_topics_screen.dart';
 import '../shared/admin_tour_guide.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
-  const AdminLearnersScreen({super.key});
+  const AdminLearnersScreen({super.key, this.initialSearch = ''});
+
+  final String initialSearch;
 
   // Brand palette (match your style)
   static const primaryBlue = Color(0xFF1A2B48);
@@ -65,6 +67,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   @override
   void initState() {
     super.initState();
+    _search = widget.initialSearch.trim();
     _tab = TabController(length: 3, vsync: this);
 
     // broadcast streams once

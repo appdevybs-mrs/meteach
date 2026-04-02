@@ -239,11 +239,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Classes',
         'Manage classes',
-        _DashCard(
-          title: 'Classes',
-          subtitle: 'Manage classes',
-          icon: Icons.class_rounded,
-          color: AdminHome.actionOrange,
+        _ClassesDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(
             context,
@@ -315,11 +311,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Reminders',
         'Send & manage reminders',
-        _DashCard(
-          title: 'Reminders',
-          subtitle: 'Send & manage reminders',
-          icon: Icons.notifications_active_rounded,
-          color: AdminHome.accentPurple,
+        _RemindersDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
@@ -331,11 +323,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Staff',
         'Teachers & staff',
-        _DashCard(
-          title: 'Staff',
-          subtitle: 'Teachers & staff',
-          icon: Icons.badge_rounded,
-          color: AdminHome.accentAmber,
+        _StaffMailDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(
             context,
@@ -472,11 +460,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Classes',
         'Manage classes',
-        _DashCard(
-          title: 'Classes',
-          subtitle: 'Manage classes',
-          icon: Icons.class_rounded,
-          color: AdminHome.actionOrange,
+        _ClassesDashCard(
           isReceptionistStyle: true,
           onTap: () => Navigator.of(
             context,
@@ -513,11 +497,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Reminders',
         'Send reminders',
-        _DashCard(
-          title: 'Reminders',
-          subtitle: 'Send reminders',
-          icon: Icons.notifications_active_rounded,
-          color: AdminHome.accentPurple,
+        _RemindersDashCard(
           isReceptionistStyle: true,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
@@ -529,11 +509,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Staff',
         'Teachers & staff',
-        _DashCard(
-          title: 'Staff',
-          subtitle: 'Teachers & staff',
-          icon: Icons.badge_rounded,
-          color: AdminHome.accentAmber,
+        _StaffMailDashCard(
           isReceptionistStyle: true,
           onTap: () => Navigator.of(
             context,
@@ -1366,11 +1342,28 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
     }
   }
 
-  int _countUpcomingBookings(dynamic rootValue) {
-    if (rootValue is! Map) return 0;
+  ({int today, int week, int upcoming}) _bookingStats(dynamic rootValue) {
+    if (rootValue is! Map) return (today: 0, week: 0, upcoming: 0);
 
     final now = DateTime.now();
-    int count = 0;
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = todayStart.add(const Duration(days: 1));
+    final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+    final weekEnd = weekStart.add(const Duration(days: 7));
+
+    int today = 0;
+    int week = 0;
+    int upcoming = 0;
+
+    bool countedSlot = false;
+
+    void markSlot(DateTime dt) {
+      if (countedSlot) return;
+      countedSlot = true;
+      upcoming += 1;
+      if (!dt.isBefore(todayStart) && dt.isBefore(todayEnd)) today += 1;
+      if (!dt.isBefore(weekStart) && dt.isBefore(weekEnd)) week += 1;
+    }
 
     final byCourse = Map<dynamic, dynamic>.from(rootValue);
 
@@ -1397,12 +1390,14 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
 
           if (!dt.isAfter(now)) continue;
 
+          countedSlot = false;
+
           final slotMap = Map<dynamic, dynamic>.from(slotNode);
 
           // Flat shape: /{day}/{time} => {learners:{...}, ...}
           final learnersRaw = slotMap['learners'];
           if (learnersRaw is Map && learnersRaw.isNotEmpty) {
-            count += 1;
+            markSlot(dt);
             continue;
           }
 
@@ -1413,14 +1408,14 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
             final tm = Map<dynamic, dynamic>.from(teacherSlot);
             final tLearners = tm['learners'];
             if (tLearners is Map && tLearners.isNotEmpty) {
-              count += 1;
+              markSlot(dt);
             }
           }
         }
       }
     }
 
-    return count;
+    return (today: today, week: week, upcoming: upcoming);
   }
 
   @override
@@ -1430,18 +1425,18 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: ref.onValue,
       builder: (context, snap) {
-        final count = _countUpcomingBookings(snap.data?.snapshot.value);
+        final stats = _bookingStats(snap.data?.snapshot.value);
 
-        final subtitle = count == 0
+        final subtitle = stats.upcoming == 0
             ? 'Online Booking management'
-            : '$count upcoming booking${count == 1 ? '' : 's'}';
+            : 'Today ${stats.today} • Week ${stats.week} • Upcoming ${stats.upcoming}';
 
         return _DashCard(
           title: 'Online Booking',
           subtitle: subtitle,
           icon: Icons.event_available_rounded,
           color: AdminHome.accentGreen,
-          badgeCount: count,
+          badgeCount: stats.upcoming,
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(
             context,
@@ -1502,6 +1497,7 @@ class _JobApplicationsDashCard extends StatelessWidget {
       builder: (context, snap) {
         int total = 0;
         int newCount = 0;
+        int followUp = 0;
 
         final v = snap.data?.snapshot.value;
         if (v is Map) {
@@ -1514,17 +1510,18 @@ class _JobApplicationsDashCard extends StatelessWidget {
             final effective = stage.isEmpty
                 ? (status.isEmpty ? 'new' : status)
                 : stage;
-            if (effective == 'new' ||
-                effective == 'called_no_answer' ||
-                effective == 'callback_requested') {
+            if (effective == 'new') {
               newCount += 1;
+            } else if (effective == 'called_no_answer' ||
+                effective == 'callback_requested') {
+              followUp += 1;
             }
           });
         }
 
         final subtitle = total == 0
             ? 'No applications yet'
-            : '$newCount new • $total total';
+            : 'New $newCount • Follow-up $followUp • Total $total';
 
         return _DashCard(
           title: 'Job Applications',
@@ -1538,6 +1535,70 @@ class _JobApplicationsDashCard extends StatelessWidget {
               builder: (_) => const AdminJobApplicationsScreen(),
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _ClassesDashCard extends StatelessWidget {
+  const _ClassesDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('classes');
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int total = 0;
+        int open = 0;
+        int closed = 0;
+        final learnerUids = <String>{};
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          total = v.length;
+          v.forEach((_, raw) {
+            if (raw is! Map) return;
+            final m = raw.map((k, val) => MapEntry(k.toString(), val));
+            final status = (m['status'] ?? 'active')
+                .toString()
+                .trim()
+                .toLowerCase();
+            if (status == 'active' || status == 'open') {
+              open += 1;
+            } else {
+              closed += 1;
+            }
+
+            final learners = m['learners'];
+            if (learners is Map) {
+              learners.forEach((uid, _) {
+                final id = uid?.toString().trim() ?? '';
+                if (id.isNotEmpty) learnerUids.add(id);
+              });
+            }
+          });
+        }
+
+        final subtitle = total == 0
+            ? 'Manage classes'
+            : 'Open $open • Closed $closed • Learners ${learnerUids.length}';
+
+        return _DashCard(
+          title: 'Classes',
+          subtitle: subtitle,
+          icon: Icons.class_rounded,
+          color: AdminHome.actionOrange,
+          badgeCount: open,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: onTap,
         );
       },
     );
@@ -2608,6 +2669,132 @@ class _MiniStatChip extends StatelessWidget {
         onTap: onTap,
         child: chip,
       ),
+    );
+  }
+}
+
+class _RemindersDashCard extends StatelessWidget {
+  const _RemindersDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('reminders');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int done = 0;
+        int seen = 0;
+        int undone = 0;
+
+        final root = snap.data?.snapshot.value;
+        if (root is Map) {
+          root.forEach((_, teacherNode) {
+            if (teacherNode is! Map) return;
+            final remindersMap = Map<dynamic, dynamic>.from(teacherNode);
+            remindersMap.forEach((_, reminderVal) {
+              if (reminderVal is! Map) return;
+              final m = reminderVal.map((k, v) => MapEntry(k.toString(), v));
+              final status = (m['status'] ?? 'new')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              if (status == 'done') {
+                done += 1;
+              } else if (status == 'read' || status == 'seen') {
+                seen += 1;
+              } else {
+                undone += 1;
+              }
+            });
+          });
+        }
+
+        final total = done + seen + undone;
+        final subtitle = total == 0
+            ? 'Send & manage reminders'
+            : 'Done $done • Seen $seen • Undone $undone';
+
+        return _DashCard(
+          title: 'Reminders',
+          subtitle: subtitle,
+          icon: Icons.notifications_active_rounded,
+          color: AdminHome.accentPurple,
+          badgeCount: undone,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+class _StaffMailDashCard extends StatelessWidget {
+  const _StaffMailDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final meUid = FirebaseAuth.instance.currentUser?.uid?.trim() ?? '';
+    if (meUid.isEmpty) {
+      return _DashCard(
+        title: 'Staff',
+        subtitle: 'Teachers & staff',
+        icon: Icons.badge_rounded,
+        color: AdminHome.accentAmber,
+        isReceptionistStyle: isReceptionistStyle,
+        onTap: onTap,
+      );
+    }
+
+    final ref = FirebaseDatabase.instance.ref('mail_index/$meUid');
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int threads = 0;
+        int unread = 0;
+
+        final root = snap.data?.snapshot.value;
+        if (root is Map) {
+          threads = root.length;
+          root.forEach((_, threadVal) {
+            if (threadVal is! Map) return;
+            final m = threadVal.map((k, v) => MapEntry(k.toString(), v));
+            unread += _toInt(m['unreadCount']);
+          });
+        }
+
+        final subtitle = threads == 0
+            ? 'Teachers & staff'
+            : 'Unread $unread • Threads $threads';
+
+        return _DashCard(
+          title: 'Staff',
+          subtitle: subtitle,
+          icon: Icons.badge_rounded,
+          color: AdminHome.accentAmber,
+          badgeCount: unread,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: onTap,
+        );
+      },
     );
   }
 }
