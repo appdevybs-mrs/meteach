@@ -1436,7 +1436,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           subtitle: subtitle,
           icon: Icons.event_available_rounded,
           color: AdminHome.accentGreen,
-          badgeCount: stats.upcoming,
+          badgeCount: 0,
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(
             context,
@@ -1496,7 +1496,7 @@ class _JobApplicationsDashCard extends StatelessWidget {
       stream: ref.onValue,
       builder: (context, snap) {
         int total = 0;
-        int newCount = 0;
+        int uncalledCount = 0;
         int followUp = 0;
 
         final v = snap.data?.snapshot.value;
@@ -1511,7 +1511,7 @@ class _JobApplicationsDashCard extends StatelessWidget {
                 ? (status.isEmpty ? 'new' : status)
                 : stage;
             if (effective == 'new') {
-              newCount += 1;
+              uncalledCount += 1;
             } else if (effective == 'called_no_answer' ||
                 effective == 'callback_requested') {
               followUp += 1;
@@ -1521,14 +1521,14 @@ class _JobApplicationsDashCard extends StatelessWidget {
 
         final subtitle = total == 0
             ? 'No applications yet'
-            : 'New $newCount • Follow-up $followUp • Total $total';
+            : 'Uncalled $uncalledCount • Follow-up $followUp • Total $total';
 
         return _DashCard(
           title: 'Job Applications',
           subtitle: subtitle,
           icon: Icons.work_history_rounded,
           color: AdminHome.accentSlate,
-          badgeCount: newCount,
+          badgeCount: uncalledCount,
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
@@ -1596,7 +1596,7 @@ class _ClassesDashCard extends StatelessWidget {
           subtitle: subtitle,
           icon: Icons.class_rounded,
           color: AdminHome.actionOrange,
-          badgeCount: open,
+          badgeCount: 0,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
         );
@@ -2726,7 +2726,7 @@ class _RemindersDashCard extends StatelessWidget {
           subtitle: subtitle,
           icon: Icons.notifications_active_rounded,
           color: AdminHome.accentPurple,
-          badgeCount: undone,
+          badgeCount: 0,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
         );
