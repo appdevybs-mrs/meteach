@@ -28,7 +28,7 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
   String? _myUid;
   String _myName = 'Admin';
   Stream<DatabaseEvent>? _inboxTodosStream;
-  Stream<DatabaseEvent>? _outboxTodosStream;
+  Stream<DatabaseEvent>? _allTodosStream;
 
   final Set<String> _expanded = <String>{};
   final Set<String> _updatingIds = <String>{};
@@ -40,7 +40,7 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
     if (_myUid != null && _myUid!.trim().isNotEmpty) {
       final uid = _myUid!.trim();
       _inboxTodosStream = _db.ref('admin_todos/$uid').onValue;
-      _outboxTodosStream = _db.ref('admin_todo_outbox/$uid').onValue;
+      _allTodosStream = _db.ref('admin_todos').onValue;
       _loadMyName();
       _backfillOutboxFromInboxes();
     }
@@ -48,7 +48,7 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
 
   Stream<DatabaseEvent>? get _activeTodosStream {
     return _viewMode == _TodoViewMode.assignedByMe
-        ? _outboxTodosStream
+        ? _allTodosStream
         : _inboxTodosStream;
   }
 
@@ -160,6 +160,38 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       out.add(_AdminTodoRow(id: k.toString(), todo: _AdminTodo.fromMap(m)));
     });
 
+    return out;
+  }
+
+  List<_AdminTodoRow> _parseAssignedByMeRows(dynamic value) {
+    final myUid = _myUid?.trim() ?? '';
+    if (myUid.isEmpty || value is! Map) return <_AdminTodoRow>[];
+
+    final out = <_AdminTodoRow>[];
+    value.forEach((assigneeUid, rawTodos) {
+      if (rawTodos is! Map) return;
+      final assignee = assigneeUid.toString().trim();
+      rawTodos.forEach((todoId, rawTodo) {
+        if (todoId == null || rawTodo is! Map) return;
+        final m = rawTodo.map((kk, vv) => MapEntry(kk.toString(), vv));
+        final createdBy = (m['createdByUid'] ?? '').toString().trim();
+        if (createdBy != myUid) return;
+
+        if ((m['assigneeUid'] ?? '').toString().trim().isEmpty &&
+            assignee.isNotEmpty) {
+          m['assigneeUid'] = assignee;
+        }
+
+        final rowId = '$assignee::${todoId.toString().trim()}';
+        out.add(_AdminTodoRow(id: rowId, todo: _AdminTodo.fromMap(m)));
+      });
+    });
+
+    out.sort((a, b) {
+      final aa = a.todo.createdAtMs ?? 0;
+      final bb = b.todo.createdAtMs ?? 0;
+      return bb.compareTo(aa);
+    });
     return out;
   }
 
@@ -599,7 +631,9 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final rows = _parseTodoRows(snap.data?.snapshot.value);
+            final rows = _viewMode == _TodoViewMode.assignedByMe
+                ? _parseAssignedByMeRows(snap.data?.snapshot.value)
+                : _parseTodoRows(snap.data?.snapshot.value);
             final filtered = _applyFilters(rows);
             final now = DateTime.now().millisecondsSinceEpoch;
 
