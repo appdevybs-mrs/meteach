@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'learner_mail_thread_screen.dart';
 
 import '../shared/human_error.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_tour_guide.dart';
@@ -620,508 +621,520 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           ),
         ],
       ),
-      body: WatermarkBackground(
-        child: _busy
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 1380,
+        child: WatermarkBackground(
+          child: _busy
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : _items.isEmpty
+              ? const Center(
                   child: Text(
-                    _error!,
+                    'No homework yet.',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                      color: UiK.mainText,
                       fontWeight: FontWeight.w800,
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                ),
-              )
-            : _items.isEmpty
-            ? const Center(
-                child: Text(
-                  'No homework yet.',
-                  style: TextStyle(
-                    color: UiK.mainText,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              )
-            : ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: _items.length + 1,
-                itemBuilder: (_, idx) {
-                  if (idx == 0) return _statsCard();
+                )
+              : ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: _items.length + 1,
+                  itemBuilder: (_, idx) {
+                    if (idx == 0) return _statsCard();
 
-                  final it = _items[idx - 1];
+                    final it = _items[idx - 1];
 
-                  final date = (it['date'] ?? '').toString();
-                  final due = (it['dueDate'] ?? '').toString();
-                  final text = (it['text'] ?? '').toString();
-                  final taughtTitle = (it['taughtTitle'] ?? '').toString();
+                    final date = (it['date'] ?? '').toString();
+                    final due = (it['dueDate'] ?? '').toString();
+                    final text = (it['text'] ?? '').toString();
+                    final taughtTitle = (it['taughtTitle'] ?? '').toString();
 
-                  final sessionId = (it['sessionId'] ?? '').toString();
-                  final isExpanded = _expanded.contains(sessionId);
+                    final sessionId = (it['sessionId'] ?? '').toString();
+                    final isExpanded = _expanded.contains(sessionId);
 
-                  final seenAt = it['seenAt'];
-                  final doneAt = it['doneAt'];
+                    final seenAt = it['seenAt'];
+                    final doneAt = it['doneAt'];
 
-                  final isSeen = seenAt != null;
-                  final isDone = doneAt != null;
-                  final submittedAt = it['submittedAt'];
+                    final isSeen = seenAt != null;
+                    final isDone = doneAt != null;
+                    final submittedAt = it['submittedAt'];
 
-                  final reviewedAt = it['reviewedAt'];
-                  final autoMailMsgKey = (it['autoMailMsgKey'] ?? '')
-                      .toString()
-                      .trim();
-                  final reviewStatus = (it['reviewStatus'] ?? '')
-                      .toString()
-                      .trim(); // pass/redo
-                  final needsRedo = it['needsRedo'] == true;
+                    final reviewedAt = it['reviewedAt'];
+                    final autoMailMsgKey = (it['autoMailMsgKey'] ?? '')
+                        .toString()
+                        .trim();
+                    final reviewStatus = (it['reviewStatus'] ?? '')
+                        .toString()
+                        .trim(); // pass/redo
+                    final needsRedo = it['needsRedo'] == true;
 
-                  final reviewScore = it['reviewScore'];
-                  final reviewGrade = (it['reviewGrade'] ?? '')
-                      .toString()
-                      .trim(); // A/B/C/D
-                  final reviewNote = (it['reviewNote'] ?? '').toString();
+                    final reviewScore = it['reviewScore'];
+                    final reviewGrade = (it['reviewGrade'] ?? '')
+                        .toString()
+                        .trim(); // A/B/C/D
+                    final reviewNote = (it['reviewNote'] ?? '').toString();
 
-                  final bool isRedo = (reviewStatus == 'redo') || needsRedo;
-                  final bool isReviewed = reviewedAt != null;
+                    final bool isRedo = (reviewStatus == 'redo') || needsRedo;
+                    final bool isReviewed = reviewedAt != null;
 
-                  // Card coloring rules:
-                  // - If redo -> red tint
-                  // - else if reviewed + grade -> grade tint
-                  // - else white
-                  final Color cardBg = isRedo
-                      ? Colors.red.withValues(alpha: 0.06)
-                      : (isReviewed && reviewGrade.isNotEmpty
-                            ? _gradeTint(reviewGrade)
-                            : Colors.white);
+                    // Card coloring rules:
+                    // - If redo -> red tint
+                    // - else if reviewed + grade -> grade tint
+                    // - else white
+                    final Color cardBg = isRedo
+                        ? Colors.red.withValues(alpha: 0.06)
+                        : (isReviewed && reviewGrade.isNotEmpty
+                              ? _gradeTint(reviewGrade)
+                              : Colors.white);
 
-                  final Color accent = isRedo
-                      ? Colors.red
-                      : (isReviewed && reviewGrade.isNotEmpty
-                            ? _gradeAccent(reviewGrade)
-                            : UiK.primaryBlue);
+                    final Color accent = isRedo
+                        ? Colors.red
+                        : (isReviewed && reviewGrade.isNotEmpty
+                              ? _gradeAccent(reviewGrade)
+                              : UiK.primaryBlue);
 
-                  Widget buildTopBadges() {
-                    if (isReviewed) {
-                      if (isRedo) {
+                    Widget buildTopBadges() {
+                      if (isReviewed) {
+                        if (isRedo) {
+                          return _statusBadge(
+                            text: 'Redo',
+                            bg: Colors.red.withValues(alpha: 0.10),
+                            fg: Colors.red,
+                            icon: Icons.refresh_rounded,
+                          );
+                        }
                         return _statusBadge(
-                          text: 'Redo',
-                          bg: Colors.red.withValues(alpha: 0.10),
-                          fg: Colors.red,
-                          icon: Icons.refresh_rounded,
+                          text: 'Passed',
+                          bg: Colors.green.withValues(alpha: 0.10),
+                          fg: Colors.green,
+                          icon: Icons.check_circle_rounded,
                         );
                       }
-                      return _statusBadge(
-                        text: 'Passed',
-                        bg: Colors.green.withValues(alpha: 0.10),
-                        fg: Colors.green,
-                        icon: Icons.check_circle_rounded,
-                      );
-                    }
 
-                    if (submittedAt != null) {
-                      return _statusBadge(
-                        text: 'Submitted',
-                        bg: Colors.amber.withValues(alpha: 0.15),
-                        fg: Colors.orange,
-                        icon: Icons.upload_file_rounded,
-                      );
-                    }
-
-                    return _statusBadge(
-                      text: 'Not submitted',
-                      bg: Colors.red.withValues(alpha: 0.08),
-                      fg: Colors.red,
-                      icon: Icons.error_outline_rounded,
-                    );
-                  }
-
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () async {
-                      final willExpand = !_expanded.contains(sessionId);
-
-                      setState(() {
-                        if (willExpand) {
-                          _expanded.add(sessionId);
-                        } else {
-                          _expanded.remove(sessionId);
-                        }
-                      });
-
-                      // mark seen only when expanding
-                      if (willExpand && !isSeen) {
-                        await _markSeen(sessionId);
-                        if (mounted) {
-                          setState(() {
-                            it['seenAt'] = _nowMs();
-                          });
-                        }
+                      if (submittedAt != null) {
+                        return _statusBadge(
+                          text: 'Submitted',
+                          bg: Colors.amber.withValues(alpha: 0.15),
+                          fg: Colors.orange,
+                          icon: Icons.upload_file_rounded,
+                        );
                       }
-                    },
-                    child: Card(
-                      elevation: 0,
-                      color: cardBg,
-                      shape: UiK.cardShape(),
-                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: accent.withValues(alpha: 0.22),
+
+                      return _statusBadge(
+                        text: 'Not submitted',
+                        bg: Colors.red.withValues(alpha: 0.08),
+                        fg: Colors.red,
+                        icon: Icons.error_outline_rounded,
+                      );
+                    }
+
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () async {
+                        final willExpand = !_expanded.contains(sessionId);
+
+                        setState(() {
+                          if (willExpand) {
+                            _expanded.add(sessionId);
+                          } else {
+                            _expanded.remove(sessionId);
+                          }
+                        });
+
+                        // mark seen only when expanding
+                        if (willExpand && !isSeen) {
+                          await _markSeen(sessionId);
+                          if (mounted) {
+                            setState(() {
+                              it['seenAt'] = _nowMs();
+                            });
+                          }
+                        }
+                      },
+                      child: Card(
+                        elevation: 0,
+                        color: cardBg,
+                        shape: UiK.cardShape(),
+                        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.22),
+                            ),
                           ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            date.isEmpty ? 'Session' : date,
-                                            style: UiK.titleText(size: 15),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              date.isEmpty ? 'Session' : date,
+                                              style: UiK.titleText(size: 15),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
+                                          const SizedBox(width: 6),
+                                          Icon(
+                                            isExpanded
+                                                ? Icons.expand_less_rounded
+                                                : Icons.expand_more_rounded,
+                                            size: 20,
+                                            color: UiK.primaryBlue.withValues(
+                                              alpha: 0.7,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    buildTopBadges(),
+                                    const SizedBox(width: 8),
+
+                                    // Seen / Done mini badge (keeps your old logic)
+                                    // Seen / Done (compact icon to reduce visual clutter)
+                                    if (isDone)
+                                      Icon(
+                                        Icons.check_circle_rounded,
+                                        size: 18,
+                                        color: UiK.primaryBlue.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                      )
+                                    else if (isSeen)
+                                      Icon(
+                                        Icons.visibility_rounded,
+                                        size: 18,
+                                        color: UiK.actionOrange.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+
+                                // Collapsed vs Expanded content
+                                if (!isExpanded) ...[
+                                  Text(
+                                    (due.isNotEmpty
+                                        ? 'Due: $due'
+                                        : (taughtTitle.isNotEmpty
+                                              ? taughtTitle
+                                              : 'Homework')),
+                                    style: UiK.subtleText(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (isReviewed && reviewGrade.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.grade_rounded,
+                                          size: 18,
+                                          color: accent,
                                         ),
                                         const SizedBox(width: 6),
-                                        Icon(
-                                          isExpanded
-                                              ? Icons.expand_less_rounded
-                                              : Icons.expand_more_rounded,
-                                          size: 20,
-                                          color: UiK.primaryBlue.withValues(
-                                            alpha: 0.7,
+                                        Text(
+                                          'Grade: ${reviewGrade.toUpperCase()}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: accent,
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  buildTopBadges(),
-                                  const SizedBox(width: 8),
-
-                                  // Seen / Done mini badge (keeps your old logic)
-                                  // Seen / Done (compact icon to reduce visual clutter)
-                                  if (isDone)
-                                    Icon(
-                                      Icons.check_circle_rounded,
-                                      size: 18,
-                                      color: UiK.primaryBlue.withValues(
-                                        alpha: 0.85,
-                                      ),
-                                    )
-                                  else if (isSeen)
-                                    Icon(
-                                      Icons.visibility_rounded,
-                                      size: 18,
-                                      color: UiK.actionOrange.withValues(
-                                        alpha: 0.85,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-
-                              // Collapsed vs Expanded content
-                              if (!isExpanded) ...[
-                                Text(
-                                  (due.isNotEmpty
-                                      ? 'Due: $due'
-                                      : (taughtTitle.isNotEmpty
-                                            ? taughtTitle
-                                            : 'Homework')),
-                                  style: UiK.subtleText(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (isReviewed && reviewGrade.isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.grade_rounded,
-                                        size: 18,
-                                        color: accent,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Grade: ${reviewGrade.toUpperCase()}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: accent,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ] else ...[
-                                // Expanded: review details
-                                if (isReviewed) ...[
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.grade_rounded,
-                                        size: 18,
-                                        color: accent,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        reviewGrade.isNotEmpty
-                                            ? 'Grade: ${reviewGrade.toUpperCase()}'
-                                            : 'Grade: —',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: accent,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      const Icon(Icons.score_rounded, size: 18),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Score: ${(reviewScore ?? 0).toString()}/100',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (isRedo) ...[
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Teacher asked you to redo this homework.',
-                                      style: TextStyle(
-                                        color: Colors.red.withValues(
-                                          alpha: 0.85,
-                                        ),
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
                                   ],
-                                  if (reviewNote.trim().isNotEmpty) ...[
+                                ] else ...[
+                                  // Expanded: review details
+                                  if (isReviewed) ...[
                                     const SizedBox(height: 8),
-                                    Text(
-                                      'Teacher note:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: UiK.mainText.withValues(
-                                          alpha: 0.9,
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.grade_rounded,
+                                          size: 18,
+                                          color: accent,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          reviewGrade.isNotEmpty
+                                              ? 'Grade: ${reviewGrade.toUpperCase()}'
+                                              : 'Grade: —',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: accent,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        const Icon(
+                                          Icons.score_rounded,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Score: ${(reviewScore ?? 0).toString()}/100',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (isRedo) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Teacher asked you to redo this homework.',
+                                        style: TextStyle(
+                                          color: Colors.red.withValues(
+                                            alpha: 0.85,
+                                          ),
+                                          fontWeight: FontWeight.w800,
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(reviewNote, style: UiK.subtleText()),
+                                    ],
+                                    if (reviewNote.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Teacher note:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: UiK.mainText.withValues(
+                                            alpha: 0.9,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(reviewNote, style: UiK.subtleText()),
+                                    ],
                                   ],
-                                ],
 
-                                if (taughtTitle.isNotEmpty) ...[
-                                  if (!isReviewed) const SizedBox(height: 6),
-                                  Text(
-                                    'Lesson: $taughtTitle',
-                                    style: UiK.subtleText(),
-                                  ),
-                                ],
+                                  if (taughtTitle.isNotEmpty) ...[
+                                    if (!isReviewed) const SizedBox(height: 6),
+                                    Text(
+                                      'Lesson: $taughtTitle',
+                                      style: UiK.subtleText(),
+                                    ),
+                                  ],
 
-                                if (due.isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Text('Due: $due', style: UiK.subtleText()),
-                                ],
+                                  if (due.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text('Due: $due', style: UiK.subtleText()),
+                                  ],
 
-                                if (text.isNotEmpty) ...[
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: UiK.uiBorder.withValues(
-                                          alpha: 0.85,
+                                  if (text.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: UiK.uiBorder.withValues(
+                                            alpha: 0.85,
+                                          ),
+                                        ),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.65,
                                         ),
                                       ),
-                                      color: Colors.white.withValues(
-                                        alpha: 0.65,
+                                      child: Text(
+                                        text,
+                                        style: UiK.subtleText(),
                                       ),
                                     ),
-                                    child: Text(text, style: UiK.subtleText()),
-                                  ),
-                                ],
+                                  ],
 
-                                const SizedBox(height: 12),
+                                  const SizedBox(height: 12),
 
-                                // Undo disappears after teacher review
-                                if (!(isDone && isReviewed))
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          icon: Icon(
-                                            isDone
-                                                ? Icons.undo_rounded
-                                                : Icons.check_circle_rounded,
-                                          ),
-                                          label: Text(
-                                            isDone ? 'Undo' : 'Mark done/Send',
-                                          ),
-                                          style: OutlinedButton.styleFrom(
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
+                                  // Undo disappears after teacher review
+                                  if (!(isDone && isReviewed))
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            icon: Icon(
+                                              isDone
+                                                  ? Icons.undo_rounded
+                                                  : Icons.check_circle_rounded,
                                             ),
-                                          ),
-                                          onPressed: () async {
-                                            final teacherUid =
-                                                (it['teacherUid'] ?? '')
-                                                    .toString()
-                                                    .trim();
-                                            final teacherName =
-                                                (it['teacherName'] ?? '')
-                                                    .toString();
+                                            label: Text(
+                                              isDone
+                                                  ? 'Undo'
+                                                  : 'Mark done/Send',
+                                            ),
+                                            style: OutlinedButton.styleFrom(
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                              ),
+                                            ),
+                                            onPressed: () async {
+                                              final teacherUid =
+                                                  (it['teacherUid'] ?? '')
+                                                      .toString()
+                                                      .trim();
+                                              final teacherName =
+                                                  (it['teacherName'] ?? '')
+                                                      .toString();
 
-                                            if (isDone) {
-                                              // Only delete auto-message if NOT reviewed
-                                              if (!isReviewed) {
-                                                await _deleteAutoHomeworkMessageIfAllowed(
-                                                  sessionId: sessionId,
-                                                  teacherUid: teacherUid,
+                                              if (isDone) {
+                                                // Only delete auto-message if NOT reviewed
+                                                if (!isReviewed) {
+                                                  await _deleteAutoHomeworkMessageIfAllowed(
+                                                    sessionId: sessionId,
+                                                    teacherUid: teacherUid,
+                                                  );
+                                                  if (mounted) {
+                                                    setState(() {
+                                                      it['autoMailMsgKey'] = '';
+                                                    });
+                                                  }
+                                                }
+
+                                                await _toggleDone(
+                                                  sessionId,
+                                                  currentlyDone: true,
                                                 );
                                                 if (mounted) {
-                                                  setState(() {
-                                                    it['autoMailMsgKey'] = '';
-                                                  });
+                                                  setState(
+                                                    () => it['doneAt'] = null,
+                                                  );
                                                 }
+                                                return;
                                               }
 
-                                              await _toggleDone(
-                                                sessionId,
-                                                currentlyDone: true,
-                                              );
-                                              if (mounted) {
-                                                setState(
-                                                  () => it['doneAt'] = null,
-                                                );
+                                              final isFirstSend =
+                                                  submittedAt == null &&
+                                                  autoMailMsgKey.isEmpty;
+                                              if (isFirstSend) {
+                                                final ok =
+                                                    await _confirmFirstSubmit();
+                                                if (!ok) return;
                                               }
-                                              return;
-                                            }
 
-                                            final isFirstSend =
-                                                submittedAt == null &&
-                                                autoMailMsgKey.isEmpty;
-                                            if (isFirstSend) {
-                                              final ok =
-                                                  await _confirmFirstSubmit();
-                                              if (!ok) return;
-                                            }
+                                              final now = _nowMs();
 
-                                            final now = _nowMs();
-
-                                            await _hwRef(sessionId).update({
-                                              'doneAt': now,
-                                              'submittedAt': now,
-                                              'seenAt': it['seenAt'] ?? now,
-                                            });
-
-                                            if (mounted) {
-                                              setState(() {
-                                                it['doneAt'] = now;
-                                                it['submittedAt'] = now;
-                                                it['seenAt'] ??= now;
+                                              await _hwRef(sessionId).update({
+                                                'doneAt': now,
+                                                'submittedAt': now,
+                                                'seenAt': it['seenAt'] ?? now,
                                               });
-                                            }
 
-                                            await _createHomeworkMailAndOpen(
-                                              sessionId: sessionId,
-                                              teacherUid: teacherUid,
-                                              teacherName: teacherName,
-                                              date: date,
-                                              dueDate: due,
-                                              taughtTitle: taughtTitle,
-                                              homeworkText: text,
-                                            );
-                                          },
+                                              if (mounted) {
+                                                setState(() {
+                                                  it['doneAt'] = now;
+                                                  it['submittedAt'] = now;
+                                                  it['seenAt'] ??= now;
+                                                });
+                                              }
+
+                                              await _createHomeworkMailAndOpen(
+                                                sessionId: sessionId,
+                                                teacherUid: teacherUid,
+                                                teacherName: teacherName,
+                                                date: date,
+                                                dueDate: due,
+                                                taughtTitle: taughtTitle,
+                                                homeworkText: text,
+                                              );
+                                            },
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
+                                      ],
+                                    ),
 
-                                // Helpful quick action: open the homework mail thread (compact)
-                                const SizedBox(height: 10),
-                                if (submittedAt != null &&
-                                    autoMailMsgKey.isNotEmpty) ...[
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          icon: const Icon(
-                                            Icons.mail_outline_rounded,
-                                          ),
-                                          label: const Text('Open HW chat'),
-                                          style: OutlinedButton.styleFrom(
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
+                                  // Helpful quick action: open the homework mail thread (compact)
+                                  const SizedBox(height: 10),
+                                  if (submittedAt != null &&
+                                      autoMailMsgKey.isNotEmpty) ...[
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            icon: const Icon(
+                                              Icons.mail_outline_rounded,
                                             ),
-                                          ),
-                                          onPressed: () async {
-                                            final teacherUid =
-                                                (it['teacherUid'] ?? '')
-                                                    .toString()
-                                                    .trim();
-                                            if (teacherUid.isEmpty) return;
+                                            label: const Text('Open HW chat'),
+                                            style: OutlinedButton.styleFrom(
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                              ),
+                                            ),
+                                            onPressed: () async {
+                                              final teacherUid =
+                                                  (it['teacherUid'] ?? '')
+                                                      .toString()
+                                                      .trim();
+                                              if (teacherUid.isEmpty) return;
 
-                                            final threadId =
-                                                '${_uid}_${teacherUid}_$sessionId';
-                                            final subject =
-                                                '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
+                                              final threadId =
+                                                  '${_uid}_${teacherUid}_$sessionId';
+                                              final subject =
+                                                  '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
 
-                                            await Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    LearnerMailThreadScreen(
-                                                      threadId: threadId,
-                                                      peerUid: teacherUid,
-                                                      peerName:
-                                                          ((it['teacherName'] ??
-                                                                  '')
-                                                              .toString()
-                                                              .trim()
-                                                              .isEmpty)
-                                                          ? 'Teacher'
-                                                          : (it['teacherName'] ??
+                                              await Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      LearnerMailThreadScreen(
+                                                        threadId: threadId,
+                                                        peerUid: teacherUid,
+                                                        peerName:
+                                                            ((it['teacherName'] ??
                                                                     '')
                                                                 .toString()
-                                                                .trim(),
-                                                      subject: subject,
-                                                    ),
-                                              ),
-                                            );
+                                                                .trim()
+                                                                .isEmpty)
+                                                            ? 'Teacher'
+                                                            : (it['teacherName'] ??
+                                                                      '')
+                                                                  .toString()
+                                                                  .trim(),
+                                                        subject: subject,
+                                                      ),
+                                                ),
+                                              );
 
-                                            if (mounted) await _load();
-                                          },
+                                              if (mounted) await _load();
+                                            },
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }

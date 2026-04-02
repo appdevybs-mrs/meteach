@@ -6,6 +6,7 @@ import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/learner_tour_guide.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
@@ -1159,123 +1160,133 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _storiesRef.onValue,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting &&
-              snap.data == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 1600,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _storiesRef.onValue,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting &&
+                snap.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final rawValue = snap.data?.snapshot.value;
+            final rawValue = snap.data?.snapshot.value;
 
-          if (rawValue == null || rawValue is! Map) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Container(
-                  width: double.infinity,
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: p.cardBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.menu_book_rounded, size: 50, color: p.primary),
-                      const SizedBox(height: 12),
-                      Text(
-                        'No stories available yet.',
-                        style: TextStyle(
+            if (rawValue == null || rawValue is! Map) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: p.cardBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: p.border.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.menu_book_rounded,
+                          size: 50,
                           color: p.primary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
-
-          final raw = Map<dynamic, dynamic>.from(rawValue);
-          final items = raw.entries.map((entry) {
-            final storyId = entry.key.toString();
-            final storyValue = entry.value;
-            final story = storyValue is Map
-                ? Map<String, dynamic>.from(storyValue)
-                : <String, dynamic>{};
-            return MapEntry(storyId, story);
-          }).toList();
-
-          final allGenres = _extractAllGenres(items);
-          final allLevels = _extractAllLevels(items);
-          final allLengths = _extractAllLengths(items);
-          final visibleItems = _applyFiltersAndSort(items: items);
-          final groupedStories = _groupStoriesByGenre(visibleItems);
-
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final availableWidth = constraints.maxWidth;
-              final pagePadding = _pagePaddingForWidth(availableWidth);
-
-              return RefreshIndicator(
-                onRefresh: () async {
-                  await _storiesRef.get();
-                },
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: pagePadding,
-                  children: [
-                    if (_showFilters) ...[
-                      const SizedBox(height: 6),
-                      _buildCompactFilters(
-                        genres: allGenres,
-                        levels: allLevels,
-                        lengths: allLengths,
-                      ),
-                    ],
-                    const SizedBox(height: 18),
-                    if (visibleItems.isEmpty)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(22),
-                        decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        child: Text(
-                          'No stories match your filters.',
-                          textAlign: TextAlign.center,
+                        const SizedBox(height: 12),
+                        Text(
+                          'No stories available yet.',
                           style: TextStyle(
-                            color: p.text,
-                            fontWeight: FontWeight.w800,
+                            color: p.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
                           ),
                         ),
-                      )
-                    else
-                      ...groupedStories.entries.map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 20),
-                          child: _buildGenreShelf(
-                            title: entry.key,
-                            stories: entry.value,
-                          ),
-                        ),
-                      ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               );
-            },
-          );
-        },
+            }
+
+            final raw = Map<dynamic, dynamic>.from(rawValue);
+            final items = raw.entries.map((entry) {
+              final storyId = entry.key.toString();
+              final storyValue = entry.value;
+              final story = storyValue is Map
+                  ? Map<String, dynamic>.from(storyValue)
+                  : <String, dynamic>{};
+              return MapEntry(storyId, story);
+            }).toList();
+
+            final allGenres = _extractAllGenres(items);
+            final allLevels = _extractAllLevels(items);
+            final allLengths = _extractAllLengths(items);
+            final visibleItems = _applyFiltersAndSort(items: items);
+            final groupedStories = _groupStoriesByGenre(visibleItems);
+
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final availableWidth = constraints.maxWidth;
+                final pagePadding = _pagePaddingForWidth(availableWidth);
+
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    await _storiesRef.get();
+                  },
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: pagePadding,
+                    children: [
+                      if (_showFilters) ...[
+                        const SizedBox(height: 6),
+                        _buildCompactFilters(
+                          genres: allGenres,
+                          levels: allLevels,
+                          lengths: allLengths,
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      if (visibleItems.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(22),
+                          decoration: BoxDecoration(
+                            color: p.cardBg,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: p.border.withValues(alpha: 0.85),
+                            ),
+                          ),
+                          child: Text(
+                            'No stories match your filters.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: p.text,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        )
+                      else
+                        ...groupedStories.entries.map(
+                          (entry) => Padding(
+                            padding: const EdgeInsets.only(bottom: 20),
+                            child: _buildGenreShelf(
+                              title: entry.key,
+                              stories: entry.value,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

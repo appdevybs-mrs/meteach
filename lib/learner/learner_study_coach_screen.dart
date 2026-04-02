@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_tour_guide.dart';
@@ -351,7 +352,8 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
       hints: const [
         LearnerTourHint(
           title: 'مدرب الدراسة',
-          line: 'تساعدك هذه الصفحة على إعداد خطة أسبوعية ومتابعة الإنجاز اليومي.',
+          line:
+              'تساعدك هذه الصفحة على إعداد خطة أسبوعية ومتابعة الإنجاز اليومي.',
         ),
         LearnerTourHint(
           title: 'المهام اليومية',
@@ -402,122 +404,126 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
             ),
           ],
         ),
-        body: WatermarkBackground(
-          child: RefreshIndicator(
-            onRefresh: _normalizeCurrentWeekPlan,
-            child: StreamBuilder<DatabaseEvent>(
-              stream: _planRef.onValue,
-              builder: (context, snap) {
-                final raw = snap.data?.snapshot.value;
-                final checked = _extractCheckedMap(raw);
+        body: learnerWebBodyFrame(
+          context: context,
+          maxWidth: 1260,
+          child: WatermarkBackground(
+            child: RefreshIndicator(
+              onRefresh: _normalizeCurrentWeekPlan,
+              child: StreamBuilder<DatabaseEvent>(
+                stream: _planRef.onValue,
+                builder: (context, snap) {
+                  final raw = snap.data?.snapshot.value;
+                  final checked = _extractCheckedMap(raw);
 
-                final total = _allTasks.length;
-                final done = checked.values.where((v) => v).length;
-                final progress = total == 0 ? 0.0 : done / total;
-                final percent = (progress * 100).round();
-                final daysStarted = _daysStartedCount(checked);
+                  final total = _allTasks.length;
+                  final done = checked.values.where((v) => v).length;
+                  final progress = total == 0 ? 0.0 : done / total;
+                  final percent = (progress * 100).round();
+                  final daysStarted = _daysStartedCount(checked);
 
-                final quote = _quotes[_extractQuoteIndex(raw)].text(_lang);
-                final today = _todayDay;
-                final todayDone = _doneCountForDay(today, checked);
+                  final quote = _quotes[_extractQuoteIndex(raw)].text(_lang);
+                  final today = _todayDay;
+                  final todayDone = _doneCountForDay(today, checked);
 
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                  children: [
-                    _HeroCard(
-                      lang: _lang,
-                      onChangeLang: (lang) {
-                        setState(() {
-                          _lang = lang;
-                        });
-                      },
-                      progress: progress,
-                      done: done,
-                      total: total,
-                      title: _tr(
-                        'My English Learning Plan',
-                        'خطة تعلم الإنجليزية',
-                      ),
-                      subtitle: _tr(
-                        'One clear weekly plan · one tracking method · simple daily steps',
-                        'خطة أسبوعية واضحة · طريقة تتبع واحدة · خطوات يومية بسيطة',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _QuoteBanner(quote: quote),
-                    const SizedBox(height: 16),
-                    _TodayFocusCard(
-                      day: today,
-                      lang: _lang,
-                      doneCount: todayDone,
-                      totalCount: today.tasks.length,
-                      onOpen: () {
-                        setState(() {
-                          _expandedDayKey = today.key;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _StatsRow(
-                      lang: _lang,
-                      done: done,
-                      daysStarted: daysStarted,
-                      percent: percent,
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      _tr('Weekly study days', 'أيام الدراسة الأسبوعية'),
-                      style: TextStyle(
-                        color: p.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _tr(
-                        'Tap one day only, follow its steps, then mark tasks done.',
-                        'افتح يوماً واحداً فقط، اتبع خطواته، ثم علّم المهام كمكتملة.',
-                      ),
-                      style: TextStyle(
-                        color: p.text.withValues(alpha: 0.70),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    ..._weekPlanDays.map((day) {
-                      final doneCount = _doneCountForDay(day, checked);
-                      final expanded = _expandedDayKey == day.key;
-
-                      return _DayCard(
-                        day: day,
+                  return ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                    children: [
+                      _HeroCard(
                         lang: _lang,
-                        checked: checked,
-                        doneCount: doneCount,
-                        expanded: expanded,
-                        isToday: day.key == today.key,
-                        onHeaderTap: () {
+                        onChangeLang: (lang) {
                           setState(() {
-                            _expandedDayKey = expanded ? null : day.key;
+                            _lang = lang;
                           });
                         },
-                        onToggleTask: (taskId, currentValue) {
-                          _toggleTask(taskId, currentValue);
+                        progress: progress,
+                        done: done,
+                        total: total,
+                        title: _tr(
+                          'My English Learning Plan',
+                          'خطة تعلم الإنجليزية',
+                        ),
+                        subtitle: _tr(
+                          'One clear weekly plan · one tracking method · simple daily steps',
+                          'خطة أسبوعية واضحة · طريقة تتبع واحدة · خطوات يومية بسيطة',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _QuoteBanner(quote: quote),
+                      const SizedBox(height: 16),
+                      _TodayFocusCard(
+                        day: today,
+                        lang: _lang,
+                        doneCount: todayDone,
+                        totalCount: today.tasks.length,
+                        onOpen: () {
+                          setState(() {
+                            _expandedDayKey = today.key;
+                          });
                         },
-                      );
-                    }),
-                    const SizedBox(height: 16),
-                    _ResetCard(
-                      lang: _lang,
-                      done: done,
-                      total: total,
-                      onReset: _resetWeek,
-                    ),
-                  ],
-                );
-              },
+                      ),
+                      const SizedBox(height: 16),
+                      _StatsRow(
+                        lang: _lang,
+                        done: done,
+                        daysStarted: daysStarted,
+                        percent: percent,
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        _tr('Weekly study days', 'أيام الدراسة الأسبوعية'),
+                        style: TextStyle(
+                          color: p.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _tr(
+                          'Tap one day only, follow its steps, then mark tasks done.',
+                          'افتح يوماً واحداً فقط، اتبع خطواته، ثم علّم المهام كمكتملة.',
+                        ),
+                        style: TextStyle(
+                          color: p.text.withValues(alpha: 0.70),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      ..._weekPlanDays.map((day) {
+                        final doneCount = _doneCountForDay(day, checked);
+                        final expanded = _expandedDayKey == day.key;
+
+                        return _DayCard(
+                          day: day,
+                          lang: _lang,
+                          checked: checked,
+                          doneCount: doneCount,
+                          expanded: expanded,
+                          isToday: day.key == today.key,
+                          onHeaderTap: () {
+                            setState(() {
+                              _expandedDayKey = expanded ? null : day.key;
+                            });
+                          },
+                          onToggleTask: (taskId, currentValue) {
+                            _toggleTask(taskId, currentValue);
+                          },
+                        );
+                      }),
+                      const SizedBox(height: 16),
+                      _ResetCard(
+                        lang: _lang,
+                        done: done,
+                        total: total,
+                        onReset: _resetWeek,
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),

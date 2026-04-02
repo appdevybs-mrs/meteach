@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
@@ -2207,49 +2208,53 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               ],
             ),
           ),
-          body: SafeArea(
-            child: WatermarkBackground(
-              child: _busy
-                  ? Center(child: YbsBusyLogo(color: p.primary))
-                  : _error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            color: p.cardBg,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
+          body: learnerWebBodyFrame(
+            context: context,
+            maxWidth: 1320,
+            child: SafeArea(
+              child: WatermarkBackground(
+                child: _busy
+                    ? Center(child: YbsBusyLogo(color: p.primary))
+                    : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: p.cardBg,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.85),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            _error!,
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontWeight: FontWeight.w800,
+                            child: Text(
+                              _error!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
+                      )
+                    : Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: TabBarView(
+                          children: [
+                            _buildCredentialsTab(
+                              email: email,
+                              serial: serial,
+                              role: role,
+                              status: status,
+                            ),
+                            _buildMediaTab(),
+                          ],
+                        ),
                       ),
-                    )
-                  : Form(
-                      key: _formKey,
-                      autovalidateMode: AutovalidateMode.onUserInteraction,
-                      child: TabBarView(
-                        children: [
-                          _buildCredentialsTab(
-                            email: email,
-                            serial: serial,
-                            role: role,
-                            status: status,
-                          ),
-                          _buildMediaTab(),
-                        ],
-                      ),
-                    ),
+              ),
             ),
           ),
         ),

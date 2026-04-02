@@ -16,6 +16,7 @@ import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/learner_web_layout.dart';
 import 'recorded_video_player_screen.dart';
 
 const int _kYbsDeepBlueHex = 0xFF0B2545;
@@ -1923,38 +1924,42 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           _buildMenuButton(),
         ],
       ),
-      body: Stack(
-        children: [
-          Positioned(
-            top: -110,
-            right: -95,
-            child: IgnorePointer(
-              child: Container(
-                width: 240,
-                height: 240,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF4F46E5).withValues(alpha: 0.06),
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 1460,
+        child: Stack(
+          children: [
+            Positioned(
+              top: -110,
+              right: -95,
+              child: IgnorePointer(
+                child: Container(
+                  width: 240,
+                  height: 240,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF4F46E5).withValues(alpha: 0.06),
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            bottom: -120,
-            left: -90,
-            child: IgnorePointer(
-              child: Container(
-                width: 230,
-                height: 230,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.06),
+            Positioned(
+              bottom: -120,
+              left: -90,
+              child: IgnorePointer(
+                child: Container(
+                  width: 230,
+                  height: 230,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF0EA5E9).withValues(alpha: 0.06),
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned.fill(child: content),
-        ],
+            Positioned.fill(child: content),
+          ],
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
 
@@ -1077,7 +1078,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       hints: const [
         LearnerTourHint(
           title: 'تشغيل الفيديو',
-          line: 'استخدم أزرار التشغيل والتقديم والتحكم لمتابعة الدرس كما يلائمك.',
+          line:
+              'استخدم أزرار التشغيل والتقديم والتحكم لمتابعة الدرس كما يلائمك.',
         ),
         LearnerTourHint(
           title: 'الملاحظات',
@@ -1112,21 +1114,26 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               ? Colors.black
               : const Color(0xFFF4F7F9),
           appBar: _isFullscreen ? null : _buildAppBar(title, isLandscape),
-          body: _busy
-              ? const Center(
-                  child: BrandedInlineLoader(message: 'Loading video...'),
-                )
-              : _error != null
-              ? _buildErrorState()
-              : _initialized
-              ? (_isFullscreen
-                    ? _buildFullscreenLayout()
-                    : (isLandscape
-                          ? _buildLandscapeLayout()
-                          : _buildPortraitLayout()))
-              : const Center(
-                  child: BrandedInlineLoader(message: 'Preparing player...'),
-                ),
+          body: learnerWebBodyFrame(
+            context: context,
+            maxWidth: 5000,
+            padding: EdgeInsets.zero,
+            child: _busy
+                ? const Center(
+                    child: BrandedInlineLoader(message: 'Loading video...'),
+                  )
+                : _error != null
+                ? _buildErrorState()
+                : _initialized
+                ? (_isFullscreen
+                      ? _buildFullscreenLayout()
+                      : (isLandscape
+                            ? _buildLandscapeLayout()
+                            : _buildPortraitLayout()))
+                : const Center(
+                    child: BrandedInlineLoader(message: 'Preparing player...'),
+                  ),
+          ),
         ),
       ),
     );

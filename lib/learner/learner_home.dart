@@ -25,6 +25,7 @@ import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/first_login_agreement.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/learner_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/course_join_rules.dart';
@@ -478,6 +479,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   Widget build(BuildContext context) {
     final p = palette;
     final isWebDashboard = kIsWeb && MediaQuery.of(context).size.width >= 1100;
+    final webDesktop = isLearnerWebDesktop(context, minWidth: 1280);
 
     LearnerTourGuide.schedule(
       context,
@@ -578,10 +580,16 @@ class _LearnerHomeState extends State<LearnerHome> {
           elevation: 0,
           centerTitle: false,
           surfaceTintColor: p.cardBg,
-          leading: IconButton(
-            icon: Icon(Icons.menu_rounded, key: _menuIconKey, color: p.primary),
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-          ),
+          leading: webDesktop
+              ? null
+              : IconButton(
+                  icon: Icon(
+                    Icons.menu_rounded,
+                    key: _menuIconKey,
+                    color: p.primary,
+                  ),
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                ),
           title: FutureBuilder<String>(
             future: _displayNameFuture,
             builder: (context, snap) {
@@ -620,15 +628,61 @@ class _LearnerHomeState extends State<LearnerHome> {
             ),
           ],
         ),
-        body: RefreshIndicator(
-          onRefresh: _refreshShell,
-          child: WatermarkBackground(
-            child: _LearnerDashboardLite(
-              key: ValueKey('learner_dash_$_shellRefreshEpoch'),
-              homeworkCardKey: _dashboardHomeworkCardKey,
-              bookingCardKey: _dashboardBookingCardKey,
-              coursesListKey: _dashboardCoursesListKey,
-            ),
+        body: learnerWebBodyFrame(
+          context: context,
+          maxWidth: 1760,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (webDesktop)
+                _LearnerHomeWebRail(
+                  palette: p,
+                  onOpenCourses: () =>
+                      _pushScreen(const LearnerCoursesScreen()),
+                  onOpenBooking: () =>
+                      _pushScreen(const LearnerBookingScreen()),
+                  onOpenMail: () => _pushScreen(LearnerMailScreen()),
+                  onOpenReminders: () =>
+                      _pushScreen(const LearnerRemindersListScreen()),
+                  onOpenHomework: () =>
+                      _pushScreen(const LearnerCoursesScreen()),
+                  onOpenGallery: () =>
+                      _pushScreen(const LearnerGalleryScreen()),
+                  onOpenStories: _openStoriesScreen,
+                  onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
+                  onOpenCoach: () =>
+                      _pushScreen(const LearnerStudyCoachScreen()),
+                  onOpenProfile: () =>
+                      _pushScreen(const LearnerProfileScreen()),
+                  onLogout: () => _logout(context),
+                ),
+              if (webDesktop) const SizedBox(width: 14),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _refreshShell,
+                  child: WatermarkBackground(
+                    child: _LearnerDashboardLite(
+                      key: ValueKey('learner_dash_$_shellRefreshEpoch'),
+                      homeworkCardKey: _dashboardHomeworkCardKey,
+                      bookingCardKey: _dashboardBookingCardKey,
+                      coursesListKey: _dashboardCoursesListKey,
+                    ),
+                  ),
+                ),
+              ),
+              if (webDesktop) const SizedBox(width: 14),
+              if (webDesktop)
+                _LearnerHomeWebAside(
+                  palette: p,
+                  onOpenCourses: () =>
+                      _pushScreen(const LearnerCoursesScreen()),
+                  onOpenBooking: () =>
+                      _pushScreen(const LearnerBookingScreen()),
+                  onOpenMail: () => _pushScreen(LearnerMailScreen()),
+                  onOpenReminders: () =>
+                      _pushScreen(const LearnerRemindersListScreen()),
+                ),
+            ],
           ),
         ),
       ),
@@ -4869,6 +4923,226 @@ class _StudyCoachHomeCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Icon(Icons.chevron_right_rounded, color: p.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LearnerHomeWebRail extends StatelessWidget {
+  const _LearnerHomeWebRail({
+    required this.palette,
+    required this.onOpenCourses,
+    required this.onOpenBooking,
+    required this.onOpenMail,
+    required this.onOpenReminders,
+    required this.onOpenHomework,
+    required this.onOpenGallery,
+    required this.onOpenStories,
+    required this.onOpenGames,
+    required this.onOpenCoach,
+    required this.onOpenProfile,
+    required this.onLogout,
+  });
+
+  final _HomePalette palette;
+  final VoidCallback onOpenCourses;
+  final VoidCallback onOpenBooking;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenReminders;
+  final VoidCallback onOpenHomework;
+  final VoidCallback onOpenGallery;
+  final VoidCallback onOpenStories;
+  final VoidCallback onOpenGames;
+  final VoidCallback onOpenCoach;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 286,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(8, 6, 0, 6),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: palette.border.withValues(alpha: 0.9)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Learner Tools',
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView(
+                children: [
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.menu_book_rounded,
+                    title: 'Courses',
+                    onTap: onOpenCourses,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.event_available_rounded,
+                    title: 'Booking',
+                    onTap: onOpenBooking,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.mail_rounded,
+                    title: 'Mail',
+                    onTap: onOpenMail,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.notifications_active_rounded,
+                    title: 'Reminders',
+                    onTap: onOpenReminders,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.assignment_rounded,
+                    title: 'Homework (from Courses)',
+                    onTap: onOpenHomework,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.photo_library_rounded,
+                    title: 'Gallery',
+                    onTap: onOpenGallery,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.auto_stories_rounded,
+                    title: 'Stories',
+                    onTap: onOpenStories,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.games_rounded,
+                    title: 'Games',
+                    onTap: onOpenGames,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.psychology_alt_rounded,
+                    title: 'Study Coach',
+                    onTap: onOpenCoach,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.person_rounded,
+                    title: 'Profile',
+                    onTap: onOpenProfile,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.logout_rounded,
+              title: 'Logout',
+              onTap: onLogout,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LearnerHomeWebAside extends StatelessWidget {
+  const _LearnerHomeWebAside({
+    required this.palette,
+    required this.onOpenCourses,
+    required this.onOpenBooking,
+    required this.onOpenMail,
+    required this.onOpenReminders,
+  });
+
+  final _HomePalette palette;
+  final VoidCallback onOpenCourses;
+  final VoidCallback onOpenBooking;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenReminders;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 300,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(0, 6, 8, 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: palette.border.withValues(alpha: 0.9)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Access',
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.menu_book_rounded,
+              title: 'Open Courses',
+              onTap: onOpenCourses,
+            ),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.event_available_rounded,
+              title: 'Open Booking',
+              onTap: onOpenBooking,
+            ),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.mail_rounded,
+              title: 'Open Mail',
+              onTap: onOpenMail,
+            ),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.notifications_active_rounded,
+              title: 'Open Reminders',
+              onTap: onOpenReminders,
+            ),
+            const Spacer(),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: palette.soft.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'Desktop mode keeps tools pinned for faster navigation.',
+                style: TextStyle(
+                  color: palette.text.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
             ),
           ],
         ),

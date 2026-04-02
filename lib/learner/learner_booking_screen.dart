@@ -9,9 +9,9 @@ import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
-import '../shared/web_page_frame.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -2560,13 +2560,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
             ),
           ),
-          body: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _buildTimetable(generatedSlots, expanded: true),
-                const SizedBox(height: 24),
-              ],
+          body: learnerWebBodyFrame(
+            context: context,
+            maxWidth: 1500,
+            child: SafeArea(
+              child: ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  _buildTimetable(generatedSlots, expanded: true),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           ),
         ),
@@ -3555,7 +3559,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: webPageFrame(
+      body: learnerWebBodyFrame(
+        context: context,
         maxWidth: 1500,
         child: Stack(
           children: [

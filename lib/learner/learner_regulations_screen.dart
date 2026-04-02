@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_tour_guide.dart';
 
@@ -241,55 +242,59 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
             ),
           ],
         ),
-        body: WatermarkBackground(
-          child: SafeArea(
-            child: _loading
-                ? Center(child: CircularProgressIndicator(color: p.primary))
-                : _error != null
-                ? _ErrorBox(
-                    palette: p,
-                    message: 'Failed to load regulations.\n$_error',
-                    onRetry: _loadAll,
-                  )
-                : !_isLearner
-                ? _InfoBox(
-                    palette: p,
-                    title: 'Learners only',
-                    message: 'هذه الصفحة مخصصة للمتعلمين فقط.',
-                    icon: Icons.lock_rounded,
-                  )
-                : _sections.isEmpty
-                ? _InfoBox(
-                    palette: p,
-                    title: 'No content',
-                    message: 'لا توجد قوانين متاحة حاليًا.',
-                    icon: Icons.info_rounded,
-                  )
-                : RefreshIndicator(
-                    color: p.primary,
-                    onRefresh: _loadAll,
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                      children: [
-                        _HeroHeaderCard(palette: p),
-                        const SizedBox(height: 16),
-                        _QuickMetaStrip(
-                          palette: p,
-                          sectionsCount: _sections.length,
-                        ),
-                        const SizedBox(height: 16),
-                        ..._sections.map(
-                          (s) => _SectionCard(
+        body: learnerWebBodyFrame(
+          context: context,
+          maxWidth: 1220,
+          child: WatermarkBackground(
+            child: SafeArea(
+              child: _loading
+                  ? Center(child: CircularProgressIndicator(color: p.primary))
+                  : _error != null
+                  ? _ErrorBox(
+                      palette: p,
+                      message: 'Failed to load regulations.\n$_error',
+                      onRetry: _loadAll,
+                    )
+                  : !_isLearner
+                  ? _InfoBox(
+                      palette: p,
+                      title: 'Learners only',
+                      message: 'هذه الصفحة مخصصة للمتعلمين فقط.',
+                      icon: Icons.lock_rounded,
+                    )
+                  : _sections.isEmpty
+                  ? _InfoBox(
+                      palette: p,
+                      title: 'No content',
+                      message: 'لا توجد قوانين متاحة حاليًا.',
+                      icon: Icons.info_rounded,
+                    )
+                  : RefreshIndicator(
+                      color: p.primary,
+                      onRefresh: _loadAll,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                        children: [
+                          _HeroHeaderCard(palette: p),
+                          const SizedBox(height: 16),
+                          _QuickMetaStrip(
                             palette: p,
-                            section: s,
-                            updatedAtLabel: _formatUpdatedAt(s.updatedAt),
+                            sectionsCount: _sections.length,
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        _FooterHint(palette: p),
-                      ],
+                          const SizedBox(height: 16),
+                          ..._sections.map(
+                            (s) => _SectionCard(
+                              palette: p,
+                              section: s,
+                              updatedAtLabel: _formatUpdatedAt(s.updatedAt),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _FooterHint(palette: p),
+                        ],
+                      ),
                     ),
-                  ),
+            ),
           ),
         ),
       ),

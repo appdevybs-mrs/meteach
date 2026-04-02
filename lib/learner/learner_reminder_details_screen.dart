@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/ui_constants.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_tour_guide.dart';
 
@@ -75,80 +76,84 @@ class _LearnerReminderDetailsScreenState
           style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
         ),
       ),
-      body: WatermarkBackground(
-        child: StreamBuilder<DatabaseEvent>(
-          stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
-          builder: (context, snap) {
-            final v = snap.data?.snapshot.value;
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 980,
+        child: WatermarkBackground(
+          child: StreamBuilder<DatabaseEvent>(
+            stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
+            builder: (context, snap) {
+              final v = snap.data?.snapshot.value;
 
-            if (v is! Map) {
-              return const Center(
-                child: Text(
-                  'Reminder not found.',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              );
-            }
+              if (v is! Map) {
+                return const Center(
+                  child: Text(
+                    'Reminder not found.',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                );
+              }
 
-            final m = v.map((k, v) => MapEntry(k.toString(), v));
+              final m = v.map((k, v) => MapEntry(k.toString(), v));
 
-            final title = (m['title'] ?? 'Reminder').toString();
-            final desc = (m['description'] ?? '').toString();
-            final status = (m['status'] ?? '').toString();
-            final teacher = (m['teacher'] is Map)
-                ? (m['teacher']['name'] ?? '').toString()
-                : '';
+              final title = (m['title'] ?? 'Reminder').toString();
+              final desc = (m['description'] ?? '').toString();
+              final status = (m['status'] ?? '').toString();
+              final teacher = (m['teacher'] is Map)
+                  ? (m['teacher']['name'] ?? '').toString()
+                  : '';
 
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Card(
-                  elevation: 0,
-                  color: Colors.white,
-                  shape: UiK.cardShape(),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: UiK.titleText(size: 18)),
-                        const SizedBox(height: 8),
-                        if (teacher.trim().isNotEmpty)
-                          Text('From: $teacher', style: UiK.subtleText()),
-                        const SizedBox(height: 10),
-                        Text(
-                          desc.isEmpty ? '—' : desc,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    elevation: 0,
+                    color: Colors.white,
+                    shape: UiK.cardShape(),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: UiK.titleText(size: 18)),
+                          const SizedBox(height: 8),
+                          if (teacher.trim().isNotEmpty)
+                            Text('From: $teacher', style: UiK.subtleText()),
+                          const SizedBox(height: 10),
+                          Text(
+                            desc.isEmpty ? '—' : desc,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
-                          decoration: BoxDecoration(
-                            color: UiK.primaryBlue.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: UiK.uiBorder.withValues(alpha: 0.85),
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: UiK.primaryBlue.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: UiK.uiBorder.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            child: Text(
+                              status.isEmpty ? '—' : status,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: UiK.primaryBlue,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
-                          child: Text(
-                            status.isEmpty ? '—' : status,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: UiK.primaryBlue,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

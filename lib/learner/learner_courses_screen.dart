@@ -10,6 +10,7 @@ import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import 'learner_course_detail_screen.dart';
 import 'recorded_course_study_screen.dart';
@@ -1051,48 +1052,55 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
           ),
         ],
       ),
-      body: WatermarkBackground(
-        child: _busy
-            ? Center(child: CircularProgressIndicator(color: p.primary))
-            : _error != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: p.cardBg,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: p.border.withValues(alpha: 0.85),
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 1520,
+        child: WatermarkBackground(
+          child: _busy
+              ? Center(child: CircularProgressIndicator(color: p.primary))
+              : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: p.cardBg,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Colors.red.shade700,
-                        fontWeight: FontWeight.w800,
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ),
+                )
+              : _courses.isEmpty
+              ? _EmptyCoursesState(palette: p, onRefresh: _load)
+              : RefreshIndicator(
+                  color: p.primary,
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                    children: [
+                      _CoursesHeroCard(
+                        palette: p,
+                        coursesCount: _courses.length,
+                      ),
+                      const SizedBox(height: 16),
+                      ..._courses.map(_courseCard),
+                    ],
+                  ),
                 ),
-              )
-            : _courses.isEmpty
-            ? _EmptyCoursesState(palette: p, onRefresh: _load)
-            : RefreshIndicator(
-                color: p.primary,
-                onRefresh: _load,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                  children: [
-                    _CoursesHeroCard(palette: p, coursesCount: _courses.length),
-                    const SizedBox(height: 16),
-                    ..._courses.map(_courseCard),
-                  ],
-                ),
-              ),
+        ),
       ),
     );
   }

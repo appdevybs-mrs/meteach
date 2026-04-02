@@ -37,6 +37,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
@@ -1414,41 +1415,45 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           ],
         ),
       ),
-      body: WatermarkBackground(
-        child: _busy
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w800,
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 1480,
+        child: WatermarkBackground(
+          child: _busy
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    textAlign: TextAlign.center,
                   ),
+                )
+              : TabBarView(
+                  controller: _tab,
+                  children: [
+                    _paymentTab(sessionsPassed: sessionsConsumed),
+                    _attendanceTab(
+                      attPct: attPct,
+                      present: present,
+                      total: meetingsHeld,
+                    ),
+                    _progressTab(
+                      meetingsHeld: meetingsHeld,
+                      plannedMeetings: _plannedMeetings,
+                      syllabusPct: syllabusPct,
+                      coveredLessons: coveredLessons,
+                      totalLessons: totalLessons,
+                    ),
+                  ],
                 ),
-              )
-            : TabBarView(
-                controller: _tab,
-                children: [
-                  _paymentTab(sessionsPassed: sessionsConsumed),
-                  _attendanceTab(
-                    attPct: attPct,
-                    present: present,
-                    total: meetingsHeld,
-                  ),
-                  _progressTab(
-                    meetingsHeld: meetingsHeld,
-                    plannedMeetings: _plannedMeetings,
-                    syllabusPct: syllabusPct,
-                    coveredLessons: coveredLessons,
-                    totalLessons: totalLessons,
-                  ),
-                ],
-              ),
+        ),
       ),
     );
   }

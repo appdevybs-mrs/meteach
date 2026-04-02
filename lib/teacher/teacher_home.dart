@@ -12,7 +12,6 @@ import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/first_login_agreement.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
@@ -1114,6 +1113,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   ],
                 ),
               ),
+              if (webDesktop) const SizedBox(width: 14),
+              if (webDesktop)
+                _TeacherHomeWebAside(
+                  palette: p,
+                  onOpenMail: () => _pushScreen(const TeacherMailScreen()),
+                  onOpenHomework: () =>
+                      _pushScreen(const TeacherHomeworkInboxScreen()),
+                  onOpenReminders: () =>
+                      _pushScreen(const TeacherReminderScreen()),
+                  onOpenClasses: () =>
+                      _pushScreen(const TeacherClassesScreen()),
+                ),
             ],
           ),
         ),
@@ -1289,6 +1300,93 @@ class _TeacherHomeWebRail extends StatelessWidget {
               icon: Icons.logout_rounded,
               title: 'Logout',
               onTap: onLogout,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TeacherHomeWebAside extends StatelessWidget {
+  const _TeacherHomeWebAside({
+    required this.palette,
+    required this.onOpenMail,
+    required this.onOpenHomework,
+    required this.onOpenReminders,
+    required this.onOpenClasses,
+  });
+
+  final _HomePalette palette;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenHomework;
+  final VoidCallback onOpenReminders;
+  final VoidCallback onOpenClasses;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 300,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(0, 6, 8, 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: palette.border.withValues(alpha: 0.9)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pinned Actions',
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.mail_rounded,
+              title: 'Open Mail',
+              onTap: onOpenMail,
+            ),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.assignment_rounded,
+              title: 'Homework Inbox',
+              onTap: onOpenHomework,
+            ),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.alarm_rounded,
+              title: 'Open Reminders',
+              onTap: onOpenReminders,
+            ),
+            _DrawerTile(
+              palette: palette,
+              icon: Icons.school_rounded,
+              title: 'Open Classes',
+              onTap: onOpenClasses,
+            ),
+            const Spacer(),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: palette.soft.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'Desktop layout keeps your daily tools fixed and visible.',
+                style: TextStyle(
+                  color: palette.text.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
             ),
           ],
         ),
