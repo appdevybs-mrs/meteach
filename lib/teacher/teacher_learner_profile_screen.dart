@@ -83,22 +83,47 @@ class _TeacherLearnerProfileScreenState
       if (!snap.exists || snap.value == null || snap.value is! Map) return out;
 
       final data = Map<String, dynamic>.from(snap.value as Map);
-      final units = data['units'];
-
-      if (units is List) {
-        for (final u in units) {
-          if (u is! Map) continue;
-          final unit = Map<String, dynamic>.from(u);
-          final sessions = unit['sessions'];
-
-          if (sessions is List) {
-            for (final ss in sessions) {
+      final modules = data['modules'];
+      if (modules is List) {
+        for (final m in modules) {
+          if (m is! Map) continue;
+          final module = Map<String, dynamic>.from(m);
+          final units = module['units'];
+          if (units is! List) continue;
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final lessons = unit['lessons'];
+            if (lessons is! List) continue;
+            for (final ss in lessons) {
               if (ss is! Map) continue;
               final sess = Map<String, dynamic>.from(ss);
               final sn = _toInt(sess['sessionNumber']);
               final sid = _safeStr(sess['id']);
               if (sn > 0 && sid.isNotEmpty) {
                 out[sn] = sid;
+              }
+            }
+          }
+        }
+      } else {
+        final units = data['units'];
+
+        if (units is List) {
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final sessions = unit['sessions'];
+
+            if (sessions is List) {
+              for (final ss in sessions) {
+                if (ss is! Map) continue;
+                final sess = Map<String, dynamic>.from(ss);
+                final sn = _toInt(sess['sessionNumber']);
+                final sid = _safeStr(sess['id']);
+                if (sn > 0 && sid.isNotEmpty) {
+                  out[sn] = sid;
+                }
               }
             }
           }

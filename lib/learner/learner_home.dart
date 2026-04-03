@@ -1000,28 +1000,46 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         final sSnap = await syllabusRef.get();
         if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
-          final units = s['units'];
-
-          if (units is List) {
-            for (final u in units) {
-              if (u is! Map) continue;
-              final unit = Map<String, dynamic>.from(u);
-              final sessions = unit['sessions'];
-              if (sessions is List) {
-                totalLessons += sessions.length;
+          final modules = s['modules'];
+          if (modules is List) {
+            for (final m in modules) {
+              if (m is! Map) continue;
+              final module = Map<String, dynamic>.from(m);
+              final units = module['units'];
+              if (units is! List) continue;
+              for (final u in units) {
+                if (u is! Map) continue;
+                final unit = Map<String, dynamic>.from(u);
+                final lessons = unit['lessons'];
+                if (lessons is List) {
+                  totalLessons += lessons.length;
+                }
               }
             }
-          } else if (units is Map) {
-            final mapUnits = Map<dynamic, dynamic>.from(units);
-            for (final entry in mapUnits.entries) {
-              final unitVal = entry.value;
-              if (unitVal is! Map) continue;
-              final unit = Map<String, dynamic>.from(unitVal);
-              final sessions = unit['sessions'];
-              if (sessions is List) {
-                totalLessons += sessions.length;
-              } else if (sessions is Map) {
-                totalLessons += Map<dynamic, dynamic>.from(sessions).length;
+          } else {
+            final units = s['units'];
+
+            if (units is List) {
+              for (final u in units) {
+                if (u is! Map) continue;
+                final unit = Map<String, dynamic>.from(u);
+                final sessions = unit['sessions'];
+                if (sessions is List) {
+                  totalLessons += sessions.length;
+                }
+              }
+            } else if (units is Map) {
+              final mapUnits = Map<dynamic, dynamic>.from(units);
+              for (final entry in mapUnits.entries) {
+                final unitVal = entry.value;
+                if (unitVal is! Map) continue;
+                final unit = Map<String, dynamic>.from(unitVal);
+                final sessions = unit['sessions'];
+                if (sessions is List) {
+                  totalLessons += sessions.length;
+                } else if (sessions is Map) {
+                  totalLessons += Map<dynamic, dynamic>.from(sessions).length;
+                }
               }
             }
           }
@@ -1223,23 +1241,46 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
         if (syllabusSnap.exists && syllabusSnap.value is Map) {
           final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
-          final rawUnits = asListOfMaps(root['units']);
+          final rawModules = asListOfMaps(root['modules']);
+          if (rawModules.isNotEmpty) {
+            for (final module in rawModules) {
+              final rawUnits = asListOfMaps(module['units']);
+              for (final unit in rawUnits) {
+                final rawLessons = asListOfMaps(unit['lessons']);
+                for (final lesson in rawLessons) {
+                  final sessionId = (lesson['id'] ?? '').toString().trim();
+                  final videoUrl = (lesson['videoUrl'] ?? '').toString().trim();
+                  final materialsUrl = (lesson['materialsUrl'] ?? '')
+                      .toString()
+                      .trim();
+                  if (sessionId.isNotEmpty) {
+                    sessionMetaById[sessionId] = {
+                      'hasVideo': videoUrl.isNotEmpty,
+                      'hasMaterials': materialsUrl.isNotEmpty,
+                    };
+                  }
+                }
+              }
+            }
+          } else {
+            final rawUnits = asListOfMaps(root['units']);
 
-          for (final unit in rawUnits) {
-            final rawSessions = asListOfMaps(unit['sessions']);
+            for (final unit in rawUnits) {
+              final rawSessions = asListOfMaps(unit['sessions']);
 
-            for (final session in rawSessions) {
-              final sessionId = (session['id'] ?? '').toString().trim();
-              final videoUrl = (session['videoUrl'] ?? '').toString().trim();
-              final materialsUrl = (session['materialsUrl'] ?? '')
-                  .toString()
-                  .trim();
+              for (final session in rawSessions) {
+                final sessionId = (session['id'] ?? '').toString().trim();
+                final videoUrl = (session['videoUrl'] ?? '').toString().trim();
+                final materialsUrl = (session['materialsUrl'] ?? '')
+                    .toString()
+                    .trim();
 
-              if (sessionId.isNotEmpty) {
-                sessionMetaById[sessionId] = {
-                  'hasVideo': videoUrl.isNotEmpty,
-                  'hasMaterials': materialsUrl.isNotEmpty,
-                };
+                if (sessionId.isNotEmpty) {
+                  sessionMetaById[sessionId] = {
+                    'hasVideo': videoUrl.isNotEmpty,
+                    'hasMaterials': materialsUrl.isNotEmpty,
+                  };
+                }
               }
             }
           }

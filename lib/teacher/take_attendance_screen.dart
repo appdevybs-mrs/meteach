@@ -287,16 +287,21 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         }
         if (sSnap.exists && sSnap.value is Map) {
           final s = _safeMap(sSnap.value);
-          final units = s['units'] as List?;
           final List<Map<String, dynamic>> flat = [];
 
-          if (units != null) {
-            for (final u in units) {
-              if (u is! Map) continue;
-              final unit = _safeMap(u);
-              final sessions = unit['sessions'] as List?;
-              if (sessions != null) {
-                for (final ss in sessions) {
+          final modules = s['modules'] as List?;
+          if (modules != null && modules.isNotEmpty) {
+            for (final m in modules) {
+              if (m is! Map) continue;
+              final module = _safeMap(m);
+              final units = module['units'] as List?;
+              if (units == null) continue;
+              for (final u in units) {
+                if (u is! Map) continue;
+                final unit = _safeMap(u);
+                final lessons = unit['lessons'] as List?;
+                if (lessons == null) continue;
+                for (final ss in lessons) {
                   if (ss is! Map) continue;
                   final sess = _safeMap(ss);
                   flat.add({
@@ -313,16 +318,52 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     'unitOrder': (unit['order'] is num)
                         ? (unit['order'] as num).toInt()
                         : 0,
-
-                    // snapshot fields
                     'objective': (sess['objective'] ?? '').toString(),
                     'homework': (sess['homework'] ?? '').toString(),
                     'skillType': (sess['skillType'] ?? '').toString(),
-
                     'sessionNumber': (sess['sessionNumber'] is num)
                         ? (sess['sessionNumber'] as num).toInt()
                         : (int.tryParse('${sess['sessionNumber']}') ?? 0),
                   });
+                }
+              }
+            }
+          } else {
+            final units = s['units'] as List?;
+            if (units != null) {
+              for (final u in units) {
+                if (u is! Map) continue;
+                final unit = _safeMap(u);
+                final sessions = unit['sessions'] as List?;
+                if (sessions != null) {
+                  for (final ss in sessions) {
+                    if (ss is! Map) continue;
+                    final sess = _safeMap(ss);
+                    flat.add({
+                      'unitId': (unit['id'] ?? '').toString(),
+                      'unitTitle':
+                          ((unit['title'] ?? '').toString().trim().isNotEmpty)
+                          ? (unit['title'] ?? '').toString()
+                          : (unit['description'] ?? '').toString(),
+                      'sessionId': (sess['id'] ?? '').toString(),
+                      'title': (sess['title'] ?? '').toString(),
+                      'order': (sess['order'] is num)
+                          ? (sess['order'] as num).toInt()
+                          : 0,
+                      'unitOrder': (unit['order'] is num)
+                          ? (unit['order'] as num).toInt()
+                          : 0,
+
+                      // snapshot fields
+                      'objective': (sess['objective'] ?? '').toString(),
+                      'homework': (sess['homework'] ?? '').toString(),
+                      'skillType': (sess['skillType'] ?? '').toString(),
+
+                      'sessionNumber': (sess['sessionNumber'] is num)
+                          ? (sess['sessionNumber'] as num).toInt()
+                          : (int.tryParse('${sess['sessionNumber']}') ?? 0),
+                    });
+                  }
                 }
               }
             }

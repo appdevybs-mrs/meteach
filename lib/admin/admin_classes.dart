@@ -2090,13 +2090,29 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     if (sSnap.exists && sSnap.value is Map) {
       final s = Map<String, dynamic>.from(sSnap.value as Map);
-      final units = s['units'];
-      if (units is List) {
-        for (final u in units) {
-          if (u is! Map) continue;
-          final unit = Map<String, dynamic>.from(u);
-          final sessions = unit['sessions'];
-          if (sessions is List) totalSessions += sessions.length;
+      final modules = s['modules'];
+      if (modules is List) {
+        for (final m in modules) {
+          if (m is! Map) continue;
+          final module = Map<String, dynamic>.from(m);
+          final units = module['units'];
+          if (units is! List) continue;
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final lessons = unit['lessons'];
+            if (lessons is List) totalSessions += lessons.length;
+          }
+        }
+      } else {
+        final units = s['units'];
+        if (units is List) {
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final sessions = unit['sessions'];
+            if (sessions is List) totalSessions += sessions.length;
+          }
         }
       }
     }

@@ -7,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
-import 'package:dream_english_academy/course_syllabus_screen.dart';
+import 'package:dream_english_academy/admin/course_syllabus_screen.dart';
 import 'package:dream_english_academy/shared/human_error.dart';
 import 'package:dream_english_academy/services/backend_api.dart';
 import '../shared/app_feedback.dart';

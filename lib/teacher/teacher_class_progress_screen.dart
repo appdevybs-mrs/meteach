@@ -185,25 +185,28 @@ class _TeacherClassProgressScreenState
     if (!sSnap.exists || sSnap.value == null || sSnap.value is! Map) return;
 
     final s = Map<String, dynamic>.from(sSnap.value as Map);
-    final units = s['units'];
     final List<Map<String, dynamic>> flat = [];
 
-    if (units is List) {
-      for (final u in units) {
-        if (u is! Map) continue;
-        final unit = Map<String, dynamic>.from(u);
-        final unitId = (unit['id'] ?? '').toString();
-        final unitTitle = ((unit['title'] ?? '').toString().trim().isNotEmpty)
-            ? (unit['title'] ?? '').toString()
-            : (unit['description'] ?? '').toString();
-        final unitOrder = unit['order'] ?? 0;
-
-        final sessions = unit['sessions'];
-        if (sessions is List) {
-          for (final ss in sessions) {
+    final modules = s['modules'];
+    if (modules is List) {
+      for (final m in modules) {
+        if (m is! Map) continue;
+        final module = Map<String, dynamic>.from(m);
+        final units = module['units'];
+        if (units is! List) continue;
+        for (final u in units) {
+          if (u is! Map) continue;
+          final unit = Map<String, dynamic>.from(u);
+          final unitId = (unit['id'] ?? '').toString();
+          final unitTitle = ((unit['title'] ?? '').toString().trim().isNotEmpty)
+              ? (unit['title'] ?? '').toString()
+              : (unit['description'] ?? '').toString();
+          final unitOrder = unit['order'] ?? 0;
+          final lessons = unit['lessons'];
+          if (lessons is! List) continue;
+          for (final ss in lessons) {
             if (ss is! Map) continue;
             final sess = Map<String, dynamic>.from(ss);
-
             flat.add({
               'unitOrder': unitOrder,
               'unitId': unitId,
@@ -215,6 +218,39 @@ class _TeacherClassProgressScreenState
               'objective': (sess['objective'] ?? '').toString(),
               'content': (sess['content'] ?? '').toString(),
             });
+          }
+        }
+      }
+    } else {
+      final units = s['units'];
+      if (units is List) {
+        for (final u in units) {
+          if (u is! Map) continue;
+          final unit = Map<String, dynamic>.from(u);
+          final unitId = (unit['id'] ?? '').toString();
+          final unitTitle = ((unit['title'] ?? '').toString().trim().isNotEmpty)
+              ? (unit['title'] ?? '').toString()
+              : (unit['description'] ?? '').toString();
+          final unitOrder = unit['order'] ?? 0;
+
+          final sessions = unit['sessions'];
+          if (sessions is List) {
+            for (final ss in sessions) {
+              if (ss is! Map) continue;
+              final sess = Map<String, dynamic>.from(ss);
+
+              flat.add({
+                'unitOrder': unitOrder,
+                'unitId': unitId,
+                'unitTitle': unitTitle,
+                'order': sess['order'] ?? 0,
+                'sessionId': (sess['id'] ?? '').toString(),
+                'title': (sess['title'] ?? '').toString(),
+                'skillType': (sess['skillType'] ?? '').toString(),
+                'objective': (sess['objective'] ?? '').toString(),
+                'content': (sess['content'] ?? '').toString(),
+              });
+            }
           }
         }
       }

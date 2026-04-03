@@ -67,6 +67,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       <String, _RecordedProgress>{};
 
   final Set<String> _expandedUnitIds = <String>{};
+  final Set<String> _expandedModuleLabels = <String>{};
 
   @override
   void initState() {
@@ -145,11 +146,32 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final List<_RecordedUnit> units = <_RecordedUnit>[];
       if (syllabusSnap.value is Map) {
         final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
-        final rawUnits = _asListOfMaps(root['units']);
-
-        for (final u in rawUnits) {
-          final unit = _RecordedUnit.fromMap(u);
-          units.add(unit);
+        final rawModules = _asListOfMaps(root['modules']);
+        if (rawModules.isNotEmpty) {
+          for (int mi = 0; mi < rawModules.length; mi++) {
+            final module = rawModules[mi];
+            final moduleLabel =
+                (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+                ? (module['otherTitle'] ?? '').toString().trim()
+                : ((module['title'] ?? '').toString().trim().isNotEmpty
+                      ? (module['title'] ?? '').toString().trim()
+                      : 'Module ${mi + 1}');
+            final rawUnits = _asListOfMaps(module['units']);
+            for (final u in rawUnits) {
+              final unit = _RecordedUnit.fromMap({
+                ...u,
+                'otherTitle': moduleLabel,
+                'sessions': u['lessons'],
+              });
+              units.add(unit);
+            }
+          }
+        } else {
+          final rawUnits = _asListOfMaps(root['units']);
+          for (final u in rawUnits) {
+            final unit = _RecordedUnit.fromMap(u);
+            units.add(unit);
+          }
         }
       }
 
@@ -171,6 +193,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ..addAll(progressById);
         _units = units;
         _ensureExpandedUnits();
+        _ensureExpandedModules();
         _busy = false;
       });
       _debug(
@@ -201,6 +224,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         .toSet();
 
     _expandedUnitIds.removeWhere((id) => !validIds.contains(id));
+  }
+
+  void _ensureExpandedModules() {
+    final labels = <String>[];
+    for (final u in _units) {
+      final label = u.otherTitle.trim().isNotEmpty
+          ? u.otherTitle.trim()
+          : 'Module';
+      if (!labels.contains(label)) labels.add(label);
+    }
+    if (labels.isEmpty) return;
+    if (_expandedModuleLabels.isEmpty) {
+      _expandedModuleLabels.add(labels.first);
+    }
+    _expandedModuleLabels.removeWhere((label) => !labels.contains(label));
   }
 
   static int _asInt(dynamic v) {
@@ -755,7 +793,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       )).buffer.asUint8List();
     } catch (_) {}
 
-    final logoImage = logo != null ? pw.MemoryImage(logo) : null;
+    Uint8List? certificateTemplate;
+    try {
+      certificateTemplate = (await rootBundle.load(
+        'assets/images/DigitalCertificate.png',
+      )).buffer.asUint8List();
+    } catch (_) {}
 
     final bool isModuleCertificate =
         moduleTitle != null && moduleTitle.trim().isNotEmpty;
@@ -769,6 +812,94 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final String awardTitle = isModuleCertificate
         ? moduleTitleText
         : courseTitle;
+
+    final uidPart = _uid.substring(0, math.min(8, _uid.length)).toUpperCase();
+    final datePart =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    final certificateId = isModuleCertificate
+        ? 'MOD${moduleNumber ?? 0}-$uidPart-$datePart'
+        : '$uidPart-$datePart';
+
+    if (certificateTemplate != null) {
+      final bg = pw.MemoryImage(certificateTemplate);
+      doc.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.zero,
+          build: (_) {
+            return pw.Stack(
+              children: [
+                pw.Positioned.fill(child: pw.Image(bg, fit: pw.BoxFit.cover)),
+                pw.Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 375,
+                  child: pw.Center(
+                    child: pw.Text(
+                      learnerName,
+                      style: pw.TextStyle(
+                        fontSize: 35,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromInt(0xFF111827),
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 60,
+                  right: 60,
+                  top: 443,
+                  child: pw.Center(
+                    child: pw.Text(
+                      awardTitle.toUpperCase(),
+                      textAlign: pw.TextAlign.center,
+                      style: pw.TextStyle(
+                        fontSize: 21,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromInt(0xFF111827),
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 176,
+                  right: 64,
+                  top: 423,
+                  child: pw.Center(
+                    child: pw.Text(
+                      'Issued on: $date',
+                      style: pw.TextStyle(
+                        fontSize: 13,
+                        color: PdfColor.fromInt(0xFF1F2937),
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 176,
+                  right: 80,
+                  bottom: 170,
+                  child: pw.Text(
+                    certificateId,
+                    style: pw.TextStyle(
+                      fontSize: 13.5,
+                      color: PdfColor.fromInt(0xFF111827),
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      return doc.save();
+    }
+
+    final logoImage = logo != null ? pw.MemoryImage(logo) : null;
 
     doc.addPage(
       pw.Page(
@@ -1165,6 +1296,34 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<void> _showCourseInfoSheet() async {
     final style = _expiryStyle;
     final progressPct = (_progressValue * 100).round();
+    final moduleSummaries = <Map<String, dynamic>>[];
+    final byModule = <String, List<_RecordedUnit>>{};
+    final moduleOrder = <String>[];
+    for (final u in _units) {
+      final key = u.otherTitle.trim().isNotEmpty
+          ? u.otherTitle.trim()
+          : 'Module';
+      if (!byModule.containsKey(key)) {
+        byModule[key] = <_RecordedUnit>[];
+        moduleOrder.add(key);
+      }
+      byModule[key]!.add(u);
+    }
+    for (final m in moduleOrder) {
+      final units = byModule[m] ?? const <_RecordedUnit>[];
+      int totalLessons = 0;
+      int doneLessons = 0;
+      for (final u in units) {
+        totalLessons += u.sessions.length;
+        doneLessons += _countCompletedInUnit(u);
+      }
+      moduleSummaries.add({
+        'name': m,
+        'units': units.length,
+        'done': doneLessons,
+        'total': totalLessons,
+      });
+    }
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1243,6 +1402,50 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         title: 'Access duration',
                         value:
                             '$_durationMonths month${_durationMonths == 1 ? '' : 's'}',
+                      ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Modules overview',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    for (final m in moduleSummaries)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                (m['name'] ?? '').toString(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0B3A8F),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${m['units']} units • ${m['done']}/${m['total']} lessons',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF64748B),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -1536,6 +1739,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           Builder(
             builder: (_) {
               final unit = _units[ui];
+              final moduleLabel = unit.otherTitle.trim().isNotEmpty
+                  ? unit.otherTitle.trim()
+                  : 'Module';
+              final previousModule = ui > 0
+                  ? (_units[ui - 1].otherTitle.trim().isNotEmpty
+                        ? _units[ui - 1].otherTitle.trim()
+                        : 'Module')
+                  : '';
+              final showModuleHeader = ui == 0 || moduleLabel != previousModule;
+              final moduleExpanded = _expandedModuleLabels.contains(
+                moduleLabel,
+              );
               final unitId = unit.id.isNotEmpty ? unit.id : '$ui';
               final isExpanded = _expandedUnitIds.contains(unitId);
               final completedInUnit = _countCompletedInUnit(unit);
@@ -1555,139 +1770,194 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
               return Column(
                 children: [
-                  Container(
-                    width: double.infinity,
-                    margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+                  if (showModuleHeader) ...[
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (moduleExpanded) {
+                            _expandedModuleLabels.remove(moduleLabel);
+                          } else {
+                            _expandedModuleLabels.add(moduleLabel);
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: double.infinity,
+                        margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF1E7),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFF4CBAA)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                moduleLabel,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF9A3412),
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              moduleExpanded
+                                  ? Icons.expand_less_rounded
+                                  : Icons.expand_more_rounded,
+                              color: const Color(0xFF9A3412),
+                            ),
+                          ],
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.035),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
                     ),
-                    child: Column(
-                      children: [
-                        InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: () {
-                            setState(() {
-                              if (isExpanded) {
-                                _expandedUnitIds.remove(unitId);
-                              } else {
-                                _expandedUnitIds.add(unitId);
-                              }
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 13,
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: isUnitDone
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFF1F5F9),
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                  child: Icon(
-                                    isUnitDone
-                                        ? Icons.check_rounded
-                                        : Icons.folder_open_rounded,
-                                    color: isUnitDone
-                                        ? const Color(0xFF15803D)
-                                        : const Color(0xFF475569),
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        unit.displayTitle,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 14.5,
-                                          color: Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '$completedInUnit of $totalInUnit completed',
-                                        style: const TextStyle(
-                                          color: Color(0xFF64748B),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Icon(
-                                  isExpanded
-                                      ? Icons.expand_less_rounded
-                                      : Icons.expand_more_rounded,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ],
-                            ),
-                          ),
+                    const SizedBox(height: 6),
+                  ],
+                  if (!moduleExpanded)
+                    const SizedBox.shrink()
+                  else
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 0),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
                         ),
-                        if (isExpanded)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (unit.description.trim().isNotEmpty) ...[
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.035),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          InkWell(
+                            borderRadius: BorderRadius.circular(18),
+                            onTap: () {
+                              setState(() {
+                                if (isExpanded) {
+                                  _expandedUnitIds.remove(unitId);
+                                } else {
+                                  _expandedUnitIds.add(unitId);
+                                }
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 13,
+                              ),
+                              child: Row(
+                                children: [
                                   Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(10),
+                                    width: 36,
+                                    height: 36,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: const Color(0xFFE2E8F0),
-                                      ),
+                                      color: isUnitDone
+                                          ? const Color(0xFFDCFCE7)
+                                          : const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(11),
                                     ),
-                                    child: Text(
-                                      unit.description.trim(),
-                                      style: TextStyle(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.70,
-                                        ),
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.3,
-                                        fontSize: 12.5,
-                                      ),
+                                    child: Icon(
+                                      isUnitDone
+                                          ? Icons.check_rounded
+                                          : Icons.folder_open_rounded,
+                                      color: isUnitDone
+                                          ? const Color(0xFF15803D)
+                                          : const Color(0xFF475569),
+                                      size: 20,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          unit.title.trim().isEmpty
+                                              ? unit.displayTitle
+                                              : unit.title.trim(),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14.5,
+                                            color: Color(0xFF0B3A8F),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          '$completedInUnit of $totalInUnit completed',
+                                          style: const TextStyle(
+                                            color: Color(0xFF64748B),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    isExpanded
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    color: const Color(0xFF64748B),
+                                  ),
                                 ],
-                                ...sessionWidgets,
-                              ],
+                              ),
                             ),
                           ),
-                      ],
+                          if (isExpanded)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (unit.description.trim().isNotEmpty) ...[
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        unit.description.trim(),
+                                        style: TextStyle(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.70,
+                                          ),
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.3,
+                                          fontSize: 12.5,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  ...sessionWidgets,
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (ui < _units.length - 1)
+                  if (moduleExpanded &&
+                      ui < _units.length - 1 &&
+                      _isUnitCompleted(unit))
                     _buildUnitMilestoneCard(unit: unit, unitIndex: ui),
                 ],
               );

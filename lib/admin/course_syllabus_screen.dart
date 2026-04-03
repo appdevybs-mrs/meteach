@@ -7,9 +7,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'shared/app_feedback.dart';
-import 'shared/human_error.dart';
-import 'services/backend_api.dart';
+import '../shared/app_feedback.dart';
+import '../shared/human_error.dart';
+import '../services/backend_api.dart';
 
 /// ----------------------------
 /// Course Syllabus Screen
@@ -53,9 +53,16 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _recordedAssetBusy = false;
+  int _recordedAssetDone = 0;
+  int _recordedAssetTotal = 0;
+  String _recordedAssetLabel = '';
+  final Map<String, _LessonAssetPresence> _lessonPresenceBySessionId =
+      <String, _LessonAssetPresence>{};
 
   List<SyllabusUnit> _units = [];
   final Map<String, bool> _unitExpanded = {};
+  final Map<String, bool> _moduleExpanded = {};
 
   bool get _isRecordedVariant =>
       widget.variantKey.trim().toLowerCase() == 'recorded';
@@ -86,8 +93,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           v.map((k, value) => MapEntry(k.toString(), value)),
         );
 
-        final rawUnits = _asListOfMaps(map['units']);
-        final units = rawUnits.map((x) => SyllabusUnit.fromMap(x)).toList();
+        final units = _isRecordedVariant
+            ? _parseRecordedUnits(map)
+            : _asListOfMaps(
+                map['units'],
+              ).map((x) => SyllabusUnit.fromMap(x)).toList();
 
         units.sort((a, b) => a.order.compareTo(b.order));
         for (final u in units) {
@@ -97,14 +107,125 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         _units = units;
         _ensureSessionNumbers();
         _bulkTouchedSessionIds.clear();
+        _rebuildLessonPresenceFromRtdb();
       } else {
         _units = [];
         _bulkTouchedSessionIds.clear();
+        _lessonPresenceBySessionId.clear();
       }
     } catch (_) {
       _units = [];
+      _lessonPresenceBySessionId.clear();
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _rebuildLessonPresenceFromRtdb() {
+    _lessonPresenceBySessionId.clear();
+    for (final unit in _units) {
+      for (final s in unit.sessions) {
+        final id = s.id.trim();
+        if (id.isEmpty) continue;
+        _lessonPresenceBySessionId[id] = _LessonAssetPresence(
+          videoOk: s.videoUrl.trim().isNotEmpty,
+          htmlOk: s.materialsUrl.trim().isNotEmpty,
+        );
+      }
+    }
+  }
+
+  Future<void> _refreshRecordedLessonPresenceFromServer() async {
+    if (!_isRecordedVariant || _recordedAssetBusy) return;
+    if (mounted) {
+      setState(() {
+        _recordedAssetBusy = true;
+        _recordedAssetDone = 0;
+        _recordedAssetTotal = _totalSessions;
+        _recordedAssetLabel = 'Checking lesson assets from server...';
+      });
+    }
+
+    final next = <String, _LessonAssetPresence>{};
+    final listCache = <String, List<Map<String, dynamic>>>{};
+
+    Future<bool> existsOnServer(String url) async {
+      final rel = _SyllabusServerStorage.extractRelativePathFromUrl(url);
+      if (rel.isEmpty) return false;
+      final folder = rel.contains('/')
+          ? rel.substring(0, rel.lastIndexOf('/'))
+          : '';
+      final fileName = Uri.tryParse(url)?.pathSegments.last ?? '';
+      if (folder.isEmpty || fileName.isEmpty) return false;
+
+      final items = listCache.containsKey(folder)
+          ? listCache[folder]!
+          : await _SyllabusServerStorage.listItems(
+              root: 'courses',
+              path: folder,
+            );
+      listCache[folder] = items;
+      for (final item in items) {
+        final name = (item['name'] ?? '').toString().trim();
+        final type = (item['type'] ?? '').toString().trim().toLowerCase();
+        if (type == 'file' && name == fileName) return true;
+      }
+      return false;
+    }
+
+    try {
+      for (final unit in _units) {
+        for (final s in unit.sessions) {
+          final id = s.id.trim();
+          if (id.isEmpty) {
+            if (mounted) setState(() => _recordedAssetDone += 1);
+            continue;
+          }
+          final videoUrl = s.videoUrl.trim();
+          final htmlUrl = s.materialsUrl.trim();
+          bool videoOk = videoUrl.isNotEmpty;
+          bool htmlOk = htmlUrl.isNotEmpty;
+
+          if (videoUrl.isNotEmpty) {
+            try {
+              videoOk = await existsOnServer(videoUrl);
+            } catch (_) {
+              videoOk = false;
+            }
+          }
+          if (htmlUrl.isNotEmpty) {
+            try {
+              htmlOk = await existsOnServer(htmlUrl);
+            } catch (_) {
+              htmlOk = false;
+            }
+          }
+
+          next[id] = _LessonAssetPresence(videoOk: videoOk, htmlOk: htmlOk);
+          if (mounted) setState(() => _recordedAssetDone += 1);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _lessonPresenceBySessionId
+            ..clear()
+            ..addAll(next);
+        });
+      }
+      if (mounted) {
+        AppToast.show(
+          context,
+          'Lesson assets refreshed from server.',
+          type: AppToastType.success,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recordedAssetBusy = false;
+          _recordedAssetLabel = '';
+        });
+      }
     }
   }
 
@@ -160,8 +281,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     if (snap.value is! Map) return;
 
     final root = Map<String, dynamic>.from(snap.value as Map);
-    final rawUnits = _asListOfMaps(root['units']);
-    final remoteUnits = rawUnits.map(SyllabusUnit.fromMap).toList()
+    final remoteUnits = _parseRecordedUnits(root)
       ..sort((a, b) => a.order.compareTo(b.order));
     for (final u in remoteUnits) {
       u.sessions.sort((a, b) => a.order.compareTo(b.order));
@@ -218,7 +338,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
   }
 
-  Future<void> _saveSyllabus() async {
+  Future<void> _saveSyllabus({bool showToast = true}) async {
     setState(() => _saving = true);
     try {
       for (int i = 0; i < _units.length; i++) {
@@ -243,14 +363,17 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'title': courseTitle,
         'duration': courseDuration,
         'updatedAt': ServerValue.timestamp,
-        'units': _units
-            .map(
-              (u) => u.toMap(
-                includeRecordedExtras: _isRecordedVariant,
-                includeOnlineExtras: !_isRecordedVariant,
-              ),
-            )
-            .toList(),
+        if (_isRecordedVariant)
+          'modules': _buildRecordedModulesPayload()
+        else
+          'units': _units
+              .map(
+                (u) => u.toMap(
+                  includeRecordedExtras: _isRecordedVariant,
+                  includeOnlineExtras: !_isRecordedVariant,
+                ),
+              )
+              .toList(),
       };
 
       await _syllabusRef.set(payload);
@@ -265,7 +388,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       _bulkTouchedSessionIds.clear();
 
       if (!mounted) return;
-      AppToast.show(context, 'Syllabus saved', type: AppToastType.success);
+      if (showToast) {
+        AppToast.show(context, 'Syllabus saved', type: AppToastType.success);
+      }
     } catch (e) {
       if (!mounted) return;
       AppToast.show(
@@ -313,6 +438,465 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     return '';
   }
 
+  Future<void> _autoSaveIfRecorded({String successMessage = 'Saved'}) async {
+    if (!_isRecordedVariant) return;
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(context, successMessage, type: AppToastType.success);
+  }
+
+  List<int> _unitIndexesForModule(String moduleLabel) {
+    final out = <int>[];
+    for (int i = 0; i < _units.length; i++) {
+      final u = _units[i];
+      final label = u.otherTitle.trim().isNotEmpty
+          ? u.otherTitle.trim()
+          : 'Module ${i + 1}';
+      if (label == moduleLabel) out.add(i);
+    }
+    return out;
+  }
+
+  Future<void> _clearRecordedAssetsByUnitIndexes({
+    required List<int> unitIndexes,
+    required String confirmTitle,
+    required String confirmMessage,
+  }) async {
+    if (!_isRecordedVariant || unitIndexes.isEmpty || _recordedAssetBusy)
+      return;
+
+    final ok = await _confirm(
+      title: confirmTitle,
+      message: confirmMessage,
+      confirmText: 'Clear',
+      danger: true,
+    );
+    if (!ok) return;
+
+    final nextUnits = [..._units];
+    final totalTargets = unitIndexes.fold<int>(0, (sum, idx) {
+      if (idx < 0 || idx >= _units.length) return sum;
+      return sum + _units[idx].sessions.length;
+    });
+    if (mounted) {
+      setState(() {
+        _recordedAssetBusy = true;
+        _recordedAssetDone = 0;
+        _recordedAssetTotal = totalTargets;
+        _recordedAssetLabel = 'Clearing assets...';
+      });
+    }
+    int cleared = 0;
+    int failed = 0;
+
+    try {
+      for (final unitIndex in unitIndexes) {
+        if (unitIndex < 0 || unitIndex >= nextUnits.length) continue;
+        final unit = nextUnits[unitIndex];
+        final sessions = [...unit.sessions];
+
+        for (int i = 0; i < sessions.length; i++) {
+          final s = sessions[i];
+          if (mounted) {
+            setState(() {
+              _recordedAssetLabel =
+                  'Clearing ${unit.title.isEmpty ? 'unit' : unit.title} • ${i + 1}/${sessions.length}';
+            });
+          }
+          try {
+            await _deleteRecordedAssetsIfNeeded(s);
+            sessions[i] = s.copyWith(
+              videoUrl: '',
+              materialsUrl: '',
+              videoThumbnailUrl: '',
+              serverFolderPath: '',
+            );
+            cleared += 1;
+          } catch (_) {
+            failed += 1;
+          } finally {
+            if (mounted) {
+              setState(() {
+                _recordedAssetDone += 1;
+              });
+            }
+          }
+        }
+
+        nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recordedAssetBusy = false;
+          _recordedAssetLabel = '';
+        });
+      }
+    }
+
+    setState(() {
+      _units = nextUnits;
+      _rebuildLessonPresenceFromRtdb();
+    });
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Clear completed. Cleared: $cleared • Failed: $failed',
+      type: failed == 0 ? AppToastType.success : AppToastType.info,
+    );
+  }
+
+  Future<void> _clearRecordedCourseAssets() async {
+    await _clearRecordedAssetsByUnitIndexes(
+      unitIndexes: [for (int i = 0; i < _units.length; i++) i],
+      confirmTitle: 'Clear Course Assets?',
+      confirmMessage:
+          'This removes recorded files/folders from server and clears URLs in RTDB for the whole course.',
+    );
+  }
+
+  Future<void> _clearRecordedModuleAssets(String moduleLabel) async {
+    await _clearRecordedAssetsByUnitIndexes(
+      unitIndexes: _unitIndexesForModule(moduleLabel),
+      confirmTitle: 'Clear Module Assets?',
+      confirmMessage:
+          'This removes recorded files/folders and clears URLs for module "$moduleLabel".',
+    );
+  }
+
+  Future<void> _clearRecordedUnitAssets(int unitIndex) async {
+    final label = (unitIndex >= 0 && unitIndex < _units.length)
+        ? _units[unitIndex].title
+        : 'Unit';
+    await _clearRecordedAssetsByUnitIndexes(
+      unitIndexes: [unitIndex],
+      confirmTitle: 'Clear Unit Assets?',
+      confirmMessage:
+          'This removes recorded files/folders and clears URLs for "$label".',
+    );
+  }
+
+  List<_RecordedBulkTarget> _buildRecordedBulkTargets(List<int> unitIndexes) {
+    final targets = <_RecordedBulkTarget>[];
+    for (final unitIndex in unitIndexes) {
+      if (unitIndex < 0 || unitIndex >= _units.length) continue;
+      final unit = _units[unitIndex];
+      for (int si = 0; si < unit.sessions.length; si++) {
+        targets.add(
+          _RecordedBulkTarget(
+            unitIndex: unitIndex,
+            sessionIndex: si,
+            session: unit.sessions[si],
+          ),
+        );
+      }
+    }
+    targets.sort((a, b) {
+      final an = a.session.sessionNumber > 0
+          ? a.session.sessionNumber
+          : (a.sessionIndex + 1);
+      final bn = b.session.sessionNumber > 0
+          ? b.session.sessionNumber
+          : (b.sessionIndex + 1);
+      return an.compareTo(bn);
+    });
+    return targets;
+  }
+
+  bool _isTrailingOnlySelection(
+    Map<int, PlatformFile> filesByNo,
+    int expected,
+  ) {
+    if (filesByNo.isEmpty) return true;
+    if (filesByNo.length > expected) return false;
+    final maxKey = filesByNo.keys.reduce((a, b) => a > b ? a : b);
+    if (maxKey != filesByNo.length) return false;
+    for (int i = 1; i <= filesByNo.length; i++) {
+      if (!filesByNo.containsKey(i)) return false;
+    }
+    return true;
+  }
+
+  Future<void> _bulkUploadRecordedForUnitIndexes({
+    required List<int> unitIndexes,
+    required String scopeLabel,
+  }) async {
+    if (_recordedAssetBusy || !_isRecordedVariant) return;
+    final targets = _buildRecordedBulkTargets(unitIndexes);
+    final expected = targets.length;
+    if (expected == 0) {
+      AppToast.show(
+        context,
+        'No lessons found in $scopeLabel.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: false,
+      type: FileType.custom,
+      allowedExtensions: const [
+        'html',
+        'htm',
+        'mp4',
+        'mov',
+        'm4v',
+        'webm',
+        'mkv',
+      ],
+    );
+    if (picked == null || picked.files.isEmpty) return;
+
+    bool isHtmlExt(String ext) => ext == 'html' || ext == 'htm';
+    bool isVideoExt(String ext) =>
+        ext == 'mp4' ||
+        ext == 'mov' ||
+        ext == 'm4v' ||
+        ext == 'webm' ||
+        ext == 'mkv';
+
+    final reg = RegExp(r'^(\d+)\.([a-z0-9]+)$', caseSensitive: false);
+    final htmlByNo = <int, PlatformFile>{};
+    final videoByNo = <int, PlatformFile>{};
+
+    for (final f in picked.files) {
+      final m = reg.firstMatch(f.name.trim());
+      if (m == null) {
+        AppToast.show(
+          context,
+          'Invalid file: ${f.name}. Use numeric names like 1.html',
+          type: AppToastType.error,
+        );
+        return;
+      }
+      final n = int.tryParse(m.group(1) ?? '') ?? 0;
+      final ext = (m.group(2) ?? '').toLowerCase();
+      if (n <= 0 || n > expected) {
+        AppToast.show(
+          context,
+          'File ${f.name} out of range. Expected 1..$expected',
+          type: AppToastType.error,
+        );
+        return;
+      }
+      if (isHtmlExt(ext)) {
+        htmlByNo[n] = f;
+      } else if (isVideoExt(ext)) {
+        videoByNo[n] = f;
+      } else {
+        AppToast.show(
+          context,
+          'Unsupported file type: ${f.name}',
+          type: AppToastType.error,
+        );
+        return;
+      }
+    }
+
+    if (htmlByNo.isEmpty && videoByNo.isEmpty) {
+      AppToast.show(
+        context,
+        'No valid HTML or video files selected.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    if (!_isTrailingOnlySelection(htmlByNo, expected)) {
+      AppToast.show(
+        context,
+        'HTML numbering must be 1..N with only trailing missing.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (!_isTrailingOnlySelection(videoByNo, expected)) {
+      AppToast.show(
+        context,
+        'Video numbering must be 1..N with only trailing missing.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    if ((htmlByNo.isNotEmpty && htmlByNo.length < expected) ||
+        (videoByNo.isNotEmpty && videoByNo.length < expected)) {
+      final htmlInfo = htmlByNo.isNotEmpty
+          ? 'HTML ${htmlByNo.length}/$expected'
+          : null;
+      final videoInfo = videoByNo.isNotEmpty
+          ? 'Video ${videoByNo.length}/$expected'
+          : null;
+      AppToast.show(
+        context,
+        'Missing trailing lessons allowed. Uploading ${[htmlInfo, videoInfo].whereType<String>().join(' • ')}',
+        type: AppToastType.info,
+      );
+    }
+
+    final courseFolderName = await _loadCourseFolderName();
+    final totalOps = htmlByNo.length + videoByNo.length;
+    final nextUnits = [..._units];
+    int success = 0;
+    int failed = 0;
+
+    if (mounted) {
+      setState(() {
+        _recordedAssetBusy = true;
+        _recordedAssetDone = 0;
+        _recordedAssetTotal = totalOps;
+        _recordedAssetLabel = 'Uploading assets for $scopeLabel';
+      });
+    }
+
+    Future<void> runSingle({
+      required _RecordedBulkTarget target,
+      required PlatformFile file,
+      required bool isHtml,
+      required int localNo,
+    }) async {
+      final current = nextUnits[target.unitIndex].sessions[target.sessionIndex];
+      final oldUrl = isHtml
+          ? current.materialsUrl.trim()
+          : current.videoUrl.trim();
+      if (oldUrl.isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(oldUrl);
+        if (rel.isNotEmpty) {
+          await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+        }
+      }
+
+      final serverPath = _resolveServerFolderPath(current).isNotEmpty
+          ? _resolveServerFolderPath(current)
+          : '${courseFolderName}/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: current.sessionNumber > 0 ? current.sessionNumber : localNo, sessionTitle: current.title)}';
+
+      final url = await _SyllabusServerStorage.uploadPlatformFile(
+        file: file,
+        root: 'courses',
+        path: serverPath,
+        customName: _SyllabusServerStorage.buildCustomBaseName(
+          sessionNumber: current.sessionNumber > 0
+              ? current.sessionNumber
+              : localNo,
+          suffix: isHtml ? 'materials' : 'video',
+        ),
+      );
+
+      final updated = isHtml
+          ? current.copyWith(materialsUrl: url, serverFolderPath: serverPath)
+          : current.copyWith(
+              videoUrl: url,
+              videoThumbnailUrl: '',
+              serverFolderPath: serverPath,
+            );
+
+      final sessions = [...nextUnits[target.unitIndex].sessions];
+      sessions[target.sessionIndex] = updated;
+      nextUnits[target.unitIndex] = nextUnits[target.unitIndex].copyWith(
+        sessions: sessions,
+      );
+    }
+
+    try {
+      for (int i = 1; i <= expected; i++) {
+        final target = targets[i - 1];
+        final htmlFile = htmlByNo[i];
+        final videoFile = videoByNo[i];
+
+        if (htmlFile != null) {
+          try {
+            if (mounted) {
+              setState(
+                () => _recordedAssetLabel = 'Uploading HTML • $i/$expected',
+              );
+            }
+            await runSingle(
+              target: target,
+              file: htmlFile,
+              isHtml: true,
+              localNo: i,
+            );
+            success += 1;
+          } catch (_) {
+            failed += 1;
+          } finally {
+            if (mounted) setState(() => _recordedAssetDone += 1);
+          }
+        }
+
+        if (videoFile != null) {
+          try {
+            if (mounted) {
+              setState(
+                () => _recordedAssetLabel = 'Uploading Video • $i/$expected',
+              );
+            }
+            await runSingle(
+              target: target,
+              file: videoFile,
+              isHtml: false,
+              localNo: i,
+            );
+            success += 1;
+          } catch (_) {
+            failed += 1;
+          } finally {
+            if (mounted) setState(() => _recordedAssetDone += 1);
+          }
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recordedAssetBusy = false;
+          _recordedAssetLabel = '';
+        });
+      }
+    }
+
+    setState(() {
+      _units = nextUnits;
+      _rebuildLessonPresenceFromRtdb();
+    });
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Bulk upload completed for $scopeLabel. Success: $success • Failed: $failed',
+      type: failed == 0 ? AppToastType.success : AppToastType.info,
+    );
+  }
+
+  Future<void> _bulkUploadRecordedUnitAssets(int unitIndex) async {
+    if (!_isRecordedVariant || unitIndex < 0 || unitIndex >= _units.length) {
+      return;
+    }
+    final unitTitle = _units[unitIndex].title.trim().isEmpty
+        ? 'Unit ${unitIndex + 1}'
+        : _units[unitIndex].title.trim();
+    await _bulkUploadRecordedForUnitIndexes(
+      unitIndexes: [unitIndex],
+      scopeLabel: unitTitle,
+    );
+  }
+
+  Future<void> _bulkUploadRecordedModuleAssets(String moduleLabel) async {
+    await _bulkUploadRecordedForUnitIndexes(
+      unitIndexes: _unitIndexesForModule(moduleLabel),
+      scopeLabel: moduleLabel,
+    );
+  }
+
+  Future<void> _bulkUploadRecordedCourseAssets() async {
+    await _bulkUploadRecordedForUnitIndexes(
+      unitIndexes: [for (int i = 0; i < _units.length; i++) i],
+      scopeLabel: 'entire course',
+    );
+  }
+
   // ----------------------------
   // Unit actions
   // ----------------------------
@@ -339,6 +923,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     );
 
     setState(() => _units = [..._units, newUnit]);
+    await _autoSaveIfRecorded(successMessage: 'Unit added and saved.');
   }
 
   Future<void> _editUnit(int unitIndex) async {
@@ -368,6 +953,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       next[unitIndex] = updated;
       _units = next;
     });
+    await _autoSaveIfRecorded(successMessage: 'Unit updated and saved.');
   }
 
   Future<void> _deleteUnit(int unitIndex) async {
@@ -391,6 +977,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         final next = [..._units]..removeAt(unitIndex);
         _units = next;
       });
+      await _autoSaveIfRecorded(successMessage: 'Unit deleted and saved.');
     } catch (e) {
       if (!mounted) return;
       AppToast.show(
@@ -408,6 +995,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       next.insert(to, item);
       _units = next;
     });
+    if (_isRecordedVariant) {
+      unawaited(_saveSyllabus(showToast: false));
+    }
   }
 
   // ----------------------------
@@ -467,13 +1057,19 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       next[unitIndex] = unit.copyWith(sessions: [...unit.sessions, newSession]);
       _units = next;
     });
-
-    if (mounted) {
+    if (_isRecordedVariant) {
+      await _saveSyllabus(showToast: false);
+      if (!mounted) return;
       AppToast.show(
         context,
-        'Session added. Tap Save to apply in RTDB.',
+        'Lesson added and saved.',
         type: AppToastType.success,
       );
+      return;
+    }
+
+    if (mounted) {
+      AppToast.show(context, 'Session added.', type: AppToastType.success);
     }
   }
 
@@ -532,13 +1128,19 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
       _units = nextUnits;
     });
-
-    if (mounted) {
+    if (_isRecordedVariant) {
+      await _saveSyllabus(showToast: false);
+      if (!mounted) return;
       AppToast.show(
         context,
-        'Session updated. Tap Save to apply in RTDB.',
+        'Lesson updated and saved.',
         type: AppToastType.success,
       );
+      return;
+    }
+
+    if (mounted) {
+      AppToast.show(context, 'Session updated.', type: AppToastType.success);
     }
   }
 
@@ -565,6 +1167,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
         _units = nextUnits;
       });
+      await _autoSaveIfRecorded(successMessage: 'Lesson deleted and saved.');
     } catch (e) {
       if (!mounted) return;
       AppToast.show(
@@ -586,6 +1189,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
       _units = nextUnits;
     });
+    if (_isRecordedVariant) {
+      unawaited(_saveSyllabus(showToast: false));
+    }
   }
 
   Future<void> _openBulkRecordedUpload() async {
@@ -620,7 +1226,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) => _RecordedBulkUploadSheet(
+      builder: (_) => _RecordedBulkSimpleUploadSheet(
         units: _units,
         courseFolderName: courseFolderName,
         courseTitle: widget.courseTitle,
@@ -660,9 +1266,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
     AppToast.show(
       context,
-      'Bulk upload applied to ${result.updates.length} session file(s). Tap Save to write to RTDB.',
+      'Bulk upload applied to ${result.updates.length} session file(s). Auto-saving...',
       type: AppToastType.success,
     );
+
+    await _saveSyllabus();
   }
 
   // ----------------------------
@@ -671,6 +1279,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final moduleGroups = _isRecordedVariant
+        ? _groupUnitsByModule()
+        : const <_ModuleUnitGroup>[];
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F9),
       appBar: AppBar(
@@ -705,35 +1316,72 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         actions: [
           if (_isRecordedVariant)
             IconButton(
-              tooltip: 'Bulk upload assets',
-              onPressed: _loading ? null : _openBulkRecordedUpload,
-              icon: const Icon(Icons.cloud_upload_outlined),
+              tooltip: 'Clear course assets',
+              onPressed: (_loading || _saving || _recordedAssetBusy)
+                  ? null
+                  : _clearRecordedCourseAssets,
+              icon: const Icon(Icons.delete_sweep_outlined),
+              color: const Color(0xFFDC2626),
+            ),
+          if (_isRecordedVariant)
+            IconButton(
+              tooltip: 'Bulk upload course assets',
+              onPressed: (_loading || _saving || _recordedAssetBusy)
+                  ? null
+                  : _bulkUploadRecordedCourseAssets,
+              icon: const Icon(Icons.upload_file_rounded),
+              color: const Color(0xFF2563EB),
+            ),
+          if (_isRecordedVariant)
+            IconButton(
+              tooltip: 'Refresh lesson files status',
+              onPressed: (_loading || _saving || _recordedAssetBusy)
+                  ? null
+                  : _refreshRecordedLessonPresenceFromServer,
+              icon: const Icon(Icons.check_circle_outline_rounded),
+              color: const Color(0xFF16A34A),
             ),
           IconButton(
             tooltip: 'Reload',
             onPressed: _loading ? null : _loadSyllabus,
             icon: const Icon(Icons.refresh),
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: FilledButton.icon(
-              onPressed: (_saving || _loading) ? null : _saveSyllabus,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(_saving ? 'Saving…' : 'Save'),
+          if (!_isRecordedVariant)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: FilledButton.icon(
+                onPressed: (_saving || _loading) ? null : _saveSyllabus,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(_saving ? 'Saving…' : 'Save'),
+              ),
             ),
-          ),
+          if (_isRecordedVariant && _recordedAssetBusy)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _loading ? null : _addUnit,
+        onPressed: (_loading || (_isRecordedVariant && _recordedAssetBusy))
+            ? null
+            : _addUnit,
         icon: const Icon(Icons.add),
-        label: const Text('Add Unit'),
+        label: Text(
+          _isRecordedVariant ? 'Add Unit (inside module)' : 'Add Unit',
+        ),
       ),
       body: _loading
           ? const Center(
@@ -743,37 +1391,144 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           ? _EmptyState(onAddUnit: _addUnit, courseTitle: widget.courseTitle)
           : Column(
               children: [
-                _HeaderStats(units: _units.length, sessions: _totalSessions),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    itemCount: _units.length,
-                    onReorder: (oldIndex, newIndex) {
-                      if (newIndex > oldIndex) newIndex -= 1;
-                      _moveUnit(oldIndex, newIndex);
-                    },
-                    itemBuilder: (context, unitIndex) {
-                      final unit = _units[unitIndex];
-                      return _UnitCard(
-                        key: ValueKey(unit.id),
-                        unitNumber: unitIndex + 1,
-                        unit: unit,
-                        isExpanded: _isExpanded(unit.id),
-                        onToggleExpanded: () => _toggleExpanded(unit.id),
-                        onEdit: () => _editUnit(unitIndex),
-                        onDelete: () => _deleteUnit(unitIndex),
-                        onAddSession: () => _addSession(unitIndex),
-                        onReorderSession: (oldI, newI) {
-                          if (newI > oldI) newI -= 1;
-                          _moveSession(unitIndex, oldI, newI);
-                        },
-                        onEditSession: (sessionIndex) =>
-                            _editSession(unitIndex, sessionIndex),
-                        onDeleteSession: (sessionIndex) =>
-                            _deleteSession(unitIndex, sessionIndex),
-                      );
-                    },
+                _HeaderStats(
+                  units: _units.length,
+                  sessions: _totalSessions,
+                  modules: _isRecordedVariant ? moduleGroups.length : null,
+                  unitsLabel: _isRecordedVariant ? 'Units' : 'Units',
+                  sessionsLabel: _isRecordedVariant ? 'Lessons' : 'Sessions',
+                  hint: _isRecordedVariant ? '' : 'Drag units to reorder',
+                ),
+                if (_isRecordedVariant && _recordedAssetBusy)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _recordedAssetLabel.isEmpty
+                                ? 'Processing...'
+                                : _recordedAssetLabel,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 6),
+                          LinearProgressIndicator(
+                            minHeight: 8,
+                            value: _recordedAssetTotal <= 0
+                                ? null
+                                : (_recordedAssetDone / _recordedAssetTotal)
+                                      .clamp(0.0, 1.0),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_recordedAssetDone}/${_recordedAssetTotal}',
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                Expanded(
+                  child: _isRecordedVariant
+                      ? ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                          children: [
+                            for (final group in moduleGroups) ...[
+                              _ModuleHeader(
+                                label: group.moduleLabel,
+                                unitCount: group.units.length,
+                                lessonCount: group.lessonCount,
+                                expanded: _isModuleExpanded(group.moduleLabel),
+                                onToggle: () =>
+                                    _toggleModuleExpanded(group.moduleLabel),
+                                onClear: _recordedAssetBusy
+                                    ? null
+                                    : () => _clearRecordedModuleAssets(
+                                        group.moduleLabel,
+                                      ),
+                                onBulkUpload: _recordedAssetBusy
+                                    ? null
+                                    : () => _bulkUploadRecordedModuleAssets(
+                                        group.moduleLabel,
+                                      ),
+                              ),
+                              if (_isModuleExpanded(group.moduleLabel))
+                                for (final pair in group.units)
+                                  _UnitCard(
+                                    key: ValueKey(pair.value.id),
+                                    unitNumber: pair.key + 1,
+                                    unit: pair.value,
+                                    isExpanded: _isExpanded(pair.value.id),
+                                    onToggleExpanded: () =>
+                                        _toggleExpanded(pair.value.id),
+                                    onEdit: () => _editUnit(pair.key),
+                                    onDelete: () => _deleteUnit(pair.key),
+                                    onAddSession: () => _addSession(pair.key),
+                                    onReorderSession: (oldI, newI) {
+                                      if (newI > oldI) newI -= 1;
+                                      _moveSession(pair.key, oldI, newI);
+                                    },
+                                    onEditSession: (sessionIndex) =>
+                                        _editSession(pair.key, sessionIndex),
+                                    onDeleteSession: (sessionIndex) =>
+                                        _deleteSession(pair.key, sessionIndex),
+                                    isRecorded: true,
+                                    onClearAssets: () =>
+                                        _clearRecordedUnitAssets(pair.key),
+                                    onBulkUpload: () =>
+                                        _bulkUploadRecordedUnitAssets(pair.key),
+                                    actionsEnabled: !_recordedAssetBusy,
+                                    assetPresenceBySessionId:
+                                        _lessonPresenceBySessionId,
+                                  ),
+                              const SizedBox(height: 8),
+                            ],
+                          ],
+                        )
+                      : ReorderableListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                          itemCount: _units.length,
+                          onReorder: (oldIndex, newIndex) {
+                            if (newIndex > oldIndex) newIndex -= 1;
+                            _moveUnit(oldIndex, newIndex);
+                          },
+                          itemBuilder: (context, unitIndex) {
+                            final unit = _units[unitIndex];
+                            return _UnitCard(
+                              key: ValueKey(unit.id),
+                              unitNumber: unitIndex + 1,
+                              unit: unit,
+                              isExpanded: _isExpanded(unit.id),
+                              onToggleExpanded: () => _toggleExpanded(unit.id),
+                              onEdit: () => _editUnit(unitIndex),
+                              onDelete: () => _deleteUnit(unitIndex),
+                              onAddSession: () => _addSession(unitIndex),
+                              onReorderSession: (oldI, newI) {
+                                if (newI > oldI) newI -= 1;
+                                _moveSession(unitIndex, oldI, newI);
+                              },
+                              onEditSession: (sessionIndex) =>
+                                  _editSession(unitIndex, sessionIndex),
+                              onDeleteSession: (sessionIndex) =>
+                                  _deleteSession(unitIndex, sessionIndex),
+                              isRecorded: false,
+                              actionsEnabled: true,
+                              assetPresenceBySessionId: const {},
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
@@ -809,6 +1564,129 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         false;
   }
 
+  int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  List<SyllabusUnit> _parseRecordedUnits(Map<String, dynamic> root) {
+    final rawModules = _asListOfMaps(root['modules']);
+    if (rawModules.isEmpty) {
+      return _asListOfMaps(
+        root['units'],
+      ).map((x) => SyllabusUnit.fromMap(x)).toList();
+    }
+
+    final units = <SyllabusUnit>[];
+
+    for (int mi = 0; mi < rawModules.length; mi++) {
+      final module = rawModules[mi];
+      final moduleOrder = _toInt(module['order'], fallback: mi + 1);
+      final moduleLabel =
+          (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+          ? (module['otherTitle'] ?? '').toString().trim()
+          : ((module['title'] ?? '').toString().trim().isNotEmpty
+                ? (module['title'] ?? '').toString().trim()
+                : 'Module ${mi + 1}');
+      final rawUnits = _asListOfMaps(module['units']);
+
+      for (int ui = 0; ui < rawUnits.length; ui++) {
+        final unit = rawUnits[ui];
+        final unitOrder = _toInt(unit['order'], fallback: ui + 1);
+        final rawLessons = _asListOfMaps(unit['lessons']);
+        final sessions = rawLessons.map(SyllabusSession.fromMap).toList()
+          ..sort((a, b) => a.order.compareTo(b.order));
+
+        units.add(
+          SyllabusUnit(
+            id: (unit['id'] ?? '').toString().trim().isNotEmpty
+                ? (unit['id'] ?? '').toString().trim()
+                : _newId(),
+            title: (unit['title'] ?? '').toString(),
+            otherTitle: moduleLabel,
+            description: (unit['description'] ?? '').toString(),
+            order: (moduleOrder * 1000) + unitOrder,
+            sessions: sessions,
+          ),
+        );
+      }
+    }
+
+    return units;
+  }
+
+  List<Map<String, dynamic>> _buildRecordedModulesPayload() {
+    final grouped = <String, List<SyllabusUnit>>{};
+    final moduleLabels = <String>[];
+
+    for (int i = 0; i < _units.length; i++) {
+      final unit = _units[i];
+      final label = unit.otherTitle.trim().isNotEmpty
+          ? unit.otherTitle.trim()
+          : 'Module ${i + 1}';
+      if (!grouped.containsKey(label)) {
+        grouped[label] = <SyllabusUnit>[];
+        moduleLabels.add(label);
+      }
+      grouped[label]!.add(unit);
+    }
+
+    final modules = <Map<String, dynamic>>[];
+    for (int mi = 0; mi < moduleLabels.length; mi++) {
+      final label = moduleLabels[mi];
+      final units = grouped[label] ?? <SyllabusUnit>[];
+      modules.add({
+        'id': 'module_${mi + 1}',
+        'title': label,
+        'otherTitle': label,
+        'description': '',
+        'order': mi + 1,
+        'units': [
+          for (int ui = 0; ui < units.length; ui++)
+            {
+              'id': units[ui].id,
+              'title': units[ui].title,
+              'otherTitle': '',
+              'description': units[ui].description,
+              'order': ui + 1,
+              'lessons': units[ui].sessions
+                  .map(
+                    (s) => s.toMap(
+                      includeRecordedExtras: true,
+                      includeOnlineExtras: false,
+                    ),
+                  )
+                  .toList(),
+            },
+        ],
+      });
+    }
+
+    return modules;
+  }
+
+  List<_ModuleUnitGroup> _groupUnitsByModule() {
+    final grouped = <String, List<MapEntry<int, SyllabusUnit>>>{};
+    final order = <String>[];
+    for (int i = 0; i < _units.length; i++) {
+      final unit = _units[i];
+      final label = unit.otherTitle.trim().isNotEmpty
+          ? unit.otherTitle.trim()
+          : 'Module ${i + 1}';
+      if (!grouped.containsKey(label)) {
+        grouped[label] = <MapEntry<int, SyllabusUnit>>[];
+        order.add(label);
+      }
+      grouped[label]!.add(MapEntry(i, unit));
+    }
+
+    return [
+      for (final label in order)
+        _ModuleUnitGroup(moduleLabel: label, units: grouped[label] ?? const []),
+    ];
+  }
+
   List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
     final out = <Map<String, dynamic>>[];
 
@@ -839,6 +1717,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
   bool _isExpanded(String unitId) => _unitExpanded[unitId] ?? true;
 
+  bool _isModuleExpanded(String moduleLabel) =>
+      _moduleExpanded[moduleLabel] ?? true;
+
   String _variantLabel(String key) {
     switch (key.trim().toLowerCase()) {
       case 'recorded':
@@ -857,6 +1738,42 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   void _toggleExpanded(String unitId) {
     setState(() => _unitExpanded[unitId] = !(_unitExpanded[unitId] ?? true));
   }
+
+  void _toggleModuleExpanded(String moduleLabel) {
+    setState(
+      () => _moduleExpanded[moduleLabel] =
+          !(_moduleExpanded[moduleLabel] ?? true),
+    );
+  }
+}
+
+class _ModuleUnitGroup {
+  const _ModuleUnitGroup({required this.moduleLabel, required this.units});
+
+  final String moduleLabel;
+  final List<MapEntry<int, SyllabusUnit>> units;
+
+  int get lessonCount =>
+      units.fold<int>(0, (sum, e) => sum + e.value.sessions.length);
+}
+
+class _RecordedBulkTarget {
+  const _RecordedBulkTarget({
+    required this.unitIndex,
+    required this.sessionIndex,
+    required this.session,
+  });
+
+  final int unitIndex;
+  final int sessionIndex;
+  final SyllabusSession session;
+}
+
+class _LessonAssetPresence {
+  const _LessonAssetPresence({required this.videoOk, required this.htmlOk});
+
+  final bool videoOk;
+  final bool htmlOk;
 }
 
 class _SyllabusServerStorage {
@@ -1137,27 +2054,116 @@ class _SyllabusServerStorage {
 /// ----------------------------
 
 class _HeaderStats extends StatelessWidget {
-  const _HeaderStats({required this.units, required this.sessions});
+  const _HeaderStats({
+    required this.units,
+    required this.sessions,
+    this.modules,
+    this.unitsLabel = 'Units',
+    this.sessionsLabel = 'Sessions',
+    this.hint = 'Drag units to reorder',
+  });
 
   final int units;
   final int sessions;
+  final int? modules;
+  final String unitsLabel;
+  final String sessionsLabel;
+  final String hint;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Pill(label: '$units Units'),
-          const SizedBox(width: 8),
-          _Pill(label: '$sessions Sessions'),
-          const Spacer(),
-          Text(
-            'Drag units to reorder',
-            style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (modules != null) _Pill(label: '$modules Modules'),
+              _Pill(label: '$units $unitsLabel'),
+              _Pill(label: '$sessions $sessionsLabel'),
+            ],
           ),
+          if (hint.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              hint,
+              style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _ModuleHeader extends StatelessWidget {
+  const _ModuleHeader({
+    required this.label,
+    required this.unitCount,
+    required this.lessonCount,
+    required this.expanded,
+    required this.onToggle,
+    this.onClear,
+    this.onBulkUpload,
+  });
+
+  final String label;
+  final int unitCount;
+  final int lessonCount;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final VoidCallback? onClear;
+  final VoidCallback? onBulkUpload;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label • $unitCount units • $lessonCount lessons',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1E3A8A),
+                ),
+              ),
+            ),
+            Icon(
+              expanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              color: const Color(0xFF1E3A8A),
+            ),
+            IconButton(
+              tooltip: 'Bulk upload module assets',
+              onPressed: onBulkUpload,
+              icon: const Icon(Icons.upload_file_rounded),
+              color: const Color(0xFF2563EB),
+            ),
+            IconButton(
+              tooltip: 'Clear module assets',
+              onPressed: onClear,
+              icon: const Icon(Icons.delete_outline_rounded),
+              color: const Color(0xFFDC2626),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1229,6 +2235,11 @@ class _UnitCard extends StatelessWidget {
     required this.onReorderSession,
     required this.onEditSession,
     required this.onDeleteSession,
+    this.isRecorded = false,
+    this.onClearAssets,
+    this.onBulkUpload,
+    this.actionsEnabled = true,
+    this.assetPresenceBySessionId = const {},
   });
 
   final int unitNumber;
@@ -1241,6 +2252,11 @@ class _UnitCard extends StatelessWidget {
   final void Function(int oldIndex, int newIndex) onReorderSession;
   final void Function(int sessionIndex) onEditSession;
   final void Function(int sessionIndex) onDeleteSession;
+  final bool isRecorded;
+  final VoidCallback? onClearAssets;
+  final VoidCallback? onBulkUpload;
+  final bool actionsEnabled;
+  final Map<String, _LessonAssetPresence> assetPresenceBySessionId;
 
   @override
   Widget build(BuildContext context) {
@@ -1256,14 +2272,14 @@ class _UnitCard extends StatelessWidget {
       key: key,
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFF1A2B48).withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(14),
@@ -1307,28 +2323,36 @@ class _UnitCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (unit.description.trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  unit.description,
-                  style: TextStyle(color: Colors.black.withValues(alpha: 0.65)),
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Row(
+            const SizedBox(height: 6),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
               children: [
                 Text(
-                  '${unit.sessions.length} sessions',
+                  '${unit.sessions.length} ${isRecorded ? 'lessons' : 'sessions'}',
                   style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
                 ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: onAddSession,
+                if (isRecorded)
+                  IconButton(
+                    onPressed: actionsEnabled ? onBulkUpload : null,
+                    tooltip: 'Bulk upload unit',
+                    icon: const Icon(Icons.upload_file_rounded),
+                    color: const Color(0xFF2563EB),
+                  ),
+                if (isRecorded)
+                  IconButton(
+                    onPressed: actionsEnabled ? onClearAssets : null,
+                    tooltip: 'Clear unit assets',
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    color: const Color(0xFFDC2626),
+                  ),
+                IconButton(
+                  onPressed: actionsEnabled ? onAddSession : null,
+                  tooltip: isRecorded ? 'Add lesson' : 'Add session',
                   icon: const Icon(Icons.add),
-                  label: const Text('Add session'),
+                  color: const Color(0xFF0F172A),
                 ),
               ],
             ),
@@ -1338,7 +2362,7 @@ class _UnitCard extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    'Collapsed • ${unit.sessions.length} sessions',
+                    'Collapsed • ${unit.sessions.length} ${isRecorded ? 'lessons' : 'sessions'}',
                     style: TextStyle(
                       color: Colors.black.withValues(alpha: 0.55),
                     ),
@@ -1351,7 +2375,9 @@ class _UnitCard extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    'No sessions yet. Add your first session.',
+                    isRecorded
+                        ? 'No lessons yet. Add your first lesson.'
+                        : 'No sessions yet. Add your first session.',
                     style: TextStyle(
                       color: Colors.black.withValues(alpha: 0.55),
                     ),
@@ -1374,23 +2400,54 @@ class _UnitCard extends StatelessWidget {
                       child: const Icon(Icons.drag_handle),
                     ),
                     title: Text(
-                      'Session ${s.sessionNumber <= 0 ? (i + 1) : s.sessionNumber} • ${s.title.isEmpty ? '(Untitled session)' : s.title}',
+                      '${isRecorded ? 'Lesson' : 'Session'} ${s.sessionNumber <= 0 ? (i + 1) : s.sessionNumber} • ${s.title.isEmpty ? '(Untitled ${isRecorded ? 'lesson' : 'session'})' : s.title}',
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     subtitle: Text(
-                      '${s.skillType.label} • ${s.durationMinutes} min\nObjective: ${s.objective.isEmpty ? '(missing)' : s.objective}',
-                      maxLines: 3,
+                      '${s.skillType.label} • ${s.durationMinutes} min',
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (v) {
-                        if (v == 'edit') onEditSession(i);
-                        if (v == 'delete') onDeleteSession(i);
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuDivider(),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    dense: true,
+                    visualDensity: const VisualDensity(vertical: -1),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isRecorded)
+                          Icon(
+                            Icons.ondemand_video_rounded,
+                            size: 18,
+                            color:
+                                (assetPresenceBySessionId[s.id]?.videoOk ??
+                                    s.videoUrl.trim().isNotEmpty)
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFF94A3B8),
+                          ),
+                        if (isRecorded) const SizedBox(width: 6),
+                        if (isRecorded)
+                          Icon(
+                            Icons.description_rounded,
+                            size: 18,
+                            color:
+                                (assetPresenceBySessionId[s.id]?.htmlOk ??
+                                    s.materialsUrl.trim().isNotEmpty)
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFF94A3B8),
+                          ),
+                        PopupMenuButton<String>(
+                          onSelected: (v) {
+                            if (v == 'edit') onEditSession(i);
+                            if (v == 'delete') onDeleteSession(i);
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                            PopupMenuDivider(),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete'),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   );
@@ -2606,9 +3663,15 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 }
 
 class _BulkUploadResult {
-  const _BulkUploadResult({required this.updates});
+  const _BulkUploadResult({
+    required this.updates,
+    this.successCount = 0,
+    this.failedCount = 0,
+  });
 
   final List<_BulkSessionUpdate> updates;
+  final int successCount;
+  final int failedCount;
 }
 
 class _BulkSessionUpdate {
@@ -2690,6 +3753,665 @@ class _BulkAssetSlot {
       progress: progress ?? this.progress,
       uploadedUrl: clearUploadedUrl ? null : (uploadedUrl ?? this.uploadedUrl),
       error: clearError ? null : (error ?? this.error),
+    );
+  }
+}
+
+enum _BulkReplaceType { html, video }
+
+class _BulkReplaceOp {
+  const _BulkReplaceOp({
+    required this.entryKey,
+    required this.sessionNumber,
+    required this.type,
+    required this.file,
+  });
+
+  final String entryKey;
+  final int sessionNumber;
+  final _BulkReplaceType type;
+  final PlatformFile file;
+}
+
+class _RecordedBulkSimpleUploadSheet extends StatefulWidget {
+  const _RecordedBulkSimpleUploadSheet({
+    required this.units,
+    required this.courseFolderName,
+    required this.courseTitle,
+    required this.courseId,
+  });
+
+  final List<SyllabusUnit> units;
+  final String courseFolderName;
+  final String courseTitle;
+  final String courseId;
+
+  @override
+  State<_RecordedBulkSimpleUploadSheet> createState() =>
+      _RecordedBulkSimpleUploadSheetState();
+}
+
+class _RecordedBulkSimpleUploadSheetState
+    extends State<_RecordedBulkSimpleUploadSheet> {
+  final List<_BulkSessionEntry> _entries = <_BulkSessionEntry>[];
+  final Map<int, PlatformFile> _htmlBySession = <int, PlatformFile>{};
+  final Map<int, PlatformFile> _videoBySession = <int, PlatformFile>{};
+  final Map<String, String> _currentHtmlUrlByEntry = <String, String>{};
+  final Map<String, String> _currentVideoUrlByEntry = <String, String>{};
+  final Map<String, String> _serverPathByEntry = <String, String>{};
+
+  final Stopwatch _watch = Stopwatch();
+
+  bool _running = false;
+  int _totalOps = 0;
+  int _doneOps = 0;
+  double _currentOpProgress = 0;
+  String _currentLabel = '';
+  int _lastSuccessCount = 0;
+  int _lastFailedCount = 0;
+
+  List<_BulkReplaceOp> _failedOps = <_BulkReplaceOp>[];
+  List<_BulkSessionUpdate> _latestUpdates = <_BulkSessionUpdate>[];
+
+  @override
+  void initState() {
+    super.initState();
+
+    for (int ui = 0; ui < widget.units.length; ui++) {
+      final unit = widget.units[ui];
+      for (int si = 0; si < unit.sessions.length; si++) {
+        final s = unit.sessions[si];
+        final sessionNo = s.sessionNumber > 0 ? s.sessionNumber : (si + 1);
+        final key = '${ui}_$si';
+        _entries.add(
+          _BulkSessionEntry(
+            key: key,
+            unitIndex: ui,
+            sessionIndex: si,
+            sessionId: s.id,
+            unitTitle: unit.title.trim().isEmpty
+                ? 'Unit ${ui + 1}'
+                : unit.title,
+            sessionTitle: s.title.trim().isEmpty
+                ? 'Session $sessionNo'
+                : s.title,
+            sessionNumber: sessionNo,
+            existingVideoUrl: s.videoUrl.trim(),
+            existingMaterialsUrl: s.materialsUrl.trim(),
+          ),
+        );
+        _currentVideoUrlByEntry[key] = s.videoUrl.trim();
+        _currentHtmlUrlByEntry[key] = s.materialsUrl.trim();
+        final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
+          sessionNumber: sessionNo,
+          sessionTitle: s.title,
+        );
+        _serverPathByEntry[key] = '${widget.courseFolderName}/$sessionFolder';
+      }
+    }
+  }
+
+  double get _globalProgress {
+    if (_totalOps <= 0) return 0;
+    return ((_doneOps + _currentOpProgress.clamp(0.0, 1.0)) / _totalOps).clamp(
+      0.0,
+      1.0,
+    );
+  }
+
+  String _elapsedLabel() {
+    final s = _watch.elapsed.inSeconds;
+    final mm = (s ~/ 60).toString().padLeft(2, '0');
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  Future<void> _pickAllFiles() async {
+    if (_running) return;
+    if (_entries.isEmpty) {
+      AppToast.show(context, 'No sessions found.', type: AppToastType.error);
+      return;
+    }
+
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: false,
+      type: FileType.custom,
+      allowedExtensions: const [
+        'html',
+        'htm',
+        'mp4',
+        'mov',
+        'm4v',
+        'webm',
+        'mkv',
+      ],
+    );
+    if (picked == null || picked.files.isEmpty) return;
+
+    final nextHtml = <int, PlatformFile>{};
+    final nextVideo = <int, PlatformFile>{};
+    final issues = <String>[];
+    final totalSessions = _entries.length;
+    final nameReg = RegExp(r'^(\d+)\.([a-z0-9]+)$', caseSensitive: false);
+
+    bool isHtmlExt(String ext) => ext == 'html' || ext == 'htm';
+    bool isVideoExt(String ext) =>
+        ext == 'mp4' ||
+        ext == 'mov' ||
+        ext == 'm4v' ||
+        ext == 'webm' ||
+        ext == 'mkv';
+
+    for (final file in picked.files) {
+      final m = nameReg.firstMatch(file.name.trim());
+      if (m == null) {
+        issues.add('Invalid file name: ${file.name} (use 1.html, 1.mp4, etc)');
+        continue;
+      }
+
+      final n = int.tryParse(m.group(1) ?? '') ?? 0;
+      final ext = (m.group(2) ?? '').toLowerCase();
+      if (n <= 0 || n > totalSessions) {
+        issues.add(
+          'Out of range: ${file.name} (session must be 1..$totalSessions)',
+        );
+        continue;
+      }
+
+      if (isHtmlExt(ext)) {
+        if (nextHtml.containsKey(n)) {
+          issues.add('Duplicate HTML session $n');
+          continue;
+        }
+        nextHtml[n] = file;
+        continue;
+      }
+
+      if (isVideoExt(ext)) {
+        if (nextVideo.containsKey(n)) {
+          issues.add('Duplicate video session $n');
+          continue;
+        }
+        nextVideo[n] = file;
+        continue;
+      }
+
+      issues.add('Unsupported extension: ${file.name}');
+    }
+
+    if (nextHtml.isEmpty && nextVideo.isEmpty) {
+      AppToast.show(
+        context,
+        issues.isEmpty ? 'No valid files selected.' : issues.first,
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    bool hasCoverage(Map<int, PlatformFile> map, String label) {
+      if (map.isEmpty) return true;
+      if (map.length != totalSessions) {
+        issues.add('$label files must be exactly $totalSessions.');
+        return false;
+      }
+      for (int i = 1; i <= totalSessions; i++) {
+        if (!map.containsKey(i)) {
+          issues.add('$label missing session $i');
+          return false;
+        }
+      }
+      return true;
+    }
+
+    hasCoverage(nextHtml, 'HTML');
+    hasCoverage(nextVideo, 'Video');
+
+    if (issues.isNotEmpty) {
+      AppToast.show(context, issues.first, type: AppToastType.error);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _htmlBySession
+        ..clear()
+        ..addAll(nextHtml);
+      _videoBySession
+        ..clear()
+        ..addAll(nextVideo);
+      _failedOps = <_BulkReplaceOp>[];
+      _latestUpdates = <_BulkSessionUpdate>[];
+      _lastSuccessCount = 0;
+      _lastFailedCount = 0;
+    });
+
+    final parts = <String>[];
+    if (nextHtml.isNotEmpty)
+      parts.add('HTML ${nextHtml.length}/$totalSessions');
+    if (nextVideo.isNotEmpty) {
+      parts.add('Video ${nextVideo.length}/$totalSessions');
+    }
+    AppToast.show(
+      context,
+      'Mapped ${parts.join(' • ')}',
+      type: AppToastType.success,
+    );
+  }
+
+  bool _isIgnorableDeleteError(Object err) {
+    final m = err.toString().toLowerCase();
+    return m.contains('not found') ||
+        m.contains('already missing') ||
+        m.contains('item not found') ||
+        m.contains('no such file');
+  }
+
+  Future<String> _uploadWithRetry({
+    required PlatformFile file,
+    required String serverPath,
+    required int sessionNumber,
+    required String customSuffix,
+    required void Function(double p) onProgress,
+  }) async {
+    Object? lastErr;
+    for (int attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return await _SyllabusServerStorage.uploadPlatformFile(
+          file: file,
+          root: 'courses',
+          path: serverPath,
+          customName: _SyllabusServerStorage.buildCustomBaseName(
+            sessionNumber: sessionNumber,
+            suffix: customSuffix,
+          ),
+          onProgress: onProgress,
+        );
+      } catch (err) {
+        lastErr = err;
+        if (attempt == 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+        }
+      }
+    }
+    throw lastErr ?? Exception('Upload failed.');
+  }
+
+  Future<void> _runBulkReplace({bool retryFailedOnly = false}) async {
+    if (_running) return;
+    if (_entries.isEmpty) {
+      AppToast.show(context, 'No sessions found.', type: AppToastType.error);
+      return;
+    }
+
+    final bySessionNumber = <int, _BulkSessionEntry>{
+      for (final e in _entries) e.sessionNumber: e,
+    };
+
+    final ops = <_BulkReplaceOp>[];
+    if (retryFailedOnly) {
+      ops.addAll(_failedOps);
+    } else {
+      for (final entry in _entries) {
+        final n = entry.sessionNumber;
+        final htmlFile = _htmlBySession[n];
+        if (htmlFile != null) {
+          ops.add(
+            _BulkReplaceOp(
+              entryKey: entry.key,
+              sessionNumber: n,
+              type: _BulkReplaceType.html,
+              file: htmlFile,
+            ),
+          );
+        }
+        final videoFile = _videoBySession[n];
+        if (videoFile != null) {
+          ops.add(
+            _BulkReplaceOp(
+              entryKey: entry.key,
+              sessionNumber: n,
+              type: _BulkReplaceType.video,
+              file: videoFile,
+            ),
+          );
+        }
+      }
+    }
+
+    if (ops.isEmpty) {
+      AppToast.show(
+        context,
+        retryFailedOnly
+            ? 'No failed items to retry.'
+            : 'Pick and map files first.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final successfulVideoByKey = <String, String>{};
+    final successfulHtmlByKey = <String, String>{};
+    final failed = <_BulkReplaceOp>[];
+    int successCount = 0;
+
+    if (!mounted) return;
+    setState(() {
+      _running = true;
+      _totalOps = ops.length;
+      _doneOps = 0;
+      _currentOpProgress = 0;
+      _currentLabel = 'Preparing...';
+      _lastSuccessCount = 0;
+      _lastFailedCount = 0;
+    });
+    _watch
+      ..reset()
+      ..start();
+
+    try {
+      for (final op in ops) {
+        final entry = bySessionNumber[op.sessionNumber];
+        if (entry == null) {
+          failed.add(op);
+          continue;
+        }
+
+        final isHtml = op.type == _BulkReplaceType.html;
+        final labelType = isHtml ? 'HTML' : 'Video';
+        final oldUrl = isHtml
+            ? (_currentHtmlUrlByEntry[op.entryKey] ?? '')
+            : (_currentVideoUrlByEntry[op.entryKey] ?? '');
+
+        if (!mounted) return;
+        setState(() {
+          _currentLabel = 'Session ${op.sessionNumber} • $labelType';
+          _currentOpProgress = 0;
+        });
+
+        try {
+          if (oldUrl.trim().isNotEmpty) {
+            final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+              oldUrl,
+            );
+            if (rel.isNotEmpty) {
+              try {
+                await _SyllabusServerStorage.deletePath(
+                  root: 'courses',
+                  path: rel,
+                );
+              } catch (err) {
+                if (!_isIgnorableDeleteError(err)) rethrow;
+              }
+            }
+          }
+
+          if (isHtml) {
+            _currentHtmlUrlByEntry[op.entryKey] = '';
+          } else {
+            _currentVideoUrlByEntry[op.entryKey] = '';
+          }
+
+          final serverPath =
+              _serverPathByEntry[op.entryKey] ??
+              '${widget.courseFolderName}/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: op.sessionNumber, sessionTitle: entry.sessionTitle)}';
+
+          final url = await _uploadWithRetry(
+            file: op.file,
+            serverPath: serverPath,
+            sessionNumber: op.sessionNumber,
+            customSuffix: isHtml ? 'materials' : 'video',
+            onProgress: (p) {
+              if (!mounted) return;
+              setState(() => _currentOpProgress = p.clamp(0.0, 1.0));
+            },
+          );
+
+          if (isHtml) {
+            _currentHtmlUrlByEntry[op.entryKey] = url;
+            successfulHtmlByKey[op.entryKey] = url;
+          } else {
+            _currentVideoUrlByEntry[op.entryKey] = url;
+            successfulVideoByKey[op.entryKey] = url;
+          }
+
+          successCount++;
+          if (mounted) {
+            AppToast.show(
+              context,
+              'Uploaded ${op.file.name} -> Session ${op.sessionNumber} $labelType',
+              type: AppToastType.success,
+            );
+          }
+        } catch (err) {
+          failed.add(op);
+          if (mounted) {
+            AppToast.show(
+              context,
+              'Failed Session ${op.sessionNumber} $labelType: ${toHumanError(err, fallback: 'Upload failed.')}',
+              type: AppToastType.error,
+            );
+          }
+        } finally {
+          if (!mounted) return;
+          setState(() {
+            _doneOps += 1;
+            _currentOpProgress = 0;
+          });
+        }
+      }
+    } finally {
+      _watch.stop();
+      if (mounted) {
+        setState(() => _running = false);
+      }
+    }
+
+    final updates = <_BulkSessionUpdate>[];
+    for (final entry in _entries) {
+      final htmlUrl = successfulHtmlByKey[entry.key];
+      final videoUrl = successfulVideoByKey[entry.key];
+      if (htmlUrl == null && videoUrl == null) continue;
+      final serverPath =
+          _serverPathByEntry[entry.key] ??
+          '${widget.courseFolderName}/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: entry.sessionNumber, sessionTitle: entry.sessionTitle)}';
+      updates.add(
+        _BulkSessionUpdate(
+          unitIndex: entry.unitIndex,
+          sessionIndex: entry.sessionIndex,
+          videoUrl: videoUrl,
+          materialsUrl: htmlUrl,
+          serverFolderPath: serverPath,
+        ),
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _failedOps = failed;
+      _latestUpdates = updates;
+      _lastSuccessCount = successCount;
+      _lastFailedCount = failed.length;
+      _currentLabel = failed.isEmpty
+          ? 'Completed'
+          : 'Completed with ${failed.length} failed';
+    });
+
+    AppToast.show(
+      context,
+      'Bulk done. Success: $successCount • Failed: ${failed.length}',
+      type: failed.isEmpty ? AppToastType.success : AppToastType.info,
+    );
+  }
+
+  void _applyAndClose() {
+    if (_running || _latestUpdates.isEmpty) return;
+    Navigator.pop(
+      context,
+      _BulkUploadResult(
+        updates: _latestUpdates,
+        successCount: _lastSuccessCount,
+        failedCount: _lastFailedCount,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalSessions = _entries.length;
+    final hasHtml = _htmlBySession.isNotEmpty;
+    final hasVideo = _videoBySession.isNotEmpty;
+    final progressPct = (_globalProgress * 100).toStringAsFixed(1);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Bulk Replace Recorded Assets',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: _running ? null : () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            Text(
+              'Use numeric names like 1.html / 1.mp4. Matches Session 1, 2, ... exactly.',
+              style: TextStyle(
+                color: Colors.black.withValues(alpha: 0.65),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _Pill(label: 'Sessions $totalSessions'),
+                if (hasHtml)
+                  _Pill(label: 'HTML ${_htmlBySession.length}/$totalSessions'),
+                if (hasVideo)
+                  _Pill(
+                    label: 'Video ${_videoBySession.length}/$totalSessions',
+                  ),
+                if (_lastSuccessCount > 0 || _lastFailedCount > 0)
+                  _Pill(
+                    label: 'Last run ✓$_lastSuccessCount ✕$_lastFailedCount',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _running ? null : _pickAllFiles,
+                    icon: const Icon(Icons.folder_open_rounded),
+                    label: const Text('Pick all files'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (_running || _totalOps > 0)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _currentLabel.isEmpty ? 'Waiting...' : _currentLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 8,
+                        value: _globalProgress,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$progressPct% • ${_doneOps}/$_totalOps • ${_elapsedLabel()}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black.withValues(alpha: 0.65),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
+            if (_failedOps.isNotEmpty)
+              Text(
+                'Failed items: ${_failedOps.length}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFB91C1C),
+                ),
+              ),
+            const Spacer(),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: (_running || _failedOps.isEmpty)
+                        ? null
+                        : () => _runBulkReplace(retryFailedOnly: true),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry failed'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _running ? null : _runBulkReplace,
+                    icon: _running
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.cloud_upload_rounded),
+                    label: Text(_running ? 'Running…' : 'Run replace'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: (_running || _latestUpdates.isEmpty)
+                        ? null
+                        : _applyAndClose,
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Apply and close'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

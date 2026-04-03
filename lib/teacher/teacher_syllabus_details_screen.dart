@@ -134,7 +134,9 @@ class _TeacherSyllabusDetailsScreenState
           topUpdatedAt,
         ]);
 
-        final units = _parseUnits(variantMap?['units']);
+        final units = key == 'recorded'
+            ? _parseRecordedUnits(variantMap)
+            : _parseUnits(variantMap?['units']);
 
         units.sort((a, b) {
           final c = a.order.compareTo(b.order);
@@ -274,6 +276,49 @@ class _TeacherSyllabusDetailsScreenState
     return out;
   }
 
+  List<_Unit> _parseRecordedUnits(Map<String, dynamic>? variantMap) {
+    final out = <_Unit>[];
+    final rawModules = _asListOfMaps(variantMap?['modules']);
+    if (rawModules.isEmpty) return _parseUnits(variantMap?['units']);
+
+    for (int mi = 0; mi < rawModules.length; mi++) {
+      final module = rawModules[mi];
+      final moduleLabel = _readString(module['otherTitle']).isNotEmpty
+          ? _readString(module['otherTitle'])
+          : (_readString(module['title']).isNotEmpty
+                ? _readString(module['title'])
+                : 'Module ${mi + 1}');
+      final moduleOrder = _toInt(module['order']) <= 0
+          ? mi + 1
+          : _toInt(module['order']);
+      final rawUnits = _asListOfMaps(module['units']);
+
+      for (int ui = 0; ui < rawUnits.length; ui++) {
+        final um = rawUnits[ui];
+        final title = _readString(um['title']);
+        final desc = _readString(um['description']);
+        final id = _readString(um['id']);
+        final unitOrder = _toInt(um['order']) <= 0
+            ? ui + 1
+            : _toInt(um['order']);
+        final sessions = _parseSessions(um['lessons']);
+
+        out.add(
+          _Unit(
+            id: id,
+            order: (moduleOrder * 1000) + unitOrder,
+            title: title.isEmpty ? 'Unit' : title,
+            otherTitle: moduleLabel,
+            description: desc,
+            sessions: sessions,
+          ),
+        );
+      }
+    }
+
+    return out;
+  }
+
   List<_Session> _parseSessions(dynamic node) {
     final out = <_Session>[];
     final sessionMaps = _asListOfMaps(node);
@@ -398,7 +443,7 @@ class _TeacherSyllabusDetailsScreenState
         TeacherTourHint(
           title: 'Syllabus details',
           line:
-              'Use tabs to switch variants and inspect units, sessions, and resources.',
+              'Use tabs to switch variants and inspect modules, units, lessons, and resources.',
         ),
       ],
     );
@@ -514,7 +559,9 @@ class _TeacherSyllabusDetailsScreenState
         else if (_query.isNotEmpty && unitsFiltered.isEmpty)
           _EmptySearchResults(query: _query, onClear: () => _search.clear())
         else
-          ...unitsFiltered.map((u) => _UnitCard(unit: u)),
+          ...unitsFiltered.map(
+            (u) => _UnitCard(unit: u, isRecorded: variant.key == 'recorded'),
+          ),
         const SizedBox(height: 12),
         const _FooterHint(),
       ],
@@ -1068,8 +1115,9 @@ class _CourseTopCard extends StatelessWidget {
 }
 
 class _UnitCard extends StatefulWidget {
-  const _UnitCard({required this.unit});
+  const _UnitCard({required this.unit, this.isRecorded = false});
   final _Unit unit;
+  final bool isRecorded;
 
   @override
   State<_UnitCard> createState() => _UnitCardState();
@@ -1137,16 +1185,36 @@ class _UnitCardState extends State<_UnitCard> {
                       ),
                       if (u.otherTitle.trim().isNotEmpty) ...[
                         const SizedBox(height: 2),
-                        Text(
-                          u.otherTitle,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: widget.isRecorded
+                                ? const Color(0xFFFFF1E7)
+                                : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: widget.isRecorded
+                                  ? const Color(0xFFF5CBA7)
+                                  : UiK.uiBorder.withValues(alpha: 0.8),
+                            ),
+                          ),
+                          child: Text(
+                            u.otherTitle,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: widget.isRecorded
+                                  ? const Color(0xFF9A3412)
+                                  : Colors.grey.shade600,
+                              fontSize: 11.5,
+                            ),
                           ),
                         ),
                       ],
-                      if (u.description.trim().isNotEmpty) ...[
+                      if (!widget.isRecorded &&
+                          u.description.trim().isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           u.description,
@@ -1181,7 +1249,9 @@ class _UnitCardState extends State<_UnitCard> {
                     ),
                   ),
                   child: Text(
-                    'No sessions in this unit.',
+                    widget.isRecorded
+                        ? 'No lessons in this unit.'
+                        : 'No sessions in this unit.',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       color: Colors.grey.shade700,
@@ -1537,7 +1607,7 @@ class _FooterHint extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Tip: Follow the units and sessions by their order number to deliver the syllabus as planned. Use Search to quickly jump to any session.',
+              'Tip: Follow modules, units, and lessons by order to deliver the syllabus as planned. Use Search to jump to any lesson quickly.',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade700,

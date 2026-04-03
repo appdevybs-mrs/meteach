@@ -746,33 +746,67 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
         if (syllabusSnap.exists && syllabusSnap.value is Map) {
           final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
-          final rawUnits = asListOfMaps(root['units']);
+          final rawModules = asListOfMaps(root['modules']);
+          if (rawModules.isNotEmpty) {
+            for (final module in rawModules) {
+              final rawUnits = asListOfMaps(module['units']);
+              for (final unit in rawUnits) {
+                final rawLessons = asListOfMaps(unit['lessons']);
+                for (final lesson in rawLessons) {
+                  final sessionId = (lesson['id'] ?? '').toString().trim();
+                  final sessionNumber = _asInt(lesson['sessionNumber']);
+                  final videoUrl = (lesson['videoUrl'] ?? '').toString().trim();
+                  final materialsUrl = (lesson['materialsUrl'] ?? '')
+                      .toString()
+                      .trim();
 
-          for (final unit in rawUnits) {
-            final rawSessions = asListOfMaps(unit['sessions']);
+                  final hasVideo = videoUrl.isNotEmpty;
+                  final hasMaterials = materialsUrl.isNotEmpty;
 
-            for (final session in rawSessions) {
-              final sessionId = (session['id'] ?? '').toString().trim();
-              final sessionNumber = _asInt(session['sessionNumber']);
-              final videoUrl = (session['videoUrl'] ?? '').toString().trim();
-              final materialsUrl = (session['materialsUrl'] ?? '')
-                  .toString()
-                  .trim();
+                  totalSyllabiSessions += 1;
 
-              final hasVideo = videoUrl.isNotEmpty;
-              final hasMaterials = materialsUrl.isNotEmpty;
+                  if (sessionId.isNotEmpty) {
+                    sessionMetaById[sessionId] = {
+                      'hasVideo': hasVideo,
+                      'hasMaterials': hasMaterials,
+                    };
+                  }
 
-              totalSyllabiSessions += 1;
-
-              if (sessionId.isNotEmpty) {
-                sessionMetaById[sessionId] = {
-                  'hasVideo': hasVideo,
-                  'hasMaterials': hasMaterials,
-                };
+                  if (sessionNumber > 0 && sessionId.isNotEmpty) {
+                    sessionIdByNumber[sessionNumber] = sessionId;
+                  }
+                }
               }
+            }
+          } else {
+            final rawUnits = asListOfMaps(root['units']);
 
-              if (sessionNumber > 0 && sessionId.isNotEmpty) {
-                sessionIdByNumber[sessionNumber] = sessionId;
+            for (final unit in rawUnits) {
+              final rawSessions = asListOfMaps(unit['sessions']);
+
+              for (final session in rawSessions) {
+                final sessionId = (session['id'] ?? '').toString().trim();
+                final sessionNumber = _asInt(session['sessionNumber']);
+                final videoUrl = (session['videoUrl'] ?? '').toString().trim();
+                final materialsUrl = (session['materialsUrl'] ?? '')
+                    .toString()
+                    .trim();
+
+                final hasVideo = videoUrl.isNotEmpty;
+                final hasMaterials = materialsUrl.isNotEmpty;
+
+                totalSyllabiSessions += 1;
+
+                if (sessionId.isNotEmpty) {
+                  sessionMetaById[sessionId] = {
+                    'hasVideo': hasVideo,
+                    'hasMaterials': hasMaterials,
+                  };
+                }
+
+                if (sessionNumber > 0 && sessionId.isNotEmpty) {
+                  sessionIdByNumber[sessionNumber] = sessionId;
+                }
               }
             }
           }

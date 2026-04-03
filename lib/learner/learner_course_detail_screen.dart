@@ -871,22 +871,31 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
-          final units = s['units'];
-
           final List<Map<String, dynamic>> flat = [];
-          if (units is List) {
-            for (final u in units) {
-              if (u is! Map) continue;
-              final unit = Map<String, dynamic>.from(u);
-              final unitId = (unit['id'] ?? '').toString();
-              final unitTitle = (unit['title'] ?? '').toString();
-              final unitDesc = (unit['description'] ?? '').toString();
-              final unitOtherTitle = (unit['otherTitle'] ?? '').toString();
-              final unitOrder = unit['order'] ?? 0;
-
-              final sessions = unit['sessions'];
-              if (sessions is List) {
-                for (final ss in sessions) {
+          final modules = s['modules'];
+          if (modules is List) {
+            for (int mi = 0; mi < modules.length; mi++) {
+              final m = modules[mi];
+              if (m is! Map) continue;
+              final module = Map<String, dynamic>.from(m);
+              final moduleLabel =
+                  (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+                  ? (module['otherTitle'] ?? '').toString()
+                  : ((module['title'] ?? '').toString().trim().isNotEmpty
+                        ? (module['title'] ?? '').toString()
+                        : 'Module ${mi + 1}');
+              final units = module['units'];
+              if (units is! List) continue;
+              for (final u in units) {
+                if (u is! Map) continue;
+                final unit = Map<String, dynamic>.from(u);
+                final unitId = (unit['id'] ?? '').toString();
+                final unitTitle = (unit['title'] ?? '').toString();
+                final unitDesc = (unit['description'] ?? '').toString();
+                final unitOrder = unit['order'] ?? 0;
+                final lessons = unit['lessons'];
+                if (lessons is! List) continue;
+                for (final ss in lessons) {
                   if (ss is! Map) continue;
                   final sess = Map<String, dynamic>.from(ss);
                   flat.add({
@@ -894,7 +903,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     'unitId': unitId,
                     'unitTitle': unitTitle,
                     'unitDescription': unitDesc,
-                    'unitOtherTitle': unitOtherTitle,
+                    'unitOtherTitle': moduleLabel,
                     'order': sess['order'] ?? 0,
                     'sessionId': (sess['id'] ?? '').toString(),
                     'title': (sess['title'] ?? '').toString(),
@@ -905,6 +914,43 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     'homework': (sess['homework'] ?? '').toString(),
                     'durationMinutes': sess['durationMinutes'] ?? 0,
                   });
+                }
+              }
+            }
+          } else {
+            final units = s['units'];
+            if (units is List) {
+              for (final u in units) {
+                if (u is! Map) continue;
+                final unit = Map<String, dynamic>.from(u);
+                final unitId = (unit['id'] ?? '').toString();
+                final unitTitle = (unit['title'] ?? '').toString();
+                final unitDesc = (unit['description'] ?? '').toString();
+                final unitOtherTitle = (unit['otherTitle'] ?? '').toString();
+                final unitOrder = unit['order'] ?? 0;
+
+                final sessions = unit['sessions'];
+                if (sessions is List) {
+                  for (final ss in sessions) {
+                    if (ss is! Map) continue;
+                    final sess = Map<String, dynamic>.from(ss);
+                    flat.add({
+                      'unitOrder': unitOrder,
+                      'unitId': unitId,
+                      'unitTitle': unitTitle,
+                      'unitDescription': unitDesc,
+                      'unitOtherTitle': unitOtherTitle,
+                      'order': sess['order'] ?? 0,
+                      'sessionId': (sess['id'] ?? '').toString(),
+                      'title': (sess['title'] ?? '').toString(),
+                      'sessionNumber': sess['sessionNumber'] ?? 0,
+                      'skillType': (sess['skillType'] ?? '').toString(),
+                      'objective': (sess['objective'] ?? '').toString(),
+                      'content': (sess['content'] ?? '').toString(),
+                      'homework': (sess['homework'] ?? '').toString(),
+                      'durationMinutes': sess['durationMinutes'] ?? 0,
+                    });
+                  }
                 }
               }
             }

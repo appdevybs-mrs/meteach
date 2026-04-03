@@ -791,12 +791,16 @@ class _LearnersListState extends State<_LearnersList>
   }
 
   Future<String?> _getLearnerFcmToken(String learnerUid) async {
-    final snap = await FirebaseDatabase.instance
-        .ref('fcm_tokens/$learnerUid/token')
-        .get();
-    final token = snap.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('fcm_tokens/$learnerUid/token')
+          .get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -957,26 +961,37 @@ class _LearnersListState extends State<_LearnersList>
 
     await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
 
-    if (token == null || token.isEmpty) {
-      await reminderRef.update({'status': 'push_skipped_no_token'});
-      if (!mounted) return;
-      _toast('Reminder saved ✅ (learner offline)');
-      return;
-    }
-
     try {
-      await PushClient.sendToToken(
-        token: token,
-        title: title,
-        message: message,
-        data: {
-          'type': 'reminder',
-          'route': 'learner',
-          'learnerUid': uid,
-          'kind': type.name,
-          'reminderId': reminderRef.key,
-        },
-      );
+      if (token != null && token.isNotEmpty) {
+        await PushClient.sendToToken(
+          token: token,
+          targetUid: uid,
+          eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+          title: title,
+          message: message,
+          data: {
+            'type': 'reminder',
+            'route': 'learner',
+            'learnerUid': uid,
+            'kind': type.name,
+            'reminderId': reminderRef.key,
+          },
+        );
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_$uid',
+          eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+          title: title,
+          message: message,
+          data: {
+            'type': 'reminder',
+            'route': 'learner',
+            'learnerUid': uid,
+            'kind': type.name,
+            'reminderId': reminderRef.key,
+          },
+        );
+      }
 
       await reminderRef.update({
         'status': 'push_sent',
@@ -4552,15 +4567,39 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
               ? syllabusRaw.map((k, v) => MapEntry(k.toString(), v))
               : <String, dynamic>{};
 
-          final rawUnits = _asListOfMaps(root['units']);
-
           final sessionItems = <Map<String, dynamic>>[];
-          for (final unit in rawUnits) {
-            final unitTitle = (unit['title'] ?? '').toString().trim();
-            final rawSessions = _asListOfMaps(unit['sessions']);
+          final rawModules = _asListOfMaps(root['modules']);
+          if (rawModules.isNotEmpty) {
+            for (int mi = 0; mi < rawModules.length; mi++) {
+              final module = rawModules[mi];
+              final moduleLabel =
+                  (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+                  ? (module['otherTitle'] ?? '').toString().trim()
+                  : ((module['title'] ?? '').toString().trim().isNotEmpty
+                        ? (module['title'] ?? '').toString().trim()
+                        : 'Module ${mi + 1}');
+              final rawUnits = _asListOfMaps(module['units']);
+              for (final unit in rawUnits) {
+                final unitTitle = (unit['title'] ?? '').toString().trim();
+                final rawLessons = _asListOfMaps(unit['lessons']);
+                for (final lesson in rawLessons) {
+                  sessionItems.add({
+                    'unitTitle': unitTitle,
+                    'moduleTitle': moduleLabel,
+                    ...lesson,
+                  });
+                }
+              }
+            }
+          } else {
+            final rawUnits = _asListOfMaps(root['units']);
+            for (final unit in rawUnits) {
+              final unitTitle = (unit['title'] ?? '').toString().trim();
+              final rawSessions = _asListOfMaps(unit['sessions']);
 
-            for (final session in rawSessions) {
-              sessionItems.add({'unitTitle': unitTitle, ...session});
+              for (final session in rawSessions) {
+                sessionItems.add({'unitTitle': unitTitle, ...session});
+              }
             }
           }
 
