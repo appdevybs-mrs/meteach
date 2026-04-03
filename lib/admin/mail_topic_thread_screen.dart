@@ -687,6 +687,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           if (token != null) {
             await PushClient.sendToToken(
               token: token,
+              targetUid: widget.peerUid,
+              eventId: 'mail_${widget.threadId}_$now',
               title: _subject.isEmpty ? 'New mail' : _subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: {

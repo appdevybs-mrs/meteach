@@ -235,6 +235,8 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       if (token == null) return;
       await PushClient.sendToToken(
         token: token,
+        targetUid: assignee.uid,
+        eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
         title: 'New admin TODO',
         message: draft.title,
         data: {
@@ -264,6 +266,8 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       final body = '$_myName: ${todo.title.trim()}';
       await PushClient.sendToToken(
         token: token,
+        targetUid: creatorUid,
+        eventId: 'admin_todo_update_${todoId}_$action',
         title: title,
         message: body,
         data: {

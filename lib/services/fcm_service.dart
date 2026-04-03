@@ -59,6 +59,18 @@ class FCMService {
   static const String chMail = 'ch_mail';
   static const String chDefault = 'ch_default';
 
+  String _canonicalType(dynamic raw) {
+    final type = (raw ?? '').toString().trim().toLowerCase();
+    if (type == 'email') return 'mail';
+    if (type == 'chat') return 'message';
+    if (type == 'class') return 'reminder';
+    return type;
+  }
+
+  String _eventIdFromData(Map<String, dynamic> data) {
+    return (data['eventId'] ?? '').toString().trim();
+  }
+
   /// REQUIRED by AuthGate (your app calls this)
   static Future<void> syncTokenAfterLogin() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -105,10 +117,10 @@ class FCMService {
     // Foreground push
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final data = Map<String, dynamic>.from(message.data);
-      final type = (data['type'] ?? '').toString().toLowerCase();
+      final type = _canonicalType(data['type']);
 
       // If already inside this mail thread, ignore notif
-      if (type == 'mail' || type == 'email') {
+      if (type == 'mail') {
         final threadId = (data['threadId'] ?? '').toString().trim();
         if (threadId.isNotEmpty && RouteState.currentMailThreadId == threadId) {
           return;
@@ -228,7 +240,10 @@ class FCMService {
     if (kIsWeb) return;
 
     final data = Map<String, dynamic>.from(message.data);
-    final type = (data['type'] ?? '').toString().toLowerCase();
+    final type = _canonicalType(data['type']);
+    if (type.isNotEmpty) {
+      data['type'] = type;
+    }
 
     final title =
         (data['title'] ?? message.notification?.title ?? 'Notification')
@@ -238,19 +253,22 @@ class FCMService {
     String channelId = chDefault;
     String channelName = 'General';
 
-    if (type == 'message' || type == 'chat') {
+    if (type == 'message') {
       channelId = chMessages;
       channelName = 'Messages';
-    } else if (type == 'reminder' || type == 'class' || type == 'admin_todo') {
+    } else if (type == 'reminder' || type == 'admin_todo') {
       channelId = chReminders;
       channelName = 'Reminders';
-    } else if (type == 'mail' || type == 'email') {
+    } else if (type == 'mail') {
       channelId = chMail;
       channelName = 'Mail';
     }
 
+    final eventId = _eventIdFromData(data);
+
     final String seed = [
       (data['type'] ?? '').toString(),
+      eventId,
       (data['threadId'] ?? '').toString(),
       (data['reminderId'] ?? '').toString(),
       (data['courseId'] ?? '').toString(),
@@ -580,9 +598,9 @@ class FCMService {
 
   String _payloadAction(Map<String, dynamic> data) {
     final route = (data['route'] ?? '').toString().trim().toLowerCase();
-    final type = (data['type'] ?? '').toString().trim().toLowerCase();
+    final type = _canonicalType(data['type']);
 
-    if (route == 'mail_thread' || type == 'mail' || type == 'email') {
+    if (route == 'mail_thread' || type == 'mail') {
       return 'mail';
     }
     if (route == 'teacher_reminders' || type == 'reminder') {
@@ -601,6 +619,11 @@ class FCMService {
   }
 
   String _tapDedupKey(Map<String, dynamic> data) {
+    final eventId = _eventIdFromData(data);
+    if (eventId.isNotEmpty) {
+      return 'event:$eventId';
+    }
+
     final action = _payloadAction(data);
     if (action.isEmpty) return '';
 
@@ -642,6 +665,15 @@ class FCMService {
 
     final action = _payloadAction(data);
 
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final eventId = _eventIdFromData(data);
+    if (uid != null && uid.trim().isNotEmpty && eventId.isNotEmpty) {
+      FirebaseDatabase.instance
+          .ref('notifications_inbox/$uid/$eventId')
+          .update({'status': 'opened', 'openedAt': ServerValue.timestamp})
+          .catchError((_) {});
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (action == 'mail') {
         await _openMailNotificationByRole(data);
@@ -668,7 +700,7 @@ class FCMService {
   Future<void> handleLocalNotificationTapPayload(
     Map<String, dynamic> data,
   ) async {
-    final type = (data['type'] ?? '').toString().trim().toLowerCase();
+    final type = _canonicalType(data['type']);
     final nav = await _waitForNavigator();
     if (nav == null) return;
 

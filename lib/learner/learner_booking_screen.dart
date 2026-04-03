@@ -380,6 +380,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       await PushClient.sendToTopic(
         topic: 'admins',
+        eventId:
+            'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo',
         title: adminTitle,
         message: adminBody,
         data: {
@@ -406,6 +408,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       await PushClient.sendToToken(
         token: teacherToken,
+        targetUid: slot.teacherId,
+        eventId:
+            'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo',
         title: teacherTitle,
         message: teacherBody,
         data: {

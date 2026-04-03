@@ -135,6 +135,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
 
       await PushClient.sendToTopic(
         topic: 'admins',
+        eventId: 'teacher_reminder_${_uid ?? ''}_${reminderId}_$action',
         title: title,
         message: message,
         data: {

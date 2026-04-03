@@ -332,6 +332,26 @@
       }
     },
 
+    "notifications_inbox": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$eventId": {
+          ".write": "auth != null && auth.uid == $uid",
+
+          "eventId": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 120" },
+          "type": { ".validate": "newData.isString() && (newData.val() == 'message' || newData.val() == 'reminder' || newData.val() == 'admin_todo' || newData.val() == 'mail' || newData.val() == 'booking' || newData.val() == 'payment' || newData.val() == 'session' || newData.val() == 'coach')" },
+          "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
+          "body": { ".validate": "newData.isString() && newData.val().length <= 500" },
+          "status": { ".validate": "newData.isString() && (newData.val() == 'sent' || newData.val() == 'opened' || newData.val() == 'failed')" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "openedAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null" },
+          "data": { ".validate": "!newData.exists() || newData.isMap()" },
+
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
     "mail_threads": {
       "$threadId": {
         ".read": "auth != null && data.child('participants').child(auth.uid).exists()",

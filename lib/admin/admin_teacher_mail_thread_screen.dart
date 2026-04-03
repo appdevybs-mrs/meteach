@@ -533,6 +533,8 @@ class _AdminTeacherMailThreadScreenState
           if (token != null) {
             await PushClient.sendToToken(
               token: token,
+              targetUid: widget.teacherUid,
+              eventId: 'mail_${_threadId}_$now',
               title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: {

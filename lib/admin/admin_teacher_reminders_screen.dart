@@ -68,10 +68,14 @@ class _AdminTeacherRemindersScreenState
   }
 
   Future<String?> _getTeacherFcmToken(String teacherUid) async {
-    final snap = await _db.ref('fcm_tokens/$teacherUid/token').get();
-    final token = snap.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
+    try {
+      final snap = await _db.ref('fcm_tokens/$teacherUid/token').get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   String _normalizeUrl(String raw) {
@@ -287,33 +291,42 @@ class _AdminTeacherRemindersScreenState
       final token = await _getTeacherFcmToken(teacherUid);
       final pushRef = ref.child('push');
 
-      if (token == null) {
-        await pushRef.update({
-          'attemptedAt': ServerValue.timestamp,
-          'status': 'skipped_no_token',
-          'error': 'missing_token',
-        });
-        return;
-      }
-
       await pushRef.update({
         'attemptedAt': ServerValue.timestamp,
         'status': 'attempted',
         'error': null,
       });
 
-      await PushClient.sendToToken(
-        token: token,
-        title: created.title.trim(),
-        message: created.description.trim().isEmpty
-            ? 'You have a new reminder'
-            : created.description.trim(),
-        data: {
-          'type': 'reminder',
-          'route': 'teacher_reminders',
-          'teacherUid': teacherUid,
-        },
-      );
+      if (token != null && token.isNotEmpty) {
+        await PushClient.sendToToken(
+          token: token,
+          targetUid: teacherUid,
+          eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
+          title: created.title.trim(),
+          message: created.description.trim().isEmpty
+              ? 'You have a new reminder'
+              : created.description.trim(),
+          data: {
+            'type': 'reminder',
+            'route': 'teacher_reminders',
+            'teacherUid': teacherUid,
+          },
+        );
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_$teacherUid',
+          eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
+          title: created.title.trim(),
+          message: created.description.trim().isEmpty
+              ? 'You have a new reminder'
+              : created.description.trim(),
+          data: {
+            'type': 'reminder',
+            'route': 'teacher_reminders',
+            'teacherUid': teacherUid,
+          },
+        );
+      }
 
       await pushRef.update({
         'sentAt': ServerValue.timestamp,

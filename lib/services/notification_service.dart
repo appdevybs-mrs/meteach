@@ -38,6 +38,16 @@ class NotificationService {
   static const String _sessionChannelName = 'Class Reminders';
   static const String _sessionChannelDesc = 'Reminders for classes';
 
+  String _sessionEventId(String classId, DateTime sessionStart, String kind) {
+    final raw = 'session|$kind|$classId|${sessionStart.toIso8601String()}';
+    return raw.hashCode.abs().toString();
+  }
+
+  String _coachEventId(String goalId) {
+    final raw = 'coach|$goalId';
+    return raw.hashCode.abs().toString();
+  }
+
   Future<void> init() async {
     if (_inited) return;
 
@@ -215,7 +225,11 @@ class NotificationService {
       notificationDetails: _detailsDaily(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: jsonEncode({'type': 'coach', 'goalId': goalId}),
+      payload: jsonEncode({
+        'type': 'coach',
+        'goalId': goalId,
+        'eventId': _coachEventId(goalId),
+      }),
     );
   }
 
@@ -301,6 +315,7 @@ class NotificationService {
 
     final payloadJson = jsonEncode({
       'type': 'session',
+      'eventId': _sessionEventId(classId, sessionStart, 'main'),
       'classId': classId,
       'sessionStart': sessionStart.toIso8601String(),
       'title': title,
@@ -433,6 +448,11 @@ class NotificationService {
 
     final payloadJson = jsonEncode({
       'type': 'session',
+      'eventId': _sessionEventId(
+        classId,
+        sessionStart,
+        'snooze_$snoozeMinutes',
+      ),
       'classId': classId,
       'sessionStart': sessionStart.toIso8601String(),
       'title': title,

@@ -707,6 +707,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           if (token != null) {
             await PushClient.sendToToken(
               token: token,
+              targetUid: widget.peerUid,
+              eventId: 'mail_${widget.threadId}_$now',
               title: widget.subject.isEmpty ? 'New mail' : widget.subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: {
