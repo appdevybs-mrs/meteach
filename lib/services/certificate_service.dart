@@ -446,6 +446,7 @@ class CertificateService {
     required String courseId,
     required String courseKey,
     required String kind,
+    required String instructorName,
     String? moduleKey,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -507,6 +508,7 @@ class CertificateService {
       courseId: courseId,
       courseKey: courseKey,
       moduleKey: moduleKey,
+      instructorName: instructorName,
     );
 
     final bytes = await _pdfService.generateCertificatePdfBytes(certBase);

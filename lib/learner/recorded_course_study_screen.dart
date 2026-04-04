@@ -13,6 +13,7 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/certificate_model.dart';
+import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
@@ -51,6 +52,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
   final CertificateService _certificateService = CertificateService();
+  final CertificatePdfService _certificatePdfService = CertificatePdfService();
 
   void _debug(String message) {
     // no-op in production build
@@ -69,8 +71,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   final Map<String, _RecordedProgress> _progressBySessionId =
       <String, _RecordedProgress>{};
 
-  final Set<String> _expandedUnitIds = <String>{};
   final Set<String> _expandedModuleLabels = <String>{};
+  final Map<String, String> _selectedUnitByModule = <String, String>{};
+  final Set<String> _expandedUnitDetails = <String>{};
+  final Set<String> _expandedLessonDetails = <String>{};
 
   @override
   void initState() {
@@ -81,6 +85,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   DatabaseReference get _usersRef => _db.ref(_usersNode);
 
   DatabaseReference get _syllabiRef => _db.ref(_syllabiNode);
+  DatabaseReference get _coursesRef => _db.ref('courses');
 
   DatabaseReference get _courseUserRef =>
       _usersRef.child(_uid).child('courses').child(widget.courseKey);
@@ -203,8 +208,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ..clear()
           ..addAll(progressById);
         _units = units;
-        _ensureExpandedUnits();
         _ensureExpandedModules();
+        _ensureSelectedUnits();
         _busy = false;
       });
       _debug(
@@ -221,22 +226,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
-  void _ensureExpandedUnits() {
-    if (_units.isEmpty) return;
-
-    if (_expandedUnitIds.isEmpty) {
-      _expandedUnitIds.add(_units.first.id.isNotEmpty ? _units.first.id : '0');
-    }
-
-    final validIds = _units
-        .asMap()
-        .entries
-        .map((e) => e.value.id.isNotEmpty ? e.value.id : '${e.key}')
-        .toSet();
-
-    _expandedUnitIds.removeWhere((id) => !validIds.contains(id));
-  }
-
   void _ensureExpandedModules() {
     final labels = <String>[];
     for (final u in _units) {
@@ -250,6 +239,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _expandedModuleLabels.add(labels.first);
     }
     _expandedModuleLabels.removeWhere((label) => !labels.contains(label));
+  }
+
+  void _ensureSelectedUnits() {
+    final byModule = _unitsByModule;
+    _selectedUnitByModule.removeWhere(
+      (module, _) => !byModule.containsKey(module),
+    );
+    for (final entry in byModule.entries) {
+      if (entry.value.isEmpty) continue;
+      final selectedId = _selectedUnitByModule[entry.key];
+      final hasSelected = entry.value.any((u) => _unitIdOf(u) == selectedId);
+      if (!hasSelected) {
+        _selectedUnitByModule[entry.key] = _unitIdOf(entry.value.first);
+      }
+    }
   }
 
   static int _asInt(dynamic v) {
@@ -314,6 +318,57 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       }
     }
     return out;
+  }
+
+  Map<String, List<_RecordedUnit>> get _unitsByModule {
+    final byModule = <String, List<_RecordedUnit>>{};
+    for (final unit in _units) {
+      final moduleLabel = _moduleLabelOf(unit);
+      byModule.putIfAbsent(moduleLabel, () => <_RecordedUnit>[]).add(unit);
+    }
+    return byModule;
+  }
+
+  String _moduleLabelOf(_RecordedUnit unit) {
+    final label = unit.otherTitle.trim();
+    return label.isEmpty ? 'Module' : label;
+  }
+
+  String _unitIdOf(_RecordedUnit unit) {
+    final raw = unit.id.trim();
+    if (raw.isNotEmpty) return raw;
+    return '${unit.order}|${unit.title.trim()}|${unit.otherTitle.trim()}';
+  }
+
+  int _moduleCompletedSessions(List<_RecordedUnit> moduleUnits) {
+    int done = 0;
+    for (final unit in moduleUnits) {
+      done += _countCompletedInUnit(unit);
+    }
+    return done;
+  }
+
+  int _moduleTotalSessions(List<_RecordedUnit> moduleUnits) {
+    int total = 0;
+    for (final unit in moduleUnits) {
+      total += unit.sessions.length;
+    }
+    return total;
+  }
+
+  int _moduleCompletedUnits(List<_RecordedUnit> moduleUnits) {
+    int done = 0;
+    for (final unit in moduleUnits) {
+      if (_isUnitCompleted(unit)) done++;
+    }
+    return done;
+  }
+
+  int _flatIndexOfSessionId(String sessionId) {
+    for (int i = 0; i < _flatSessions.length; i++) {
+      if (_flatSessions[i].session.id == sessionId) return i;
+    }
+    return -1;
   }
 
   _RecordedProgress _progressOf(String sessionId) {
@@ -561,10 +616,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Widget _buildTopOverviewCard() {
     final style = _expiryStyle;
     final progressPct = (_progressValue * 100).round();
+    final isNarrow = MediaQuery.sizeOf(context).width < 420;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        isNarrow ? 10 : 12,
+        12,
+        isNarrow ? 10 : 12,
+      ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: const LinearGradient(
@@ -603,8 +664,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   const SizedBox(width: 6),
                   Text(
                     '$progressPct% complete',
-                    style: const TextStyle(
-                      fontSize: 12.5,
+                    style: TextStyle(
+                      fontSize: isNarrow ? 12 : 12.5,
                       fontWeight: FontWeight.w900,
                       color: Color(0xFF0F172A),
                     ),
@@ -646,8 +707,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF1E293B),
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      minimumSize: const Size(0, 34),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: Size(0, isNarrow ? 32 : 34),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isNarrow ? 8 : 10,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -667,79 +730,111 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Widget _buildUnitProgressTrack() {
-    final unitCount = _totalUnits;
+    final moduleGroups = _unitsByModule.values.toList();
+    final unitNodes = _units;
+    final lessonNodes = _flatSessions.map((e) => e.session).toList();
 
-    if (unitCount <= 0) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: LinearProgressIndicator(
-          minHeight: 5,
-          value: _progressValue.clamp(0, 1),
-          backgroundColor: const Color(0xFFE2E8F0),
-          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
+    Widget buildNode({
+      required bool done,
+      required double size,
+      required Color doneColor,
+    }) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: done ? doneColor : Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: done ? doneColor : const Color(0xFF94A3B8),
+            width: done ? 1.5 : 1.2,
+          ),
         ),
       );
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: 16,
-          child: Stack(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            minHeight: 5,
+            value: _progressValue.clamp(0, 1),
+            backgroundColor: const Color(0xFFE2E8F0),
+            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
             children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 5,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    minHeight: 5,
-                    value: _progressValue.clamp(0, 1),
-                    backgroundColor: const Color(0xFFE2E8F0),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF4F46E5),
-                    ),
-                  ),
+              const Text(
+                'M',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              Positioned.fill(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: List.generate(unitCount, (i) {
-                    final unitDone = _isUnitCompleted(_units[i]);
-                    return Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                        color: unitDone
-                            ? const Color(0xFF16A34A)
-                            : const Color(0xFFFFFFFF),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: unitDone
-                              ? const Color(0xFF15803D)
-                              : const Color(0xFF94A3B8),
-                          width: 1.4,
-                        ),
-                      ),
-                    );
-                  }),
+              const SizedBox(width: 6),
+              for (final units in moduleGroups) ...[
+                buildNode(
+                  done:
+                      _moduleCompletedUnits(units) == units.length &&
+                      units.isNotEmpty,
+                  size: 12,
+                  doneColor: const Color(0xFFEA580C),
+                ),
+                const SizedBox(width: 5),
+              ],
+              const SizedBox(width: 10),
+              const Text(
+                'U',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w800,
                 ),
               ),
+              const SizedBox(width: 6),
+              for (final unit in unitNodes) ...[
+                buildNode(
+                  done: _isUnitCompleted(unit),
+                  size: 9,
+                  doneColor: const Color(0xFF0EA5E9),
+                ),
+                const SizedBox(width: 4),
+              ],
+              const SizedBox(width: 10),
+              const Text(
+                'L',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 6),
+              for (final session in lessonNodes) ...[
+                buildNode(
+                  done: _isSessionCompleted(session),
+                  size: 6,
+                  doneColor: const Color(0xFF16A34A),
+                ),
+                const SizedBox(width: 3),
+              ],
             ],
           ),
         ),
         const SizedBox(height: 4),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'Module milestones: $_completedUnits/$unitCount',
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontWeight: FontWeight.w700,
-              fontSize: 11.5,
-            ),
+        const Text(
+          'M = modules, U = units, L = lessons',
+          style: TextStyle(
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w700,
+            fontSize: 11,
           ),
         ),
       ],
@@ -811,6 +906,67 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
+  String _firstNonEmpty(Map<String, dynamic> map, List<String> keys) {
+    for (final k in keys) {
+      final v = (map[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  String _instructorFromCourseMap(Map<String, dynamic> courseMap) {
+    final cls = courseMap['class'] is Map
+        ? Map<String, dynamic>.from(courseMap['class'] as Map)
+        : <String, dynamic>{};
+    final fromClass = _firstNonEmpty(cls, [
+      'instructor',
+      'teacher_name',
+      'teacherName',
+      'instructorName',
+    ]);
+    if (fromClass.isNotEmpty) return fromClass;
+
+    final fromTop = _firstNonEmpty(courseMap, [
+      'instructor',
+      'teacher_name',
+      'teacherName',
+      'instructorName',
+    ]);
+    if (fromTop.isNotEmpty) return fromTop;
+
+    final instructors = courseMap['instructors'];
+    if (instructors is List && instructors.isNotEmpty) {
+      final first = instructors.first.toString().trim();
+      if (first.isNotEmpty) return first;
+    }
+    if (instructors is String && instructors.trim().isNotEmpty) {
+      final parts = instructors
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (parts.isNotEmpty) return parts.first;
+    }
+    return '';
+  }
+
+  Future<String> _resolveInstructorName() async {
+    final local = _instructorFromCourseMap(widget.courseData);
+    if (local.isNotEmpty) return local;
+
+    try {
+      final snap = await _coursesRef.child(widget.courseKey).get();
+      if (snap.exists && snap.value is Map) {
+        final remote = _instructorFromCourseMap(
+          Map<String, dynamic>.from(snap.value as Map),
+        );
+        if (remote.isNotEmpty) return remote;
+      }
+    } catch (_) {}
+
+    return 'Seddik. B';
+  }
+
   int _sessionCompletionAt(_RecordedProgress p) {
     return math.max(p.videoCompletedAt, p.materialsCompletedAt);
   }
@@ -847,6 +1003,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final identity = await _learnerIdentity();
     final fullName = (identity['fullName'] ?? 'Learner').trim();
     final nationalId = (identity['nationalIdNumber'] ?? '').trim();
+    final instructorName = await _resolveInstructorName();
     if (nationalId.length < 4) {
       throw Exception(
         'National ID is missing. Ask admin to add your National ID in your learner profile before issuing certificates.',
@@ -864,6 +1021,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       courseId: _courseId,
       courseKey: widget.courseKey,
       kind: kind,
+      instructorName: instructorName,
       moduleKey: moduleKey,
     );
   }
@@ -1233,9 +1391,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         trainingDate: _courseCompletionDate(),
         kind: 'course',
       );
-      final bytes = await _buildCertificatePdfBytes(
-        learnerName: cert.fullName,
-        courseTitle: _title,
+      final bytes = await _certificatePdfService.generateCertificatePdfBytes(
+        cert,
       );
       await _presentCertificate(
         bytes: bytes,
@@ -1263,17 +1420,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final certId = 'module_${_sanitizeIdPart(_courseId)}_$moduleKey';
       final cert = await _issueRecordedCertificate(
         certId: certId,
-        certificateTitle: '${_title} - ${unit.displayTitle}',
+        certificateTitle: '$_title - ${unit.displayTitle}',
         trainingDate: _unitCompletionDate(unit),
         kind: 'milestone',
         moduleKey: moduleKey,
       );
-      final bytes = await _buildCertificatePdfBytes(
-        learnerName: cert.fullName,
-        courseTitle: _title,
-        moduleTitle: unit.displayTitle,
-        moduleNumber: unitIndex + 1,
-        moduleCount: _totalUnits,
+      final bytes = await _certificatePdfService.generateCertificatePdfBytes(
+        cert,
       );
       await _presentCertificate(
         bytes: bytes,
@@ -1644,232 +1797,200 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Widget _buildSessionCard({
-    required _RecordedUnit unit,
     required _RecordedSession session,
     required int flatIndex,
   }) {
+    final isNarrow = MediaQuery.sizeOf(context).width < 420;
     final progress = _progressOf(session.id);
     final isUnlocked = _isSessionUnlocked(flatIndex);
     final isCompleted = _isSessionCompleted(session);
     final requiresVideo = _sessionRequiresVideo(session);
     final requiresMaterials = _sessionRequiresMaterials(session);
-
+    final canExpandDetails = session.objective.trim().isNotEmpty;
+    final showDetails = _expandedLessonDetails.contains(session.id);
     final number = session.sessionNumber > 0
         ? session.sessionNumber
         : (flatIndex + 1);
 
-    final Color accent = isCompleted
-        ? const Color(0xFF15803D)
-        : isUnlocked
-        ? const Color(0xFF4F46E5)
-        : const Color(0xFF6B7280);
-
-    final Color bg = isCompleted
-        ? const Color(0xFFF0FDF4)
-        : isUnlocked
-        ? const Color(0xFFFFFFFF)
-        : const Color(0xFFF8FAFC);
-
-    final Color border = isCompleted
-        ? const Color(0xFFBBF7D0)
-        : const Color(0xFFE5E7EB);
+    Color dotColor = const Color(0xFF94A3B8);
+    if (isCompleted) {
+      dotColor = const Color(0xFF16A34A);
+    } else if (isUnlocked) {
+      dotColor = const Color(0xFF4F46E5);
+    }
 
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
+      margin: EdgeInsets.only(top: isNarrow ? 6 : 7),
+      padding: EdgeInsets.symmetric(
+        horizontal: isNarrow ? 9 : 10,
+        vertical: isNarrow ? 8 : 9,
+      ),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isCompleted
+              ? const Color(0xFFBBF7D0)
+              : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: isCompleted
-                      ? const Color(0xFFDCFCE7)
-                      : isUnlocked
-                      ? const Color(0xFFEEF2FF)
-                      : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                width: isNarrow ? 20 : 22,
+                height: isNarrow ? 20 : 22,
                 alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: dotColor.withValues(alpha: 0.12),
+                  border: Border.all(color: dotColor, width: 1.2),
+                ),
                 child: Text(
                   '$number',
                   style: TextStyle(
-                    color: accent,
                     fontWeight: FontWeight.w900,
-                    fontSize: 12,
+                    color: dotColor,
+                    fontSize: isNarrow ? 9.5 : 10,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: isNarrow ? 7 : 8),
               Expanded(
                 child: Text(
-                  session.title.isEmpty ? 'Untitled Session' : session.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                  session.title.trim().isEmpty
+                      ? 'Untitled lesson'
+                      : session.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
                     color: Color(0xFF0F172A),
-                    fontSize: 13.6,
+                    fontWeight: FontWeight.w800,
+                    fontSize: isNarrow ? 12.5 : 13,
                   ),
                 ),
               ),
-              _SessionBadge(
-                label: isCompleted ? '✓' : (isUnlocked ? 'Open' : '🔒'),
-                fg: accent,
-                bg: isCompleted
-                    ? const Color(0xFFDCFCE7)
-                    : isUnlocked
-                    ? const Color(0xFFEEF2FF)
-                    : const Color(0xFFF1F5F9),
-              ),
+              if (canExpandDetails)
+                Tooltip(
+                  message: showDetails ? 'Hide details' : 'Show details',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () {
+                      setState(() {
+                        if (showDetails) {
+                          _expandedLessonDetails.remove(session.id);
+                        } else {
+                          _expandedLessonDetails.add(session.id);
+                        }
+                      });
+                    },
+                    child: Container(
+                      width: isNarrow ? 22 : 24,
+                      height: isNarrow ? 22 : 24,
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '!',
+                        style: TextStyle(
+                          color: Color(0xFF334155),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (requiresVideo)
+                Tooltip(
+                  message: progress.videoCompleted
+                      ? 'Rewatch video'
+                      : 'Watch video',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: isUnlocked
+                        ? () => _openVideoPlaceholder(session)
+                        : null,
+                    child: Container(
+                      width: isNarrow ? 28 : 30,
+                      height: isNarrow ? 28 : 30,
+                      decoration: BoxDecoration(
+                        color: isUnlocked
+                            ? const Color(0xFFEEF2FF)
+                            : const Color(0xFFF1F5F9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.play_circle_fill_rounded,
+                        size: isNarrow ? 17 : 18,
+                        color: isUnlocked
+                            ? const Color(0xFF4F46E5)
+                            : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ),
+                ),
+              if (requiresMaterials)
+                Padding(
+                  padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
+                  child: Tooltip(
+                    message: progress.materialsCompleted
+                        ? 'Open reading again'
+                        : 'Open reading',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: isUnlocked ? () => _openMaterials(session) : null,
+                      child: Container(
+                        width: isNarrow ? 28 : 30,
+                        height: isNarrow ? 28 : 30,
+                        decoration: BoxDecoration(
+                          color: isUnlocked
+                              ? const Color(0xFFFFF7ED)
+                              : const Color(0xFFF1F5F9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.menu_book_rounded,
+                          size: isNarrow ? 16 : 17,
+                          color: isUnlocked
+                              ? const Color(0xFFEA580C)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-          if (session.objective.trim().isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              session.objective.trim(),
-              style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.67),
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-                fontSize: 12,
-              ),
-            ),
-          ],
-          if (requiresVideo || requiresMaterials) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                if (requiresVideo)
-                  _StatusMiniPill(
-                    label: progress.videoCompleted ? '✓ Video' : 'Video',
-                    fg: progress.videoCompleted
-                        ? const Color(0xFF15803D)
-                        : const Color(0xFF475569),
-                    bg: progress.videoCompleted
-                        ? const Color(0xFFF0FDF4)
-                        : const Color(0xFFFFFFFF),
-                    border: progress.videoCompleted
-                        ? const Color(0xFFBBF7D0)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                if (requiresMaterials)
-                  _StatusMiniPill(
-                    label: progress.materialsCompleted ? '✓ Read' : 'Read',
-                    fg: progress.materialsCompleted
-                        ? const Color(0xFF15803D)
-                        : const Color(0xFF475569),
-                    bg: progress.materialsCompleted
-                        ? const Color(0xFFF0FDF4)
-                        : const Color(0xFFFFFFFF),
-                    border: progress.materialsCompleted
-                        ? const Color(0xFFBBF7D0)
-                        : const Color(0xFFE2E8F0),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
           if (!isUnlocked)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(
-                    Icons.lock_outline_rounded,
-                    size: 15,
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Locked: finish the previous lesson first.',
+                  style: TextStyle(
                     color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.4,
                   ),
-                  SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Finish the previous session to unlock this one.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF64748B),
-                        fontSize: 12.3,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            )
-          else if (requiresVideo || requiresMaterials)
-            Row(
-              children: [
-                if (requiresVideo) ...[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openVideoPlaceholder(session),
-                      icon: const Icon(Icons.ondemand_video_rounded, size: 18),
-                      label: Text(
-                        progress.videoCompleted ? 'Rewatch 🔁' : 'Watch ▶',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF0F172A),
-                        side: const BorderSide(color: Color(0xFFE2E8F0)),
-                        backgroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ),
+            ),
+          if (showDetails && canExpandDetails)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  session.objective.trim(),
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    height: 1.25,
                   ),
-                ],
-                if (requiresVideo && requiresMaterials)
-                  const SizedBox(width: 8),
-                if (requiresMaterials) ...[
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => _openMaterials(session),
-                      icon: const Icon(Icons.menu_book_rounded, size: 18),
-                      label: Text(
-                        progress.materialsCompleted
-                            ? 'Read again 🔁'
-                            : 'Read 📘',
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF111827),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+                ),
+              ),
             ),
         ],
       ),
@@ -1877,6 +1998,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Widget _buildUnitsList() {
+    final isNarrow = MediaQuery.sizeOf(context).width < 420;
     if (_units.isEmpty) {
       return Container(
         width: double.infinity,
@@ -1896,47 +2018,52 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
     }
 
-    int flatIndex = 0;
+    final moduleEntries = _unitsByModule.entries.toList();
 
     return Column(
       children: [
-        for (int ui = 0; ui < _units.length; ui++) ...[
+        for (
+          int moduleIndex = 0;
+          moduleIndex < moduleEntries.length;
+          moduleIndex++
+        )
           Builder(
             builder: (_) {
-              final unit = _units[ui];
-              final moduleLabel = unit.otherTitle.trim().isNotEmpty
-                  ? unit.otherTitle.trim()
-                  : 'Module';
-              final previousModule = ui > 0
-                  ? (_units[ui - 1].otherTitle.trim().isNotEmpty
-                        ? _units[ui - 1].otherTitle.trim()
-                        : 'Module')
-                  : '';
-              final showModuleHeader = ui == 0 || moduleLabel != previousModule;
+              final moduleLabel = moduleEntries[moduleIndex].key;
+              final moduleUnits = moduleEntries[moduleIndex].value;
               final moduleExpanded = _expandedModuleLabels.contains(
                 moduleLabel,
               );
-              final unitId = unit.id.isNotEmpty ? unit.id : '$ui';
-              final isExpanded = _expandedUnitIds.contains(unitId);
-              final completedInUnit = _countCompletedInUnit(unit);
-              final totalInUnit = unit.sessions.length;
-              final isUnitDone = _isUnitCompleted(unit);
+              final doneUnits = _moduleCompletedUnits(moduleUnits);
+              final totalUnits = moduleUnits.length;
+              final doneLessons = _moduleCompletedSessions(moduleUnits);
+              final totalLessons = _moduleTotalSessions(moduleUnits);
+              final selectedUnitId =
+                  _selectedUnitByModule[moduleLabel] ??
+                  _unitIdOf(moduleUnits.first);
+              final selectedUnit = moduleUnits.firstWhere(
+                (u) => _unitIdOf(u) == selectedUnitId,
+                orElse: () => moduleUnits.first,
+              );
+              final selectedUnitIdSafe = _unitIdOf(selectedUnit);
+              final showUnitDetails = _expandedUnitDetails.contains(
+                selectedUnitIdSafe,
+              );
 
-              final List<Widget> sessionWidgets = [];
-              for (int si = 0; si < unit.sessions.length; si++) {
-                sessionWidgets.add(
-                  _buildSessionCard(
-                    unit: unit,
-                    session: unit.sessions[si],
-                    flatIndex: flatIndex++,
-                  ),
-                );
-              }
-
-              return Column(
-                children: [
-                  if (showModuleHeader) ...[
+              return Container(
+                width: double.infinity,
+                margin: EdgeInsets.only(
+                  top: moduleIndex == 0 ? 0 : (isNarrow ? 8 : 10),
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(isNarrow ? 14 : 16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
                     InkWell(
+                      borderRadius: BorderRadius.circular(isNarrow ? 14 : 16),
                       onTap: () {
                         setState(() {
                           if (moduleExpanded) {
@@ -1946,193 +2073,247 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                           }
                         });
                       },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        width: double.infinity,
-                        margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFFFFEDD5), Color(0xFFFFF7ED)],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFF59E7A)),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          isNarrow ? 10 : 12,
+                          isNarrow ? 9 : 11,
+                          isNarrow ? 10 : 12,
+                          isNarrow ? 9 : 11,
                         ),
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                moduleLabel,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF7C2D12),
-                                  fontSize: 14,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    moduleLabel,
+                                    style: TextStyle(
+                                      color: Color(0xFF0F172A),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: isNarrow ? 14 : 14.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '$doneUnits/$totalUnits units • $doneLessons/$totalLessons lessons',
+                                    style: TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: isNarrow ? 11.2 : 11.8,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            Icon(
-                              moduleExpanded
-                                  ? Icons.expand_less_rounded
-                                  : Icons.expand_more_rounded,
-                              color: const Color(0xFF7C2D12),
+                            Container(
+                              width: isNarrow ? 24 : 26,
+                              height: isNarrow ? 24 : 26,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF7ED),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Icon(
+                                moduleExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                                color: const Color(0xFFEA580C),
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                  ],
-                  if (!moduleExpanded)
-                    const SizedBox.shrink()
-                  else
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(top: 0),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+                    if (moduleExpanded)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          isNarrow ? 10 : 12,
+                          0,
+                          isNarrow ? 10 : 12,
+                          isNarrow ? 10 : 12,
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.035),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: () {
-                              setState(() {
-                                if (isExpanded) {
-                                  _expandedUnitIds.remove(unitId);
-                                } else {
-                                  _expandedUnitIds.add(unitId);
-                                }
-                              });
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 13,
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: isUnitDone
-                                          ? const Color(0xFFDCFCE7)
-                                          : const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(11),
-                                    ),
-                                    child: Icon(
-                                      isUnitDone
-                                          ? Icons.check_rounded
-                                          : Icons.folder_open_rounded,
-                                      color: isUnitDone
-                                          ? const Color(0xFF15803D)
-                                          : const Color(0xFF475569),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          unit.title.trim().isEmpty
-                                              ? unit.displayTitle
-                                              : unit.title.trim(),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 14.5,
-                                            color: Color(0xFF0B3A8F),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 3),
-                                        Text(
-                                          '$completedInUnit of $totalInUnit completed',
-                                          style: const TextStyle(
-                                            color: Color(0xFF64748B),
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Icon(
-                                    isExpanded
-                                        ? Icons.expand_less_rounded
-                                        : Icons.expand_more_rounded,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (isExpanded)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (unit.description.trim().isNotEmpty) ...[
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(height: isNarrow ? 3 : 4),
+                            SizedBox(
+                              height: isNarrow ? 40 : 44,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: moduleUnits.length,
+                                separatorBuilder: (_, _) =>
+                                    SizedBox(width: isNarrow ? 6 : 8),
+                                itemBuilder: (_, i) {
+                                  final unit = moduleUnits[i];
+                                  final unitId = _unitIdOf(unit);
+                                  final isSelected =
+                                      unitId == selectedUnitIdSafe;
+                                  final unitDone = _isUnitCompleted(unit);
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedUnitByModule[moduleLabel] =
+                                            unitId;
+                                      });
+                                    },
+                                    child: Container(
+                                      constraints: BoxConstraints(
+                                        minWidth: isNarrow ? 104 : 120,
+                                        maxWidth: isNarrow ? 180 : 220,
+                                      ),
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isNarrow ? 8 : 10,
+                                        vertical: isNarrow ? 7 : 8,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFF8FAFC),
+                                        color: isSelected
+                                            ? const Color(0xFFEEF2FF)
+                                            : Colors.white,
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: const Color(0xFFE2E8F0),
+                                          color: isSelected
+                                              ? const Color(0xFF4F46E5)
+                                              : const Color(0xFFE2E8F0),
                                         ),
                                       ),
-                                      child: Text(
-                                        unit.description.trim(),
-                                        style: TextStyle(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.70,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            unitDone
+                                                ? Icons.check_circle_rounded
+                                                : Icons
+                                                      .radio_button_unchecked_rounded,
+                                            size: 15,
+                                            color: unitDone
+                                                ? const Color(0xFF16A34A)
+                                                : const Color(0xFF64748B),
                                           ),
-                                          fontWeight: FontWeight.w600,
-                                          height: 1.3,
-                                          fontSize: 12.5,
+                                          SizedBox(width: isNarrow ? 5 : 6),
+                                          Flexible(
+                                            child: Text(
+                                              unit.title.trim().isEmpty
+                                                  ? 'Unit ${i + 1}'
+                                                  : unit.title.trim(),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: const Color(0xFF1E293B),
+                                                fontWeight: isSelected
+                                                    ? FontWeight.w900
+                                                    : FontWeight.w700,
+                                                fontSize: isNarrow ? 11.5 : 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            SizedBox(height: isNarrow ? 6 : 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    selectedUnit.title.trim().isEmpty
+                                        ? selectedUnit.displayTitle
+                                        : selectedUnit.title.trim(),
+                                    style: TextStyle(
+                                      color: Color(0xFF0F172A),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: isNarrow ? 13 : 13.5,
+                                    ),
+                                  ),
+                                ),
+                                if (selectedUnit.description.trim().isNotEmpty)
+                                  Tooltip(
+                                    message: showUnitDetails
+                                        ? 'Hide unit details'
+                                        : 'Show unit details',
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: () {
+                                        setState(() {
+                                          if (showUnitDetails) {
+                                            _expandedUnitDetails.remove(
+                                              selectedUnitIdSafe,
+                                            );
+                                          } else {
+                                            _expandedUnitDetails.add(
+                                              selectedUnitIdSafe,
+                                            );
+                                          }
+                                        });
+                                      },
+                                      child: Container(
+                                        width: isNarrow ? 24 : 26,
+                                        height: isNarrow ? 24 : 26,
+                                        alignment: Alignment.center,
+                                        child: const Text(
+                                          '!',
+                                          style: TextStyle(
+                                            color: Color(0xFF334155),
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
-                                  ],
-                                  ...sessionWidgets,
-                                ],
-                              ),
+                                  ),
+                              ],
                             ),
-                        ],
+                            if (showUnitDetails &&
+                                selectedUnit.description.trim().isNotEmpty)
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(top: 5),
+                                padding: EdgeInsets.all(isNarrow ? 9 : 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Text(
+                                  selectedUnit.description.trim(),
+                                  style: TextStyle(
+                                    color: Color(0xFF475569),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: isNarrow ? 11.6 : 12,
+                                    height: 1.25,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 2),
+                            for (
+                              int i = 0;
+                              i < selectedUnit.sessions.length;
+                              i++
+                            )
+                              _buildSessionCard(
+                                session: selectedUnit.sessions[i],
+                                flatIndex: _flatIndexOfSessionId(
+                                  selectedUnit.sessions[i].id,
+                                ),
+                              ),
+                            if (_isUnitCompleted(selectedUnit))
+                              _buildUnitMilestoneCard(
+                                unit: selectedUnit,
+                                unitIndex: _units.indexOf(selectedUnit),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  if (moduleExpanded &&
-                      ui < _units.length - 1 &&
-                      _isUnitCompleted(unit))
-                    _buildUnitMilestoneCard(unit: unit, unitIndex: ui),
-                ],
+                  ],
+                ),
               );
             },
           ),
-        ],
       ],
     );
   }
@@ -2297,6 +2478,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         ),
       );
     } else {
+      final isNarrow = MediaQuery.sizeOf(context).width < 420;
       content = RefreshIndicator(
         onRefresh: _loadAll,
         child: Stack(
@@ -2322,7 +2504,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
             ),
             ListView(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
+              padding: EdgeInsets.fromLTRB(
+                isNarrow ? 10 : 12,
+                isNarrow ? 8 : 10,
+                isNarrow ? 10 : 12,
+                isNarrow ? 16 : 18,
+              ),
               children: [
                 _buildTopOverviewCard(),
                 const SizedBox(height: 10),
@@ -2590,71 +2777,6 @@ class _ConfettiPiece {
   final double size;
   final double phase;
   final Color color;
-}
-
-class _SessionBadge extends StatelessWidget {
-  const _SessionBadge({
-    required this.label,
-    required this.fg,
-    required this.bg,
-  });
-
-  final String label;
-  final Color fg;
-  final Color bg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontWeight: FontWeight.w900,
-          fontSize: 10.5,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusMiniPill extends StatelessWidget {
-  const _StatusMiniPill({
-    required this.label,
-    required this.fg,
-    required this.bg,
-    required this.border,
-  });
-
-  final String label;
-  final Color fg;
-  final Color bg;
-  final Color border;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontWeight: FontWeight.w800,
-          fontSize: 10.5,
-        ),
-      ),
-    );
-  }
 }
 
 class _ExpiryStyle {

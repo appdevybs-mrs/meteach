@@ -71,6 +71,7 @@ class Certificate {
   final String? courseId;
   final String? courseKey;
   final String? moduleKey;
+  final String? instructorName;
 
   Certificate({
     this.key,
@@ -97,6 +98,7 @@ class Certificate {
     this.courseId,
     this.courseKey,
     this.moduleKey,
+    this.instructorName,
   });
 
   Map<String, dynamic> toMap() {
@@ -124,6 +126,7 @@ class Certificate {
       if (courseId != null) 'courseId': courseId,
       if (courseKey != null) 'courseKey': courseKey,
       if (moduleKey != null) 'moduleKey': moduleKey,
+      if (instructorName != null) 'instructorName': instructorName,
     };
   }
 
@@ -159,6 +162,7 @@ class Certificate {
       courseId: map['courseId']?.toString(),
       courseKey: map['courseKey']?.toString(),
       moduleKey: map['moduleKey']?.toString(),
+      instructorName: map['instructorName']?.toString(),
     );
   }
 
@@ -194,6 +198,7 @@ class Certificate {
     String? courseId,
     String? courseKey,
     String? moduleKey,
+    String? instructorName,
   }) {
     return Certificate(
       key: key ?? this.key,
@@ -220,6 +225,7 @@ class Certificate {
       courseId: courseId ?? this.courseId,
       courseKey: courseKey ?? this.courseKey,
       moduleKey: moduleKey ?? this.moduleKey,
+      instructorName: instructorName ?? this.instructorName,
     );
   }
 

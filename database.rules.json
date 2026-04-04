@@ -193,6 +193,9 @@
           ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "newData.isString() || !newData.exists()"
         },
+        "instructorName": {
+          ".validate": "newData.isString() || !newData.exists()"
+        },
         "notes": {
           ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "newData.isString() || !newData.exists()"

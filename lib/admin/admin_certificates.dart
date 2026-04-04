@@ -884,6 +884,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     final fullNameC = TextEditingController(text: cert.fullName);
     final nationalIdC = TextEditingController(text: cert.nationalIdNumber);
     final titleC = TextEditingController(text: cert.certificateTitle);
+    final instructorC = TextEditingController(text: cert.instructorName ?? '');
     final notesC = TextEditingController(text: cert.notes ?? '');
     String trainingDate = cert.trainingDate;
     String expirationDate = cert.expirationDate;
@@ -902,6 +903,9 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         fullName: fullNameC.text.trim(),
         nationalIdNumber: nationalIdC.text.trim(),
         certificateTitle: titleC.text.trim(),
+        instructorName: instructorC.text.trim().isEmpty
+            ? 'Seddik. B'
+            : instructorC.text.trim(),
         trainingDate: trainingDate,
         expirationDate: expirationDate,
         updatedAt: now,
@@ -943,6 +947,13 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 TextFormField(
                   controller: titleC,
                   decoration: const InputDecoration(labelText: 'Title'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: instructorC,
+                  decoration: const InputDecoration(
+                    labelText: 'Instructor Name',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -1043,6 +1054,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     fullNameC.dispose();
     nationalIdC.dispose();
     titleC.dispose();
+    instructorC.dispose();
     notesC.dispose();
   }
 }
@@ -1373,6 +1385,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
   final _fullNameController = TextEditingController();
   final _nationalIdController = TextEditingController();
   final _titleController = TextEditingController();
+  final _instructorController = TextEditingController();
   final _notesController = TextEditingController();
 
   String? _cvn;
@@ -1394,6 +1407,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
       _fullNameController.text = cert.fullName;
       _nationalIdController.text = cert.nationalIdNumber;
       _titleController.text = cert.certificateTitle;
+      _instructorController.text = cert.instructorName ?? '';
       _trainingDate = cert.trainingDate;
       _expirationDate = cert.expirationDate;
       _calculateDurationFromDates();
@@ -1435,6 +1449,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
     _fullNameController.dispose();
     _nationalIdController.dispose();
     _titleController.dispose();
+    _instructorController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -1490,6 +1505,9 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
         fullName: _fullNameController.text.trim(),
         nationalIdNumber: _nationalIdController.text.trim(),
         certificateTitle: _titleController.text.trim(),
+        instructorName: _instructorController.text.trim().isEmpty
+            ? 'Seddik. B'
+            : _instructorController.text.trim(),
         trainingDate: _trainingDate,
         expirationDate: _expirationDate,
         status: _status,
@@ -1647,6 +1665,15 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
                   validator: (v) => v?.trim().isEmpty == true
                       ? 'Certificate title is required'
                       : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _instructorController,
+                  decoration: const InputDecoration(
+                    labelText: 'Instructor Name',
+                    hintText: 'Defaults to Seddik. B',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -1899,6 +1926,12 @@ class _CertificateViewSheet extends StatelessWidget {
               _DetailRow(
                 label: 'Certificate Title',
                 value: certificate.certificateTitle,
+              ),
+              _DetailRow(
+                label: 'Instructor',
+                value: (certificate.instructorName ?? '').trim().isEmpty
+                    ? 'Seddik. B'
+                    : certificate.instructorName!,
               ),
               _DetailRow(
                 label: 'Training Date',
