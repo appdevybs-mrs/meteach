@@ -68,6 +68,17 @@ class CertificatePdfService {
       template = pw.MemoryImage(bytes.buffer.asUint8List());
     } catch (_) {}
 
+    const double pageHeight = 842;
+
+    // Measured bottom-origin Y values converted to top-origin:
+    // top = pageHeight - y
+    const double learnerNameTop = 322;
+    const double courseTitleTop = 444;
+    const double issuedDateTop = 548;
+    const double instructorTop = 598;
+    const double academicDirectorTop = 598;
+    const double certificateIdTop = 681;
+
     final issueDate = cert.createdAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
         : DateTime.now();
@@ -94,7 +105,7 @@ class CertificatePdfService {
 
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat(595, 842),
+        pageFormat: PdfPageFormat(595, pageHeight),
         margin: pw.EdgeInsets.zero,
         build: (_) {
           return pw.Stack(
@@ -105,7 +116,7 @@ class CertificatePdfService {
                 ),
               centeredText(
                 centerX: 297.5,
-                top: 492,
+                top: learnerNameTop,
                 boxWidth: 520,
                 text: cert.fullName,
                 style: pw.TextStyle(
@@ -116,7 +127,7 @@ class CertificatePdfService {
               ),
               centeredText(
                 centerX: 297.5,
-                top: 370,
+                top: courseTitleTop,
                 boxWidth: 520,
                 text: cert.certificateTitle,
                 style: pw.TextStyle(
@@ -127,7 +138,7 @@ class CertificatePdfService {
               ),
               pw.Positioned(
                 left: 322,
-                top: 266,
+                top: issuedDateTop,
                 child: pw.Text(
                   _fmtDate(issueDate),
                   style: pw.TextStyle(
@@ -138,7 +149,7 @@ class CertificatePdfService {
               ),
               centeredText(
                 centerX: 142,
-                top: 230,
+                top: instructorTop,
                 boxWidth: 210,
                 text: instructor,
                 style: pw.TextStyle(
@@ -148,7 +159,7 @@ class CertificatePdfService {
               ),
               centeredText(
                 centerX: 466,
-                top: 230,
+                top: academicDirectorTop,
                 boxWidth: 170,
                 text: 'Seddik. B',
                 style: pw.TextStyle(
@@ -158,7 +169,7 @@ class CertificatePdfService {
               ),
               pw.Positioned(
                 left: 224,
-                top: 133,
+                top: certificateIdTop,
                 child: pw.SizedBox(
                   width: 170,
                   child: pw.Text(
