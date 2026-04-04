@@ -359,4 +359,54 @@ class CertificatePdfService {
 
     throw Exception((data['message'] ?? 'Upload failed').toString());
   }
+
+  Future<String> uploadCertificatePdfForLearner({
+    required Certificate cert,
+    required Uint8List pdfBytes,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) {
+      throw Exception('Not logged in.');
+    }
+
+    final req = http.MultipartRequest(
+      'POST',
+      BackendApi.uri('upload_secure.php'),
+    );
+    await BackendApi.applyAuthToMultipart(req);
+
+    req.fields['app_id'] = 'recorded_certificates_$uid';
+    req.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        pdfBytes,
+        filename: '${_sanitize(cert.cvn, fallback: 'certificate')}.pdf',
+      ),
+    );
+
+    final streamed = await req.send().timeout(const Duration(minutes: 5));
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Learner upload failed HTTP ${response.statusCode}: ${response.body}',
+      );
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception('Learner upload failed: invalid JSON response');
+    }
+
+    if (decoded is! Map || decoded['success'] != true) {
+      throw Exception('Learner upload failed: ${response.body}');
+    }
+
+    final url = (decoded['url'] ?? '').toString().trim();
+    if (url.isEmpty) {
+      throw Exception('Learner upload failed: missing URL in response');
+    }
+    return url;
+  }
 }

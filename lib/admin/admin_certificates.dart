@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/certificate_model.dart';
+import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart' show AppToast, AppToastType;
@@ -25,11 +26,15 @@ class AdminCertificatesScreen extends StatefulWidget {
 
 class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   final CertificateService _service = CertificateService();
+  final CertificatePdfService _pdfService = CertificatePdfService();
   final _searchController = TextEditingController();
 
   List<Certificate> _certificates = [];
   List<Certificate> _filteredCertificates = [];
+  List<RecordedCertificateEntry> _recordedCertificates = [];
+  List<RecordedCertificateEntry> _filteredRecordedCertificates = [];
   bool _loading = true;
+  int _activeTab = 0;
 
   String _searchQuery = '';
   CertificateStatus? _statusFilter;
@@ -46,7 +51,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCertificates();
+    _loadAll();
   }
 
   @override
@@ -82,6 +87,24 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           type: AppToastType.error,
         );
       }
+    }
+  }
+
+  Future<void> _loadAll() async {
+    await Future.wait([_loadCertificates(), _loadRecordedCertificates()]);
+  }
+
+  Future<void> _loadRecordedCertificates() async {
+    setState(() => _loading = true);
+    try {
+      final rows = await _service.getAllRecordedCertificates();
+      setState(() {
+        _recordedCertificates = rows;
+        _applyRecordedFilters();
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() => _loading = false);
     }
   }
 
@@ -161,8 +184,24 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   void _onSearchChanged(String value) {
     setState(() {
       _searchQuery = value;
-      _applyFilters();
+      if (_activeTab == 0) {
+        _applyFilters();
+      } else {
+        _applyRecordedFilters();
+      }
     });
+  }
+
+  void _applyRecordedFilters() {
+    final q = _searchQuery.trim().toLowerCase();
+    _filteredRecordedCertificates = _recordedCertificates.where((entry) {
+      if (q.isEmpty) return true;
+      final cert = entry.certificate;
+      return cert.fullName.toLowerCase().contains(q) ||
+          cert.cvn.toLowerCase().contains(q) ||
+          cert.certificateTitle.toLowerCase().contains(q) ||
+          cert.nationalIdNumber.toLowerCase().contains(q);
+    }).toList();
   }
 
   void _setStatusFilter(CertificateStatus? status) {
@@ -202,7 +241,11 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       _expirationDateFrom = null;
       _expirationDateTo = null;
       _searchController.clear();
-      _applyFilters();
+      if (_activeTab == 0) {
+        _applyFilters();
+      } else {
+        _applyRecordedFilters();
+      }
     });
   }
 
@@ -329,11 +372,12 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         ),
         actions: [
           const SizedBox.shrink(),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, color: _actionOrange),
-            onPressed: _showAddCertificateForm,
-            tooltip: 'Add Certificate',
-          ),
+          if (_activeTab == 0)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, color: _actionOrange),
+              onPressed: _showAddCertificateForm,
+              tooltip: 'Add Certificate',
+            ),
         ],
       ),
       body: adminWebBodyFrame(
@@ -341,18 +385,120 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         maxWidth: 1660,
         child: Column(
           children: [
-            _buildSearchAndFilters(),
-            Expanded(child: _buildCertificatesList()),
+            _buildTabSwitch(),
+            if (_activeTab == 0)
+              _buildSearchAndFilters()
+            else
+              _buildRecordedSearch(),
+            Expanded(
+              child: _activeTab == 0
+                  ? _buildCertificatesList()
+                  : _buildRecordedCertificatesList(),
+            ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddCertificateForm,
-        backgroundColor: _actionOrange,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Add Certificate',
-          style: TextStyle(color: Colors.white),
+      floatingActionButton: _activeTab == 0
+          ? FloatingActionButton.extended(
+              onPressed: _showAddCertificateForm,
+              backgroundColor: _actionOrange,
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                'Add Certificate',
+                style: TextStyle(color: Colors.white),
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildTabSwitch() {
+    Widget tab(int idx, String label) {
+      final selected = _activeTab == idx;
+      return Expanded(
+        child: InkWell(
+          onTap: () {
+            if (_activeTab == idx) return;
+            setState(() {
+              _activeTab = idx;
+              if (_activeTab == 0) {
+                _applyFilters();
+              } else {
+                _applyRecordedFilters();
+              }
+            });
+          },
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? _primaryBlue : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : _primaryBlue,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            tab(0, 'Manual Certificates'),
+            const SizedBox(width: 6),
+            tab(1, 'Recorded Achievements'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecordedSearch() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        decoration: InputDecoration(
+          hintText: 'Search recorded by name, CVN, title, or National ID...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    _onSearchChanged('');
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _uiBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _uiBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _primaryBlue, width: 2),
+          ),
         ),
       ),
     );
@@ -658,6 +804,246 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         );
       },
     );
+  }
+
+  Widget _buildRecordedCertificatesList() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_filteredRecordedCertificates.isEmpty) {
+      return Center(
+        child: Text(
+          _recordedCertificates.isEmpty
+              ? 'No recorded achievement certificates yet'
+              : 'No recorded certificates match your search',
+          style: const TextStyle(color: _softText, fontSize: 16),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      itemCount: _filteredRecordedCertificates.length,
+      itemBuilder: (context, index) {
+        final entry = _filteredRecordedCertificates[index];
+        final cert = entry.certificate;
+        return _CertificateListItem(
+          certificate: cert,
+          onView: () => _showViewCertificate(cert),
+          onEdit: () => _showEditRecordedCertificateForm(entry),
+          onDelete: () => _deleteRecordedCertificateEntry(entry),
+          onPrint: () => _printCertificate(cert),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteRecordedCertificateEntry(
+    RecordedCertificateEntry entry,
+  ) async {
+    final cert = entry.certificate;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Recorded Certificate'),
+        content: Text('Delete recorded certificate for "${cert.fullName}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await _service.deleteRecordedCertificate(
+      learnerUid: entry.learnerUid,
+      certId: entry.certId,
+      cvn: cert.cvn,
+    );
+    await _loadRecordedCertificates();
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Recorded certificate deleted',
+      type: AppToastType.success,
+    );
+  }
+
+  Future<void> _showEditRecordedCertificateForm(
+    RecordedCertificateEntry entry,
+  ) async {
+    final cert = entry.certificate;
+    final fullNameC = TextEditingController(text: cert.fullName);
+    final nationalIdC = TextEditingController(text: cert.nationalIdNumber);
+    final titleC = TextEditingController(text: cert.certificateTitle);
+    final notesC = TextEditingController(text: cert.notes ?? '');
+    String trainingDate = cert.trainingDate;
+    String expirationDate = cert.expirationDate;
+    bool downloadsEnabled = cert.downloadsEnabled;
+
+    int durationYears = 1;
+    try {
+      final t = DateTime.parse(trainingDate);
+      final e = DateTime.parse(expirationDate);
+      durationYears = (e.difference(t).inDays / 365).round().clamp(1, 10);
+    } catch (_) {}
+
+    Future<void> save(StateSetter setSheetState) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final updated = cert.copyWith(
+        fullName: fullNameC.text.trim(),
+        nationalIdNumber: nationalIdC.text.trim(),
+        certificateTitle: titleC.text.trim(),
+        trainingDate: trainingDate,
+        expirationDate: expirationDate,
+        updatedAt: now,
+        notes: notesC.text.trim().isEmpty ? null : notesC.text.trim(),
+        downloadsEnabled: downloadsEnabled,
+      );
+      final bytes = await _pdfService.generateCertificatePdfBytes(updated);
+      final url = await _pdfService.uploadCertificatePdf(
+        cert: updated,
+        pdfBytes: bytes,
+      );
+      final withPdf = updated.copyWith(pdfUrl: url, pdfPreviewUrl: url);
+      await _service.updateRecordedCertificate(
+        learnerUid: entry.learnerUid,
+        certId: entry.certId,
+        cert: withPdf,
+      );
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => AlertDialog(
+          title: const Text('Edit Recorded Certificate'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: fullNameC,
+                  decoration: const InputDecoration(labelText: 'Full Name'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: nationalIdC,
+                  decoration: const InputDecoration(labelText: 'National ID'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: titleC,
+                  decoration: const InputDecoration(labelText: 'Title'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  readOnly: true,
+                  controller: TextEditingController(text: trainingDate),
+                  decoration: const InputDecoration(labelText: 'Training Date'),
+                  onTap: () async {
+                    final d = await showDatePicker(
+                      context: ctx,
+                      initialDate:
+                          DateTime.tryParse(trainingDate) ?? DateTime.now(),
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2035),
+                    );
+                    if (d == null) return;
+                    setSheetState(() {
+                      trainingDate = DateFormat('yyyy-MM-dd').format(d);
+                      expirationDate = DateFormat(
+                        'yyyy-MM-dd',
+                      ).format(d.add(Duration(days: durationYears * 365)));
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  value: durationYears,
+                  decoration: const InputDecoration(labelText: 'Duration'),
+                  items: List.generate(
+                    10,
+                    (i) => DropdownMenuItem(
+                      value: i + 1,
+                      child: Text('${i + 1} year${i == 0 ? '' : 's'}'),
+                    ),
+                  ),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setSheetState(() {
+                      durationYears = v;
+                      final t =
+                          DateTime.tryParse(trainingDate) ?? DateTime.now();
+                      expirationDate = DateFormat(
+                        'yyyy-MM-dd',
+                      ).format(t.add(Duration(days: durationYears * 365)));
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  readOnly: true,
+                  controller: TextEditingController(text: expirationDate),
+                  decoration: const InputDecoration(
+                    labelText: 'Expiration Date',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: notesC,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Notes'),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  value: downloadsEnabled,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Downloads enabled'),
+                  onChanged: (v) => setSheetState(() => downloadsEnabled = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await save(setSheetState);
+                if (!mounted) return;
+                Navigator.pop(ctx);
+                await _loadRecordedCertificates();
+                if (!mounted) return;
+                AppToast.show(
+                  context,
+                  'Recorded certificate updated',
+                  type: AppToastType.success,
+                );
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    fullNameC.dispose();
+    nationalIdC.dispose();
+    titleC.dispose();
+    notesC.dispose();
   }
 }
 

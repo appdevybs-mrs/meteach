@@ -18,6 +18,9 @@ class CertificateServiceException implements Exception {
 
 class CertificateService {
   static const String _certificatesPath = 'certificates';
+  static const String _usersPath = 'users';
+  static const String _recordedCertificatesPath = 'recorded_certificates';
+  static const String _cvnIndexPath = 'certificate_cvn_index';
   static const String _prefix = 'DZ01SB';
   static const String _downloadPingUrl =
       'https://www.yourbridgeschool.com/app/secure/certificate_download_ping.php';
@@ -26,6 +29,8 @@ class CertificateService {
   final CertificatePdfService _pdfService = CertificatePdfService();
 
   DatabaseReference get _certificatesRef => _db.ref(_certificatesPath);
+  DatabaseReference get _usersRef => _db.ref(_usersPath);
+  DatabaseReference get _cvnIndexRef => _db.ref(_cvnIndexPath);
 
   String _cvnFromKey(String key, {required int nowMs}) {
     final year = DateTime.fromMillisecondsSinceEpoch(nowMs).year;
@@ -35,6 +40,66 @@ class CertificateService {
     );
     final sequence = (hash % 100000).toString().padLeft(5, '0');
     return '$_prefix-$year-$sequence';
+  }
+
+  String _cvnFromRecordedId({
+    required String learnerUid,
+    required String certId,
+    required int nowMs,
+  }) {
+    final year = DateTime.fromMillisecondsSinceEpoch(nowMs).year;
+    final seed = '$learnerUid|$certId';
+    final hash = seed.codeUnits.fold<int>(
+      0,
+      (a, b) => (a * 33 + b) & 0x7fffffff,
+    );
+    final sequence = (hash % 100000).toString().padLeft(5, '0');
+    return '$_prefix-R$year-$sequence';
+  }
+
+  DatabaseReference _recordedCertRef(String learnerUid, String certId) {
+    return _usersRef
+        .child(learnerUid)
+        .child(_recordedCertificatesPath)
+        .child(certId);
+  }
+
+  Future<void> upsertRecordedCvnIndex({
+    required String cvn,
+    required String learnerUid,
+    required String certId,
+  }) async {
+    await _cvnIndexRef.child(cvn).set({
+      'source': 'recorded',
+      'learnerUid': learnerUid,
+      'certId': certId,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> deleteRecordedCvnIndex(String cvn) async {
+    final safe = cvn.trim();
+    if (safe.isEmpty) return;
+    await _cvnIndexRef.child(safe).remove();
+  }
+
+  Future<bool> isRecordedCVNUnique(
+    String cvn, {
+    String? learnerUid,
+    String? certId,
+  }) async {
+    final existingGlobal = await getCertificateByCVN(cvn);
+    if (existingGlobal != null && existingGlobal.source != 'recorded') {
+      return false;
+    }
+
+    final idxSnap = await _cvnIndexRef.child(cvn).get();
+    if (!idxSnap.exists || idxSnap.value is! Map) return true;
+    final m = Map<String, dynamic>.from(idxSnap.value as Map);
+    final sameLearner =
+        (m['learnerUid'] ?? '').toString() == (learnerUid ?? '');
+    final sameCert = (m['certId'] ?? '').toString() == (certId ?? '');
+    return sameLearner && sameCert;
   }
 
   Future<bool> isCVNUnique(String cvn, {String? excludeKey}) async {
@@ -233,6 +298,22 @@ class CertificateService {
           }
         }
       }
+
+      final idxSnap = await _cvnIndexRef.child(cvn).get();
+      if (idxSnap.exists && idxSnap.value is Map) {
+        final idx = Map<String, dynamic>.from(idxSnap.value as Map);
+        final learnerUid = (idx['learnerUid'] ?? '').toString().trim();
+        final certId = (idx['certId'] ?? '').toString().trim();
+        if (learnerUid.isNotEmpty && certId.isNotEmpty) {
+          final rec = await getRecordedCertificateByPath(
+            learnerUid: learnerUid,
+            certId: certId,
+          );
+          if (rec != null) {
+            return rec.certificate;
+          }
+        }
+      }
       return null;
     } catch (e) {
       return null;
@@ -297,6 +378,203 @@ class CertificateService {
       }
       rethrow;
     }
+  }
+
+  Future<List<RecordedCertificateEntry>> getAllRecordedCertificates() async {
+    final out = <RecordedCertificateEntry>[];
+    final usersSnap = await _usersRef.get();
+    if (!usersSnap.exists || usersSnap.value is! Map) return out;
+
+    final users = usersSnap.value as Map;
+    users.forEach((uidRaw, userRaw) {
+      if (userRaw is! Map) return;
+      final uid = uidRaw.toString();
+      final user = Map<String, dynamic>.from(userRaw);
+      final node = user[_recordedCertificatesPath];
+      if (node is! Map) return;
+
+      final certs = Map<dynamic, dynamic>.from(node);
+      certs.forEach((certIdRaw, certRaw) {
+        if (certRaw is! Map) return;
+        final certId = certIdRaw.toString();
+        final cert = Certificate.fromMap(
+          certRaw,
+          key: certId,
+        ).copyWith(source: 'recorded', learnerUid: uid, recordedCertId: certId);
+        out.add(
+          RecordedCertificateEntry(
+            learnerUid: uid,
+            certId: certId,
+            certificate: cert,
+          ),
+        );
+      });
+    });
+
+    out.sort(
+      (a, b) => b.certificate.createdAt.compareTo(a.certificate.createdAt),
+    );
+    return out;
+  }
+
+  Future<RecordedCertificateEntry?> getRecordedCertificateByPath({
+    required String learnerUid,
+    required String certId,
+  }) async {
+    final snap = await _recordedCertRef(learnerUid, certId).get();
+    if (!snap.exists || snap.value is! Map) return null;
+    final cert = Certificate.fromMap(snap.value as Map, key: certId).copyWith(
+      source: 'recorded',
+      learnerUid: learnerUid,
+      recordedCertId: certId,
+    );
+    return RecordedCertificateEntry(
+      learnerUid: learnerUid,
+      certId: certId,
+      certificate: cert,
+    );
+  }
+
+  Future<Certificate> issueRecordedCertificate({
+    required String learnerUid,
+    required String certId,
+    required String fullName,
+    required String nationalIdNumber,
+    required String certificateTitle,
+    required String trainingDate,
+    required String expirationDate,
+    required String courseId,
+    required String courseKey,
+    required String kind,
+    String? moduleKey,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final existing = await getRecordedCertificateByPath(
+      learnerUid: learnerUid,
+      certId: certId,
+    );
+
+    var cvn = existing?.certificate.cvn ?? '';
+    if (cvn.isEmpty) {
+      cvn = _cvnFromRecordedId(
+        learnerUid: learnerUid,
+        certId: certId,
+        nowMs: now,
+      );
+      var unique = await isRecordedCVNUnique(
+        cvn,
+        learnerUid: learnerUid,
+        certId: certId,
+      );
+      if (!unique) {
+        final fallbackSeq = (now % 100000).toString().padLeft(5, '0');
+        cvn = '$_prefix-R${DateTime.now().year}-$fallbackSeq';
+        unique = await isRecordedCVNUnique(
+          cvn,
+          learnerUid: learnerUid,
+          certId: certId,
+        );
+      }
+      if (!unique) {
+        throw CertificateServiceException(
+          'Could not allocate unique CVN. Please retry.',
+        );
+      }
+    }
+
+    final certBase = Certificate(
+      key: certId,
+      cvn: cvn,
+      fullName: fullName,
+      nationalIdNumber: nationalIdNumber,
+      certificateTitle: certificateTitle,
+      trainingDate: trainingDate,
+      expirationDate: expirationDate,
+      status: CertificateStatus.valid,
+      createdAt: existing?.certificate.createdAt ?? now,
+      updatedAt: now,
+      issuedBy: learnerUid,
+      notes: existing?.certificate.notes,
+      pdfUrl: existing?.certificate.pdfUrl,
+      pdfPreviewUrl: existing?.certificate.pdfPreviewUrl,
+      downloadCount: existing?.certificate.downloadCount ?? 0,
+      lastDownloadedAt: existing?.certificate.lastDownloadedAt,
+      downloadsEnabled: existing?.certificate.downloadsEnabled ?? true,
+      source: 'recorded',
+      learnerUid: learnerUid,
+      recordedCertId: certId,
+      certificateKind: kind,
+      courseId: courseId,
+      courseKey: courseKey,
+      moduleKey: moduleKey,
+    );
+
+    final bytes = await _pdfService.generateCertificatePdfBytes(certBase);
+    final url = await _pdfService.uploadCertificatePdfForLearner(
+      cert: certBase,
+      pdfBytes: bytes,
+    );
+
+    final certFinal = certBase.copyWith(pdfUrl: url, pdfPreviewUrl: url);
+    await _recordedCertRef(learnerUid, certId).set(certFinal.toMap());
+    await upsertRecordedCvnIndex(
+      cvn: certFinal.cvn,
+      learnerUid: learnerUid,
+      certId: certId,
+    );
+    return certFinal;
+  }
+
+  Future<void> updateRecordedCertificate({
+    required String learnerUid,
+    required String certId,
+    required Certificate cert,
+  }) async {
+    await _recordedCertRef(learnerUid, certId).update(
+      cert
+          .copyWith(
+            source: 'recorded',
+            learnerUid: learnerUid,
+            recordedCertId: certId,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          )
+          .toMap(),
+    );
+    await upsertRecordedCvnIndex(
+      cvn: cert.cvn,
+      learnerUid: learnerUid,
+      certId: certId,
+    );
+  }
+
+  Future<void> deleteRecordedCertificate({
+    required String learnerUid,
+    required String certId,
+    String? cvn,
+  }) async {
+    await _recordedCertRef(learnerUid, certId).remove();
+    final safeCvn = (cvn ?? '').trim();
+    if (safeCvn.isNotEmpty) {
+      await deleteRecordedCvnIndex(safeCvn);
+    }
+  }
+
+  Future<void> incrementRecordedDownloadCount({
+    required String learnerUid,
+    required String certId,
+  }) async {
+    final ref = _recordedCertRef(learnerUid, certId);
+    final snap = await ref.get();
+    if (!snap.exists || snap.value is! Map) return;
+    final m = Map<String, dynamic>.from(snap.value as Map);
+    final current = (m['downloadCount'] is num)
+        ? (m['downloadCount'] as num).toInt()
+        : int.tryParse((m['downloadCount'] ?? '').toString()) ?? 0;
+    await ref.update({
+      'downloadCount': current + 1,
+      'lastDownloadedAt': DateTime.now().millisecondsSinceEpoch,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    });
   }
 
   Future<List<Certificate>> searchCertificates({
@@ -412,5 +690,17 @@ class CertificateVerificationResult {
     this.certificate,
     required this.message,
     required this.isValid,
+  });
+}
+
+class RecordedCertificateEntry {
+  final String learnerUid;
+  final String certId;
+  final Certificate certificate;
+
+  RecordedCertificateEntry({
+    required this.learnerUid,
+    required this.certId,
+    required this.certificate,
   });
 }

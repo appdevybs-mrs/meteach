@@ -204,6 +204,28 @@
       }
     },
 
+    "certificate_cvn_index": {
+      ".read": true,
+      "$cvn": {
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin' || ((newData.child('source').val() == 'recorded' || data.child('source').val() == 'recorded') && (newData.child('learnerUid').val() == auth.uid || data.child('learnerUid').val() == auth.uid)))",
+        "source": {
+          ".validate": "newData.isString() && newData.val() == 'recorded'"
+        },
+        "learnerUid": {
+          ".validate": "newData.isString() && newData.val().length >= 6"
+        },
+        "certId": {
+          ".validate": "newData.isString() && newData.val().length >= 3"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() || !newData.exists()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+
     "stories": {
       ".read": true,
       ".write": "auth != null"

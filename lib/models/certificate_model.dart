@@ -64,6 +64,13 @@ class Certificate {
   final int downloadCount;
   final int? lastDownloadedAt;
   final bool downloadsEnabled;
+  final String? source;
+  final String? learnerUid;
+  final String? recordedCertId;
+  final String? certificateKind;
+  final String? courseId;
+  final String? courseKey;
+  final String? moduleKey;
 
   Certificate({
     this.key,
@@ -83,6 +90,13 @@ class Certificate {
     this.downloadCount = 0,
     this.lastDownloadedAt,
     this.downloadsEnabled = true,
+    this.source,
+    this.learnerUid,
+    this.recordedCertId,
+    this.certificateKind,
+    this.courseId,
+    this.courseKey,
+    this.moduleKey,
   });
 
   Map<String, dynamic> toMap() {
@@ -103,6 +117,13 @@ class Certificate {
       'downloadCount': downloadCount,
       if (lastDownloadedAt != null) 'lastDownloadedAt': lastDownloadedAt,
       'downloadsEnabled': downloadsEnabled,
+      if (source != null) 'source': source,
+      if (learnerUid != null) 'learnerUid': learnerUid,
+      if (recordedCertId != null) 'recordedCertId': recordedCertId,
+      if (certificateKind != null) 'certificateKind': certificateKind,
+      if (courseId != null) 'courseId': courseId,
+      if (courseKey != null) 'courseKey': courseKey,
+      if (moduleKey != null) 'moduleKey': moduleKey,
     };
   }
 
@@ -131,6 +152,13 @@ class Certificate {
       downloadsEnabled: map['downloadsEnabled'] == null
           ? true
           : map['downloadsEnabled'] == true,
+      source: map['source']?.toString(),
+      learnerUid: map['learnerUid']?.toString(),
+      recordedCertId: map['recordedCertId']?.toString(),
+      certificateKind: map['certificateKind']?.toString(),
+      courseId: map['courseId']?.toString(),
+      courseKey: map['courseKey']?.toString(),
+      moduleKey: map['moduleKey']?.toString(),
     );
   }
 
@@ -159,6 +187,13 @@ class Certificate {
     int? downloadCount,
     int? lastDownloadedAt,
     bool? downloadsEnabled,
+    String? source,
+    String? learnerUid,
+    String? recordedCertId,
+    String? certificateKind,
+    String? courseId,
+    String? courseKey,
+    String? moduleKey,
   }) {
     return Certificate(
       key: key ?? this.key,
@@ -178,6 +213,13 @@ class Certificate {
       downloadCount: downloadCount ?? this.downloadCount,
       lastDownloadedAt: lastDownloadedAt ?? this.lastDownloadedAt,
       downloadsEnabled: downloadsEnabled ?? this.downloadsEnabled,
+      source: source ?? this.source,
+      learnerUid: learnerUid ?? this.learnerUid,
+      recordedCertId: recordedCertId ?? this.recordedCertId,
+      certificateKind: certificateKind ?? this.certificateKind,
+      courseId: courseId ?? this.courseId,
+      courseKey: courseKey ?? this.courseKey,
+      moduleKey: moduleKey ?? this.moduleKey,
     );
   }
 

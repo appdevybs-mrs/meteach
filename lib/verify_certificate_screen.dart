@@ -256,7 +256,16 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
     );
 
     try {
-      await _service.incrementDownloadCount(key, cvn: cert.cvn);
+      if (cert.source == 'recorded' &&
+          (cert.learnerUid ?? '').trim().isNotEmpty &&
+          (cert.recordedCertId ?? '').trim().isNotEmpty) {
+        await _service.incrementRecordedDownloadCount(
+          learnerUid: cert.learnerUid!.trim(),
+          certId: cert.recordedCertId!.trim(),
+        );
+      } else {
+        await _service.incrementDownloadCount(key, cvn: cert.cvn);
+      }
     } catch (_) {}
   }
 

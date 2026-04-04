@@ -12,6 +12,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/certificate_model.dart';
+import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
@@ -48,6 +50,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   static const String _recordedProgressNode = 'recorded_progress';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
+  final CertificateService _certificateService = CertificateService();
 
   void _debug(String message) {
     // no-op in production build
@@ -769,17 +772,100 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     await _loadAll();
   }
 
-  Future<String> _learnerDisplayName() async {
+  Future<Map<String, String>> _learnerIdentity() async {
+    final out = <String, String>{'fullName': 'Learner', 'nationalIdNumber': ''};
+    final snap = await _usersRef.child(_uid).get();
+    if (!snap.exists || snap.value is! Map) return out;
+    final m = Map<String, dynamic>.from(snap.value as Map);
+    final first = (m['first_name'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? '').toString().trim();
+    final full = '$first $last'.trim();
+    final nationalId = (m['national_id_number'] ?? m['nationalIdNumber'] ?? '')
+        .toString();
+    if (full.isNotEmpty) out['fullName'] = full;
+    out['nationalIdNumber'] = nationalId.trim();
+    return out;
+  }
+
+  String _sanitizeIdPart(String raw) {
+    final safe = raw
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return safe.isEmpty ? 'item' : safe;
+  }
+
+  String _fmtYmd(DateTime d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  String _oneYearAfter(String trainingDate) {
     try {
-      final snap = await _usersRef.child(_uid).get();
-      if (!snap.exists || snap.value is! Map) return 'Learner';
-      final m = Map<String, dynamic>.from(snap.value as Map);
-      final first = (m['first_name'] ?? '').toString().trim();
-      final last = (m['last_name'] ?? '').toString().trim();
-      final full = '$first $last'.trim();
-      if (full.isNotEmpty) return full;
-    } catch (_) {}
-    return 'Learner';
+      final d = DateTime.parse(trainingDate);
+      return _fmtYmd(d.add(const Duration(days: 365)));
+    } catch (_) {
+      return _fmtYmd(DateTime.now().add(const Duration(days: 365)));
+    }
+  }
+
+  int _sessionCompletionAt(_RecordedProgress p) {
+    return math.max(p.videoCompletedAt, p.materialsCompletedAt);
+  }
+
+  String _courseCompletionDate() {
+    int latest = 0;
+    for (final ref in _flatSessions) {
+      if (!_isSessionCompleted(ref.session)) continue;
+      final p = _progressOf(ref.session.id);
+      latest = math.max(latest, _sessionCompletionAt(p));
+    }
+    if (latest <= 0) return _fmtYmd(DateTime.now());
+    return _fmtYmd(DateTime.fromMillisecondsSinceEpoch(latest));
+  }
+
+  String _unitCompletionDate(_RecordedUnit unit) {
+    int latest = 0;
+    for (final session in unit.sessions) {
+      if (!_isSessionCompleted(session)) continue;
+      final p = _progressOf(session.id);
+      latest = math.max(latest, _sessionCompletionAt(p));
+    }
+    if (latest <= 0) return _fmtYmd(DateTime.now());
+    return _fmtYmd(DateTime.fromMillisecondsSinceEpoch(latest));
+  }
+
+  Future<Certificate> _issueRecordedCertificate({
+    required String certId,
+    required String certificateTitle,
+    required String trainingDate,
+    required String kind,
+    String? moduleKey,
+  }) async {
+    final identity = await _learnerIdentity();
+    final fullName = (identity['fullName'] ?? 'Learner').trim();
+    final nationalId = (identity['nationalIdNumber'] ?? '').trim();
+    if (nationalId.length < 4) {
+      throw Exception(
+        'National ID is missing. Ask admin to add your National ID in your learner profile before issuing certificates.',
+      );
+    }
+
+    return _certificateService.issueRecordedCertificate(
+      learnerUid: _uid,
+      certId: certId,
+      fullName: fullName,
+      nationalIdNumber: nationalId,
+      certificateTitle: certificateTitle,
+      trainingDate: trainingDate,
+      expirationDate: _oneYearAfter(trainingDate),
+      courseId: _courseId,
+      courseKey: widget.courseKey,
+      kind: kind,
+      moduleKey: moduleKey,
+    );
   }
 
   Future<Uint8List> _buildCertificatePdfBytes({
@@ -1140,14 +1226,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Future<void> _onCertificateTap() async {
     try {
-      final learnerName = await _learnerDisplayName();
+      final certId = 'course_${_sanitizeIdPart(_courseId)}';
+      final cert = await _issueRecordedCertificate(
+        certId: certId,
+        certificateTitle: _title,
+        trainingDate: _courseCompletionDate(),
+        kind: 'course',
+      );
       final bytes = await _buildCertificatePdfBytes(
-        learnerName: learnerName,
+        learnerName: cert.fullName,
         courseTitle: _title,
       );
       await _presentCertificate(
         bytes: bytes,
-        defaultFileName: 'course_certificate_${widget.courseKey}.pdf',
+        defaultFileName:
+            'course_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
       );
     } catch (e) {
       if (!mounted) return;
@@ -1164,9 +1257,19 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required int unitIndex,
   }) async {
     try {
-      final learnerName = await _learnerDisplayName();
+      final moduleKey = unit.id.trim().isNotEmpty
+          ? _sanitizeIdPart(unit.id)
+          : 'm${unitIndex + 1}';
+      final certId = 'module_${_sanitizeIdPart(_courseId)}_$moduleKey';
+      final cert = await _issueRecordedCertificate(
+        certId: certId,
+        certificateTitle: '${_title} - ${unit.displayTitle}',
+        trainingDate: _unitCompletionDate(unit),
+        kind: 'milestone',
+        moduleKey: moduleKey,
+      );
       final bytes = await _buildCertificatePdfBytes(
-        learnerName: learnerName,
+        learnerName: cert.fullName,
         courseTitle: _title,
         moduleTitle: unit.displayTitle,
         moduleNumber: unitIndex + 1,
@@ -1175,7 +1278,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       await _presentCertificate(
         bytes: bytes,
         defaultFileName:
-            'module_${unitIndex + 1}_certificate_${widget.courseKey}.pdf',
+            'module_${unitIndex + 1}_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
       );
     } catch (e) {
       if (!mounted) return;
