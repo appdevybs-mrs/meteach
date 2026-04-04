@@ -287,6 +287,20 @@ class _TeacherHomeworkInboxScreenState
     if (mounted) setState(() {});
   }
 
+  Future<void> _markUnreviewed(_HomeworkThreadView v) async {
+    if (v.homeworkRefPath.trim().isEmpty) return;
+    await _db.child(v.homeworkRefPath).update({
+      'reviewedAt': null,
+      'reviewStatus': '',
+      'reviewScore': null,
+      'reviewGrade': '',
+      'reviewNote': '',
+      'needsRedo': false,
+    });
+    _viewsFuture = null;
+    if (mounted) setState(() {});
+  }
+
   List<_HomeworkThreadView> _applyFilter(List<_HomeworkThreadView> views) {
     switch (_filter) {
       case _HomeworkFilter.notReviewed:
@@ -601,42 +615,120 @@ class _TeacherHomeworkInboxScreenState
                             final v = views[i - 1];
                             return Dismissible(
                               key: ValueKey('hw_${v.row.threadId}'),
-                              direction: DismissDirection.startToEnd,
-                              confirmDismiss: (_) async {
-                                if (v.reviewed) return false;
-                                final ok =
-                                    await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Mark as reviewed?'),
-                                        content: const Text(
-                                          'This will mark this homework thread as reviewed and remove it from "Not reviewed".',
+                              direction: DismissDirection.horizontal,
+                              confirmDismiss: (direction) async {
+                                if (direction == DismissDirection.startToEnd) {
+                                  if (v.reviewed) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Already reviewed'),
+                                          duration: Duration(
+                                            milliseconds: 1200,
+                                          ),
                                         ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, false),
-                                            child: const Text('Cancel'),
+                                      );
+                                    }
+                                    return false;
+                                  }
+                                  final ok =
+                                      await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text(
+                                            'Mark as reviewed?',
                                           ),
-                                          FilledButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, true),
-                                            child: const Text('Mark reviewed'),
+                                          content: const Text(
+                                            'This will mark this homework thread as reviewed and remove it from "Not reviewed".',
                                           ),
-                                        ],
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: const Text('Cancel'),
+                                            ),
+                                            FilledButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text(
+                                                'Mark reviewed',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ??
+                                      false;
+                                  if (!ok) return false;
+                                  await _markReviewed(v);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Marked reviewed'),
+                                        duration: Duration(milliseconds: 1200),
                                       ),
-                                    ) ??
-                                    false;
-                                if (!ok) return false;
-                                await _markReviewed(v);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Marked reviewed'),
-                                      duration: Duration(milliseconds: 1200),
-                                    ),
-                                  );
+                                    );
+                                  }
+                                  return false;
                                 }
+
+                                if (direction == DismissDirection.endToStart) {
+                                  if (!v.reviewed) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Already not reviewed'),
+                                          duration: Duration(
+                                            milliseconds: 1200,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return false;
+                                  }
+                                  final ok =
+                                      await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text(
+                                            'Mark as not reviewed?',
+                                          ),
+                                          content: const Text(
+                                            'This will move this homework thread back to "Not reviewed" and clear review details.',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: const Text('Cancel'),
+                                            ),
+                                            FilledButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text(
+                                                'Mark not reviewed',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ??
+                                      false;
+                                  if (!ok) return false;
+                                  await _markUnreviewed(v);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Marked not reviewed'),
+                                        duration: Duration(milliseconds: 1200),
+                                      ),
+                                    );
+                                  }
+                                  return false;
+                                }
+
                                 return false;
                               },
                               background: Container(
@@ -660,6 +752,34 @@ class _TeacherHomeworkInboxScreenState
                                       'Mark reviewed',
                                       style: TextStyle(
                                         color: Colors.green,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              secondaryBackground: Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                alignment: Alignment.centerRight,
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Icon(
+                                      Icons.undo_rounded,
+                                      color: Colors.orange.shade800,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Mark not reviewed',
+                                      style: TextStyle(
+                                        color: Colors.orange.shade800,
                                         fontWeight: FontWeight.w900,
                                       ),
                                     ),
