@@ -548,11 +548,29 @@ class PaymentDialogShared {
     required String uid,
     required String courseKey,
   }) async {
+    final usersRef = db.ref('users');
     await _rebuildLearnerSummaryFromPayments(
       db: db,
       uid: uid,
       courseKey: courseKey,
     );
+
+    final study = await _loadStudyFieldsForLearnerCourse(
+      usersRef: usersRef,
+      uid: uid,
+      courseKey: courseKey,
+    );
+    final variantKey = _normalizeDeliveryKey(
+      (study['variantKey'] ?? study['deliveryKey'] ?? '').toString(),
+    );
+    if (_variantUsesExpiry(variantKey)) {
+      await _rebuildVariantAccessFromPayments(
+        db: db,
+        uid: uid,
+        courseKey: courseKey,
+        variantKey: variantKey,
+      );
+    }
   }
 
   static Future<void> _updateLearnerSummary({

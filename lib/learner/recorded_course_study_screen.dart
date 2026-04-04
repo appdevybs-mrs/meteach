@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -96,6 +95,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   DatabaseReference get _recordedProgressRef =>
       _courseUserRef.child(_recordedProgressNode);
 
+  DatabaseReference get _paymentSummaryRef =>
+      _courseUserRef.child('payment_summary');
+
   Future<void> _loadAll() async {
     _debug('loadAll start courseKey=${widget.courseKey}');
     setState(() {
@@ -120,12 +122,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final results = await Future.wait<dynamic>([
         _recordedAccessRef.get(),
         _recordedProgressRef.get(),
+        _paymentSummaryRef.get(),
         _syllabiRef.child(_courseId).child('recorded').get(),
       ]);
 
       final DataSnapshot accessSnap = results[0] as DataSnapshot;
       final DataSnapshot progressSnap = results[1] as DataSnapshot;
-      final DataSnapshot syllabusSnap = results[2] as DataSnapshot;
+      final DataSnapshot paymentSummarySnap = results[2] as DataSnapshot;
+      final DataSnapshot syllabusSnap = results[3] as DataSnapshot;
       _debug(
         'snapshots access=${accessSnap.exists} progress=${progressSnap.exists} '
         'syllabus=${syllabusSnap.exists}',
@@ -137,6 +141,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         final map = Map<String, dynamic>.from(accessSnap.value as Map);
         expiresAt = _asInt(map['expiresAt']);
         durationMonths = _asInt(map['durationMonths']);
+      }
+      if ((expiresAt <= 0 || durationMonths <= 0) &&
+          paymentSummarySnap.value is Map) {
+        final sum = Map<String, dynamic>.from(paymentSummarySnap.value as Map);
+        if (expiresAt <= 0) {
+          expiresAt = _asInt(sum['expiresAt']);
+        }
+        if (durationMonths <= 0) {
+          durationMonths = _asInt(sum['durationMonths']);
+        }
       }
 
       final Map<String, _RecordedProgress> progressById =
@@ -2540,15 +2554,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        actions: [
-          if (kDebugMode)
-            IconButton(
-              tooltip: 'Debug certificate',
-              onPressed: _onCertificateTap,
-              icon: const Icon(Icons.bug_report_rounded),
-            ),
-          _buildMenuButton(),
-        ],
+        actions: [_buildMenuButton()],
       ),
       body: learnerWebBodyFrame(
         context: context,
