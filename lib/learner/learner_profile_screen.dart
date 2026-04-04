@@ -2069,6 +2069,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   Widget _buildCredentialsTab({
     required String email,
     required String serial,
+    required String nationalIdNumber,
     required String role,
     required String status,
   }) {
@@ -2091,6 +2092,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             children: [
               _readonlyRow('Email', email),
               _readonlyRow('Serial', serial),
+              _readonlyRow('National ID', nationalIdNumber),
               _readonlyRow('Role', role),
               _readonlyRow('Status', status),
               const SizedBox(height: 12),
@@ -2193,6 +2195,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final p = palette;
     final email = (_user['email'] ?? '').toString();
     final serial = (_user['serial'] ?? '').toString();
+    final nationalIdNumber =
+        (_user['national_id_number'] ?? _user['nationalIdNumber'] ?? '')
+            .toString();
     final role = (_user['role'] ?? '').toString();
     final status = (_user['status'] ?? '').toString();
 
@@ -2286,6 +2291,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                             _buildCredentialsTab(
                               email: email,
                               serial: serial,
+                              nationalIdNumber: nationalIdNumber,
                               role: role,
                               status: status,
                             ),

@@ -1341,6 +1341,7 @@ class _LearnersListState extends State<_LearnersList>
                     : l.fullName.toLowerCase().contains(s) ||
                           l.email.toLowerCase().contains(s) ||
                           l.serial.toLowerCase().contains(s) ||
+                          l.nationalIdNumber.toLowerCase().contains(s) ||
                           l.phone1.toLowerCase().contains(s) ||
                           l.phone2.toLowerCase().contains(s);
 
@@ -1939,6 +1940,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   late final TextEditingController emailC;
   late final TextEditingController passwordC;
   late final TextEditingController serialC;
+  late final TextEditingController nationalIdC;
   bool _serialUnlocked = false;
 
   DateTime? _dob;
@@ -1975,6 +1977,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       text: widget.mode == EditorMode.create ? '12345678' : '',
     );
     serialC = TextEditingController(text: initial?.serial ?? '');
+    nationalIdC = TextEditingController(text: initial?.nationalIdNumber ?? '');
 
     _status = initial?.status ?? LearnerStatus.active;
 
@@ -2008,6 +2011,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     emailC.dispose();
     passwordC.dispose();
     serialC.dispose();
+    nationalIdC.dispose();
     super.dispose();
   }
 
@@ -2105,6 +2109,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       final pass = passwordC.text.trim();
 
       final serial = serialC.text.trim();
+      final nationalId = nationalIdC.text.trim();
       final dob = dobC.text.trim();
       final phone1 = phone1C.text.trim();
       final phone2 = phone2C.text.trim();
@@ -2140,6 +2145,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         phone2: phone2,
         email: email,
         serial: serial,
+        nationalIdNumber: nationalId,
         role: 'learner',
         status: _status,
         updatedAtMs: null,
@@ -2346,6 +2352,12 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                               : const Icon(Icons.lock_rounded),
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    _TextField(
+                      controller: nationalIdC,
+                      label: 'National ID number',
+                      hint: 'Optional',
                     ),
                   ],
                 ),
@@ -2628,6 +2640,7 @@ class Learner {
     required this.phone2,
     required this.email,
     required this.serial,
+    required this.nationalIdNumber,
     required this.role,
     required this.status,
     required this.updatedAtMs,
@@ -2645,6 +2658,7 @@ class Learner {
   final String phone2;
   final String email;
   final String serial;
+  final String nationalIdNumber;
   final String role;
   final LearnerStatus status;
   final int? updatedAtMs;
@@ -2673,6 +2687,7 @@ class Learner {
       'phone2': phone2,
       'email': email,
       'serial': serial,
+      'national_id_number': nationalIdNumber,
       'status': status.value,
       'updatedAt': updatedAtMs,
       'profile_photo': profilePhoto,
@@ -2702,6 +2717,8 @@ class Learner {
       phone2: (m['phone2'] ?? '').toString(),
       email: (m['email'] ?? '').toString(),
       serial: (m['serial'] ?? '').toString(),
+      nationalIdNumber: (m['national_id_number'] ?? m['nationalIdNumber'] ?? '')
+          .toString(),
       status: LearnerStatus.fromValue(m['status']?.toString()),
       updatedAtMs: parseInt(m['updatedAt']),
       profilePhoto: (m['profile_photo'] ?? '').toString().trim(),

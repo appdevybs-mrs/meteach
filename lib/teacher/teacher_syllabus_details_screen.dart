@@ -425,6 +425,25 @@ class _TeacherSyllabusDetailsScreenState
     return sum;
   }
 
+  List<_ModuleGroup> _groupRecordedUnitsByModule(List<_Unit> units) {
+    final grouped = <String, List<_Unit>>{};
+    final order = <String>[];
+    for (final u in units) {
+      final label = u.otherTitle.trim().isNotEmpty
+          ? u.otherTitle.trim()
+          : 'Module';
+      if (!grouped.containsKey(label)) {
+        grouped[label] = <_Unit>[];
+        order.add(label);
+      }
+      grouped[label]!.add(u);
+    }
+    return [
+      for (final label in order)
+        _ModuleGroup(label: label, units: grouped[label] ?? const <_Unit>[]),
+    ];
+  }
+
   _SyllabusVariant? get _currentVariant {
     final c = _course;
     if (c == null) return null;
@@ -551,13 +570,17 @@ class _TeacherSyllabusDetailsScreenState
           onClear: () => _search.clear(),
           resultLabel: _query.isEmpty
               ? null
-              : '$filteredSessionsCount session(s) match “$_query”.',
+              : '$filteredSessionsCount ${variant.key == 'recorded' ? 'lesson(s)' : 'session(s)'} match “$_query”.',
         ),
         const SizedBox(height: 12),
         if (variant.units.isEmpty)
           _VariantEmptyState(variantLabel: _variantLabel(variant.key))
         else if (_query.isNotEmpty && unitsFiltered.isEmpty)
           _EmptySearchResults(query: _query, onClear: () => _search.clear())
+        else if (variant.key == 'recorded')
+          ..._groupRecordedUnitsByModule(
+            unitsFiltered,
+          ).map((g) => _ModuleGroupCard(label: g.label, units: g.units))
         else
           ...unitsFiltered.map(
             (u) => _UnitCard(unit: u, isRecorded: variant.key == 'recorded'),
@@ -1108,6 +1131,83 @@ class _CourseTopCard extends StatelessWidget {
                 _Pill(icon: Icons.update_rounded, text: updatedLabel),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModuleGroup {
+  const _ModuleGroup({required this.label, required this.units});
+
+  final String label;
+  final List<_Unit> units;
+}
+
+class _ModuleGroupCard extends StatefulWidget {
+  const _ModuleGroupCard({required this.label, required this.units});
+
+  final String label;
+  final List<_Unit> units;
+
+  @override
+  State<_ModuleGroupCard> createState() => _ModuleGroupCardState();
+}
+
+class _ModuleGroupCardState extends State<_ModuleGroupCard> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final lessonCount = widget.units.fold<int>(
+      0,
+      (sum, u) => sum + u.sessions.length,
+    );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5CBA7)),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${widget.label} • ${widget.units.length} units • $lessonCount lessons',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF9A3412),
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _expanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    color: const Color(0xFF9A3412),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: Column(
+                children: [
+                  for (final u in widget.units)
+                    _UnitCard(unit: u, isRecorded: true),
+                ],
+              ),
+            ),
         ],
       ),
     );

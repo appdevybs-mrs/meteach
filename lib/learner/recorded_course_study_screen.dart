@@ -150,6 +150,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         if (rawModules.isNotEmpty) {
           for (int mi = 0; mi < rawModules.length; mi++) {
             final module = rawModules[mi];
+            final moduleOrder = _asInt(module['order']) > 0
+                ? _asInt(module['order'])
+                : (mi + 1);
             final moduleLabel =
                 (module['otherTitle'] ?? '').toString().trim().isNotEmpty
                 ? (module['otherTitle'] ?? '').toString().trim()
@@ -157,11 +160,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       ? (module['title'] ?? '').toString().trim()
                       : 'Module ${mi + 1}');
             final rawUnits = _asListOfMaps(module['units']);
-            for (final u in rawUnits) {
+            for (int ui = 0; ui < rawUnits.length; ui++) {
+              final u = rawUnits[ui];
+              final unitOrder = _asInt(u['order']) > 0
+                  ? _asInt(u['order'])
+                  : (ui + 1);
               final unit = _RecordedUnit.fromMap({
                 ...u,
                 'otherTitle': moduleLabel,
                 'sessions': u['lessons'],
+                'order': (moduleOrder * 1000) + unitOrder,
               });
               units.add(unit);
             }
@@ -833,61 +841,83 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 pw.Positioned(
                   left: 0,
                   right: 0,
-                  top: 375,
+                  top: 500,
                   child: pw.Center(
                     child: pw.Text(
                       learnerName,
                       style: pw.TextStyle(
-                        fontSize: 35,
+                        fontSize: 34,
                         fontWeight: pw.FontWeight.bold,
                         color: PdfColor.fromInt(0xFF111827),
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 60,
-                  right: 60,
-                  top: 443,
-                  child: pw.Center(
-                    child: pw.Text(
-                      awardTitle.toUpperCase(),
-                      textAlign: pw.TextAlign.center,
-                      style: pw.TextStyle(
-                        fontSize: 21,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromInt(0xFF111827),
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 176,
-                  right: 64,
-                  top: 423,
-                  child: pw.Center(
-                    child: pw.Text(
-                      'Issued on: $date',
-                      style: pw.TextStyle(
-                        fontSize: 13,
-                        color: PdfColor.fromInt(0xFF1F2937),
                         letterSpacing: 0.2,
                       ),
                     ),
                   ),
                 ),
                 pw.Positioned(
-                  left: 176,
-                  right: 80,
-                  bottom: 170,
+                  left: 0,
+                  right: 0,
+                  top: 440,
+                  child: pw.Center(
+                    child: pw.Text(
+                      awardTitle.toUpperCase(),
+                      textAlign: pw.TextAlign.center,
+                      style: pw.TextStyle(
+                        fontSize: 22,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromInt(0xFF111827),
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 310,
+                  child: pw.Center(
+                    child: pw.Text(
+                      'Issued on: $date',
+                      style: pw.TextStyle(
+                        fontSize: 15,
+                        color: PdfColor.fromInt(0xFF1F2937),
+                        letterSpacing: 0.25,
+                        fontWeight: pw.FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 120,
+                  top: 250,
+                  child: pw.Text(
+                    'Course Instructor',
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      color: PdfColor.fromInt(0xFF1F2937),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 475,
+                  top: 250,
+                  child: pw.Text(
+                    'Academic Director',
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      color: PdfColor.fromInt(0xFF1F2937),
+                    ),
+                  ),
+                ),
+                pw.Positioned(
+                  left: 120,
+                  top: 180,
                   child: pw.Text(
                     certificateId,
                     style: pw.TextStyle(
-                      fontSize: 13.5,
+                      fontSize: 14,
                       color: PdfColor.fromInt(0xFF111827),
-                      letterSpacing: 0.4,
+                      letterSpacing: 0.35,
                     ),
                   ),
                 ),
@@ -1356,15 +1386,54 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         ),
                       ),
                     ),
-                    Text(
-                      _title,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFFFFFFF), Color(0xFFF2F7FF)],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFDCE6F6)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _InfoChip(
+                                icon: Icons.trending_up_rounded,
+                                text: '$progressPct% progress',
+                              ),
+                              _InfoChip(
+                                icon: Icons.menu_book_rounded,
+                                text:
+                                    '$_completedSessions/$_totalSessions lessons',
+                              ),
+                              _InfoChip(
+                                icon: style.icon,
+                                text: style.label,
+                                fg: style.fg,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                     _InfoTile(
                       icon: Icons.trending_up_rounded,
                       title: 'Progress',
@@ -1388,13 +1457,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       iconColor: _courseCertificateUnlocked
                           ? const Color(0xFF15803D)
                           : const Color(0xFF64748B),
-                    ),
-                    _InfoTile(
-                      icon: Icons.rule_folder_outlined,
-                      title: 'Session rule',
-                      value:
-                          'Finish either the Video or the Read content to mark the session as completed and unlock the next session.',
-                      iconColor: const Color(0xFF4F46E5),
                     ),
                     if (_durationMonths > 0)
                       _InfoTile(
@@ -1510,17 +1572,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         : const Color(0xFFE5E7EB);
 
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -1530,8 +1592,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
                   color: isCompleted
                       ? const Color(0xFFDCFCE7)
@@ -1546,18 +1608,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     color: accent,
                     fontWeight: FontWeight.w900,
-                    fontSize: 12.5,
+                    fontSize: 12,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   session.title.isEmpty ? 'Untitled Session' : session.title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     color: Color(0xFF0F172A),
-                    fontSize: 14,
+                    fontSize: 13.6,
                   ),
                 ),
               ),
@@ -1573,14 +1635,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             ],
           ),
           if (session.objective.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               session.objective.trim(),
               style: TextStyle(
                 color: Colors.black.withValues(alpha: 0.67),
                 fontWeight: FontWeight.w600,
                 height: 1.3,
-                fontSize: 12.5,
+                fontSize: 12,
               ),
             ),
           ],
@@ -1787,12 +1849,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 8,
+                          vertical: 9,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF1E7),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFFFEDD5), Color(0xFFFFF7ED)],
+                          ),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFF4CBAA)),
+                          border: Border.all(color: const Color(0xFFF59E7A)),
                         ),
                         child: Row(
                           children: [
@@ -1801,8 +1867,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 moduleLabel,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
-                                  color: Color(0xFF9A3412),
-                                  fontSize: 13.5,
+                                  color: Color(0xFF7C2D12),
+                                  fontSize: 14,
                                 ),
                               ),
                             ),
@@ -1810,7 +1876,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                               moduleExpanded
                                   ? Icons.expand_less_rounded
                                   : Icons.expand_more_rounded,
-                              color: const Color(0xFF9A3412),
+                              color: const Color(0xFF7C2D12),
                             ),
                           ],
                         ),
@@ -2286,6 +2352,42 @@ class _InfoTile extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.icon, required this.text, this.fg});
+
+  final IconData icon;
+  final String text;
+  final Color? fg;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = fg ?? const Color(0xFF334155);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD9E2EE)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 11.5,
             ),
           ),
         ],

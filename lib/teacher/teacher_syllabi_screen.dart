@@ -156,13 +156,15 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
 
       final hasUnits =
           variant['units'] is List && (variant['units'] as List).isNotEmpty;
+      final hasModules =
+          variant['modules'] is List && (variant['modules'] as List).isNotEmpty;
       final hasMeta =
           _readString(variant['title']).isNotEmpty ||
           _readString(variant['courseCode']).isNotEmpty ||
           _readString(variant['duration']).isNotEmpty ||
           _toInt(variant['updatedAt']) > 0;
 
-      if (hasUnits || hasMeta) {
+      if (hasUnits || hasModules || hasMeta) {
         out.add(key);
       }
     }

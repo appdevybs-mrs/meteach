@@ -849,6 +849,9 @@ class _TeacherLearnerProfileScreenState
     final phone1 = _safeStr(_user['phone1']);
     final phone2 = _safeStr(_user['phone2']);
     final dob = _safeStr(_user['dob']);
+    final nationalIdNumber = _safeStr(
+      _user['national_id_number'] ?? _user['nationalIdNumber'],
+    );
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -880,6 +883,7 @@ class _TeacherLearnerProfileScreenState
           _readonlyRow(p, 'Serial', serial),
           _readonlyRow(p, 'Role', role),
           _readonlyRow(p, 'Status', status),
+          _readonlyRow(p, 'National ID', nationalIdNumber),
           _readonlyRow(p, 'Phone 1', phone1),
           _readonlyRow(p, 'Phone 2', phone2),
           _readonlyRow(p, 'DOB', dob),

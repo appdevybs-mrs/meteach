@@ -647,20 +647,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            _isCompleted
-                ? 'Marked done automatically after reaching the end.'
-                : 'Will mark done automatically when the video reaches the end.',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.25,
-              color: _isCompleted
-                  ? const Color(0xFF166534)
-                  : const Color(0xFF92400E),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          const SizedBox(height: 2),
         ],
       ),
     );

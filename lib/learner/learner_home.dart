@@ -2311,26 +2311,21 @@ class _ProgressCard extends StatelessWidget {
   }
 
   Color _variantAccentColor(String variantKey) {
-    switch (variantKey) {
+    final key = variantKey.trim().toLowerCase();
+    switch (key) {
       case 'recorded':
-        return palette.accent;
+        return const Color(0xFF7C3AED);
       case 'flexible':
       case 'online':
-        return palette.primary;
+        return const Color(0xFF2563EB);
       case 'private':
       case 'live':
-        return Color.alphaBlend(
-          palette.accent.withValues(alpha: 0.35),
-          palette.primary,
-        );
+        return const Color(0xFFF98D28);
       case 'inclass':
       case 'in_class':
       case 'in-class':
       case 'in class':
-        return Color.alphaBlend(
-          palette.primary.withValues(alpha: 0.18),
-          palette.accent,
-        );
+        return const Color(0xFF1E8E3E);
       default:
         return palette.primary;
     }
@@ -2393,13 +2388,13 @@ class _ProgressCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: hasProgress
-                      ? palette.primary.withValues(alpha: 0.28)
-                      : palette.border.withValues(alpha: 0.85),
+                      ? variantAccent.withValues(alpha: 0.34)
+                      : variantAccent.withValues(alpha: 0.20),
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: hasProgress
-                        ? palette.primary.withValues(alpha: 0.08)
+                        ? variantAccent.withValues(alpha: 0.10)
                         : Colors.black.withValues(alpha: 0.04),
                     blurRadius: 12,
                     offset: const Offset(0, 7),
@@ -2584,7 +2579,7 @@ class _CourseProgressRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final clamped = progress.clamp(0.0, 1.0);
-    final track = palette.soft.withValues(alpha: 0.85);
+    final track = accent.withValues(alpha: 0.16);
 
     return SizedBox(
       width: size,
@@ -2607,7 +2602,7 @@ class _CourseProgressRing extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: palette.cardBg,
-              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+              border: Border.all(color: accent.withValues(alpha: 0.38)),
             ),
             alignment: Alignment.center,
             child: Text(
