@@ -1261,7 +1261,8 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                         .child('courses')
                         .child(courseKey)
                         .child('payment_summary')
-                        .onValue,
+                        .onValue
+                        .asBroadcastStream(),
                     builder: (context, snap) {
                       final raw = snap.data?.snapshot.value;
                       final sum = raw is Map

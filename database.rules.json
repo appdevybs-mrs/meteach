@@ -447,10 +447,11 @@
     },
 
     "course_reviews": {
+      ".read": "auth != null",
       "$courseId": {
-        ".read": true,
+        ".read": "auth != null",
         "$reviewId": {
-          ".write": "auth != null && ((!data.exists() && auth.uid == $reviewId && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').hasChildren()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+          ".write": "auth != null && ((!data.exists() && auth.uid == $reviewId && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           "uid": {
             ".validate": "newData.isString() && newData.val().length > 0"
           },
@@ -496,9 +497,9 @@
 
     "course_review_stats": {
       "$courseId": {
-        ".read": true,
-        ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
-        ".validate": "newData.isMap()"
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['courseId','visibleCount','averageRating','stars','updatedAt'])"
       }
     },
 
@@ -528,9 +529,10 @@
     "lesson_comments": {
       "$courseId": {
         "$lessonId": {
+          ".read": "auth != null",
           "$commentId": {
             ".read": "auth != null",
-            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').hasChildren()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
             "uid": {
               ".validate": "newData.isString() && newData.val().length > 0"
             },
@@ -582,9 +584,10 @@
       "$courseId": {
         "$lessonId": {
           "$commentId": {
+            ".read": "auth != null",
             "$replyId": {
               ".read": "auth != null",
-              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').hasChildren()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
               "uid": {
                 ".validate": "newData.isString() && newData.val().length > 0"
               },

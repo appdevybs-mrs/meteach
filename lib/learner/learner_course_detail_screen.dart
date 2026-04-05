@@ -1405,15 +1405,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      useSafeArea: true,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setD) {
+            final media = MediaQuery.of(ctx);
             return Padding(
               padding: EdgeInsets.fromLTRB(
                 16,
                 8,
                 16,
-                MediaQuery.of(ctx).viewInsets.bottom + 16,
+                media.viewInsets.bottom + media.padding.bottom + 16,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
