@@ -307,11 +307,7 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Course Reviews',
         'Moderate learner reviews',
-        _DashCard(
-          title: 'Course Reviews',
-          subtitle: 'Moderate learner reviews',
-          icon: Icons.reviews_rounded,
-          color: AdminHome.accentAmber,
+        _CourseFeedbackDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminCourseReviewsScreen()),
@@ -2979,6 +2975,91 @@ class _DashCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CourseFeedbackDashCard extends StatelessWidget {
+  const _CourseFeedbackDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  Future<int> _reportedCount() async {
+    final db = FirebaseDatabase.instance.ref();
+    final results = await Future.wait([
+      db.child('course_reviews').get(),
+      db.child('lesson_comments').get(),
+    ]);
+
+    var count = 0;
+
+    final reviewsSnap = results[0];
+    if (reviewsSnap.exists && reviewsSnap.value is Map) {
+      final byCourse = Map<dynamic, dynamic>.from(reviewsSnap.value as Map);
+      for (final c in byCourse.values) {
+        if (c is! Map) continue;
+        final revs = Map<dynamic, dynamic>.from(c);
+        for (final v in revs.values) {
+          if (v is! Map) continue;
+          final m = v.map((k, v) => MapEntry('$k', v));
+          final status = (m['status'] ?? '').toString();
+          final reports = _asInt(m['reportCount']);
+          if (status != 'removed' && reports > 0) count += reports;
+        }
+      }
+    }
+
+    final commentsSnap = results[1];
+    if (commentsSnap.exists && commentsSnap.value is Map) {
+      final byCourse = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
+      for (final c in byCourse.values) {
+        if (c is! Map) continue;
+        final lessons = Map<dynamic, dynamic>.from(c);
+        for (final l in lessons.values) {
+          if (l is! Map) continue;
+          final cm = Map<dynamic, dynamic>.from(l);
+          for (final v in cm.values) {
+            if (v is! Map) continue;
+            final m = v.map((k, v) => MapEntry('$k', v));
+            final status = (m['status'] ?? '').toString();
+            final reports = _asInt(m['reportCount']);
+            if (status != 'removed' && reports > 0) count += reports;
+          }
+        }
+      }
+    }
+
+    return count;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: _reportedCount(),
+      builder: (context, snap) {
+        final reported = snap.data ?? 0;
+        return _DashCard(
+          title: 'Course Reviews',
+          subtitle: reported > 0
+              ? '$reported reported feedback items'
+              : 'Moderate learner reviews',
+          icon: Icons.reviews_rounded,
+          color: AdminHome.accentAmber,
+          badgeCount: reported,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: onTap,
+        );
+      },
     );
   }
 }

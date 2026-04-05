@@ -1386,9 +1386,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       return;
     }
 
-    final existing = await FirebaseDatabase.instance
-        .ref('course_reviews/$courseId/$_uid')
-        .get();
+    DataSnapshot existing;
+    try {
+      existing = await FirebaseDatabase.instance
+          .ref('course_reviews/$courseId/$_uid')
+          .get();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+      return;
+    }
     if (!mounted) return;
 
     int rating = 5;
@@ -1479,14 +1490,23 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
 
     if (submitted != true || !mounted) return;
-    await CourseFeedbackService.upsertCourseReview(
-      courseId: courseId,
-      uid: _uid,
-      rating: rating,
-      comment: commentC.text,
-    );
-    if (!mounted) return;
-    AppToast.show(context, 'Your review is now visible on this course.');
+    try {
+      await CourseFeedbackService.upsertCourseReview(
+        courseId: courseId,
+        uid: _uid,
+        rating: rating,
+        comment: commentC.text,
+      );
+      if (!mounted) return;
+      AppToast.show(context, 'Your review was submitted for approval.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    }
   }
 
   @override

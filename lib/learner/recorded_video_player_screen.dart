@@ -1281,6 +1281,43 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     AppToast.show(context, 'Comment reported.');
   }
 
+  Future<void> _openCommentActions(LessonCommentItem item) async {
+    final courseId = item.courseId.trim().isEmpty
+        ? _primaryFeedbackCourseId
+        : item.courseId;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.reply_rounded),
+                title: Text('Reply'),
+                subtitle: Text('Add a reply to this comment'),
+                onTap: () => Navigator.pop(ctx, 'reply'),
+              ),
+              ListTile(
+                leading: Icon(Icons.flag_outlined),
+                title: Text('Report'),
+                subtitle: Text('Report inappropriate content'),
+                onTap: () => Navigator.pop(ctx, 'report'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    if (action == 'reply') {
+      await _replyToComment(item.id, courseId);
+    } else if (action == 'report') {
+      await _reportComment(item.id, courseId);
+    }
+  }
+
   Widget _buildCommentsPanel() {
     final visible = _comments.take(_commentsVisible).toList();
 
@@ -1372,178 +1409,195 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
                       final shownReplies = replyExpanded
                           ? replies
-                          : replies.take(2).toList();
+                          : const <Map<String, dynamic>>[];
 
-                      return Container(
-                        margin: const EdgeInsets.only(top: 6),
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                ProfileAvatar(
-                                  name: item.displayName,
-                                  photoUrl: item.photoUrl,
-                                  radius: 12,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    '${item.firstName.isEmpty ? 'Learner' : item.firstName} (${item.abbr.isEmpty ? 'L' : item.abbr})',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
+                      return GestureDetector(
+                        onLongPress: () => _openCommentActions(item),
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  ProfileAvatar(
+                                    name: item.displayName,
+                                    photoUrl: item.photoUrl,
+                                    radius: 12,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      '${item.firstName.isEmpty ? 'Learner' : item.firstName} (${item.abbr.isEmpty ? 'L' : item.abbr})',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
+                                  Text(
+                                    _fmtDateTime(item.createdAt),
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.52,
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  if (replies.isNotEmpty)
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: () {
+                                        setState(() {
+                                          if (replyExpanded) {
+                                            _expandedReplies.remove(item.id);
+                                          } else {
+                                            _expandedReplies.add(item.id);
+                                          }
+                                        });
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4),
+                                        child: Icon(
+                                          replyExpanded
+                                              ? Icons.keyboard_arrow_up_rounded
+                                              : Icons
+                                                    .keyboard_arrow_down_rounded,
+                                          size: 18,
+                                          color: const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
                                 ),
-                                Text(
-                                  _fmtDateTime(item.createdAt),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                  color: const Color(0xFFF8FAFC),
+                                ),
+                                child: Text(
+                                  shownComment,
                                   style: TextStyle(
-                                    color: Colors.black.withValues(alpha: 0.52),
+                                    fontSize: 12.5,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.black.withValues(alpha: 0.8),
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              shownComment,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                            if (isLongComment)
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      if (commentExpanded) {
-                                        _expandedComments.remove(item.id);
-                                      } else {
-                                        _expandedComments.add(item.id);
-                                      }
-                                    });
-                                  },
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: const Size(0, 20),
-                                  ),
-                                  child: Text(
-                                    commentExpanded ? 'Collapse' : 'Expand',
                                   ),
                                 ),
                               ),
-                            Row(
-                              children: [
-                                TextButton(
-                                  onPressed: () => _replyToComment(
-                                    item.id,
-                                    item.courseId.trim().isEmpty
-                                        ? _primaryFeedbackCourseId
-                                        : item.courseId,
-                                  ),
-                                  child: const Text('Reply'),
-                                ),
-                                TextButton(
-                                  onPressed: () => _reportComment(
-                                    item.id,
-                                    item.courseId.trim().isEmpty
-                                        ? _primaryFeedbackCourseId
-                                        : item.courseId,
-                                  ),
-                                  child: const Text('Report'),
-                                ),
-                                const Spacer(),
-                                if (replies.isNotEmpty)
-                                  TextButton(
+                              if (isLongComment)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton(
                                     onPressed: () {
                                       setState(() {
-                                        if (replyExpanded) {
-                                          _expandedReplies.remove(item.id);
+                                        if (commentExpanded) {
+                                          _expandedComments.remove(item.id);
                                         } else {
-                                          _expandedReplies.add(item.id);
+                                          _expandedComments.add(item.id);
                                         }
                                       });
                                     },
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 20),
+                                    ),
                                     child: Text(
-                                      replyExpanded
-                                          ? 'Hide replies'
-                                          : 'Show replies (${replies.length})',
+                                      commentExpanded ? 'Collapse' : 'Expand',
                                     ),
                                   ),
-                              ],
-                            ),
-                            if (replies.isNotEmpty) ...[
-                              const Divider(height: 12),
-                              ...shownReplies.map((r) {
-                                final rName = (r['firstName'] ?? 'User')
-                                    .toString();
-                                final rAbbr = (r['abbr'] ?? 'U').toString();
-                                final rPhoto = (r['photoUrl'] ?? '').toString();
-                                final rText = (r['text'] ?? '').toString();
-                                final rAt = CourseFeedbackService.asInt(
-                                  r['createdAt'],
-                                );
-                                return Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 10,
-                                    bottom: 6,
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      ProfileAvatar(
-                                        name: rName,
-                                        photoUrl: rPhoto,
-                                        radius: 10,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '$rName ($rAbbr)',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 1),
-                                            Text(
-                                              rText,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 1),
-                                            Text(
-                                              _fmtDateTime(rAt),
-                                              style: TextStyle(
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.5,
-                                                ),
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
+                                ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Long press for actions',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (replies.isNotEmpty && replyExpanded) ...[
+                                const Divider(height: 12),
+                                ...shownReplies.map((r) {
+                                  final rName = (r['firstName'] ?? 'User')
+                                      .toString();
+                                  final rAbbr = (r['abbr'] ?? 'U').toString();
+                                  final rPhoto = (r['photoUrl'] ?? '')
+                                      .toString();
+                                  final rText = (r['text'] ?? '').toString();
+                                  final rAt = CourseFeedbackService.asInt(
+                                    r['createdAt'],
+                                  );
+                                  return Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 10,
+                                      bottom: 6,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        ProfileAvatar(
+                                          name: rName,
+                                          photoUrl: rPhoto,
+                                          radius: 10,
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '$rName ($rAbbr)',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              Text(
+                                                rText,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              Text(
+                                                _fmtDateTime(rAt),
+                                                style: TextStyle(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.5),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       );
                     },

@@ -195,9 +195,16 @@ class CourseFeedbackService {
     final now = DateTime.now().millisecondsSinceEpoch;
     final ref = _db.child(courseReviewsNode).child(courseId).child(uid);
     final existing = await ref.get();
+    final exists = existing.exists && existing.value is Map;
     final createdAt = existing.exists && existing.value is Map
         ? asInt((existing.value as Map)['createdAt'])
         : now;
+    final reportCount = asInt((existing.value as Map?)?['reportCount']);
+    final priorStatus = ((existing.value as Map?)?['status'] ?? '').toString();
+
+    final status = exists
+        ? (priorStatus == 'removed' ? 'removed' : 'pending')
+        : 'pending';
 
     await ref.set({
       'uid': uid,
@@ -208,8 +215,8 @@ class CourseFeedbackService {
       'abbr': identity['abbr'] ?? 'L',
       'rating': rating,
       'comment': comment.trim(),
-      'status': 'visible',
-      'reportCount': asInt((existing.value as Map?)?['reportCount']),
+      'status': status,
+      'reportCount': reportCount,
       'createdAt': createdAt,
       'updatedAt': now,
     });

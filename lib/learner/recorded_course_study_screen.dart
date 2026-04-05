@@ -15,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
+import '../services/course_feedback_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
@@ -2578,6 +2579,146 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  Future<void> _openReviewSheet() async {
+    if (_uid.trim().isEmpty) return;
+    final courseId = _courseId.trim().isEmpty ? widget.courseKey : _courseId;
+    final enrolled = await CourseFeedbackService.isUserEnrolledInCourse(
+      _uid,
+      courseId,
+    );
+    if (!mounted) return;
+    if (!enrolled) {
+      AppToast.show(
+        context,
+        'Only enrolled learners can add a review.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    DataSnapshot existing;
+    try {
+      existing = await FirebaseDatabase.instance
+          .ref('course_reviews/$courseId/$_uid')
+          .get();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    int rating = 5;
+    String comment = '';
+    if (existing.exists && existing.value is Map) {
+      final map = Map<String, dynamic>.from(existing.value as Map);
+      final parsedRating = CourseFeedbackService.asInt(map['rating']);
+      if (parsedRating >= 1 && parsedRating <= 5) rating = parsedRating;
+      comment = (map['comment'] ?? '').toString();
+    }
+
+    final commentC = TextEditingController(text: comment);
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setD) {
+            final media = MediaQuery.of(ctx);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                media.viewInsets.bottom + media.padding.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rate this recorded course',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    children: List.generate(5, (i) {
+                      final v = i + 1;
+                      return IconButton(
+                        onPressed: () => setD(() => rating = v),
+                        icon: Icon(
+                          v <= rating
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: const Color(0xFFF59E0B),
+                        ),
+                      );
+                    }),
+                  ),
+                  TextField(
+                    controller: commentC,
+                    maxLength: 500,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Comment',
+                      hintText: 'Share your feedback to help others enroll.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        if (commentC.text.trim().isEmpty) {
+                          AppToast.show(
+                            ctx,
+                            'Please add a comment before submitting.',
+                            type: AppToastType.error,
+                          );
+                          return;
+                        }
+                        Navigator.pop(ctx, true);
+                      },
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Submit review'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (submitted != true || !mounted) return;
+    try {
+      await CourseFeedbackService.upsertCourseReview(
+        courseId: courseId,
+        uid: _uid,
+        rating: rating,
+        comment: commentC.text,
+      );
+      if (!mounted) return;
+      AppToast.show(context, 'Your review was submitted for approval.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    }
+  }
+
   PopupMenuButton<String> _buildMenuButton() {
     return PopupMenuButton<String>(
       tooltip: 'More',
@@ -2800,7 +2941,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        actions: [_buildMenuButton()],
+        actions: [
+          IconButton(
+            tooltip: 'Review course',
+            onPressed: _busy ? null : _openReviewSheet,
+            icon: const Icon(Icons.reviews_rounded),
+          ),
+          _buildMenuButton(),
+        ],
       ),
       body: learnerWebBodyFrame(
         context: context,

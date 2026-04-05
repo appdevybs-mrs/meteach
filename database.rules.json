@@ -477,7 +477,7 @@
             ".validate": "newData.isString() && newData.val().length <= 500"
           },
           "status": {
-            ".validate": "newData.isString() && (newData.val() == 'visible' || newData.val() == 'hidden' || newData.val() == 'removed')"
+            ".validate": "newData.isString() && (newData.val() == 'pending' || newData.val() == 'visible' || newData.val() == 'hidden' || newData.val() == 'removed')"
           },
           "reportCount": {
             ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
@@ -527,6 +527,7 @@
     },
 
     "lesson_comments": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
       "$courseId": {
         "$lessonId": {
           ".read": "auth != null",
@@ -561,7 +562,7 @@
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 400"
             },
             "status": {
-              ".validate": "newData.isString() && (newData.val() == 'visible' || newData.val() == 'hidden' || newData.val() == 'removed')"
+              ".validate": "newData.isString() && (newData.val() == 'pending' || newData.val() == 'visible' || newData.val() == 'hidden' || newData.val() == 'removed')"
             },
             "reportCount": {
               ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
@@ -581,6 +582,7 @@
     },
 
     "lesson_comment_replies": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
       "$courseId": {
         "$lessonId": {
           "$commentId": {
@@ -607,7 +609,7 @@
                 ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 400"
               },
               "status": {
-                ".validate": "newData.isString() && (newData.val() == 'visible' || newData.val() == 'hidden' || newData.val() == 'removed')"
+                ".validate": "newData.isString() && (newData.val() == 'pending' || newData.val() == 'visible' || newData.val() == 'hidden' || newData.val() == 'removed')"
               },
               "createdAt": {
                 ".validate": "newData.isNumber()"

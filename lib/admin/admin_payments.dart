@@ -2275,7 +2275,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             (pickedCourse['duration'] ?? '').toString(),
           );
           final maxSessions = _maxSessionsFromCourse(pickedCourse);
-          final usesTeacher = _variantUsesTeacher(pickedVariantKey);
+          final usesTeacher =
+              _variantUsesTeacher(pickedVariantKey) &&
+              !_variantIsFlexible(pickedVariantKey);
           final usesSessions = _variantUsesSessions(pickedVariantKey);
           final usesReminder = _variantUsesReminder(pickedVariantKey);
           final usesStartDate = _variantUsesStartDate(pickedVariantKey);
@@ -2723,9 +2725,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           return;
                         }
 
-                        final usesTeacher = _variantUsesTeacher(
-                          pickedVariantKey,
-                        );
+                        final usesTeacher =
+                            _variantUsesTeacher(pickedVariantKey) &&
+                            !_variantIsFlexible(pickedVariantKey);
                         final usesSessions = _variantUsesSessions(
                           pickedVariantKey,
                         );
@@ -2957,7 +2959,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
-          final usesTeacher = _variantUsesTeacher(variantKey);
+          final usesTeacher =
+              _variantUsesTeacher(variantKey) &&
+              !_variantIsFlexible(variantKey);
           final usesSessions = _variantUsesSessions(variantKey);
           final usesReminder = _variantUsesReminder(variantKey);
           final usesStartDate = _variantUsesStartDate(variantKey);

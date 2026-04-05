@@ -18,7 +18,6 @@ enum _MyPlatformTab { needsReply, reported, recent, hidden }
 
 class _MyPlatformItem {
   const _MyPlatformItem({
-    required this.kind,
     required this.courseId,
     required this.lessonId,
     required this.entryId,
@@ -31,10 +30,8 @@ class _MyPlatformItem {
     required this.status,
     required this.reportCount,
     required this.createdAt,
-    required this.rating,
   });
 
-  final String kind;
   final String courseId;
   final String lessonId;
   final String entryId;
@@ -47,7 +44,6 @@ class _MyPlatformItem {
   final String status;
   final int reportCount;
   final int createdAt;
-  final int rating;
 }
 
 class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
@@ -57,8 +53,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   String? _error;
   _MyPlatformTab _tab = _MyPlatformTab.needsReply;
   String _courseFilter = 'all';
+
   List<_MyPlatformItem> _all = const [];
   Set<String> _assignedCourseIds = const <String>{};
+  final Map<String, String> _courseLabelById = <String, String>{};
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -74,11 +72,16 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       _error = null;
     });
     try {
-      final assigned = await _loadAssignedCourses();
+      final assignedMap = await _loadAssignedCourses();
+      final assigned = assignedMap.keys.toSet();
       final items = await _loadFeedbackItems(assigned);
+
       if (!mounted) return;
       setState(() {
         _assignedCourseIds = assigned;
+        _courseLabelById
+          ..clear()
+          ..addAll(assignedMap);
         _all = items;
         _busy = false;
       });
@@ -91,26 +94,54 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     }
   }
 
-  Future<Set<String>> _loadAssignedCourses() async {
-    final out = <String>{};
-    final snap = await _db.child('classes').get();
-    if (!snap.exists || snap.value is! Map) return out;
+  Future<Map<String, String>> _loadAssignedCourses() async {
+    final out = <String, String>{};
 
-    final classes = Map<dynamic, dynamic>.from(snap.value as Map);
-    for (final entry in classes.entries) {
-      final value = entry.value;
-      if (value is! Map) continue;
-      final m = value.map((k, v) => MapEntry(k.toString(), v));
-      String currentUid = '';
-      final cur = m['instructor_current'];
-      if (cur is Map) {
-        currentUid = (cur['uid'] ?? '').toString().trim();
+    final userCoursesSnap = await _db
+        .child('users')
+        .child(_uid)
+        .child('courses')
+        .get();
+    if (userCoursesSnap.exists && userCoursesSnap.value is Map) {
+      final courses = Map<dynamic, dynamic>.from(userCoursesSnap.value as Map);
+      for (final entry in courses.entries) {
+        if (entry.value is! Map) continue;
+        final nodeKey = entry.key.toString().trim();
+        final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+
+        final id = (m['id'] ?? '').toString().trim();
+        final title = (m['title'] ?? '').toString().trim();
+        final code = (m['course_code'] ?? '').toString().trim();
+        final label = title.isEmpty
+            ? (code.isEmpty ? (id.isEmpty ? nodeKey : id) : code)
+            : (code.isEmpty ? title : '$title ($code)');
+
+        if (id.isNotEmpty) out[id] = label;
+        if (nodeKey.isNotEmpty) out[nodeKey] = label;
       }
-      if (currentUid != _uid) continue;
-
-      final cid = (m['course_id'] ?? '').toString().trim();
-      if (cid.isNotEmpty) out.add(cid);
     }
+
+    if (out.isEmpty) {
+      final classesSnap = await _db.child('classes').get();
+      if (classesSnap.exists && classesSnap.value is Map) {
+        final classes = Map<dynamic, dynamic>.from(classesSnap.value as Map);
+        for (final entry in classes.entries) {
+          if (entry.value is! Map) continue;
+          final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+          final cur = m['instructor_current'];
+          final currentUid = cur is Map
+              ? (cur['uid'] ?? '').toString().trim()
+              : '';
+          if (currentUid != _uid) continue;
+
+          final cid = (m['course_id'] ?? '').toString().trim();
+          if (cid.isNotEmpty) {
+            out[cid] = (m['course_title'] ?? cid).toString();
+          }
+        }
+      }
+    }
+
     return out;
   }
 
@@ -122,71 +153,38 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final out = <_MyPlatformItem>[];
 
     for (final courseId in courseIds) {
-      final reviewSnap = await _db
-          .child('course_reviews')
+      final commentsSnap = await _db
+          .child('lesson_comments')
           .child(courseId)
           .get();
-      if (reviewSnap.exists && reviewSnap.value is Map) {
-        final raw = Map<dynamic, dynamic>.from(reviewSnap.value as Map);
-        for (final e in raw.entries) {
-          if (e.value is! Map) continue;
-          final m = (e.value as Map).map((k, v) => MapEntry('$k', v));
-          final item = CourseReviewItem.fromMap(e.key.toString(), m);
+      if (!commentsSnap.exists || commentsSnap.value is! Map) continue;
+
+      final lessons = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
+      for (final lesson in lessons.entries) {
+        final lessonId = lesson.key.toString();
+        if (lesson.value is! Map) continue;
+
+        final comments = Map<dynamic, dynamic>.from(lesson.value as Map);
+        for (final entry in comments.entries) {
+          if (entry.value is! Map) continue;
+          final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+          final item = LessonCommentItem.fromMap(entry.key.toString(), m);
           out.add(
             _MyPlatformItem(
-              kind: 'review',
               courseId: courseId,
-              lessonId: '',
+              lessonId: lessonId,
               entryId: item.id,
               uid: item.uid,
               firstName: item.firstName,
               displayName: item.displayName,
               photoUrl: item.photoUrl,
               abbr: item.abbr,
-              text: item.comment,
+              text: item.text,
               status: item.status,
               reportCount: item.reportCount,
               createdAt: item.createdAt,
-              rating: item.rating,
             ),
           );
-        }
-      }
-
-      final commentsSnap = await _db
-          .child('lesson_comments')
-          .child(courseId)
-          .get();
-      if (commentsSnap.exists && commentsSnap.value is Map) {
-        final lessons = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
-        for (final lesson in lessons.entries) {
-          final lessonId = lesson.key.toString();
-          final comments = lesson.value;
-          if (comments is! Map) continue;
-          final cm = Map<dynamic, dynamic>.from(comments);
-          for (final e in cm.entries) {
-            if (e.value is! Map) continue;
-            final m = (e.value as Map).map((k, v) => MapEntry('$k', v));
-            final item = LessonCommentItem.fromMap(e.key.toString(), m);
-            out.add(
-              _MyPlatformItem(
-                kind: 'comment',
-                courseId: courseId,
-                lessonId: lessonId,
-                entryId: item.id,
-                uid: item.uid,
-                firstName: item.firstName,
-                displayName: item.displayName,
-                photoUrl: item.photoUrl,
-                abbr: item.abbr,
-                text: item.text,
-                status: item.status,
-                reportCount: item.reportCount,
-                createdAt: item.createdAt,
-                rating: 0,
-              ),
-            );
-          }
         }
       }
     }
@@ -201,11 +199,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
       switch (_tab) {
         case _MyPlatformTab.needsReply:
-          return x.kind == 'comment' && x.status == 'visible';
+          return x.status == 'visible' || x.status == 'pending';
         case _MyPlatformTab.reported:
-          return x.reportCount > 0;
+          return x.reportCount > 0 && x.status != 'removed';
         case _MyPlatformTab.recent:
-          return x.status == 'visible';
+          return x.status != 'removed';
         case _MyPlatformTab.hidden:
           return x.status == 'hidden' || x.status == 'removed';
       }
@@ -219,21 +217,15 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
+  String _courseLabel(String id) => _courseLabelById[id] ?? id;
+
   Future<void> _moderate(_MyPlatformItem item, String status) async {
-    if (item.kind == 'review') {
-      await CourseFeedbackService.moderateCourseReview(
-        courseId: item.courseId,
-        reviewId: item.entryId,
-        status: status,
-      );
-    } else {
-      await CourseFeedbackService.moderateLessonComment(
-        courseId: item.courseId,
-        lessonId: item.lessonId,
-        commentId: item.entryId,
-        status: status,
-      );
-    }
+    await CourseFeedbackService.moderateLessonComment(
+      courseId: item.courseId,
+      lessonId: item.lessonId,
+      commentId: item.entryId,
+      status: status,
+    );
     await _load();
   }
 
@@ -267,6 +259,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     if (ok != true) return;
     final text = c.text.trim();
     if (text.isEmpty) return;
+
     await CourseFeedbackService.addLessonReply(
       courseId: item.courseId,
       lessonId: item.lessonId,
@@ -280,10 +273,26 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     ).showSnackBar(const SnackBar(content: Text('Reply posted.')));
   }
 
+  Future<String> _resolveLearnerName(String uid, String fallback) async {
+    final snap = await _db.child('users').child(uid).get();
+    if (snap.exists && snap.value is Map) {
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final first = (m['first_name'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? '').toString().trim();
+      final full = '$first $last'.trim();
+      if (full.isNotEmpty) return full;
+      final email = (m['email'] ?? '').toString().trim();
+      if (email.isNotEmpty) return email;
+    }
+    if (fallback.trim().isNotEmpty) return fallback.trim();
+    return 'Learner';
+  }
+
   Future<void> _messageLearner(_MyPlatformItem item) async {
-    final subject = 'Course support: ${item.courseId}';
+    final subject = 'Course support: ${_courseLabel(item.courseId)}';
     final threadId = _threadIdFor(_uid, item.uid, item.courseId);
     final now = DateTime.now().millisecondsSinceEpoch;
+    final learnerName = await _resolveLearnerName(item.uid, item.firstName);
 
     final threadRef = _db.child('mail_threads').child(threadId);
     final tSnap = await threadRef.get();
@@ -302,8 +311,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     if (msgId != null) {
       await _db.child('mail_messages').child(threadId).child(msgId).set({
         'fromUid': _uid,
-        'body':
-            'Hi ${item.firstName.isEmpty ? 'Learner' : item.firstName}, I saw your comment and wanted to help.',
+        'body': 'Hi $learnerName, I saw your comment and wanted to help.',
         'createdAt': now,
       });
     }
@@ -325,7 +333,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         builder: (_) => TeacherMailThreadScreen(
           threadId: threadId,
           peerUid: item.uid,
-          peerName: item.firstName.isEmpty ? 'Learner' : item.firstName,
+          peerName: learnerName,
           subject: subject,
         ),
       ),
@@ -337,26 +345,86 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     return 'support_${scope}_${ids[0]}_${ids[1]}';
   }
 
-  Widget _tabs() {
-    Widget chip(_MyPlatformTab tab, String label) {
-      final selected = _tab == tab;
-      return ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => setState(() => _tab = tab),
-      );
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return const Color(0xFFD97706);
+      case 'visible':
+        return const Color(0xFF047857);
+      case 'hidden':
+        return const Color(0xFF64748B);
+      case 'removed':
+        return const Color(0xFFB91C1C);
+      default:
+        return const Color(0xFF475569);
     }
+  }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        chip(_MyPlatformTab.needsReply, 'Needs reply'),
-        chip(_MyPlatformTab.reported, 'Reported'),
-        chip(_MyPlatformTab.recent, 'Recent'),
-        chip(_MyPlatformTab.hidden, 'Hidden'),
+  Widget _statusChip(String status) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
+  PopupMenuButton<String> _actionsMenu(_MyPlatformItem item) {
+    return PopupMenuButton<String>(
+      tooltip: 'Actions',
+      icon: const Text(
+        '!',
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 18,
+          color: Color(0xFF0F172A),
+        ),
+      ),
+      onSelected: (v) async {
+        if (v == 'visible' || v == 'hidden' || v == 'removed') {
+          await _moderate(item, v);
+          return;
+        }
+        if (v == 'reply') {
+          await _reply(item);
+          return;
+        }
+        if (v == 'message') {
+          await _messageLearner(item);
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'visible', child: Text('Accept')),
+        PopupMenuItem(value: 'hidden', child: Text('Hide')),
+        PopupMenuItem(value: 'removed', child: Text('Remove')),
+        PopupMenuItem(value: 'reply', child: Text('Answer')),
+        PopupMenuItem(value: 'message', child: Text('Message learner')),
       ],
     );
+  }
+
+  String _tabLabel(_MyPlatformTab tab) {
+    switch (tab) {
+      case _MyPlatformTab.needsReply:
+        return 'Needs reply';
+      case _MyPlatformTab.reported:
+        return 'Reported';
+      case _MyPlatformTab.recent:
+        return 'Recent';
+      case _MyPlatformTab.hidden:
+        return 'Hidden';
+    }
   }
 
   @override
@@ -379,28 +447,75 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                _tabs(),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: _courseFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Course filter',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+                Expanded(
+                  child: DropdownButtonFormField<_MyPlatformTab>(
+                    value: _tab,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'View',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: _MyPlatformTab.values
+                        .map(
+                          (t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(_tabLabel(t)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _tab = v);
+                    },
                   ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: 'all',
-                      child: Text('All assigned courses'),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _courseFilter,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Course',
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
-                    ...courses.map(
-                      (c) => DropdownMenuItem(value: c, child: Text(c)),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() => _courseFilter = v ?? 'all'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All courses'),
+                      ),
+                      ...courses.map(
+                        (c) => DropdownMenuItem(
+                          value: c,
+                          child: Text(
+                            _courseLabel(c),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                    selectedItemBuilder: (_) {
+                      final labels = [
+                        'All courses',
+                        ...courses.map(_courseLabel),
+                      ];
+                      return labels
+                          .map(
+                            (x) => Text(
+                              x,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          )
+                          .toList();
+                    },
+                    onChanged: (v) =>
+                        setState(() => _courseFilter = v ?? 'all'),
+                  ),
                 ),
               ],
             ),
@@ -416,19 +531,22 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                     ),
                   )
                 : rows.isEmpty
-                ? const Center(child: Text('No items in this view yet.'))
+                ? const Center(child: Text('No comments in this view yet.'))
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
                     itemCount: rows.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
                     itemBuilder: (context, i) {
                       final item = rows[i];
+                      final lessonMeta =
+                          'Lesson: ${item.lessonId.isEmpty ? '-' : item.lessonId}';
+
                       return Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.fromLTRB(9, 7, 7, 7),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           border: Border.all(color: const Color(0xFFE5E7EB)),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,108 +556,71 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                                 ProfileAvatar(
                                   name: item.displayName,
                                   photoUrl: item.photoUrl,
-                                  radius: 14,
+                                  radius: 11,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    '${item.firstName.isEmpty ? 'Learner' : item.firstName} (${item.abbr.isEmpty ? 'L' : item.abbr})',
+                                    item.firstName.isEmpty
+                                        ? 'Learner'
+                                        : item.firstName,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  item.kind == 'review' ? 'Review' : 'Comment',
-                                  style: TextStyle(
-                                    color: item.kind == 'review'
-                                        ? const Color(0xFF1D4ED8)
-                                        : const Color(0xFF047857),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            if (item.kind == 'review')
-                              Row(
-                                children: List.generate(5, (idx) {
-                                  return Icon(
-                                    idx < item.rating
-                                        ? Icons.star_rounded
-                                        : Icons.star_border_rounded,
-                                    size: 16,
-                                    color: const Color(0xFFF59E0B),
-                                  );
-                                }),
-                              ),
-                            const SizedBox(height: 6),
-                            Text(item.text),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Text(
-                                  'Course: ${item.courseId}',
-                                  style: TextStyle(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                if (item.lessonId.isNotEmpty)
-                                  Text(
-                                    'Lesson: ${item.lessonId}',
-                                    style: TextStyle(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.6,
-                                      ),
-                                      fontWeight: FontWeight.w700,
                                       fontSize: 12,
                                     ),
                                   ),
-                                const Spacer(),
+                                ),
                                 Text(
                                   _fmtDate(item.createdAt),
                                   style: TextStyle(
-                                    color: Colors.black.withValues(alpha: 0.55),
+                                    color: Colors.black.withValues(alpha: 0.52),
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                _actionsMenu(item),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                _statusChip(item.status),
+                                const SizedBox(width: 8),
+                                if (item.reportCount > 0)
+                                  Text(
+                                    'Reports ${item.reportCount}',
+                                    style: const TextStyle(
+                                      color: Color(0xFFB45309),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                const Spacer(),
+                                Flexible(
+                                  child: Text(
+                                    lessonMeta,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.58,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 10.5,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                FilledButton.tonal(
-                                  onPressed: () => _moderate(item, 'visible'),
-                                  child: const Text('Accept'),
-                                ),
-                                FilledButton.tonal(
-                                  onPressed: () => _moderate(item, 'hidden'),
-                                  child: const Text('Hide'),
-                                ),
-                                FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFB91C1C),
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  onPressed: () => _moderate(item, 'removed'),
-                                  child: const Text('Remove'),
-                                ),
-                                if (item.kind == 'comment')
-                                  OutlinedButton(
-                                    onPressed: () => _reply(item),
-                                    child: const Text('Answer'),
-                                  ),
-                                OutlinedButton(
-                                  onPressed: () => _messageLearner(item),
-                                  child: const Text('Message learner'),
-                                ),
-                              ],
+                            const SizedBox(height: 4),
+                            Text(
+                              item.text,
+                              style: TextStyle(
+                                fontStyle: FontStyle.italic,
+                                color: Colors.black.withValues(alpha: 0.78),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12.5,
+                              ),
                             ),
                           ],
                         ),

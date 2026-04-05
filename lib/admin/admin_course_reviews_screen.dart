@@ -31,6 +31,7 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
   String? _error;
 
   _AdminFeedbackTab _tab = _AdminFeedbackTab.reviews;
+  bool _binMode = false;
   String _courseFilter = 'all';
   String _statusFilter = 'all';
 
@@ -57,56 +58,49 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
         db.child('courses').get(),
       ]);
 
-      final reviewsSnap = results[0];
-      final commentsSnap = results[1];
-      final coursesSnap = results[2];
-
       final reviews = <CourseReviewItem>[];
+      final reviewsSnap = results[0];
       if (reviewsSnap.exists && reviewsSnap.value is Map) {
-        final courses = Map<dynamic, dynamic>.from(reviewsSnap.value as Map);
-        for (final cEntry in courses.entries) {
-          final courseId = cEntry.key.toString();
-          final reviewsMap = cEntry.value;
-          if (reviewsMap is! Map) continue;
-          final rawReviews = Map<dynamic, dynamic>.from(reviewsMap);
-          for (final rEntry in rawReviews.entries) {
-            if (rEntry.value is! Map) continue;
-            final m = (rEntry.value as Map).map(
-              (k, v) => MapEntry(k.toString(), v),
+        final byCourse = Map<dynamic, dynamic>.from(reviewsSnap.value as Map);
+        for (final c in byCourse.entries) {
+          final courseId = c.key.toString();
+          if (c.value is! Map) continue;
+          final map = Map<dynamic, dynamic>.from(c.value as Map);
+          for (final r in map.entries) {
+            if (r.value is! Map) continue;
+            final m = (r.value as Map).map((k, v) => MapEntry('$k', v));
+            reviews.add(
+              CourseReviewItem.fromMap(r.key.toString(), {
+                ...m,
+                'courseId': (m['courseId'] ?? courseId).toString(),
+              }),
             );
-            final item = CourseReviewItem.fromMap(rEntry.key.toString(), {
-              ...m,
-              'courseId': (m['courseId'] ?? courseId).toString(),
-            });
-            reviews.add(item);
           }
         }
       }
 
       final comments = <_AdminLessonCommentRow>[];
+      final commentsSnap = results[1];
       if (commentsSnap.exists && commentsSnap.value is Map) {
         final byCourse = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
-        for (final cEntry in byCourse.entries) {
-          final courseId = cEntry.key.toString();
-          final byLesson = cEntry.value;
-          if (byLesson is! Map) continue;
-          final lessons = Map<dynamic, dynamic>.from(byLesson);
-          for (final lEntry in lessons.entries) {
-            final lessonId = lEntry.key.toString();
-            final commentsMap = lEntry.value;
-            if (commentsMap is! Map) continue;
-            final rawComments = Map<dynamic, dynamic>.from(commentsMap);
-            for (final x in rawComments.entries) {
-              if (x.value is! Map) continue;
-              final m = (x.value as Map).map((k, v) => MapEntry('$k', v));
-              final item = LessonCommentItem.fromMap(x.key.toString(), {
-                ...m,
-                'courseId': (m['courseId'] ?? courseId).toString(),
-                'lessonId': (m['lessonId'] ?? lessonId).toString(),
-              });
+        for (final c in byCourse.entries) {
+          final courseId = c.key.toString();
+          if (c.value is! Map) continue;
+          final byLesson = Map<dynamic, dynamic>.from(c.value as Map);
+          for (final l in byLesson.entries) {
+            final lessonId = l.key.toString();
+            if (l.value is! Map) continue;
+            final cm = Map<dynamic, dynamic>.from(l.value as Map);
+            for (final item in cm.entries) {
+              if (item.value is! Map) continue;
+              final m = (item.value as Map).map((k, v) => MapEntry('$k', v));
               comments.add(
                 _AdminLessonCommentRow(
-                  item: item,
+                  item: LessonCommentItem.fromMap(item.key.toString(), {
+                    ...m,
+                    'courseId': (m['courseId'] ?? courseId).toString(),
+                    'lessonId': (m['lessonId'] ?? lessonId).toString(),
+                  }),
                   courseId: courseId,
                   lessonId: lessonId,
                 ),
@@ -117,21 +111,20 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
       }
 
       final titleMap = <String, String>{};
+      final coursesSnap = results[2];
       if (coursesSnap.exists && coursesSnap.value is Map) {
-        final raw = Map<dynamic, dynamic>.from(coursesSnap.value as Map);
-        for (final entry in raw.entries) {
-          final id = entry.key.toString();
-          final value = entry.value;
-          if (value is! Map) continue;
-          final m = value.map((k, v) => MapEntry('$k', v));
+        final byId = Map<dynamic, dynamic>.from(coursesSnap.value as Map);
+        for (final c in byId.entries) {
+          if (c.value is! Map) continue;
+          final m = (c.value as Map).map((k, v) => MapEntry('$k', v));
+          final id = c.key.toString();
           final title = (m['title'] ?? m['course_title'] ?? '')
               .toString()
               .trim();
           final code = (m['course_code'] ?? '').toString().trim();
-          final label = title.isEmpty
+          titleMap[id] = title.isEmpty
               ? (code.isEmpty ? id : code)
               : (code.isEmpty ? title : '$title ($code)');
-          titleMap[id] = label;
         }
       }
 
@@ -150,28 +143,13 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _busy = false;
         _error = e.toString();
+        _busy = false;
       });
     }
   }
 
-  List<CourseReviewItem> get _filteredReviews {
-    return _reviews.where((r) {
-      if (_courseFilter != 'all' && r.courseId != _courseFilter) return false;
-      if (_statusFilter != 'all' && r.status != _statusFilter) return false;
-      return true;
-    }).toList();
-  }
-
-  List<_AdminLessonCommentRow> get _filteredComments {
-    return _comments.where((r) {
-      if (_courseFilter != 'all' && r.courseId != _courseFilter) return false;
-      if (_statusFilter != 'all' && r.item.status != _statusFilter)
-        return false;
-      return true;
-    }).toList();
-  }
+  String _courseLabel(String id) => _courseTitleById[id] ?? id;
 
   String _fmtDate(int ms) {
     if (ms <= 0) return '-';
@@ -180,8 +158,39 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
-  String _courseLabel(String courseId) {
-    return _courseTitleById[courseId] ?? courseId;
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return const Color(0xFFD97706);
+      case 'visible':
+        return const Color(0xFF047857);
+      case 'hidden':
+        return const Color(0xFF64748B);
+      case 'removed':
+        return const Color(0xFFB91C1C);
+      default:
+        return const Color(0xFF475569);
+    }
+  }
+
+  Widget _statusChip(String status) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 10,
+        ),
+      ),
+    );
   }
 
   Future<void> _moderateReview(CourseReviewItem item, String status) async {
@@ -190,10 +199,6 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
       reviewId: item.id,
       status: status,
     );
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Review set to "$status"')));
     await _load();
   }
 
@@ -207,11 +212,85 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
       commentId: row.item.id,
       status: status,
     );
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Comment set to "$status"')));
     await _load();
+  }
+
+  List<CourseReviewItem> get _filteredReviews {
+    return _reviews.where((r) {
+      if (_courseFilter != 'all' && r.courseId != _courseFilter) return false;
+      if (_binMode) return r.status == 'removed';
+      if (r.status == 'removed') return false;
+      if (_statusFilter != 'all' && r.status != _statusFilter) return false;
+      return true;
+    }).toList();
+  }
+
+  List<_AdminLessonCommentRow> get _filteredComments {
+    return _comments.where((r) {
+      if (_courseFilter != 'all' && r.courseId != _courseFilter) return false;
+      if (_binMode) return r.item.status == 'removed';
+      if (r.item.status == 'removed') return false;
+      if (_statusFilter != 'all' && r.item.status != _statusFilter)
+        return false;
+      return true;
+    }).toList();
+  }
+
+  Widget _buildFilters(List<String> courseIds) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _courseFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Course',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: 'all',
+                  child: Text('All courses'),
+                ),
+                ...courseIds.map(
+                  (id) => DropdownMenuItem(
+                    value: id,
+                    child: Text(
+                      _courseLabel(id),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _courseFilter = v ?? 'all'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 142,
+            child: DropdownButtonFormField<String>(
+              value: _statusFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Status',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('All')),
+                DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                DropdownMenuItem(value: 'visible', child: Text('Visible')),
+                DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+              ],
+              onChanged: (v) => setState(() => _statusFilter = v ?? 'all'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _stars(int rating) {
@@ -220,316 +299,191 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
       children: List.generate(5, (i) {
         return Icon(
           i < rating ? Icons.star_rounded : Icons.star_border_rounded,
-          size: 16,
+          size: 14,
           color: const Color(0xFFF59E0B),
         );
       }),
     );
   }
 
-  Widget _buildFilters(List<String> courseIds) {
-    final courseDropdown = DropdownButtonFormField<String>(
-      value: _courseFilter,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Course',
-        border: OutlineInputBorder(),
-        isDense: true,
+  PopupMenuButton<String> _actionsMenu(void Function(String) onSelect) {
+    return PopupMenuButton<String>(
+      tooltip: 'Actions',
+      icon: const Text(
+        '!',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+          color: Color(0xFF0F172A),
+        ),
       ),
-      selectedItemBuilder: (_) {
-        final labels = ['All courses', ...courseIds.map(_courseLabel)];
-        return labels
-            .map((x) => Text(x, overflow: TextOverflow.ellipsis, maxLines: 1))
-            .toList();
-      },
-      items: [
-        const DropdownMenuItem(value: 'all', child: Text('All courses')),
-        ...courseIds.map(
-          (id) => DropdownMenuItem(
-            value: id,
-            child: Text(
-              _courseLabel(id),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
+      onSelected: onSelect,
+      itemBuilder: (_) => _binMode
+          ? const [
+              PopupMenuItem(value: 'visible', child: Text('Restore')),
+              PopupMenuItem(value: 'hidden', child: Text('Restore as hidden')),
+            ]
+          : const [
+              PopupMenuItem(value: 'visible', child: Text('Accept')),
+              PopupMenuItem(value: 'hidden', child: Text('Hide')),
+              PopupMenuItem(value: 'removed', child: Text('Remove')),
+            ],
+    );
+  }
+
+  Widget _reviewCard(CourseReviewItem r) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(9, 7, 7, 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ProfileAvatar(
+                name: r.displayName,
+                photoUrl: r.photoUrl,
+                radius: 11,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  r.firstName.isEmpty ? 'Learner' : r.firstName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Text(
+                _fmtDate(r.createdAt),
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.52),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              _actionsMenu((v) => _moderateReview(r, v)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              _stars(r.rating),
+              const SizedBox(width: 6),
+              _statusChip(r.status),
+              const SizedBox(width: 8),
+              if (r.reportCount > 0)
+                Text(
+                  'Reports ${r.reportCount}',
+                  style: const TextStyle(
+                    color: Color(0xFFB45309),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            r.comment,
+            style: TextStyle(
+              fontStyle: FontStyle.italic,
+              color: Colors.black.withValues(alpha: 0.78),
+              fontWeight: FontWeight.w600,
+              fontSize: 12.5,
             ),
           ),
-        ),
-      ],
-      onChanged: (v) => setState(() => _courseFilter = v ?? 'all'),
-    );
-
-    final statusDropdown = DropdownButtonFormField<String>(
-      value: _statusFilter,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Status',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
-      items: const [
-        DropdownMenuItem(value: 'all', child: Text('All')),
-        DropdownMenuItem(value: 'visible', child: Text('Visible')),
-        DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-        DropdownMenuItem(value: 'removed', child: Text('Removed')),
-      ],
-      onChanged: (v) => setState(() => _statusFilter = v ?? 'all'),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 720;
-          if (compact) {
-            return Column(
-              children: [
-                courseDropdown,
-                const SizedBox(height: 8),
-                statusDropdown,
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: courseDropdown),
-              const SizedBox(width: 10),
-              SizedBox(width: 185, child: statusDropdown),
-            ],
-          );
-        },
+        ],
       ),
     );
   }
 
-  Widget _reviewsList() {
-    final rows = _filteredReviews;
-    if (rows.isEmpty)
-      return const Center(child: Text('No reviews match current filters.'));
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-      itemCount: rows.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) {
-        final r = rows[i];
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _commentCard(_AdminLessonCommentRow row) {
+    final c = row.item;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(9, 7, 7, 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  ProfileAvatar(
-                    name: r.displayName,
-                    photoUrl: r.photoUrl,
-                    radius: 14,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${r.firstName.isEmpty ? 'Learner' : r.firstName} (${r.abbr.isEmpty ? 'L' : r.abbr})',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      _courseLabel(r.courseId),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.black.withValues(alpha: 0.58),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
+              ProfileAvatar(
+                name: c.displayName,
+                photoUrl: c.photoUrl,
+                radius: 11,
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  _stars(r.rating),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Status: ${r.status}',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  c.firstName.isEmpty ? 'Learner' : c.firstName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
                   ),
-                  const SizedBox(width: 8),
-                  if (r.reportCount > 0)
-                    Text(
-                      'Reports: ${r.reportCount}',
-                      style: const TextStyle(
-                        color: Color(0xFFB45309),
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  const Spacer(),
-                  Text(
-                    _fmtDate(r.createdAt),
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(r.comment),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: () => _moderateReview(r, 'visible'),
-                    child: const Text('Accept'),
+              Text(
+                _fmtDate(c.createdAt),
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.52),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              _actionsMenu((v) => _moderateComment(row, v)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              _statusChip(c.status),
+              const SizedBox(width: 8),
+              if (c.reportCount > 0)
+                Text(
+                  'Reports ${c.reportCount}',
+                  style: const TextStyle(
+                    color: Color(0xFFB45309),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
                   ),
-                  FilledButton.tonal(
-                    onPressed: () => _moderateReview(r, 'hidden'),
-                    child: const Text('Hide'),
+                ),
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  _courseLabel(row.courseId),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
                   ),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFB91C1C),
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: () => _moderateReview(r, 'removed'),
-                    child: const Text('Remove'),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _commentsList() {
-    final rows = _filteredComments;
-    if (rows.isEmpty)
-      return const Center(
-        child: Text('No lesson comments match current filters.'),
-      );
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-      itemCount: rows.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) {
-        final row = rows[i];
-        final c = row.item;
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            borderRadius: BorderRadius.circular(12),
+          const SizedBox(height: 4),
+          Text(
+            c.text,
+            style: TextStyle(
+              fontStyle: FontStyle.italic,
+              color: Colors.black.withValues(alpha: 0.78),
+              fontWeight: FontWeight.w600,
+              fontSize: 12.5,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  ProfileAvatar(
-                    name: c.displayName,
-                    photoUrl: c.photoUrl,
-                    radius: 13,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${c.firstName.isEmpty ? 'Learner' : c.firstName} (${c.abbr.isEmpty ? 'L' : c.abbr})',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      _courseLabel(row.courseId),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.black.withValues(alpha: 0.58),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(c.text),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Text(
-                    'Lesson: ${row.lessonId}',
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Status: ${c.status}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (c.reportCount > 0)
-                    Text(
-                      'Reports: ${c.reportCount}',
-                      style: const TextStyle(
-                        color: Color(0xFFB45309),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  const Spacer(),
-                  Text(
-                    _fmtDate(c.createdAt),
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.52),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: () => _moderateComment(row, 'visible'),
-                    child: const Text('Accept'),
-                  ),
-                  FilledButton.tonal(
-                    onPressed: () => _moderateComment(row, 'hidden'),
-                    child: const Text('Hide'),
-                  ),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFB91C1C),
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: () => _moderateComment(row, 'removed'),
-                    child: const Text('Remove'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -538,12 +492,24 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
     final courseIds = {
       ..._reviews.map((e) => e.courseId),
       ..._comments.map((e) => e.courseId),
-    }.where((id) => id.trim().isNotEmpty).toList()..sort();
+    }.where((x) => x.trim().isNotEmpty).toList()..sort();
+
+    final reviewRows = _filteredReviews;
+    final commentRows = _filteredComments;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Course Feedback Moderation'),
         actions: [
+          IconButton(
+            tooltip: _binMode ? 'Show active items' : 'Open bin',
+            onPressed: () => setState(() => _binMode = !_binMode),
+            icon: Icon(
+              _binMode
+                  ? Icons.restore_from_trash_rounded
+                  : Icons.delete_outline_rounded,
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _load,
@@ -586,9 +552,35 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
                       child: Text(_error!, textAlign: TextAlign.center),
                     ),
                   )
-                : (_tab == _AdminFeedbackTab.reviews
-                      ? _reviewsList()
-                      : _commentsList()),
+                : _tab == _AdminFeedbackTab.reviews
+                ? (reviewRows.isEmpty
+                      ? Center(
+                          child: Text(
+                            _binMode
+                                ? 'No removed reviews in bin.'
+                                : 'No reviews match current filters.',
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+                          itemCount: reviewRows.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 6),
+                          itemBuilder: (_, i) => _reviewCard(reviewRows[i]),
+                        ))
+                : (commentRows.isEmpty
+                      ? Center(
+                          child: Text(
+                            _binMode
+                                ? 'No removed comments in bin.'
+                                : 'No lesson comments match current filters.',
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+                          itemCount: commentRows.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 6),
+                          itemBuilder: (_, i) => _commentCard(commentRows[i]),
+                        )),
           ),
         ],
       ),
