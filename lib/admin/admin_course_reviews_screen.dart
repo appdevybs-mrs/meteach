@@ -228,66 +228,75 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
   }
 
   Widget _buildFilters(List<String> courseIds) {
+    final courseDropdown = DropdownButtonFormField<String>(
+      value: _courseFilter,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Course',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      selectedItemBuilder: (_) {
+        final labels = ['All courses', ...courseIds.map(_courseLabel)];
+        return labels
+            .map((x) => Text(x, overflow: TextOverflow.ellipsis, maxLines: 1))
+            .toList();
+      },
+      items: [
+        const DropdownMenuItem(value: 'all', child: Text('All courses')),
+        ...courseIds.map(
+          (id) => DropdownMenuItem(
+            value: id,
+            child: Text(
+              _courseLabel(id),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ),
+      ],
+      onChanged: (v) => setState(() => _courseFilter = v ?? 'all'),
+    );
+
+    final statusDropdown = DropdownButtonFormField<String>(
+      value: _statusFilter,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Status',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: const [
+        DropdownMenuItem(value: 'all', child: Text('All')),
+        DropdownMenuItem(value: 'visible', child: Text('Visible')),
+        DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+        DropdownMenuItem(value: 'removed', child: Text('Removed')),
+      ],
+      onChanged: (v) => setState(() => _statusFilter = v ?? 'all'),
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              value: _courseFilter,
-              decoration: const InputDecoration(
-                labelText: 'Course',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              selectedItemBuilder: (_) {
-                final labels = ['All courses', ...courseIds.map(_courseLabel)];
-                return labels
-                    .map(
-                      (x) =>
-                          Text(x, overflow: TextOverflow.ellipsis, maxLines: 1),
-                    )
-                    .toList();
-              },
-              items: [
-                const DropdownMenuItem(
-                  value: 'all',
-                  child: Text('All courses'),
-                ),
-                ...courseIds.map(
-                  (id) => DropdownMenuItem(
-                    value: id,
-                    child: Text(
-                      _courseLabel(id),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ),
-                ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+          if (compact) {
+            return Column(
+              children: [
+                courseDropdown,
+                const SizedBox(height: 8),
+                statusDropdown,
               ],
-              onChanged: (v) => setState(() => _courseFilter = v ?? 'all'),
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 155,
-            child: DropdownButtonFormField<String>(
-              value: _statusFilter,
-              decoration: const InputDecoration(
-                labelText: 'Status',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              items: const [
-                DropdownMenuItem(value: 'all', child: Text('All')),
-                DropdownMenuItem(value: 'visible', child: Text('Visible')),
-                DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-                DropdownMenuItem(value: 'removed', child: Text('Removed')),
-              ],
-              onChanged: (v) => setState(() => _statusFilter = v ?? 'all'),
-            ),
-          ),
-        ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: courseDropdown),
+              const SizedBox(width: 10),
+              SizedBox(width: 185, child: statusDropdown),
+            ],
+          );
+        },
       ),
     );
   }

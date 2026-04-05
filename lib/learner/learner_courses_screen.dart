@@ -1255,16 +1255,15 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                     label: status,
                   ),
                 if (!isRecorded)
-                  StreamBuilder<DatabaseEvent>(
-                    stream: _usersRef
+                  FutureBuilder<DataSnapshot>(
+                    future: _usersRef
                         .child(_uid)
                         .child('courses')
                         .child(courseKey)
                         .child('payment_summary')
-                        .onValue
-                        .asBroadcastStream(),
+                        .get(),
                     builder: (context, snap) {
-                      final raw = snap.data?.snapshot.value;
+                      final raw = snap.data?.value;
                       final sum = raw is Map
                           ? raw.map((k, v) => MapEntry(k.toString(), v))
                           : <String, dynamic>{};
