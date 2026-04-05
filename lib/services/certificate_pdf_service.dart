@@ -61,11 +61,30 @@ class CertificatePdfService {
   Future<Uint8List> generateCertificatePdfBytes(Certificate cert) async {
     final doc = pw.Document();
     pw.MemoryImage? template;
+    pw.Font? playfairRegular;
+    pw.Font? playfairBold;
+    pw.Font? hughIsLife;
     try {
       final bytes = await rootBundle.load(
         'assets/images/DigitalCertificate.png',
       );
       template = pw.MemoryImage(bytes.buffer.asUint8List());
+    } catch (_) {}
+    try {
+      final bytes = await rootBundle.load(
+        'assets/fonts/PlayfairDisplay-Regular.ttf',
+      );
+      playfairRegular = pw.Font.ttf(bytes);
+    } catch (_) {}
+    try {
+      final bytes = await rootBundle.load(
+        'assets/fonts/PlayfairDisplay-Bold.ttf',
+      );
+      playfairBold = pw.Font.ttf(bytes);
+    } catch (_) {}
+    try {
+      final bytes = await rootBundle.load('assets/fonts/HughIsLife.ttf');
+      hughIsLife = pw.Font.ttf(bytes);
     } catch (_) {}
 
     const double pageHeight = 842;
@@ -77,7 +96,7 @@ class CertificatePdfService {
     const double issuedDateTop = 548;
     const double instructorTop = 598;
     const double academicDirectorTop = 598;
-    const double certificateIdTop = 681;
+    const double certificateIdTop = 709.35;
 
     final issueDate = cert.createdAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
@@ -122,6 +141,7 @@ class CertificatePdfService {
                 style: pw.TextStyle(
                   fontSize: 36,
                   fontWeight: pw.FontWeight.bold,
+                  font: playfairBold,
                   color: PdfColor.fromInt(0xFF111827),
                 ),
               ),
@@ -133,6 +153,7 @@ class CertificatePdfService {
                 style: pw.TextStyle(
                   fontSize: 24,
                   fontWeight: pw.FontWeight.bold,
+                  font: playfairBold,
                   color: PdfColor.fromInt(0xFF111827),
                 ),
               ),
@@ -143,6 +164,7 @@ class CertificatePdfService {
                   _fmtDate(issueDate),
                   style: pw.TextStyle(
                     fontSize: 14,
+                    font: playfairRegular,
                     color: PdfColor.fromInt(0xFF1F2937),
                   ),
                 ),
@@ -154,6 +176,7 @@ class CertificatePdfService {
                 text: instructor,
                 style: pw.TextStyle(
                   fontSize: 14,
+                  font: hughIsLife ?? playfairRegular,
                   color: PdfColor.fromInt(0xFF1F2937),
                 ),
               ),
@@ -164,6 +187,7 @@ class CertificatePdfService {
                 text: 'Seddik. B',
                 style: pw.TextStyle(
                   fontSize: 14,
+                  font: hughIsLife ?? playfairRegular,
                   color: PdfColor.fromInt(0xFF1F2937),
                 ),
               ),
@@ -177,6 +201,7 @@ class CertificatePdfService {
                     maxLines: 2,
                     style: pw.TextStyle(
                       fontSize: 13,
+                      font: playfairRegular,
                       color: PdfColor.fromInt(0xFF111827),
                     ),
                   ),

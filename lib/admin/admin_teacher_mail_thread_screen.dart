@@ -544,6 +544,19 @@ class _AdminTeacherMailThreadScreenState
                 'peerUid': _meUid,
               },
             );
+          } else {
+            await PushClient.sendToTopic(
+              topic: 'user_${widget.teacherUid}',
+              eventId: 'mail_${_threadId}_$now',
+              title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
+              message: preview80.isEmpty ? 'You received new mail' : preview80,
+              data: {
+                'type': 'mail',
+                'route': 'mail_thread',
+                'threadId': _threadId,
+                'peerUid': _meUid,
+              },
+            );
           }
         } catch (_) {}
       }());

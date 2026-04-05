@@ -7,14 +7,17 @@ import 'package:video_player/video_player.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
+import '../services/course_feedback_service.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
   const RecordedVideoPlayerScreen({
     super.key,
     required this.uid,
     required this.courseKey,
+    required this.courseId,
     required this.sessionId,
     required this.sessionTitle,
     required this.videoUrl,
@@ -22,6 +25,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
 
   final String uid;
   final String courseKey;
+  final String courseId;
   final String sessionId;
   final String sessionTitle;
   final String videoUrl;
@@ -32,7 +36,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
 }
 
 class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const String _usersNode = 'users';
   static const String _recordedProgressNode = 'recorded_progress';
 
@@ -49,6 +53,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _bookmarked = false;
   bool _showControls = true;
   bool _isFullscreen = false;
+  bool _commentsBusy = false;
 
   String? _error;
   String _notes = '';
@@ -61,6 +66,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Timer? _saveDebounce;
   Timer? _hideControlsTimer;
   bool _isDisposing = false;
+  late final TabController _tabController;
+  final TextEditingController _commentC = TextEditingController();
+  final FocusNode _commentFocus = FocusNode();
+  List<LessonCommentItem> _comments = const [];
+  final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
+  int _commentsVisible = 20;
 
   void _debug(String message) {
     // no-op in production build
@@ -77,9 +88,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addObserver(this);
     _enableScreenRotations();
     _loadAndInit();
+    _loadComments();
   }
 
   @override
@@ -89,6 +102,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _progressSub?.cancel();
     _saveDebounce?.cancel();
     _hideControlsTimer?.cancel();
+    _tabController.dispose();
+    _commentC.dispose();
+    _commentFocus.dispose();
     _persistProgressNow();
     _controller?.removeListener(_videoListener);
     _controller?.dispose();
@@ -1057,6 +1073,382 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     );
   }
 
+  String get _primaryFeedbackCourseId {
+    final id = widget.courseId.trim();
+    if (id.isNotEmpty) return id;
+    return widget.courseKey.trim();
+  }
+
+  List<String> get _feedbackCourseIds {
+    final ordered = <String>[];
+    final seen = <String>{};
+    final primary = _primaryFeedbackCourseId;
+    if (primary.isNotEmpty && seen.add(primary)) ordered.add(primary);
+    final secondary = widget.courseKey.trim();
+    if (secondary.isNotEmpty && seen.add(secondary)) ordered.add(secondary);
+    return ordered;
+  }
+
+  Future<void> _loadComments() async {
+    setState(() => _commentsBusy = true);
+    try {
+      final mergedById = <String, LessonCommentItem>{};
+      for (final courseId in _feedbackCourseIds) {
+        final comments = await CourseFeedbackService.listLessonComments(
+          courseId,
+          widget.sessionId,
+          visibleOnly: true,
+        );
+        for (final comment in comments) {
+          mergedById.putIfAbsent(comment.id, () => comment);
+        }
+      }
+
+      final comments = mergedById.values.toList();
+      comments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      final repliesMap = <String, List<Map<String, dynamic>>>{};
+      for (final c in comments.take(60)) {
+        final sourceCourseId = c.courseId.trim().isEmpty
+            ? _primaryFeedbackCourseId
+            : c.courseId.trim();
+        final replies = await CourseFeedbackService.listLessonReplies(
+          sourceCourseId,
+          widget.sessionId,
+          c.id,
+        );
+        repliesMap[c.id] = replies;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _comments = comments;
+        _repliesByComment
+          ..clear()
+          ..addAll(repliesMap);
+        _commentsBusy = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _commentsBusy = false);
+    }
+  }
+
+  String _fmtDateTime(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  Future<void> _postComment({String type = 'comment'}) async {
+    final text = _commentC.text.trim();
+    if (text.isEmpty) {
+      AppToast.show(
+        context,
+        'Write a comment first.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (text.length > 400) {
+      AppToast.show(
+        context,
+        'Comment is too long (max 400 chars).',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    await CourseFeedbackService.addLessonComment(
+      courseId: _primaryFeedbackCourseId,
+      lessonId: widget.sessionId,
+      uid: widget.uid,
+      text: text,
+      type: type,
+    );
+    _commentC.clear();
+    await _loadComments();
+    if (!mounted) return;
+    _tabController.animateTo(1);
+    FocusScope.of(context).requestFocus(_commentFocus);
+    AppToast.show(context, 'Comment posted.');
+  }
+
+  Future<void> _replyToComment(String commentId, String courseId) async {
+    final c = TextEditingController();
+    final submit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reply'),
+        content: TextField(
+          controller: c,
+          maxLength: 400,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Write your reply',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reply'),
+          ),
+        ],
+      ),
+    );
+    if (submit != true) return;
+    final text = c.text.trim();
+    if (text.isEmpty) return;
+
+    await CourseFeedbackService.addLessonReply(
+      courseId: courseId,
+      lessonId: widget.sessionId,
+      commentId: commentId,
+      uid: widget.uid,
+      text: text,
+    );
+    await _loadComments();
+  }
+
+  Future<void> _reportComment(String commentId, String courseId) async {
+    await CourseFeedbackService.reportLessonComment(
+      courseId: courseId,
+      lessonId: widget.sessionId,
+      commentId: commentId,
+      uid: widget.uid,
+      reason: 'Reported by learner',
+    );
+    if (!mounted) return;
+    AppToast.show(context, 'Comment reported.');
+  }
+
+  Widget _buildCommentsPanel() {
+    final visible = _comments.take(_commentsVisible).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentC,
+                  focusNode: _commentFocus,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  maxLength: 400,
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'Ask a question or leave a comment...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                children: [
+                  FilledButton(
+                    onPressed: () => _postComment(type: 'comment'),
+                    child: const Text('Post'),
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton(
+                    onPressed: () => _postComment(type: 'question'),
+                    child: const Text('Question'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _commentsBusy
+              ? const Center(child: CircularProgressIndicator())
+              : _comments.isEmpty
+              ? const Center(child: Text('No comments yet for this lesson.'))
+              : RefreshIndicator(
+                  onRefresh: _loadComments,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+                    itemCount: visible.length + 1,
+                    itemBuilder: (context, i) {
+                      if (i >= visible.length) {
+                        if (_comments.length <= visible.length) {
+                          return const SizedBox(height: 1);
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Center(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _commentsVisible += 20;
+                                });
+                              },
+                              icon: const Icon(Icons.expand_more_rounded),
+                              label: const Text('Load more comments'),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final item = visible[i];
+                      final replies = _repliesByComment[item.id] ?? const [];
+                      return Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                ProfileAvatar(
+                                  name: item.displayName,
+                                  photoUrl: item.photoUrl,
+                                  radius: 14,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '${item.firstName.isEmpty ? 'Learner' : item.firstName} (${item.abbr.isEmpty ? 'L' : item.abbr})',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                if (item.type == 'question')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE0F2FE),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'Question',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(item.text),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Text(
+                                  _fmtDateTime(item.createdAt),
+                                  style: TextStyle(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const Spacer(),
+                                TextButton(
+                                  onPressed: () => _replyToComment(
+                                    item.id,
+                                    item.courseId.trim().isEmpty
+                                        ? _primaryFeedbackCourseId
+                                        : item.courseId,
+                                  ),
+                                  child: const Text('Reply'),
+                                ),
+                                TextButton(
+                                  onPressed: () => _reportComment(
+                                    item.id,
+                                    item.courseId.trim().isEmpty
+                                        ? _primaryFeedbackCourseId
+                                        : item.courseId,
+                                  ),
+                                  child: const Text('Report'),
+                                ),
+                              ],
+                            ),
+                            if (replies.isNotEmpty) ...[
+                              const Divider(height: 16),
+                              ...replies.take(5).map((r) {
+                                final rName = (r['firstName'] ?? 'User')
+                                    .toString();
+                                final rAbbr = (r['abbr'] ?? 'U').toString();
+                                final rPhoto = (r['photoUrl'] ?? '').toString();
+                                final rText = (r['text'] ?? '').toString();
+                                final rAt = CourseFeedbackService.asInt(
+                                  r['createdAt'],
+                                );
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      ProfileAvatar(
+                                        name: rName,
+                                        photoUrl: rPhoto,
+                                        radius: 12,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '$rName ($rAbbr)',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(rText),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              _fmtDateTime(rAt),
+                                              style: TextStyle(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.5,
+                                                ),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     LearnerTourGuide.schedule(
@@ -1114,9 +1506,37 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 : _initialized
                 ? (_isFullscreen
                       ? _buildFullscreenLayout()
-                      : (isLandscape
-                            ? _buildLandscapeLayout()
-                            : _buildPortraitLayout()))
+                      : Column(
+                          children: [
+                            Container(
+                              color: Colors.white,
+                              child: TabBar(
+                                controller: _tabController,
+                                tabs: const [
+                                  Tab(
+                                    icon: Icon(Icons.ondemand_video_rounded),
+                                    text: 'Video',
+                                  ),
+                                  Tab(
+                                    icon: Icon(Icons.forum_rounded),
+                                    text: 'Comments',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: TabBarView(
+                                controller: _tabController,
+                                children: [
+                                  isLandscape
+                                      ? _buildLandscapeLayout()
+                                      : _buildPortraitLayout(),
+                                  _buildCommentsPanel(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ))
                 : const Center(
                     child: BrandedInlineLoader(message: 'Preparing player...'),
                   ),

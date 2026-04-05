@@ -92,6 +92,11 @@ class FCMService {
     _initialized = true;
 
     await _requestPermission();
+    await _messaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
     await _ensureLocalInit();
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);

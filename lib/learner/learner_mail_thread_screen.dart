@@ -718,6 +718,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                 'peerUid': _meUid,
               },
             );
+          } else {
+            await PushClient.sendToTopic(
+              topic: 'user_${widget.peerUid}',
+              eventId: 'mail_${widget.threadId}_$now',
+              title: widget.subject.isEmpty ? 'New mail' : widget.subject,
+              message: preview80.isEmpty ? 'You received new mail' : preview80,
+              data: {
+                'type': 'mail',
+                'route': 'mail_thread',
+                'threadId': widget.threadId,
+                'peerUid': _meUid,
+              },
+            );
           }
         } catch (_) {}
       }());

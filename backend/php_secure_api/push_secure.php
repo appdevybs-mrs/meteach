@@ -33,6 +33,21 @@ function is_allowed_push_type(string $type): bool
     return isset($allowed[$type]);
 }
 
+function is_allowed_push_type_for_role(string $type, string $role): bool
+{
+    $safeRole = strtolower(trim($role));
+
+    if ($safeRole === 'admin' || $safeRole === 'teacher') {
+        return is_allowed_push_type($type);
+    }
+
+    if ($safeRole === 'learner') {
+        return ($type === 'mail' || $type === 'booking');
+    }
+
+    return false;
+}
+
 function sanitize_push_data(array $data): array
 {
     $safe = [];
@@ -111,7 +126,7 @@ function save_push_inbox_for_admin_topic($db, string $eventId, string $title, st
     }
 }
 
-$auth = require_auth(['admin', 'teacher']);
+$auth = require_auth(['admin', 'teacher', 'learner']);
 $payload = request_json();
 
 $mode = strtolower(trim((string) ($payload['mode'] ?? '')));
@@ -130,6 +145,10 @@ $safeData = sanitize_push_data($data);
 $type = canonical_push_type((string) ($safeData['type'] ?? ''));
 if ($type === '' || !is_allowed_push_type($type)) {
     json_response(['success' => false, 'message' => 'Invalid or missing data.type.'], 400);
+}
+$actorRole = strtolower(trim((string) ($auth['role'] ?? '')));
+if (!is_allowed_push_type_for_role($type, $actorRole)) {
+    json_response(['success' => false, 'message' => 'Forbidden push type for role.'], 403);
 }
 $safeData['type'] = $type;
 
@@ -155,6 +174,14 @@ if ($mode === 'token') {
 
 if ($targetValue === '') {
     json_response(['success' => false, 'message' => 'Missing notification target.'], 400);
+}
+
+if ($actorRole === 'learner' && $mode === 'topic') {
+    $isUserTopic = preg_match('/^user_[A-Za-z0-9_\-]{6,128}$/', $targetValue) === 1;
+    $isAdminsTopic = ($targetValue === 'admins');
+    if (!$isUserTopic && !$isAdminsTopic) {
+        json_response(['success' => false, 'message' => 'Learner topic not allowed.'], 403);
+    }
 }
 
 $eventRef = null;

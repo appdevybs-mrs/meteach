@@ -16,8 +16,10 @@ String toHumanError(
   }
 
   String? byHttpStatus() {
-    final m = RegExp(r'\bhttp\s*(?:status\s*)?(\d{3})\b', caseSensitive: false)
-        .firstMatch(raw);
+    final m = RegExp(
+      r'\bhttp\s*(?:status\s*)?(\d{3})\b',
+      caseSensitive: false,
+    ).firstMatch(raw);
     if (m == null) return null;
     final code = int.tryParse(m.group(1) ?? '');
     if (code == null) return null;
@@ -53,6 +55,8 @@ String toHumanError(
     }
 
     if (lower.contains('permission denied') ||
+        lower.contains('permission-denied') ||
+        lower.contains('permission_denied') ||
         lower.contains('not allowed') ||
         lower.contains('access denied')) {
       return 'The app does not have permission to access this file or action.';
@@ -230,6 +234,22 @@ String humanizeUiMessage(
   if (msg.isEmpty) return fallback;
 
   final lower = msg.toLowerCase();
+  final hasStackLikeTrace =
+      msg.contains('\n#0') ||
+      msg.contains('\n#1') ||
+      msg.contains('Stack trace') ||
+      msg.contains('stacktrace');
+  final isClearlyUserFacing =
+      msg.length <= 260 &&
+      !hasStackLikeTrace &&
+      !lower.contains('exception:') &&
+      !lower.contains('[firebase_') &&
+      !lower.contains('darterror') &&
+      !lower.contains('type ') &&
+      !lower.contains(' not a subtype ');
+
+  if (isClearlyUserFacing) return msg;
+
   final looksTechnical =
       lower.contains('exception') ||
       lower.contains('firebase') ||
@@ -239,7 +259,6 @@ String humanizeUiMessage(
       lower.startsWith('camera upload failed') ||
       lower.startsWith('audio send failed') ||
       lower.startsWith('record failed') ||
-      RegExp(r'\b[a-z ]*failed\b').hasMatch(lower) ||
       lower.contains('not a subtype') ||
       lower.contains('stack') ||
       lower.contains('[firebase_') ||

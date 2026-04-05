@@ -195,10 +195,15 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
   }
 
   Future<void> _moveToTrash(String courseId, Course course) async {
+    final lookupIds = <String>{courseId};
+    final counts = await _loadEngagementCounts(lookupIds.toList());
+    final reviewCount = counts['reviews'] ?? 0;
+    final commentCount = counts['comments'] ?? 0;
+
     final ok = await _confirm(
       title: 'Move to Trash?',
       message:
-          'This will remove the course from Courses and move it to Trash.\n\nYou can restore it later.',
+          'This will remove the course from Courses and move it to Trash.\n\nYou can restore it later.\n\nEngagement data:\n• Reviews: $reviewCount\n• Lesson comments: $commentCount\n\nRecommended: Archive/Hide the course if you want to preserve discovery history.',
       confirmText: 'Move to Trash',
       danger: true,
     );
@@ -234,17 +239,71 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
   }
 
   Future<void> _deletePermanently(String courseId) async {
+    final trashSnap = await _trashRef.child(courseId).get();
+    final lookupIds = <String>{courseId};
+    if (trashSnap.exists && trashSnap.value is Map) {
+      final m = (trashSnap.value as Map).map((k, v) => MapEntry('$k', v));
+      final id = (m['id'] ?? '').toString().trim();
+      final original = (m['originalId'] ?? '').toString().trim();
+      if (id.isNotEmpty) lookupIds.add(id);
+      if (original.isNotEmpty) lookupIds.add(original);
+    }
+
+    final counts = await _loadEngagementCounts(lookupIds.toList());
+    final reviewCount = counts['reviews'] ?? 0;
+    final commentCount = counts['comments'] ?? 0;
+
     final ok = await _confirm(
       title: 'Delete permanently?',
       message:
-          'This will permanently delete the course from Trash.\n\nThis cannot be undone.',
+          'This will permanently delete the course from Trash.\n\nThis cannot be undone.\n\nEngagement data:\n• Reviews: $reviewCount\n• Lesson comments: $commentCount\n\nRecommended: Archive/Hide the course instead of deleting to preserve comments and trust signals.',
       confirmText: 'Delete',
       danger: true,
     );
     if (!ok) return;
 
+    if (reviewCount > 0 || commentCount > 0) {
+      final second = await _confirm(
+        title: 'Confirm permanent deletion',
+        message:
+            'This course has learner engagement content.\n\nDeleting permanently may make discovery moderation harder later.\n\nAre you absolutely sure you want to continue?',
+        confirmText: 'Yes, delete permanently',
+        danger: true,
+      );
+      if (!second) return;
+    }
+
     await _trashRef.child(courseId).remove();
     if (mounted) _showSnack('Deleted permanently ✅');
+  }
+
+  Future<Map<String, int>> _loadEngagementCounts(List<String> lookupIds) async {
+    final seen = <String>{};
+    var reviewCount = 0;
+    var commentCount = 0;
+
+    for (final rawId in lookupIds) {
+      final id = rawId.trim();
+      if (id.isEmpty || !seen.add(id)) continue;
+
+      final reviewSnap = await _db.ref('course_reviews/$id').get();
+      if (reviewSnap.exists && reviewSnap.value is Map) {
+        final reviews = Map<dynamic, dynamic>.from(reviewSnap.value as Map);
+        reviewCount += reviews.length;
+      }
+
+      final commentsSnap = await _db.ref('lesson_comments/$id').get();
+      if (commentsSnap.exists && commentsSnap.value is Map) {
+        final lessons = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
+        for (final v in lessons.values) {
+          if (v is Map) {
+            commentCount += Map<dynamic, dynamic>.from(v).length;
+          }
+        }
+      }
+    }
+
+    return {'reviews': reviewCount, 'comments': commentCount};
   }
 
   Future<bool> _confirm({

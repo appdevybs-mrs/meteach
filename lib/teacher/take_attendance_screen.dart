@@ -35,6 +35,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   bool _busy = true;
   String? _error;
+  Map<String, dynamic>? _loadedEditRecord;
 
   DateTime _date = DateTime.now();
   int _successRate = 80;
@@ -155,6 +156,34 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     return _firstMissingPositive(used);
   }
 
+  Future<Map<String, dynamic>?> _loadLatestEditRecord() async {
+    if (!_isEdit) return null;
+
+    final fallback = widget.existingRecord != null
+        ? _safeMap(widget.existingRecord)
+        : null;
+
+    if (_classId.isEmpty || widget.existingSessionId == null) {
+      return fallback;
+    }
+
+    try {
+      final snap = await _db
+          .child('classes')
+          .child(_classId)
+          .child('attendance')
+          .child(widget.existingSessionId!)
+          .get();
+      if (snap.exists && snap.value is Map) {
+        return _safeMap(snap.value);
+      }
+    } catch (_) {
+      // Fall back to the record passed by caller.
+    }
+
+    return fallback;
+  }
+
   Future<void> _init() async {
     setState(() {
       _busy = true;
@@ -162,6 +191,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     });
 
     try {
+      _loadedEditRecord = await _loadLatestEditRecord();
+
       // learners
       final learnersNode = widget.classData['learners'];
       final Set<String> learnerSet = {};
@@ -171,8 +202,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }
 
       // restore edit mode
-      if (_isEdit && widget.existingRecord != null) {
-        final rec = widget.existingRecord!;
+      if (_isEdit && _loadedEditRecord != null) {
+        final rec = _loadedEditRecord!;
 
         final p = _safeMap(rec['present']);
         final a = _safeMap(rec['absent']);
@@ -868,10 +899,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }
 
       final hwText = _homeworkCtrl.text.trim();
-      final prevHw = _safeMap(widget.existingRecord?['homework']);
+      final prevHw = _safeMap(_loadedEditRecord?['homework']);
+      final existingCreatedAt = _loadedEditRecord?['createdAt'];
       final hwCreatedAt =
-          prevHw['createdAt'] ??
-          (widget.existingRecord?['createdAt'] ?? ServerValue.timestamp);
+          prevHw['createdAt'] ?? (existingCreatedAt ?? ServerValue.timestamp);
 
       final Map<String, dynamic>? homeworkObj =
           (hwText.isEmpty && _homeworkDueDate.isEmpty)
@@ -915,8 +946,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'sessionId': sessionId,
         'date': dateStr,
         'updatedAt': ServerValue.timestamp,
-        'createdAt':
-            widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
+        'createdAt': existingCreatedAt ?? ServerValue.timestamp,
         'meetingNumber': _meetingNumber,
         'teacherUid': user.uid,
         'teacherName': teacherName,

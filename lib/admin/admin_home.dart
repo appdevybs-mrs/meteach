@@ -36,6 +36,7 @@ import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 import 'admin_admin_todos_screen.dart';
+import 'admin_course_reviews_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -301,6 +302,20 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const AdminCoursesScreen())),
+        ),
+      ),
+      card(
+        'Course Reviews',
+        'Moderate learner reviews',
+        _DashCard(
+          title: 'Course Reviews',
+          subtitle: 'Moderate learner reviews',
+          icon: Icons.reviews_rounded,
+          color: AdminHome.accentAmber,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminCourseReviewsScreen()),
+          ),
         ),
       ),
       card(
@@ -1646,31 +1661,57 @@ class _CertificatesDashCard extends StatelessWidget {
 
   const _CertificatesDashCard({this.isReceptionistStyle = false});
 
+  int _countRecordedAchievements(dynamic usersValue) {
+    if (usersValue is! Map) return 0;
+    int count = 0;
+    usersValue.forEach((_, userRaw) {
+      if (userRaw is! Map) return;
+      final user = Map<dynamic, dynamic>.from(userRaw);
+      final recorded = user['recorded_certificates'];
+      if (recorded is Map) {
+        count += recorded.length;
+      }
+    });
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ref = FirebaseDatabase.instance.ref('certificates');
+    final manualRef = FirebaseDatabase.instance.ref('certificates');
+    final usersRef = FirebaseDatabase.instance.ref('users');
 
     return StreamBuilder<DatabaseEvent>(
-      stream: ref.onValue,
-      builder: (context, snap) {
-        int count = 0;
-        final v = snap.data?.snapshot.value;
-        if (v is Map) count = v.length;
+      stream: manualRef.onValue,
+      builder: (context, manualSnap) {
+        final manualVal = manualSnap.data?.snapshot.value;
+        final manualCount = manualVal is Map ? manualVal.length : 0;
 
-        final subtitle = count == 0
-            ? 'No certificates yet'
-            : '$count certificate${count == 1 ? '' : 's'}';
+        return StreamBuilder<DatabaseEvent>(
+          stream: usersRef.onValue,
+          builder: (context, usersSnap) {
+            final recordedCount = _countRecordedAchievements(
+              usersSnap.data?.snapshot.value,
+            );
+            final totalCount = manualCount + recordedCount;
 
-        return _DashCard(
-          title: 'Certificates',
-          subtitle: subtitle,
-          icon: Icons.workspace_premium_rounded,
-          color: AdminHome.accentIndigo,
-          badgeCount: count,
-          isReceptionistStyle: isReceptionistStyle,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminCertificatesScreen()),
-          ),
+            final subtitle = totalCount == 0
+                ? 'No certificates yet'
+                : '$totalCount total • $recordedCount recorded achievement${recordedCount == 1 ? '' : 's'}';
+
+            return _DashCard(
+              title: 'Certificates',
+              subtitle: subtitle,
+              icon: Icons.workspace_premium_rounded,
+              color: AdminHome.accentIndigo,
+              badgeCount: totalCount,
+              isReceptionistStyle: isReceptionistStyle,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AdminCertificatesScreen(),
+                ),
+              ),
+            );
+          },
         );
       },
     );

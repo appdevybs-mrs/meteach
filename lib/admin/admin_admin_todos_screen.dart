@@ -232,21 +232,36 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
   }) async {
     try {
       final token = await _getFcmToken(assignee.uid);
-      if (token == null) return;
-      await PushClient.sendToToken(
-        token: token,
-        targetUid: assignee.uid,
-        eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
-        title: 'New admin TODO',
-        message: draft.title,
-        data: {
-          'type': 'admin_todo',
-          'route': 'admin_todos',
-          'todoId': todoId,
-          'assigneeUid': assignee.uid,
-          'createdByUid': _myUid ?? '',
-        },
-      );
+      if (token != null) {
+        await PushClient.sendToToken(
+          token: token,
+          targetUid: assignee.uid,
+          eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+          title: 'New admin TODO',
+          message: draft.title,
+          data: {
+            'type': 'admin_todo',
+            'route': 'admin_todos',
+            'todoId': todoId,
+            'assigneeUid': assignee.uid,
+            'createdByUid': _myUid ?? '',
+          },
+        );
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_${assignee.uid}',
+          eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+          title: 'New admin TODO',
+          message: draft.title,
+          data: {
+            'type': 'admin_todo',
+            'route': 'admin_todos',
+            'todoId': todoId,
+            'assigneeUid': assignee.uid,
+            'createdByUid': _myUid ?? '',
+          },
+        );
+      }
     } catch (_) {}
   }
 
@@ -261,24 +276,40 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
 
     try {
       final token = await _getFcmToken(creatorUid);
-      if (token == null) return;
       final title = action == 'done' ? 'TODO completed' : 'TODO seen';
       final body = '$_myName: ${todo.title.trim()}';
-      await PushClient.sendToToken(
-        token: token,
-        targetUid: creatorUid,
-        eventId: 'admin_todo_update_${todoId}_$action',
-        title: title,
-        message: body,
-        data: {
-          'type': 'admin_todo',
-          'route': 'admin_todos',
-          'todoId': todoId,
-          'assigneeUid': myUid,
-          'createdByUid': creatorUid,
-          'action': action,
-        },
-      );
+      if (token != null) {
+        await PushClient.sendToToken(
+          token: token,
+          targetUid: creatorUid,
+          eventId: 'admin_todo_update_${todoId}_$action',
+          title: title,
+          message: body,
+          data: {
+            'type': 'admin_todo',
+            'route': 'admin_todos',
+            'todoId': todoId,
+            'assigneeUid': myUid,
+            'createdByUid': creatorUid,
+            'action': action,
+          },
+        );
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_$creatorUid',
+          eventId: 'admin_todo_update_${todoId}_$action',
+          title: title,
+          message: body,
+          data: {
+            'type': 'admin_todo',
+            'route': 'admin_todos',
+            'todoId': todoId,
+            'assigneeUid': myUid,
+            'createdByUid': creatorUid,
+            'action': action,
+          },
+        );
+      }
     } catch (_) {}
   }
 

@@ -1852,6 +1852,13 @@ class _CertificateViewSheet extends StatelessWidget {
 
   const _CertificateViewSheet({required this.certificate});
 
+  String _formatLocalTimestamp(int ms) {
+    if (ms <= 0) return '-';
+    return DateFormat(
+      'yyyy-MM-dd HH:mm:ss',
+    ).format(DateTime.fromMillisecondsSinceEpoch(ms).toLocal());
+  }
+
   Future<void> _openUrl(BuildContext context, String url) async {
     final u = url.trim();
     if (u.isEmpty) return;
@@ -1936,6 +1943,10 @@ class _CertificateViewSheet extends StatelessWidget {
               _DetailRow(
                 label: 'Training Date',
                 value: certificate.trainingDate,
+              ),
+              _DetailRow(
+                label: 'Issued At',
+                value: _formatLocalTimestamp(certificate.createdAt),
               ),
               _DetailRow(
                 label: 'Expiration Date',
