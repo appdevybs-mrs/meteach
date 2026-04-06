@@ -75,13 +75,12 @@ class PushClient {
     };
 
     final headers = await BackendApi.authHeaders(json: true);
+    final endpoint = await BackendApi.withAuthQuery(
+      BackendApi.uri('push_secure.php'),
+    );
 
     final res = await http
-        .post(
-          BackendApi.uri('push_secure.php'),
-          headers: headers,
-          body: jsonEncode(body),
-        )
+        .post(endpoint, headers: headers, body: jsonEncode(body))
         .timeout(_timeout);
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -122,13 +121,12 @@ class PushClient {
     };
 
     final headers = await BackendApi.authHeaders(json: true);
+    final endpoint = await BackendApi.withAuthQuery(
+      BackendApi.uri('push_secure.php'),
+    );
 
     final res = await http
-        .post(
-          BackendApi.uri('push_secure.php'),
-          headers: headers,
-          body: jsonEncode(body),
-        )
+        .post(endpoint, headers: headers, body: jsonEncode(body))
         .timeout(_timeout);
 
     if (res.statusCode < 200 || res.statusCode >= 300) {

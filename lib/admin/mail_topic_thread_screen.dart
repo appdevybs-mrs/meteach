@@ -211,10 +211,14 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   }
 
   Future<String?> _getFcmToken(String uid) async {
-    final snap = await _db.ref('fcm_tokens/$uid/token').get();
-    final token = snap.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
+    try {
+      final snap = await _db.ref('fcm_tokens/$uid/token').get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _markRead() async {
@@ -684,32 +688,42 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
+          final payload = {
+            'type': 'mail',
+            'route': 'mail_thread',
+            'threadId': widget.threadId,
+            'peerUid': _meUid,
+          };
           if (token != null) {
-            await PushClient.sendToToken(
-              token: token,
-              targetUid: widget.peerUid,
-              eventId: 'mail_${widget.threadId}_$now',
-              title: _subject.isEmpty ? 'New mail' : _subject,
-              message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: {
-                'type': 'mail',
-                'route': 'mail_thread',
-                'threadId': widget.threadId,
-                'peerUid': _meUid,
-              },
-            );
+            try {
+              await PushClient.sendToToken(
+                token: token,
+                targetUid: widget.peerUid,
+                eventId: 'mail_${widget.threadId}_$now',
+                title: _subject.isEmpty ? 'New mail' : _subject,
+                message: preview80.isEmpty
+                    ? 'You received new mail'
+                    : preview80,
+                data: payload,
+              );
+            } catch (_) {
+              await PushClient.sendToTopic(
+                topic: 'user_${widget.peerUid}',
+                eventId: 'mail_${widget.threadId}_$now',
+                title: _subject.isEmpty ? 'New mail' : _subject,
+                message: preview80.isEmpty
+                    ? 'You received new mail'
+                    : preview80,
+                data: payload,
+              );
+            }
           } else {
             await PushClient.sendToTopic(
               topic: 'user_${widget.peerUid}',
               eventId: 'mail_${widget.threadId}_$now',
               title: _subject.isEmpty ? 'New mail' : _subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: {
-                'type': 'mail',
-                'route': 'mail_thread',
-                'threadId': widget.threadId,
-                'peerUid': _meUid,
-              },
+              data: payload,
             );
           }
         } catch (_) {}

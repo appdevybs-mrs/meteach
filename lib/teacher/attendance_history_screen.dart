@@ -244,9 +244,19 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             }
 
             final title = (item['title'] ?? '').toString().trim();
+            final unitTitle = (item['unitTitle'] ?? '').toString().trim();
             final sn = _safeInt(item['sessionNumber']);
             if (title.isEmpty) return '';
-            return sn > 0 ? 'Session $sn • $title' : title;
+            if (unitTitle.isNotEmpty && sn > 0) {
+              return 'Unit $unitTitle • Session $sn • $title';
+            }
+            if (unitTitle.isNotEmpty) {
+              return 'Unit $unitTitle • $title';
+            }
+            if (sn > 0) {
+              return 'Session $sn • $title';
+            }
+            return title;
           })
           .where((t) => t.isNotEmpty)
           .toList();
@@ -260,9 +270,19 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     if (session['taught'] is Map) {
       final taught = Map<String, dynamic>.from(session['taught'] as Map);
       final title = (taught['title'] ?? '').toString().trim();
+      final unitTitle = (taught['unitTitle'] ?? '').toString().trim();
       final sn = _safeInt(taught['sessionNumber']);
       if (title.isNotEmpty) {
-        return sn > 0 ? 'Session $sn • $title' : title;
+        if (unitTitle.isNotEmpty && sn > 0) {
+          return 'Unit $unitTitle • Session $sn • $title';
+        }
+        if (unitTitle.isNotEmpty) {
+          return 'Unit $unitTitle • $title';
+        }
+        if (sn > 0) {
+          return 'Session $sn • $title';
+        }
+        return title;
       }
     }
 

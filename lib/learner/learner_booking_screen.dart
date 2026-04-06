@@ -404,48 +404,48 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       final teacherBody =
           '$learnerName booked Session $sessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time}.';
 
+      final teacherData = {
+        'type': 'booking',
+        'targetRole': 'teacher',
+        'courseId': slot.courseId,
+        'courseTitle': safeCourseTitle,
+        'teacherId': slot.teacherId,
+        'teacherName': slot.teacherName,
+        'learnerUid': myUid,
+        'learnerName': learnerName,
+        'dayKey': slot.dayKey,
+        'time': slot.time,
+        'sessionNo': sessionNo.toString(),
+      };
+      final teacherEventId =
+          'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo';
+
       if (teacherToken != null && teacherToken.isNotEmpty) {
-        await PushClient.sendToToken(
-          token: teacherToken,
-          targetUid: slot.teacherId,
-          eventId:
-              'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo',
-          title: teacherTitle,
-          message: teacherBody,
-          data: {
-            'type': 'booking',
-            'targetRole': 'teacher',
-            'courseId': slot.courseId,
-            'courseTitle': safeCourseTitle,
-            'teacherId': slot.teacherId,
-            'teacherName': slot.teacherName,
-            'learnerUid': myUid,
-            'learnerName': learnerName,
-            'dayKey': slot.dayKey,
-            'time': slot.time,
-            'sessionNo': sessionNo.toString(),
-          },
-        );
+        try {
+          await PushClient.sendToToken(
+            token: teacherToken,
+            targetUid: slot.teacherId,
+            eventId: teacherEventId,
+            title: teacherTitle,
+            message: teacherBody,
+            data: teacherData,
+          );
+        } catch (_) {
+          await PushClient.sendToTopic(
+            topic: 'user_${slot.teacherId}',
+            eventId: teacherEventId,
+            title: teacherTitle,
+            message: teacherBody,
+            data: teacherData,
+          );
+        }
       } else {
         await PushClient.sendToTopic(
           topic: 'user_${slot.teacherId}',
-          eventId:
-              'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo',
+          eventId: teacherEventId,
           title: teacherTitle,
           message: teacherBody,
-          data: {
-            'type': 'booking',
-            'targetRole': 'teacher',
-            'courseId': slot.courseId,
-            'courseTitle': safeCourseTitle,
-            'teacherId': slot.teacherId,
-            'teacherName': slot.teacherName,
-            'learnerUid': myUid,
-            'learnerName': learnerName,
-            'dayKey': slot.dayKey,
-            'time': slot.time,
-            'sessionNo': sessionNo.toString(),
-          },
+          data: teacherData,
         );
       }
     } catch (_) {}

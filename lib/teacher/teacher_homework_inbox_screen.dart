@@ -69,6 +69,13 @@ class _TeacherHomeworkInboxScreenState
     return '${t.substring(0, max - 1)}…';
   }
 
+  String _normalizeHomeworkStatus(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+    if (s == 'approved') return 'pass';
+    if (s == 'needs_work') return 'redo';
+    return s;
+  }
+
   List<_HomeworkThreadRow> _rowsFromSnapshot(dynamic value) {
     if (value is! Map) return const <_HomeworkThreadRow>[];
     final out = <_HomeworkThreadRow>[];
@@ -275,10 +282,9 @@ class _TeacherHomeworkInboxScreenState
           if (existingHomeworkRefs.contains(homeworkRefPath)) continue;
 
           final reviewedAt = _toInt(learnerHw['reviewedAt']);
-          final reviewStatus = (learnerHw['reviewStatus'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
+          final reviewStatus = _normalizeHomeworkStatus(
+            learnerHw['reviewStatus'],
+          );
 
           int updatedAt = _toInt(learnerHw['updatedAt']);
           if (updatedAt <= 0) updatedAt = _toInt(learnerRec['updatedAt']);
@@ -373,10 +379,7 @@ class _TeacherHomeworkInboxScreenState
             final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
             reviewedAt = _toInt(hw['reviewedAt']);
             submittedAtMs = _toInt(hw['submittedAt']);
-            reviewStatus = (hw['reviewStatus'] ?? '')
-                .toString()
-                .trim()
-                .toLowerCase();
+            reviewStatus = _normalizeHomeworkStatus(hw['reviewStatus']);
             score = _toInt(hw['reviewScore']);
             grade = (hw['reviewGrade'] ?? '').toString().trim();
             needsRedo = hw['needsRedo'] == true || reviewStatus == 'redo';

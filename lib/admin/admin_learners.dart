@@ -666,6 +666,7 @@ class _LearnersListState extends State<_LearnersList>
     with AutomaticKeepAliveClientMixin {
   late final Stream<Map<String, int>> _unreadByLearnerStream;
   final Map<String, _PayFlag> _payFlagCache = <String, _PayFlag>{};
+  final Set<String> _payFlagLoading = <String>{};
 
   @override
   void initState() {
@@ -861,6 +862,9 @@ class _LearnersListState extends State<_LearnersList>
     final key = uid.trim();
     if (key.isEmpty) return;
     if (_payFlagCache.containsKey(key)) return;
+    if (_payFlagLoading.contains(key)) return;
+
+    _payFlagLoading.add(key);
 
     try {
       final snap = await _db.ref('users/$key/courses').get();
@@ -909,7 +913,21 @@ class _LearnersListState extends State<_LearnersList>
       setState(() => _payFlagCache[key] = best);
     } catch (_) {
       // Keep UI responsive; skip flag on transient failures.
+    } finally {
+      _payFlagLoading.remove(key);
     }
+  }
+
+  void _prefetchPayFlags(List<_LearnerRow> rows) {
+    if (rows.isEmpty) return;
+    final uids = rows.map((r) => r.uid.trim()).where((u) => u.isNotEmpty);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final uid in uids) {
+        if (_payFlagCache.containsKey(uid)) continue;
+        if (_payFlagLoading.contains(uid)) continue;
+        unawaited(_loadPayFlagForUid(uid));
+      }
+    });
   }
 
   Future<void> _sendLearnerQuickReminder({
@@ -962,34 +980,39 @@ class _LearnersListState extends State<_LearnersList>
     await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
 
     try {
+      final payload = {
+        'type': 'reminder',
+        'route': 'learner',
+        'learnerUid': uid,
+        'kind': type.name,
+        'reminderId': reminderRef.key,
+      };
       if (token != null && token.isNotEmpty) {
-        await PushClient.sendToToken(
-          token: token,
-          targetUid: uid,
-          eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
-          title: title,
-          message: message,
-          data: {
-            'type': 'reminder',
-            'route': 'learner',
-            'learnerUid': uid,
-            'kind': type.name,
-            'reminderId': reminderRef.key,
-          },
-        );
+        try {
+          await PushClient.sendToToken(
+            token: token,
+            targetUid: uid,
+            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+            title: title,
+            message: message,
+            data: payload,
+          );
+        } catch (_) {
+          await PushClient.sendToTopic(
+            topic: 'user_$uid',
+            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+            title: title,
+            message: message,
+            data: payload,
+          );
+        }
       } else {
         await PushClient.sendToTopic(
           topic: 'user_$uid',
           eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
           title: title,
           message: message,
-          data: {
-            'type': 'reminder',
-            'route': 'learner',
-            'learnerUid': uid,
-            'kind': type.name,
-            'reminderId': reminderRef.key,
-          },
+          data: payload,
         );
       }
 
@@ -1352,6 +1375,8 @@ class _LearnersListState extends State<_LearnersList>
                 return matchesSearch && matchesStatus;
               }).toList();
 
+              _prefetchPayFlags(filtered);
+
               if (filtered.isEmpty) {
                 return const _StateCard(
                   title: 'No learners',
@@ -1379,23 +1404,35 @@ class _LearnersListState extends State<_LearnersList>
 
                       Color avatarBg;
                       Color avatarFg;
+                      Color rowBorderColor = AdminLearnersScreen.uiBorders;
+                      Color rowBgColor = Colors.white;
 
                       switch (flag) {
                         case _PayFlag.noCourse:
                           avatarBg = Colors.blue;
                           avatarFg = Colors.white;
+                          rowBorderColor = Colors.blue.withValues(alpha: 0.45);
+                          rowBgColor = Colors.blue.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.black:
                           avatarBg = Colors.black;
                           avatarFg = Colors.white;
+                          rowBorderColor = Colors.black.withValues(alpha: 0.65);
+                          rowBgColor = Colors.black.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.red:
                           avatarBg = Colors.red;
                           avatarFg = Colors.white;
+                          rowBorderColor = Colors.red.withValues(alpha: 0.50);
+                          rowBgColor = Colors.red.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.yellow:
                           avatarBg = Colors.orange;
                           avatarFg = Colors.white;
+                          rowBorderColor = Colors.orange.withValues(
+                            alpha: 0.45,
+                          );
+                          rowBgColor = Colors.orange.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.ok:
                         default:
@@ -1418,11 +1455,9 @@ class _LearnersListState extends State<_LearnersList>
                       return Container(
                         margin: EdgeInsets.only(bottom: dense ? 7 : 10),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: rowBgColor,
                           borderRadius: BorderRadius.circular(dense ? 12 : 16),
-                          border: Border.all(
-                            color: AdminLearnersScreen.uiBorders,
-                          ),
+                          border: Border.all(color: rowBorderColor),
                         ),
                         child: Column(
                           children: [
@@ -2828,6 +2863,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
   final Map<String, Future<DataSnapshot>> _classAttendanceFutureCache =
       <String, Future<DataSnapshot>>{};
 
+  void _toast(String msg) {
+    if (!mounted) return;
+    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
+  }
+
   static const List<String> _variantKeys = [
     'inclass',
     'flexible',
@@ -4031,9 +4071,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                         : false;
 
                     final sessionsLeft =
-                        (effectiveSessionsPaidTotal - sessionsDone) < 0
-                        ? 0
-                        : (effectiveSessionsPaidTotal - sessionsDone);
+                        effectiveSessionsPaidTotal - sessionsDone;
+                    final overSessions = sessionsLeft < 0 ? -sessionsLeft : 0;
 
                     final effectivePaidTotalForDisplay =
                         effectiveSessionsPaidTotal > 0
@@ -4123,27 +4162,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 const SizedBox(height: 6),
                                 if (usesSessions)
                                   Text(
-                                    'Sessions paid total: $effectivePaidTotalForDisplay',
-                                    style: TextStyle(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.75,
-                                      ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                if (usesSessions)
-                                  Text(
-                                    'Sessions left: $sessionsLeft',
-                                    style: TextStyle(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.75,
-                                      ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                if (usesReminder)
-                                  Text(
-                                    'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
+                                    overSessions > 0
+                                        ? 'Paid $effectivePaidTotalForDisplay • Left $sessionsLeft (Over $overSessions)'
+                                        : 'Paid $effectivePaidTotalForDisplay • Left $sessionsLeft',
                                     style: TextStyle(
                                       color: Colors.black.withValues(
                                         alpha: 0.75,
@@ -5185,8 +5206,193 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
   }
 
   Widget _reportTab(BuildContext context) {
-    return const _MiniState(
-      text: 'Report tab is ready (we will build it later).',
+    final keys = _userCourses.keys.toList()..sort();
+
+    int avgFromMap(dynamic raw, {int max = 5}) {
+      if (raw is! Map) return 0;
+      var sum = 0;
+      var count = 0;
+      raw.forEach((_, v) {
+        final n = _asInt(v);
+        if (n <= 0) return;
+        final capped = n > max ? max : n;
+        sum += capped;
+        count++;
+      });
+      if (count == 0) return 0;
+      return (sum / count).round();
+    }
+
+    String shortOneLine(String text, {int max = 140}) {
+      final t = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (t.length <= max) return t;
+      if (max <= 1) return '…';
+      return '${t.substring(0, max - 1)}…';
+    }
+
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        _coursePicker(keys),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 258,
+          child: StreamBuilder<DatabaseEvent>(
+            stream: widget.db.ref('reports/${widget.uid}').onValue,
+            builder: (context, snap) {
+              final v = snap.data?.snapshot.value;
+              final items = <Map<String, dynamic>>[];
+
+              if (v is Map) {
+                v.forEach((k, val) {
+                  if (val is! Map) return;
+                  final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+                  items.add({'reportId': k.toString(), ...m});
+                });
+              }
+
+              if (_selectedCourseKey != null &&
+                  _selectedCourseKey!.isNotEmpty) {
+                final selected = _selectedCourseKey!.trim();
+                items.removeWhere((r) {
+                  final rk = (r['courseKey'] ?? '').toString().trim();
+                  return rk.isNotEmpty && rk != selected;
+                });
+              }
+
+              items.sort(
+                (a, b) =>
+                    _asInt(b['createdAt']).compareTo(_asInt(a['createdAt'])),
+              );
+
+              if (items.isEmpty) {
+                return const _MiniState(
+                  text: 'No reports yet for this learner.',
+                );
+              }
+
+              return ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: items.length,
+                itemBuilder: (context, i) {
+                  final r = items[i];
+                  final reportId = (r['reportId'] ?? '').toString().trim();
+                  final createdAt = _fmtDateMs(_asInt(r['createdAt']));
+                  final byName = (r['createdByName'] ?? '').toString().trim();
+                  final courseTitle = (r['courseTitle'] ?? '')
+                      .toString()
+                      .trim();
+                  final comment = (r['comment'] ?? '').toString().trim();
+
+                  final behaviorAvg = avgFromMap(r['behavior']);
+                  final progressAvg = avgFromMap(r['progress']);
+
+                  final hwRaw = r['homework'];
+                  final hw = hwRaw is Map
+                      ? hwRaw.map((k, v) => MapEntry(k.toString(), v))
+                      : <String, dynamic>{};
+                  final hwFinalRaw = hw['final'];
+                  final hwFinal = hwFinalRaw is Map
+                      ? hwFinalRaw.map((k, v) => MapEntry(k.toString(), v))
+                      : <String, dynamic>{};
+
+                  final hwAvg = _asInt(hwFinal['avgScore']);
+                  final hwRedo = _asInt(hwFinal['redoCount']);
+                  final summaryLine =
+                      'Behavior ${behaviorAvg > 0 ? behaviorAvg : '-'} /5 • '
+                      'Progress ${progressAvg > 0 ? progressAvg : '-'} /5 • '
+                      'HW ${hwAvg > 0 ? hwAvg : '-'} /100 • '
+                      'Redo $hwRedo';
+
+                  final diagramUrl = (r['diagramUrl'] ?? '').toString().trim();
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _miniCard(
+                      bg: Colors.white,
+                      borderColor: AdminLearnersScreen.uiBorders,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            summaryLine,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            [
+                              if (courseTitle.isNotEmpty) courseTitle,
+                              if (byName.isNotEmpty) 'By $byName',
+                              if (createdAt.isNotEmpty) createdAt,
+                              if (reportId.isNotEmpty) '#$reportId',
+                            ].join(' • '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (comment.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              shortOneLine(comment),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.black.withValues(alpha: 0.68),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                          if (diagramUrl.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  final uri = Uri.tryParse(diagramUrl);
+                                  if (uri == null) {
+                                    _toast('Invalid report diagram link.');
+                                    return;
+                                  }
+                                  final ok = await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                  if (!ok) {
+                                    _toast(
+                                      'Could not open report diagram link.',
+                                    );
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  size: 16,
+                                ),
+                                label: const Text('Open diagram'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

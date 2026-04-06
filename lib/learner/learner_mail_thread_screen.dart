@@ -276,10 +276,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   }
 
   Future<String?> _getFcmToken(String uid) async {
-    final snap = await _db.ref('fcm_tokens/$uid/token').get();
-    final token = snap.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
+    try {
+      final snap = await _db.ref('fcm_tokens/$uid/token').get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _markRead() async {
@@ -676,7 +680,6 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         '$threadPath/lastMessage': preview80,
         '$threadPath/participants/$_meUid': true,
         '$threadPath/participants/${widget.peerUid}': true,
-        '$threadPath/type': 'homework',
         '$senderIndexPath/subject': widget.subject,
         '$senderIndexPath/updatedAt': now,
         '$senderIndexPath/lastMessage': preview80,
@@ -684,14 +687,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         '$senderIndexPath/peerUid': widget.peerUid,
         '$senderIndexPath/peerName': _peerNameShown,
         '$senderIndexPath/deletedAt': null,
-        '$senderIndexPath/type': 'homework',
         '$teacherIndexPath/subject': widget.subject,
         '$teacherIndexPath/updatedAt': now,
         '$teacherIndexPath/lastMessage': preview80,
         '$teacherIndexPath/peerUid': _meUid,
         '$teacherIndexPath/peerName': _meDisplayName,
         '$teacherIndexPath/deletedAt': null,
-        '$teacherIndexPath/type': 'homework',
         '$teacherIndexPath/unreadCount': ServerValue.increment(1),
         'mail_state/$_meUid/${widget.threadId}/lastReadAt': now,
       };
@@ -704,32 +705,42 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
+          final payload = {
+            'type': 'mail',
+            'route': 'mail_thread',
+            'threadId': widget.threadId,
+            'peerUid': _meUid,
+          };
           if (token != null) {
-            await PushClient.sendToToken(
-              token: token,
-              targetUid: widget.peerUid,
-              eventId: 'mail_${widget.threadId}_$now',
-              title: widget.subject.isEmpty ? 'New mail' : widget.subject,
-              message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: {
-                'type': 'mail',
-                'route': 'mail_thread',
-                'threadId': widget.threadId,
-                'peerUid': _meUid,
-              },
-            );
+            try {
+              await PushClient.sendToToken(
+                token: token,
+                targetUid: widget.peerUid,
+                eventId: 'mail_${widget.threadId}_$now',
+                title: widget.subject.isEmpty ? 'New mail' : widget.subject,
+                message: preview80.isEmpty
+                    ? 'You received new mail'
+                    : preview80,
+                data: payload,
+              );
+            } catch (_) {
+              await PushClient.sendToTopic(
+                topic: 'user_${widget.peerUid}',
+                eventId: 'mail_${widget.threadId}_$now',
+                title: widget.subject.isEmpty ? 'New mail' : widget.subject,
+                message: preview80.isEmpty
+                    ? 'You received new mail'
+                    : preview80,
+                data: payload,
+              );
+            }
           } else {
             await PushClient.sendToTopic(
               topic: 'user_${widget.peerUid}',
               eventId: 'mail_${widget.threadId}_$now',
               title: widget.subject.isEmpty ? 'New mail' : widget.subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: {
-                'type': 'mail',
-                'route': 'mail_thread',
-                'threadId': widget.threadId,
-                'peerUid': _meUid,
-              },
+              data: payload,
             );
           }
         } catch (_) {}
