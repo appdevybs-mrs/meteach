@@ -1,14 +1,17 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart' show AppToast, AppToastType;
-import '../shared/screen_help_guide.dart';
 
 const _primaryBlue = Color(0xFF1A2B48);
 const _actionOrange = Color(0xFFF98D28);
@@ -350,11 +353,23 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   }
 
   Future<void> _printCertificate(Certificate cert) async {
-    AppToast.show(
-      context,
-      'Print functionality coming soon',
-      type: AppToastType.info,
-    );
+    try {
+      final bytes = await _pdfService.generateCertificatePdfBytes(cert);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Certificate opened in print preview.',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Could not generate certificate PDF.',
+        type: AppToastType.error,
+      );
+    }
   }
 
   @override
@@ -472,34 +487,80 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        decoration: InputDecoration(
-          hintText: 'Search recorded by name, CVN, title, or National ID...',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    _onSearchChanged('');
-                  },
-                )
-              : null,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _uiBorder),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            decoration: InputDecoration(
+              hintText:
+                  'Search recorded by name, CVN, title, or National ID...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: _uiBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: _uiBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: _primaryBlue, width: 2),
+              ),
+            ),
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _uiBorder),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'disable_before_date') {
+                  _runRecordedQuickAction(deleteBeforeDate: false);
+                } else if (value == 'delete_before_date') {
+                  _runRecordedQuickAction(deleteBeforeDate: true);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'disable_before_date',
+                  child: Text('Disable downloads before date'),
+                ),
+                PopupMenuItem(
+                  value: 'delete_before_date',
+                  child: Text('Delete certificates before date'),
+                ),
+              ],
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: _uiBorder),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bolt_rounded, size: 18, color: _primaryBlue),
+                    SizedBox(width: 6),
+                    Text('Quick actions (filtered)'),
+                  ],
+                ),
+              ),
+            ),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _primaryBlue, width: 2),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -834,8 +895,142 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           onEdit: () => _showEditRecordedCertificateForm(entry),
           onDelete: () => _deleteRecordedCertificateEntry(entry),
           onPrint: () => _printCertificate(cert),
+          onToggleDownloads: () => _toggleRecordedDownloads(entry),
+          toggleDownloadsLabel: cert.downloadsEnabled
+              ? 'Disable download'
+              : 'Enable download',
         );
       },
+    );
+  }
+
+  Future<void> _toggleRecordedDownloads(RecordedCertificateEntry entry) async {
+    final cert = entry.certificate;
+    final next = !cert.downloadsEnabled;
+    await _service.updateRecordedCertificate(
+      learnerUid: entry.learnerUid,
+      certId: entry.certId,
+      cert: cert.copyWith(
+        downloadsEnabled: next,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await _loadRecordedCertificates();
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      next
+          ? 'Recorded certificate download enabled'
+          : 'Recorded certificate download disabled',
+      type: AppToastType.success,
+    );
+  }
+
+  Future<void> _runRecordedQuickAction({required bool deleteBeforeDate}) async {
+    if (_filteredRecordedCertificates.isEmpty) {
+      AppToast.show(
+        context,
+        'No filtered recorded certificates to process.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+    if (picked == null) return;
+
+    final cutoff = DateTime(
+      picked.year,
+      picked.month,
+      picked.day,
+      23,
+      59,
+      59,
+      999,
+    ).millisecondsSinceEpoch;
+    final targets = _filteredRecordedCertificates
+        .where(
+          (e) =>
+              e.certificate.createdAt > 0 && e.certificate.createdAt <= cutoff,
+        )
+        .toList();
+
+    if (targets.isEmpty) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'No recorded certificates issued on or before ${DateFormat('yyyy-MM-dd').format(picked)} in current filters.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(
+          deleteBeforeDate ? 'Delete Certificates' : 'Disable Downloads',
+        ),
+        content: Text(
+          deleteBeforeDate
+              ? 'Delete ${targets.length} recorded certificate(s) issued on or before ${DateFormat('yyyy-MM-dd').format(picked)} from current filters?'
+              : 'Disable learner downloads for ${targets.length} recorded certificate(s) issued on or before ${DateFormat('yyyy-MM-dd').format(picked)} from current filters?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: deleteBeforeDate ? Colors.red : _actionOrange,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(deleteBeforeDate ? 'Delete' : 'Disable'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    var changed = 0;
+    for (final entry in targets) {
+      try {
+        if (deleteBeforeDate) {
+          await _service.deleteRecordedCertificate(
+            learnerUid: entry.learnerUid,
+            certId: entry.certId,
+            cvn: entry.certificate.cvn,
+          );
+          changed++;
+        } else {
+          if (!entry.certificate.downloadsEnabled) continue;
+          await _service.updateRecordedCertificate(
+            learnerUid: entry.learnerUid,
+            certId: entry.certId,
+            cert: entry.certificate.copyWith(
+              downloadsEnabled: false,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+          changed++;
+        }
+      } catch (_) {}
+    }
+
+    await _loadRecordedCertificates();
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      deleteBeforeDate
+          ? 'Deleted $changed recorded certificate(s).'
+          : 'Disabled downloads on $changed recorded certificate(s).',
+      type: AppToastType.success,
     );
   }
 
@@ -912,16 +1107,10 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         notes: notesC.text.trim().isEmpty ? null : notesC.text.trim(),
         downloadsEnabled: downloadsEnabled,
       );
-      final bytes = await _pdfService.generateCertificatePdfBytes(updated);
-      final url = await _pdfService.uploadCertificatePdf(
-        cert: updated,
-        pdfBytes: bytes,
-      );
-      final withPdf = updated.copyWith(pdfUrl: url, pdfPreviewUrl: url);
       await _service.updateRecordedCertificate(
         learnerUid: entry.learnerUid,
         certId: entry.certId,
-        cert: withPdf,
+        cert: updated,
       );
     }
 
@@ -1129,6 +1318,8 @@ class _CertificateListItem extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onPrint;
+  final VoidCallback? onToggleDownloads;
+  final String? toggleDownloadsLabel;
 
   const _CertificateListItem({
     required this.certificate,
@@ -1136,6 +1327,8 @@ class _CertificateListItem extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onPrint,
+    this.onToggleDownloads,
+    this.toggleDownloadsLabel,
   });
 
   Color _getStatusColor() {
@@ -1266,20 +1459,41 @@ class _CertificateListItem extends StatelessWidget {
                         case 'print':
                           onPrint();
                           break;
+                        case 'toggle_download':
+                          onToggleDownloads?.call();
+                          break;
                         case 'delete':
                           onDelete();
                           break;
                       }
                     },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'view', child: Text('View')),
-                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      const PopupMenuItem(value: 'print', child: Text('Print')),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete'),
-                      ),
-                    ],
+                    itemBuilder: (_) {
+                      final items = <PopupMenuEntry<String>>[
+                        const PopupMenuItem(value: 'view', child: Text('View')),
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        const PopupMenuItem(
+                          value: 'print',
+                          child: Text('Print'),
+                        ),
+                      ];
+                      if (onToggleDownloads != null) {
+                        items.add(
+                          PopupMenuItem(
+                            value: 'toggle_download',
+                            child: Text(
+                              toggleDownloadsLabel ?? 'Toggle download',
+                            ),
+                          ),
+                        );
+                      }
+                      items.add(
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
+                      );
+                      return items;
+                    },
                   ),
                 ],
               ),
@@ -1517,8 +1731,6 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
-        pdfUrl: widget.certificate?.pdfUrl,
-        pdfPreviewUrl: widget.certificate?.pdfPreviewUrl,
         downloadCount: widget.certificate?.downloadCount ?? 0,
         lastDownloadedAt: widget.certificate?.lastDownloadedAt,
         downloadsEnabled: _downloadsEnabled,
@@ -1527,7 +1739,6 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
       if (_isEditing) {
         final key = widget.certificate!.key!;
         await widget.service.updateCertificate(key, cert);
-        await widget.service.attachGeneratedPdf(key, cert.copyWith(key: key));
         if (mounted) Navigator.pop(context, cert.copyWith(key: key));
       } else {
         final created = await widget.service.createCertificateWithPdf(cert);
@@ -1603,7 +1814,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
                         const SizedBox(width: 8),
                         const Expanded(
                           child: Text(
-                            'CVN is generated automatically after PDF creation.',
+                            'CVN is generated automatically when the certificate is saved.',
                             style: TextStyle(color: _softText),
                           ),
                         ),
@@ -1849,8 +2060,9 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
 
 class _CertificateViewSheet extends StatelessWidget {
   final Certificate certificate;
+  final CertificatePdfService _pdfService = CertificatePdfService();
 
-  const _CertificateViewSheet({required this.certificate});
+  _CertificateViewSheet({required this.certificate});
 
   String _formatLocalTimestamp(int ms) {
     if (ms <= 0) return '-';
@@ -1859,21 +2071,54 @@ class _CertificateViewSheet extends StatelessWidget {
     ).format(DateTime.fromMillisecondsSinceEpoch(ms).toLocal());
   }
 
-  Future<void> _openUrl(BuildContext context, String url) async {
-    final u = url.trim();
-    if (u.isEmpty) return;
-    final uri = Uri.tryParse(u);
-    if (uri == null) {
+  Future<void> _sharePdf(BuildContext context) async {
+    try {
+      final bytes = await _pdfService.generateCertificatePdfBytes(certificate);
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${certificate.cvn}.pdf',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles([
+        XFile(
+          file.path,
+          mimeType: 'application/pdf',
+          name: '${certificate.cvn}.pdf',
+        ),
+      ]);
+      if (!context.mounted) return;
       AppToast.show(
         context,
-        'Invalid certificate URL',
+        'Certificate PDF is ready to save or share.',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      AppToast.show(
+        context,
+        'Could not generate certificate PDF.',
         type: AppToastType.error,
       );
-      return;
     }
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) {
-      AppToast.show(context, 'Could not open file', type: AppToastType.error);
+  }
+
+  Future<void> _printPdf(BuildContext context) async {
+    try {
+      final bytes = await _pdfService.generateCertificatePdfBytes(certificate);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      if (!context.mounted) return;
+      AppToast.show(
+        context,
+        'Certificate opened in print preview.',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      AppToast.show(
+        context,
+        'Could not generate certificate PDF.',
+        type: AppToastType.error,
+      );
     }
   }
 
@@ -1960,29 +2205,25 @@ class _CertificateViewSheet extends StatelessWidget {
                 label: 'Learner Download Access',
                 value: certificate.downloadsEnabled ? 'Enabled' : 'Disabled',
               ),
-              if ((certificate.pdfUrl ?? '').trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: () => _openUrl(context, certificate.pdfUrl!),
-                        icon: const Icon(Icons.download_rounded, size: 18),
-                        label: const Text('Open PDF'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _openUrl(
-                          context,
-                          (certificate.pdfPreviewUrl ?? certificate.pdfUrl)!,
-                        ),
-                        icon: const Icon(Icons.preview_rounded, size: 18),
-                        label: const Text('Preview'),
-                      ),
-                    ],
-                  ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: () => _sharePdf(context),
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('Generate PDF'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _printPdf(context),
+                      icon: const Icon(Icons.print_rounded, size: 18),
+                      label: const Text('Print'),
+                    ),
+                  ],
                 ),
+              ),
               if (certificate.notes != null && certificate.notes!.isNotEmpty)
                 _DetailRow(label: 'Notes', value: certificate.notes!),
             ],

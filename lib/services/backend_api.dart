@@ -13,6 +13,26 @@ class BackendApi {
     // no-op in production build
   }
 
+  static bool _looksLikeJwt(String token) {
+    final t = token.trim();
+    if (t.isEmpty) return false;
+    final lower = t.toLowerCase();
+    if (lower == 'null' ||
+        lower == 'none' ||
+        lower == 'undefined' ||
+        lower == 'false' ||
+        lower == 'true' ||
+        lower == 'nan') {
+      return false;
+    }
+    final parts = t.split('.');
+    if (parts.length != 3) return false;
+    final validPart = RegExp(r'^[A-Za-z0-9_-]+$');
+    return validPart.hasMatch(parts[0]) &&
+        validPart.hasMatch(parts[1]) &&
+        validPart.hasMatch(parts[2]);
+  }
+
   static Future<Uri> withAuthQuery(Uri original) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -21,6 +41,10 @@ class BackendApi {
     }
 
     final token = await authToken();
+    if (!_looksLikeJwt(token)) {
+      _debug('withAuthQuery failed: invalid token shape for ${original.path}');
+      throw Exception('Session expired. Please log in again.');
+    }
     _debug(
       'withAuthQuery path=${original.path} uid=${user.uid} tokenLen=${token.length}',
     );
@@ -28,8 +52,6 @@ class BackendApi {
       queryParameters: {
         ...original.queryParameters,
         'auth_token': token,
-        'token': token,
-        'bearer_token': token,
         'auth_uid': user.uid,
       },
     );
@@ -44,7 +66,7 @@ class BackendApi {
 
     try {
       final token = await user.getIdToken(false);
-      if (token != null && token.trim().isNotEmpty) {
+      if (token != null && _looksLikeJwt(token)) {
         final value = token.trim();
         _debug(
           'authToken cached success uid=${user.uid} tokenLen=${value.length}',
@@ -54,7 +76,7 @@ class BackendApi {
     } catch (_) {}
 
     final refreshed = await user.getIdToken(true);
-    if (refreshed == null || refreshed.trim().isEmpty) {
+    if (refreshed == null || !_looksLikeJwt(refreshed)) {
       _debug('authToken refresh failed uid=${user.uid}');
       throw Exception('Could not get auth token.');
     }
@@ -72,13 +94,11 @@ class BackendApi {
     }
 
     final token = await authToken();
+    if (!_looksLikeJwt(token)) {
+      throw Exception('Session expired. Please log in again.');
+    }
     _debug('authFormFields ready uid=${user.uid} tokenLen=${token.length}');
-    return <String, String>{
-      'auth_token': token,
-      'token': token,
-      'bearer_token': token,
-      'auth_uid': user.uid,
-    };
+    return <String, String>{'auth_token': token, 'auth_uid': user.uid};
   }
 
   static Future<void> applyAuthToMultipart(http.MultipartRequest req) async {

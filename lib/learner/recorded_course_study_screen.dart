@@ -923,12 +923,50 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   void _addNameParts(List<String> out, Set<String> seen, String raw) {
-    for (final part in raw.split(',')) {
-      final name = part.trim();
-      if (name.isEmpty) continue;
-      final key = name.toLowerCase();
-      if (seen.add(key)) out.add(name);
+    final extractedMapNames = RegExp(
+      r'name\s*:\s*([^,}]+)',
+      caseSensitive: false,
+    ).allMatches(raw);
+    for (final m in extractedMapNames) {
+      final cleaned = _cleanInstructorToken(m.group(1) ?? '');
+      if (cleaned.isEmpty) continue;
+      final key = cleaned.toLowerCase();
+      if (seen.add(key)) out.add(cleaned);
     }
+
+    final withoutMapDumps = raw.replaceAll(RegExp(r'\{[^}]*\}'), ' ');
+    for (final part in withoutMapDumps.split(',')) {
+      final cleaned = _cleanInstructorToken(part);
+      if (cleaned.isEmpty) continue;
+      final key = cleaned.toLowerCase();
+      if (seen.add(key)) out.add(cleaned);
+    }
+  }
+
+  String _cleanInstructorToken(String raw) {
+    var token = raw.trim();
+    if (token.isEmpty) return '';
+
+    final mapLikeMatch = RegExp(
+      r'name\s*:\s*([^,}]+)',
+      caseSensitive: false,
+    ).firstMatch(token);
+    if (mapLikeMatch != null) {
+      token = (mapLikeMatch.group(1) ?? '').trim();
+    }
+
+    token = token.replaceAll(RegExp("^[\"']+|[\"']+\$"), '').trim();
+    if (token.isEmpty) return '';
+    if (_looksLikeUidValue(token)) return '';
+    return token;
+  }
+
+  bool _looksLikeUidValue(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return false;
+    if (v.contains(' ') || v.contains(',')) return false;
+    if (!RegExp(r'^[A-Za-z0-9_-]{20,}$').hasMatch(v)) return false;
+    return RegExp(r'[A-Za-z]').hasMatch(v);
   }
 
   String _joinedInstructorNames(List<String> names) {
@@ -1065,14 +1103,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     ];
 
     for (final entry in fromStructured) {
-      String name = (entry['name'] ?? '').trim();
+      final rawName = (entry['name'] ?? '').trim();
+      String name = _cleanInstructorToken(rawName);
       final uid = (entry['uid'] ?? '').trim();
+
+      if (name.isEmpty && _looksLikeUidValue(rawName)) {
+        name = await _teacherNameFromUid(rawName);
+      }
 
       if (name.isEmpty && uid.isNotEmpty) {
         name = await _teacherNameFromUid(uid);
-      }
-      if (name.isEmpty && uid.isNotEmpty) {
-        name = uid;
       }
       _addNameParts(out, seen, name);
     }
