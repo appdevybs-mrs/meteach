@@ -39,6 +39,7 @@ import '../shared/app_feedback.dart';
 import '../shared/learner_tour_guide.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
+import '../services/course_feedback_service.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2 ...
@@ -1368,6 +1369,146 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   // -------------------- Build --------------------
 
+  Future<void> _openReviewSheet() async {
+    if (_uid.trim().isEmpty) return;
+    final courseId = _courseId.trim().isEmpty ? widget.courseKey : _courseId;
+    final enrolled = await CourseFeedbackService.isUserEnrolledInCourse(
+      _uid,
+      courseId,
+    );
+    if (!mounted) return;
+    if (!enrolled) {
+      AppToast.show(
+        context,
+        'Only enrolled learners can add a review.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    DataSnapshot existing;
+    try {
+      existing = await FirebaseDatabase.instance
+          .ref('course_reviews/$courseId/$_uid')
+          .get();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    int rating = 5;
+    String comment = '';
+    if (existing.exists && existing.value is Map) {
+      final map = Map<String, dynamic>.from(existing.value as Map);
+      final parsedRating = CourseFeedbackService.asInt(map['rating']);
+      if (parsedRating >= 1 && parsedRating <= 5) rating = parsedRating;
+      comment = (map['comment'] ?? '').toString();
+    }
+
+    final commentC = TextEditingController(text: comment);
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setD) {
+            final media = MediaQuery.of(ctx);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                media.viewInsets.bottom + media.padding.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rate this course',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    children: List.generate(5, (i) {
+                      final v = i + 1;
+                      return IconButton(
+                        onPressed: () => setD(() => rating = v),
+                        icon: Icon(
+                          v <= rating
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: const Color(0xFFF59E0B),
+                        ),
+                      );
+                    }),
+                  ),
+                  TextField(
+                    controller: commentC,
+                    maxLength: 500,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Comment',
+                      hintText: 'Share your feedback to help others enroll.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        if (commentC.text.trim().isEmpty) {
+                          AppToast.show(
+                            ctx,
+                            'Please add a comment before submitting.',
+                            type: AppToastType.error,
+                          );
+                          return;
+                        }
+                        Navigator.pop(ctx, true);
+                      },
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Submit review'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (submitted != true || !mounted) return;
+    try {
+      await CourseFeedbackService.upsertCourseReview(
+        courseId: courseId,
+        uid: _uid,
+        rating: rating,
+        comment: commentC.text,
+      );
+      if (!mounted) return;
+      AppToast.show(context, 'Your review was submitted for approval.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     LearnerTourGuide.schedule(
@@ -1429,6 +1570,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Review course',
+            icon: const Icon(Icons.reviews_rounded, color: UiK.actionOrange),
+            onPressed: _busy ? null : _openReviewSheet,
+          ),
           IconButton(
             tooltip: 'Homework',
             icon: const Icon(Icons.assignment_rounded, color: UiK.actionOrange),
@@ -1501,6 +1647,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ),
         ),
       ),
+      floatingActionButton: _busy
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _openReviewSheet,
+              backgroundColor: UiK.actionOrange,
+              icon: const Icon(Icons.reviews_rounded),
+              label: const Text('Write Review'),
+            ),
     );
   }
 

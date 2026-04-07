@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/certificate_model.dart';
+import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart';
 
@@ -22,6 +26,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
   static const _red = Color(0xFFEF4444);
 
   final CertificateService _service = CertificateService();
+  final CertificatePdfService _pdfService = CertificatePdfService();
   final _cvnController = TextEditingController();
   final _fullNameController = TextEditingController();
   final _trainingDateController = TextEditingController();
@@ -224,34 +229,30 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
       return;
     }
 
-    final key = cert.key?.trim() ?? '';
-    final url = (cert.pdfUrl ?? '').trim();
-    if (key.isEmpty || url.isEmpty) {
+    try {
+      final bytes = await _pdfService.generateCertificatePdfBytes(cert);
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${cert.cvn}.pdf',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles([
+        XFile(file.path, mimeType: 'application/pdf', name: '${cert.cvn}.pdf'),
+      ]);
+    } catch (_) {
+      if (!mounted) return;
       AppToast.show(
         context,
-        'PDF is not available for this certificate yet.',
-        type: AppToastType.info,
+        'Could not generate certificate PDF.',
+        type: AppToastType.error,
       );
-      return;
-    }
-
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      AppToast.show(context, 'Invalid PDF URL', type: AppToastType.error);
-      return;
-    }
-
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok) {
-      if (!mounted) return;
-      AppToast.show(context, 'Could not open PDF', type: AppToastType.error);
       return;
     }
 
     if (!mounted) return;
     AppToast.show(
       context,
-      'Certificate PDF opened.',
+      'Certificate PDF is ready to save or share.',
       type: AppToastType.success,
     );
 
@@ -264,6 +265,8 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
           certId: cert.recordedCertId!.trim(),
         );
       } else {
+        final key = cert.key?.trim() ?? '';
+        if (key.isEmpty) return;
         await _service.incrementDownloadCount(key, cvn: cert.cvn);
       }
     } catch (_) {}
@@ -720,7 +723,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        if ((cert.pdfUrl ?? '').trim().isNotEmpty && cert.downloadsEnabled)
+        if (cert.downloadsEnabled)
           FilledButton.icon(
             onPressed: () => _downloadCertificatePdf(cert),
             icon: const Icon(Icons.download_rounded),
@@ -731,9 +734,8 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
-        if ((cert.pdfUrl ?? '').trim().isNotEmpty && cert.downloadsEnabled)
-          const SizedBox(height: 10),
-        if ((cert.pdfUrl ?? '').trim().isNotEmpty && !cert.downloadsEnabled)
+        if (cert.downloadsEnabled) const SizedBox(height: 10),
+        if (!cert.downloadsEnabled)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -751,8 +753,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
               textAlign: TextAlign.center,
             ),
           ),
-        if ((cert.pdfUrl ?? '').trim().isNotEmpty && !cert.downloadsEnabled)
-          const SizedBox(height: 10),
+        if (!cert.downloadsEnabled) const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed: _reset,
           icon: const Icon(Icons.refresh),

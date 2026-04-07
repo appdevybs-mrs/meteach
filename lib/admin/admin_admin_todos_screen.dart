@@ -219,10 +219,14 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
   }
 
   Future<String?> _getFcmToken(String uid) async {
-    final snap = await _db.ref('fcm_tokens/$uid/token').get();
-    final token = snap.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
+    try {
+      final snap = await _db.ref('fcm_tokens/$uid/token').get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _notifyAssigneeOnCreate({
@@ -232,21 +236,41 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
   }) async {
     try {
       final token = await _getFcmToken(assignee.uid);
-      if (token == null) return;
-      await PushClient.sendToToken(
-        token: token,
-        targetUid: assignee.uid,
-        eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
-        title: 'New admin TODO',
-        message: draft.title,
-        data: {
-          'type': 'admin_todo',
-          'route': 'admin_todos',
-          'todoId': todoId,
-          'assigneeUid': assignee.uid,
-          'createdByUid': _myUid ?? '',
-        },
-      );
+      final payload = {
+        'type': 'admin_todo',
+        'route': 'admin_todos',
+        'todoId': todoId,
+        'assigneeUid': assignee.uid,
+        'createdByUid': _myUid ?? '',
+      };
+      if (token != null) {
+        try {
+          await PushClient.sendToToken(
+            token: token,
+            targetUid: assignee.uid,
+            eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+            title: 'New admin TODO',
+            message: draft.title,
+            data: payload,
+          );
+        } catch (_) {
+          await PushClient.sendToTopic(
+            topic: 'user_${assignee.uid}',
+            eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+            title: 'New admin TODO',
+            message: draft.title,
+            data: payload,
+          );
+        }
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_${assignee.uid}',
+          eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+          title: 'New admin TODO',
+          message: draft.title,
+          data: payload,
+        );
+      }
     } catch (_) {}
   }
 
@@ -261,24 +285,44 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
 
     try {
       final token = await _getFcmToken(creatorUid);
-      if (token == null) return;
       final title = action == 'done' ? 'TODO completed' : 'TODO seen';
       final body = '$_myName: ${todo.title.trim()}';
-      await PushClient.sendToToken(
-        token: token,
-        targetUid: creatorUid,
-        eventId: 'admin_todo_update_${todoId}_$action',
-        title: title,
-        message: body,
-        data: {
-          'type': 'admin_todo',
-          'route': 'admin_todos',
-          'todoId': todoId,
-          'assigneeUid': myUid,
-          'createdByUid': creatorUid,
-          'action': action,
-        },
-      );
+      final payload = {
+        'type': 'admin_todo',
+        'route': 'admin_todos',
+        'todoId': todoId,
+        'assigneeUid': myUid,
+        'createdByUid': creatorUid,
+        'action': action,
+      };
+      if (token != null) {
+        try {
+          await PushClient.sendToToken(
+            token: token,
+            targetUid: creatorUid,
+            eventId: 'admin_todo_update_${todoId}_$action',
+            title: title,
+            message: body,
+            data: payload,
+          );
+        } catch (_) {
+          await PushClient.sendToTopic(
+            topic: 'user_$creatorUid',
+            eventId: 'admin_todo_update_${todoId}_$action',
+            title: title,
+            message: body,
+            data: payload,
+          );
+        }
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_$creatorUid',
+          eventId: 'admin_todo_update_${todoId}_$action',
+          title: title,
+          message: body,
+          data: payload,
+        );
+      }
     } catch (_) {}
   }
 

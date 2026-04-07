@@ -515,10 +515,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 
   Future<String?> _getFcmToken(String uid) async {
-    final snap = await _db.ref('fcm_tokens/$uid/token').get();
-    final token = snap.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
+    try {
+      final snap = await _db.ref('fcm_tokens/$uid/token').get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _markRead() async {
@@ -895,19 +899,42 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
+          final payload = {
+            'type': 'mail',
+            'route': 'mail_thread',
+            'threadId': widget.threadId,
+            'peerUid': _meUid,
+          };
           if (token != null) {
-            await PushClient.sendToToken(
-              token: token,
-              targetUid: widget.peerUid,
+            try {
+              await PushClient.sendToToken(
+                token: token,
+                targetUid: widget.peerUid,
+                eventId: 'mail_${widget.threadId}_$now',
+                title: widget.subject.isEmpty ? 'New mail' : widget.subject,
+                message: preview80.isEmpty
+                    ? 'You received new mail'
+                    : preview80,
+                data: payload,
+              );
+            } catch (_) {
+              await PushClient.sendToTopic(
+                topic: 'user_${widget.peerUid}',
+                eventId: 'mail_${widget.threadId}_$now',
+                title: widget.subject.isEmpty ? 'New mail' : widget.subject,
+                message: preview80.isEmpty
+                    ? 'You received new mail'
+                    : preview80,
+                data: payload,
+              );
+            }
+          } else {
+            await PushClient.sendToTopic(
+              topic: 'user_${widget.peerUid}',
               eventId: 'mail_${widget.threadId}_$now',
               title: widget.subject.isEmpty ? 'New mail' : widget.subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: {
-                'type': 'mail',
-                'route': 'mail_thread',
-                'threadId': widget.threadId,
-                'peerUid': _meUid,
-              },
+              data: payload,
             );
           }
         } catch (_) {}
@@ -2236,14 +2263,34 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       }
 
       final t = Map<String, dynamic>.from(tSnap.value as Map);
-      if ((t['type'] ?? '').toString() != 'homework') {
+      final threadType = (t['type'] ?? '').toString().trim().toLowerCase();
+      var hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+
+      if (hwRefPath.isEmpty) {
+        final learnerUid = (t['learnerUid'] ?? '').toString().trim();
+        final courseKey = (t['courseKey'] ?? '').toString().trim();
+        final sessionId = (t['sessionId'] ?? '').toString().trim();
+        if (learnerUid.isNotEmpty &&
+            courseKey.isNotEmpty &&
+            sessionId.isNotEmpty) {
+          hwRefPath =
+              'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework';
+        }
+      }
+
+      if (threadType != 'homework' && hwRefPath.isEmpty) {
         _snack('No Homework Found.');
         return;
       }
 
-      final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
       if (hwRefPath.isEmpty) {
         _snack('homeworkRef missing.');
+        return;
+      }
+
+      final hwSnap = await _db.ref(hwRefPath).get();
+      if (!hwSnap.exists || hwSnap.value is! Map) {
+        _snack('No homework detected for this thread.');
         return;
       }
 
@@ -2262,8 +2309,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           score = score.clamp(0, 100);
 
           note = (hw['reviewNote'] ?? '').toString();
-          final st = (hw['reviewStatus'] ?? '').toString().trim();
-          if (st == 'pass' || st == 'redo') status = st;
+          final st = (hw['reviewStatus'] ?? '').toString().trim().toLowerCase();
+          if (st == 'pass' || st == 'approved') status = 'pass';
+          if (st == 'redo' || st == 'needs_work') status = 'redo';
 
           final nr = hw['needsRedo'];
           if (nr is bool) needsRedo = nr;
@@ -2936,7 +2984,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
       final needsRedo = hw['needsRedo'] == true;
       final status = (hw['reviewStatus'] ?? '').toString().trim().toLowerCase();
-      if (needsRedo || status == 'redo') redoCount++;
+      if (needsRedo || status == 'redo' || status == 'needs_work') redoCount++;
 
       final reviewedAt = hw['reviewedAt'];
       if (reviewedAt != null) {

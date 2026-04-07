@@ -4,7 +4,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:http/http.dart' as http;
 import '../models/certificate_model.dart';
-import 'certificate_pdf_service.dart';
 
 class CertificateServiceException implements Exception {
   final String message;
@@ -26,7 +25,6 @@ class CertificateService {
       'https://www.yourbridgeschool.com/app/secure/certificate_download_ping.php';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
-  final CertificatePdfService _pdfService = CertificatePdfService();
 
   DatabaseReference get _certificatesRef => _db.ref(_certificatesPath);
   DatabaseReference get _usersRef => _db.ref(_usersPath);
@@ -124,19 +122,18 @@ class CertificateService {
 
   Future<void> attachGeneratedPdf(String key, Certificate cert) async {
     try {
-      final bytes = await _pdfService.generateCertificatePdfBytes(cert);
-      final url = await _pdfService.uploadCertificatePdf(
-        cert: cert,
-        pdfBytes: bytes,
-      );
       await _certificatesRef.child(key).update({
-        'pdfUrl': url,
-        'pdfPreviewUrl': url,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       });
-    } catch (e) {
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw CertificateServiceException(
+          'Permission denied. Please ensure you are logged in as an admin or teacher.',
+          isPermissionError: true,
+        );
+      }
       throw CertificateServiceException(
-        'Certificate PDF generation/upload failed: $e',
+        'Failed to update certificate: ${e.message}',
       );
     }
   }
@@ -203,15 +200,8 @@ class CertificateService {
         downloadCount: 0,
       );
 
-      final bytes = await _pdfService.generateCertificatePdfBytes(certBase);
-      final url = await _pdfService.uploadCertificatePdf(
-        cert: certBase,
-        pdfBytes: bytes,
-      );
-
-      final certFinal = certBase.copyWith(pdfUrl: url, pdfPreviewUrl: url);
-      await newRef.set(certFinal.toMap());
-      return certFinal;
+      await newRef.set(certBase.toMap());
+      return certBase;
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw CertificateServiceException(
@@ -483,48 +473,63 @@ class CertificateService {
       }
     }
 
+    bool looksBrokenInstructor(String value) {
+      final v = value.trim().toLowerCase();
+      return v.contains('{') ||
+          v.contains('uid:') ||
+          v.contains('teacheruid') ||
+          v.contains('teacher_uid');
+    }
+
+    final incomingInstructor = instructorName.trim();
+    final existingInstructor = (existing?.certificate.instructorName ?? '')
+        .trim();
+    final chosenInstructor =
+        incomingInstructor.isNotEmpty &&
+            !looksBrokenInstructor(incomingInstructor)
+        ? incomingInstructor
+        : (existingInstructor.isNotEmpty &&
+                  !looksBrokenInstructor(existingInstructor)
+              ? existingInstructor
+              : incomingInstructor.isNotEmpty
+              ? incomingInstructor
+              : existingInstructor);
+
     final certBase = Certificate(
       key: certId,
       cvn: cvn,
-      fullName: fullName,
-      nationalIdNumber: nationalIdNumber,
-      certificateTitle: certificateTitle,
-      trainingDate: trainingDate,
-      expirationDate: expirationDate,
-      status: CertificateStatus.valid,
+      fullName: existing?.certificate.fullName ?? fullName,
+      nationalIdNumber:
+          existing?.certificate.nationalIdNumber ?? nationalIdNumber,
+      certificateTitle:
+          existing?.certificate.certificateTitle ?? certificateTitle,
+      trainingDate: existing?.certificate.trainingDate ?? trainingDate,
+      expirationDate: existing?.certificate.expirationDate ?? expirationDate,
+      status: existing?.certificate.status ?? CertificateStatus.valid,
       createdAt: existing?.certificate.createdAt ?? now,
       updatedAt: now,
       issuedBy: learnerUid,
       notes: existing?.certificate.notes,
-      pdfUrl: existing?.certificate.pdfUrl,
-      pdfPreviewUrl: existing?.certificate.pdfPreviewUrl,
       downloadCount: existing?.certificate.downloadCount ?? 0,
       lastDownloadedAt: existing?.certificate.lastDownloadedAt,
       downloadsEnabled: existing?.certificate.downloadsEnabled ?? true,
       source: 'recorded',
       learnerUid: learnerUid,
       recordedCertId: certId,
-      certificateKind: kind,
-      courseId: courseId,
-      courseKey: courseKey,
-      moduleKey: moduleKey,
-      instructorName: instructorName,
+      certificateKind: existing?.certificate.certificateKind ?? kind,
+      courseId: existing?.certificate.courseId ?? courseId,
+      courseKey: existing?.certificate.courseKey ?? courseKey,
+      moduleKey: existing?.certificate.moduleKey ?? moduleKey,
+      instructorName: chosenInstructor,
     );
 
-    final bytes = await _pdfService.generateCertificatePdfBytes(certBase);
-    final url = await _pdfService.uploadCertificatePdfForLearner(
-      cert: certBase,
-      pdfBytes: bytes,
-    );
-
-    final certFinal = certBase.copyWith(pdfUrl: url, pdfPreviewUrl: url);
-    await _recordedCertRef(learnerUid, certId).set(certFinal.toMap());
+    await _recordedCertRef(learnerUid, certId).set(certBase.toMap());
     await upsertRecordedCvnIndex(
-      cvn: certFinal.cvn,
+      cvn: certBase.cvn,
       learnerUid: learnerUid,
       certId: certId,
     );
-    return certFinal;
+    return certBase;
   }
 
   Future<void> updateRecordedCertificate({

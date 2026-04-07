@@ -15,8 +15,10 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'enroll_screen.dart';
+import 'course_reviews_screen.dart';
 import 'services/fcm_service.dart';
 import 'services/backend_api.dart';
+import 'services/course_feedback_service.dart';
 import 'firebase_options.dart';
 import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';
@@ -25,6 +27,7 @@ import 'shared/app_theme.dart';
 import 'shared/app_feedback.dart';
 import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
+import 'shared/profile_avatar.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
@@ -3106,6 +3109,166 @@ class _CourseDetailsSheet extends StatelessWidget {
   const _CourseDetailsSheet({required this.course});
   final _CourseLite course;
 
+  String _fmtDate(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  Widget _starsRow(int rating) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        return Icon(
+          i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+          size: 17,
+          color: Brand.actionOrange,
+        );
+      }),
+    );
+  }
+
+  Widget _reviewsBlock(BuildContext context) {
+    final courseId = course.id.trim();
+    if (courseId.isEmpty) return const SizedBox.shrink();
+
+    return FutureBuilder<List<CourseReviewItem>>(
+      future: CourseFeedbackService.listCourseReviews(
+        courseId,
+        visibleOnly: true,
+      ),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(minHeight: 2),
+          );
+        }
+        final items = [...snap.data!];
+        items.sort((a, b) {
+          final byRating = b.rating.compareTo(a.rating);
+          if (byRating != 0) return byRating;
+          return b.createdAt.compareTo(a.createdAt);
+        });
+        final total = items.length;
+        final avg = total == 0
+            ? 0.0
+            : items.fold<int>(0, (s, x) => s + x.rating) / total;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Brand.uiBorder),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Reviews',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: Brand.primaryBlue,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CourseReviewsScreen(
+                            courseId: courseId,
+                            courseTitle: course.title,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.list_alt_rounded),
+                    label: const Text('Read all'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  _starsRow((avg.round().clamp(0, 5) as num).toInt()),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${avg.toStringAsFixed(1)} / 5 • $total reviews',
+                    style: TextStyle(
+                      color: Brand.mainText.withValues(alpha: 0.75),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (items.isEmpty)
+                const Text(
+                  'No reviews yet for this course.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                )
+              else
+                ...items.take(3).map((r) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Brand.appBg,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            ProfileAvatar(
+                              name: r.displayName,
+                              photoUrl: r.photoUrl,
+                              radius: 14,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${r.firstName.isEmpty ? 'Learner' : r.firstName} (${r.abbr.isEmpty ? 'L' : r.abbr})',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _fmtDate(r.createdAt),
+                              style: TextStyle(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        _starsRow(r.rating),
+                        const SizedBox(height: 6),
+                        Text(
+                          r.comment,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _hero() {
     if (course.thumb.trim().isEmpty) {
       return Container(
@@ -3218,6 +3381,8 @@ class _CourseDetailsSheet extends StatelessWidget {
                     ),
                 ],
               ),
+              const SizedBox(height: 14),
+              _reviewsBlock(context),
               if (course.instructors.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(

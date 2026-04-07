@@ -12,6 +12,7 @@ import '../teacher/teacher_home.dart';
 import 'not_authorized.dart';
 import '../services/topic_service.dart';
 import '../services/fcm_service.dart';
+import '../shared/priority_alert_gate.dart';
 
 import 'deleted_action_screen.dart';
 import 'blocked_action_screen.dart';
@@ -277,19 +278,21 @@ class _AuthGateState extends State<AuthGate> {
                 );
                 unawaited(FCMService.syncTokenAfterLogin());
 
-                if (role == 'admin') return const AdminHome();
+                if (role == 'admin') {
+                  return const PriorityAlertGate(child: AdminHome());
+                }
 
                 if (role == 'teacher' ||
                     role == 'teachers' ||
                     role == 'teacher(s)' ||
                     role == 'Teacher') {
-                  return const TeacherHomeScreen();
+                  return const PriorityAlertGate(child: TeacherHomeScreen());
                 }
 
                 if (role == 'learner' ||
                     role == 'learners' ||
                     role == 'learner(s)') {
-                  return const LearnerHome();
+                  return const PriorityAlertGate(child: LearnerHome());
                 }
 
                 return NotAuthorized(role: role);

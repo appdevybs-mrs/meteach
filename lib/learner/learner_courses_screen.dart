@@ -1035,6 +1035,59 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     return '';
   }
 
+  int _sessionsDoneForPaymentCourse({
+    required Map<String, dynamic> course,
+    required String variantKey,
+  }) {
+    final attendance = course['attendance'];
+    switch (variantKey) {
+      case 'inclass':
+        return countHeldUniqueAttendanceDates(attendance);
+      case 'private':
+        return countPresentUniqueAttendanceDates(attendance);
+      case 'flexible':
+        final directOnline = countPresentOnlineAttendance(
+          course['online_attendance'],
+        );
+        if (directOnline > 0) return directOnline;
+
+        final bookingProgress = course['booking_progress'];
+        if (bookingProgress is Map) {
+          final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
+          final nestedOnline = countPresentOnlineAttendance(
+            bp['online_attendance'],
+          );
+          if (nestedOnline > 0) return nestedOnline;
+        }
+
+        return countPresentUniqueAttendanceDates(attendance);
+      default:
+        return countPresentUniqueAttendanceDates(attendance);
+    }
+  }
+
+  bool _isPaymentNeededCourse(Map<String, dynamic> course) {
+    final variantKey = _variantKeyOf(course);
+    if (variantKey == 'recorded') return false;
+
+    final summaryRaw = course['payment_summary'];
+    final summary = summaryRaw is Map
+        ? summaryRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    final sessionsDone = _sessionsDoneForPaymentCourse(
+      course: course,
+      variantKey: variantKey,
+    );
+
+    return _paymentStateFromSummary(
+          variantKey: variantKey,
+          sessionsDone: sessionsDone,
+          summary: summary,
+        ) ==
+        'PAYMENT NEEDED';
+  }
+
   bool _isExpiredMs(int ms) {
     if (ms <= 0) return false;
     return DateTime.now().millisecondsSinceEpoch >= ms;
@@ -1159,334 +1212,414 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     final isOnline = _isOnlineCourse(course);
     final isRecorded = variantKey == 'recorded';
     final variantStyle = _variantStyle(variantKey);
+    final paymentNeeded = _isPaymentNeededCourse(course);
 
     final attCounts = _attendanceCounts(course);
     final total = attCounts['total'] ?? 0;
     final present = attCounts['present'] ?? 0;
     final attPct = total == 0 ? 0 : ((present / total) * 100).round();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
+    return _PaymentDuePulse(
+      enabled: paymentNeeded,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: p.cardBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: paymentNeeded
+                ? Colors.red.withValues(alpha: 0.85)
+                : p.border.withValues(alpha: 0.85),
+            width: paymentNeeded ? 1.8 : 1,
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: variantStyle.bg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: variantStyle.border),
-                  ),
-                  child: Icon(
-                    variantStyle.icon,
-                    color: variantStyle.fg,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: p.primary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          height: 1.15,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        code.isEmpty ? 'Code: -' : 'Code: $code',
-                        style: TextStyle(
-                          color: p.text.withValues(alpha: 0.66),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          boxShadow: [
+            BoxShadow(
+              color: paymentNeeded
+                  ? Colors.red.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.04),
+              blurRadius: paymentNeeded ? 18 : 14,
+              offset: const Offset(0, 8),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _BadgePill(
-                  bg: variantStyle.bg,
-                  border: variantStyle.border,
-                  fg: variantStyle.fg,
-                  icon: variantStyle.icon,
-                  label: variantStyle.label,
-                ),
-                if (classId.isNotEmpty)
-                  _NeutralPill(
-                    palette: p,
-                    icon: Icons.badge_rounded,
-                    label: 'Class $classId',
-                  ),
-                if (status.isNotEmpty)
-                  _NeutralPill(
-                    palette: p,
-                    icon: Icons.info_outline_rounded,
-                    label: status,
-                  ),
-                if (!isRecorded)
-                  StreamBuilder<DatabaseEvent>(
-                    stream: _usersRef
-                        .child(_uid)
-                        .child('courses')
-                        .child(courseKey)
-                        .child('payment_summary')
-                        .onValue,
-                    builder: (context, snap) {
-                      final raw = snap.data?.snapshot.value;
-                      final sum = raw is Map
-                          ? raw.map((k, v) => MapEntry(k.toString(), v))
-                          : <String, dynamic>{};
-
-                      Widget stateChipForDone(int sessionsDone) {
-                        final state = _paymentStateFromSummary(
-                          variantKey: variantKey,
-                          sessionsDone: sessionsDone,
-                          summary: sum,
-                        );
-
-                        Widget buildPill(String label, Color tone) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: tone.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: tone.withValues(alpha: 0.28),
-                              ),
-                            ),
-                            child: Text(
-                              label,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                                color: tone,
-                              ),
-                            ),
-                          );
-                        }
-
-                        final flexAccess = course['flexible_access'];
-                        final flexMap = flexAccess is Map
-                            ? flexAccess.map(
-                                (k, v) => MapEntry(k.toString(), v),
-                              )
-                            : <String, dynamic>{};
-                        final flexExpiresAt = _asInt(flexMap['expiresAt']);
-                        final expired =
-                            variantKey == 'flexible' &&
-                            _isExpiredMs(flexExpiresAt);
-                        final nearExpiry =
-                            variantKey == 'flexible' &&
-                            _isNearExpiryMs(flexExpiresAt);
-
-                        if (variantKey == 'flexible') {
-                          final cues = <Widget>[];
-                          if (state.isNotEmpty) {
-                            final sessionTone = switch (state) {
-                              'PAYMENT NEEDED' => Colors.red,
-                              'PAYMENT SOON' => const Color(0xFFD97706),
-                              _ => p.accent,
-                            };
-                            cues.add(buildPill(state, sessionTone));
-                          }
-
-                          if (expired) {
-                            cues.add(buildPill('ACCESS EXPIRED', Colors.red));
-                          } else if (nearExpiry) {
-                            cues.add(
-                              buildPill('EXPIRY SOON', const Color(0xFF7C3AED)),
-                            );
-                          }
-
-                          if (cues.isEmpty) return const SizedBox.shrink();
-                          return Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: cues,
-                          );
-                        }
-
-                        if (state.isEmpty) return const SizedBox.shrink();
-                        final tone = switch (state) {
-                          'PAYMENT NEEDED' => Colors.red,
-                          'PAYMENT SOON' => const Color(0xFFD97706),
-                          _ => p.accent,
-                        };
-                        return buildPill(state, tone);
-                      }
-
-                      final inclassHeld = countHeldUniqueAttendanceDates(
-                        course['attendance'],
-                      );
-                      final privatePresent = countPresentUniqueAttendanceDates(
-                        course['attendance'],
-                      );
-
-                      if (variantKey == 'inclass') {
-                        return stateChipForDone(inclassHeld);
-                      }
-
-                      if (variantKey == 'private') {
-                        return stateChipForDone(privatePresent);
-                      }
-
-                      if (variantKey != 'flexible') {
-                        return stateChipForDone(privatePresent);
-                      }
-
-                      final cid = _courseIdOf(course);
-                      if (cid.isEmpty) return stateChipForDone(privatePresent);
-
-                      return FutureBuilder<DataSnapshot>(
-                        future: _db
-                            .child(
-                              '$bookingProgressNode/$_uid/$cid/online_attendance',
-                            )
-                            .get(),
-                        builder: (context, onlineSnap) {
-                          final onlinePresent = countPresentOnlineAttendance(
-                            onlineSnap.data?.value,
-                          );
-                          return stateChipForDone(onlinePresent);
-                        },
-                      );
-                    },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _InfoLine(
-              palette: p,
-              icon: Icons.person_outline_rounded,
-              text: instructor.isEmpty ? 'Teacher: -' : 'Teacher: $instructor',
-            ),
-            const SizedBox(height: 8),
-            if (isRecorded)
-              FutureBuilder<Map<String, int>>(
-                future: _progressCounts(course),
-                builder: (_, snap) {
-                  final data = snap.data ?? {'total': 0, 'covered': 0};
-                  final t = data['total'] ?? 0;
-                  final c = data['covered'] ?? 0;
-                  final pct = t == 0 ? 0 : ((c / t) * 100).round();
-
-                  return _kpiTile(
-                    icon: Icons.insights_rounded,
-                    label: 'Progress',
-                    value: '$pct%',
-                    accent: variantStyle.fg,
-                    tint: variantStyle.bg,
-                  );
-                },
-              )
-            else
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
-                  Expanded(
-                    child: _kpiTile(
-                      icon: Icons.how_to_reg_rounded,
-                      label: 'Attendance',
-                      value: '$attPct%',
-                      accent: variantStyle.fg,
-                      tint: variantStyle.bg,
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: variantStyle.bg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: variantStyle.border),
+                    ),
+                    child: Icon(
+                      variantStyle.icon,
+                      color: variantStyle.fg,
+                      size: 24,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: FutureBuilder<Map<String, int>>(
-                      future: _progressCounts(course),
-                      builder: (_, snap) {
-                        final data = snap.data ?? {'total': 0, 'covered': 0};
-                        final t = data['total'] ?? 0;
-                        final c = data['covered'] ?? 0;
-                        final pct = t == 0 ? 0 : ((c / t) * 100).round();
-
-                        return _kpiTile(
-                          icon: Icons.insights_rounded,
-                          label: 'Progress',
-                          value: '$pct%',
-                          accent: variantStyle.fg,
-                          tint: variantStyle.bg,
-                        );
-                      },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: p.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            height: 1.15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          code.isEmpty ? 'Code: -' : 'Code: $code',
+                          style: TextStyle(
+                            color: p.text.withValues(alpha: 0.66),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.visibility_rounded),
-                label: const Text('Open Course'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isOnline ? variantStyle.fg : p.accent,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _BadgePill(
+                    bg: variantStyle.bg,
+                    border: variantStyle.border,
+                    fg: variantStyle.fg,
+                    icon: variantStyle.icon,
+                    label: variantStyle.label,
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => variantKey == 'recorded'
-                          ? RecordedCourseStudyScreen(
-                              courseKey: courseKey,
-                              courseData: course,
-                            )
-                          : LearnerCourseDetailScreen(
-                              courseKey: courseKey,
-                              courseData: course,
-                            ),
+                  if (classId.isNotEmpty)
+                    _NeutralPill(
+                      palette: p,
+                      icon: Icons.badge_rounded,
+                      label: 'Class $classId',
                     ),
-                  );
-                },
+                  if (status.isNotEmpty)
+                    _NeutralPill(
+                      palette: p,
+                      icon: Icons.info_outline_rounded,
+                      label: status,
+                    ),
+                  if (!isRecorded)
+                    FutureBuilder<DataSnapshot>(
+                      future: _usersRef
+                          .child(_uid)
+                          .child('courses')
+                          .child(courseKey)
+                          .child('payment_summary')
+                          .get(),
+                      builder: (context, snap) {
+                        final raw = snap.data?.value;
+                        final sum = raw is Map
+                            ? raw.map((k, v) => MapEntry(k.toString(), v))
+                            : <String, dynamic>{};
+
+                        Widget stateChipForDone(int sessionsDone) {
+                          final state = _paymentStateFromSummary(
+                            variantKey: variantKey,
+                            sessionsDone: sessionsDone,
+                            summary: sum,
+                          );
+
+                          Widget buildPill(String label, Color tone) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: tone.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: tone.withValues(alpha: 0.28),
+                                ),
+                              ),
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 11,
+                                  color: tone,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final flexAccess = course['flexible_access'];
+                          final flexMap = flexAccess is Map
+                              ? flexAccess.map(
+                                  (k, v) => MapEntry(k.toString(), v),
+                                )
+                              : <String, dynamic>{};
+                          final flexExpiresAt = _asInt(flexMap['expiresAt']);
+                          final expired =
+                              variantKey == 'flexible' &&
+                              _isExpiredMs(flexExpiresAt);
+                          final nearExpiry =
+                              variantKey == 'flexible' &&
+                              _isNearExpiryMs(flexExpiresAt);
+
+                          if (variantKey == 'flexible') {
+                            final cues = <Widget>[];
+                            if (state.isNotEmpty) {
+                              final sessionTone = switch (state) {
+                                'PAYMENT NEEDED' => Colors.red,
+                                'PAYMENT SOON' => const Color(0xFFD97706),
+                                _ => p.accent,
+                              };
+                              cues.add(buildPill(state, sessionTone));
+                            }
+
+                            if (expired) {
+                              cues.add(buildPill('ACCESS EXPIRED', Colors.red));
+                            } else if (nearExpiry) {
+                              cues.add(
+                                buildPill(
+                                  'EXPIRY SOON',
+                                  const Color(0xFF7C3AED),
+                                ),
+                              );
+                            }
+
+                            if (cues.isEmpty) return const SizedBox.shrink();
+                            return Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: cues,
+                            );
+                          }
+
+                          if (state.isEmpty) return const SizedBox.shrink();
+                          final tone = switch (state) {
+                            'PAYMENT NEEDED' => Colors.red,
+                            'PAYMENT SOON' => const Color(0xFFD97706),
+                            _ => p.accent,
+                          };
+                          return buildPill(state, tone);
+                        }
+
+                        final inclassHeld = countHeldUniqueAttendanceDates(
+                          course['attendance'],
+                        );
+                        final privatePresent =
+                            countPresentUniqueAttendanceDates(
+                              course['attendance'],
+                            );
+
+                        if (variantKey == 'inclass') {
+                          return stateChipForDone(inclassHeld);
+                        }
+
+                        if (variantKey == 'private') {
+                          return stateChipForDone(privatePresent);
+                        }
+
+                        if (variantKey != 'flexible') {
+                          return stateChipForDone(privatePresent);
+                        }
+
+                        final cid = _courseIdOf(course);
+                        if (cid.isEmpty)
+                          return stateChipForDone(privatePresent);
+
+                        return FutureBuilder<DataSnapshot>(
+                          future: _db
+                              .child(
+                                '$bookingProgressNode/$_uid/$cid/online_attendance',
+                              )
+                              .get(),
+                          builder: (context, onlineSnap) {
+                            final onlinePresent = countPresentOnlineAttendance(
+                              onlineSnap.data?.value,
+                            );
+                            return stateChipForDone(onlinePresent);
+                          },
+                        );
+                      },
+                    ),
+                ],
               ),
-            ),
-            if (_isPrivateOnline(course)) ...[
-              const SizedBox(height: 10),
-              FutureBuilder<_PrivateOnlineMeta?>(
-                future: _privateMetaForCourse(course),
-                builder: (context, snap) {
-                  final meta = snap.data;
-                  if (meta == null) {
+              const SizedBox(height: 14),
+              _InfoLine(
+                palette: p,
+                icon: Icons.person_outline_rounded,
+                text: instructor.isEmpty
+                    ? 'Teacher: -'
+                    : 'Teacher: $instructor',
+              ),
+              const SizedBox(height: 8),
+              if (isRecorded)
+                FutureBuilder<Map<String, int>>(
+                  future: _progressCounts(course),
+                  builder: (_, snap) {
+                    final data = snap.data ?? {'total': 0, 'covered': 0};
+                    final t = data['total'] ?? 0;
+                    final c = data['covered'] ?? 0;
+                    final pct = t == 0 ? 0 : ((c / t) * 100).round();
+
+                    return _kpiTile(
+                      icon: Icons.insights_rounded,
+                      label: 'Progress',
+                      value: '$pct%',
+                      accent: variantStyle.fg,
+                      tint: variantStyle.bg,
+                    );
+                  },
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: _kpiTile(
+                        icon: Icons.how_to_reg_rounded,
+                        label: 'Attendance',
+                        value: '$attPct%',
+                        accent: variantStyle.fg,
+                        tint: variantStyle.bg,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FutureBuilder<Map<String, int>>(
+                        future: _progressCounts(course),
+                        builder: (_, snap) {
+                          final data = snap.data ?? {'total': 0, 'covered': 0};
+                          final t = data['total'] ?? 0;
+                          final c = data['covered'] ?? 0;
+                          final pct = t == 0 ? 0 : ((c / t) * 100).round();
+
+                          return _kpiTile(
+                            icon: Icons.insights_rounded,
+                            label: 'Progress',
+                            value: '$pct%',
+                            accent: variantStyle.fg,
+                            tint: variantStyle.bg,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.visibility_rounded),
+                  label: const Text('Open Course'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isOnline ? variantStyle.fg : p.accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => variantKey == 'recorded'
+                            ? RecordedCourseStudyScreen(
+                                courseKey: courseKey,
+                                courseData: course,
+                              )
+                            : LearnerCourseDetailScreen(
+                                courseKey: courseKey,
+                                courseData: course,
+                              ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (_isPrivateOnline(course)) ...[
+                const SizedBox(height: 10),
+                FutureBuilder<_PrivateOnlineMeta?>(
+                  future: _privateMetaForCourse(course),
+                  builder: (context, snap) {
+                    final meta = snap.data;
+                    if (meta == null) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: p.soft,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        child: Text(
+                          'Loading private online session details...',
+                          style: TextStyle(
+                            color: p.text.withValues(alpha: 0.72),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      );
+                    }
+
+                    final now = DateTime.now();
+                    final current = _currentOccurrence(meta, now);
+                    final next = _nextOccurrence(meta, now);
+                    final hasMeet = meta.meetUrl.trim().isNotEmpty;
+                    final canJoin = current != null && hasMeet;
+
+                    String timeLine;
+                    if (current != null) {
+                      timeLine =
+                          'Join window open: ${_fmtDateTime(current.start)}';
+                    } else if (next != null) {
+                      timeLine = 'Next session: ${_fmtDateTime(next.start)}';
+                    } else {
+                      timeLine = 'No upcoming session found';
+                    }
+
+                    final joinLabel = current != null
+                        ? joinButtonLabelForWindow(
+                            openFrom: current.start.subtract(
+                              const Duration(minutes: 5),
+                            ),
+                            openUntil: current.end,
+                            hasMeetLink: hasMeet,
+                            actionLabel: 'Join',
+                            closedLabel: 'Join window closed',
+                          )
+                        : (next != null
+                              ? joinButtonLabelForWindow(
+                                  openFrom: next.start.subtract(
+                                    const Duration(minutes: 5),
+                                  ),
+                                  openUntil: next.start.add(
+                                    const Duration(minutes: 10),
+                                  ),
+                                  hasMeetLink: hasMeet,
+                                  actionLabel: 'Join',
+                                  closedLabel: 'Join window closed',
+                                )
+                              : (hasMeet
+                                    ? 'Join (no upcoming session)'
+                                    : 'Meet link not set'));
+
                     return Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
@@ -1497,112 +1630,53 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           color: p.border.withValues(alpha: 0.85),
                         ),
                       ),
-                      child: Text(
-                        'Loading private online session details...',
-                        style: TextStyle(
-                          color: p.text.withValues(alpha: 0.72),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _InfoLine(
+                            palette: p,
+                            icon: Icons.schedule_rounded,
+                            text: _schedulePatternText(meta.slots),
+                          ),
+                          const SizedBox(height: 6),
+                          _InfoLine(
+                            palette: p,
+                            icon: Icons.access_time_rounded,
+                            text: timeLine,
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.video_call_rounded),
+                              label: Text(joinLabel),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: canJoin
+                                    ? variantStyle.fg
+                                    : Colors.grey.shade500,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                              onPressed: canJoin
+                                  ? () =>
+                                        _openExternalUrl(context, meta.meetUrl)
+                                  : null,
+                            ),
+                          ),
+                        ],
                       ),
                     );
-                  }
-
-                  final now = DateTime.now();
-                  final current = _currentOccurrence(meta, now);
-                  final next = _nextOccurrence(meta, now);
-                  final hasMeet = meta.meetUrl.trim().isNotEmpty;
-                  final canJoin = current != null && hasMeet;
-
-                  String timeLine;
-                  if (current != null) {
-                    timeLine =
-                        'Join window open: ${_fmtDateTime(current.start)}';
-                  } else if (next != null) {
-                    timeLine = 'Next session: ${_fmtDateTime(next.start)}';
-                  } else {
-                    timeLine = 'No upcoming session found';
-                  }
-
-                  final joinLabel = current != null
-                      ? joinButtonLabelForWindow(
-                          openFrom: current.start.subtract(
-                            const Duration(minutes: 5),
-                          ),
-                          openUntil: current.end,
-                          hasMeetLink: hasMeet,
-                          actionLabel: 'Join',
-                          closedLabel: 'Join window closed',
-                        )
-                      : (next != null
-                            ? joinButtonLabelForWindow(
-                                openFrom: next.start.subtract(
-                                  const Duration(minutes: 5),
-                                ),
-                                openUntil: next.start.add(
-                                  const Duration(minutes: 10),
-                                ),
-                                hasMeetLink: hasMeet,
-                                actionLabel: 'Join',
-                                closedLabel: 'Join window closed',
-                              )
-                            : (hasMeet
-                                  ? 'Join (no upcoming session)'
-                                  : 'Meet link not set'));
-
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: p.soft,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: p.border.withValues(alpha: 0.85),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _InfoLine(
-                          palette: p,
-                          icon: Icons.schedule_rounded,
-                          text: _schedulePatternText(meta.slots),
-                        ),
-                        const SizedBox(height: 6),
-                        _InfoLine(
-                          palette: p,
-                          icon: Icons.access_time_rounded,
-                          text: timeLine,
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.video_call_rounded),
-                            label: Text(joinLabel),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: canJoin
-                                  ? variantStyle.fg
-                                  : Colors.grey.shade500,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                            onPressed: canJoin
-                                ? () => _openExternalUrl(context, meta.meetUrl)
-                                : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                  },
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1665,6 +1739,61 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         ],
       ),
     );
+  }
+}
+
+class _PaymentDuePulse extends StatefulWidget {
+  const _PaymentDuePulse({required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_PaymentDuePulse> createState() => _PaymentDuePulseState();
+}
+
+class _PaymentDuePulseState extends State<_PaymentDuePulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  late final Animation<double> _scale = Tween<double>(
+    begin: 1,
+    end: 1.02,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PaymentDuePulse oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled == oldWidget.enabled) return;
+
+    if (widget.enabled) {
+      _controller.repeat(reverse: true);
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+    return ScaleTransition(scale: _scale, child: widget.child);
   }
 }
 

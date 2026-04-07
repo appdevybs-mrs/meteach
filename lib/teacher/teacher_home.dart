@@ -28,6 +28,7 @@ import 'teacher_schedule.dart';
 import 'teacher_shared_files_screen.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
+import 'teacher_my_platform_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -777,6 +778,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               _pushScreen(const TeacherRegulationsScreen()),
           onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
           onOpenShared: () => _pushScreen(const TeacherSharedFilesScreen()),
+          onOpenMyPlatform: () => _pushScreen(const TeacherMyPlatformScreen()),
 
           onOpenThemeSettings: _openThemeSheet,
           onRestartTour: () async {
@@ -1412,6 +1414,7 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenThemeSettings,
     required this.onRestartTour,
     required this.onOpenShared,
+    required this.onOpenMyPlatform,
     required this.onLogout,
     required this.onOpenGames,
     required this.onOpenStories,
@@ -1432,6 +1435,7 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onRestartTour;
   final VoidCallback onOpenShared;
+  final VoidCallback onOpenMyPlatform;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStories;
   final VoidCallback onLogout;
@@ -1614,6 +1618,16 @@ class _TeacherDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenShared();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.hub_rounded,
+                    title: 'My Platform',
+                    subtitle: 'Assigned course comments and reviews',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenMyPlatform();
                     },
                   ),
                   _DrawerTile(

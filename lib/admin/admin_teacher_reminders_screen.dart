@@ -298,20 +298,36 @@ class _AdminTeacherRemindersScreenState
       });
 
       if (token != null && token.isNotEmpty) {
-        await PushClient.sendToToken(
-          token: token,
-          targetUid: teacherUid,
-          eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
-          title: created.title.trim(),
-          message: created.description.trim().isEmpty
-              ? 'You have a new reminder'
-              : created.description.trim(),
-          data: {
-            'type': 'reminder',
-            'route': 'teacher_reminders',
-            'teacherUid': teacherUid,
-          },
-        );
+        try {
+          await PushClient.sendToToken(
+            token: token,
+            targetUid: teacherUid,
+            eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
+            title: created.title.trim(),
+            message: created.description.trim().isEmpty
+                ? 'You have a new reminder'
+                : created.description.trim(),
+            data: {
+              'type': 'reminder',
+              'route': 'teacher_reminders',
+              'teacherUid': teacherUid,
+            },
+          );
+        } catch (_) {
+          await PushClient.sendToTopic(
+            topic: 'user_$teacherUid',
+            eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
+            title: created.title.trim(),
+            message: created.description.trim().isEmpty
+                ? 'You have a new reminder'
+                : created.description.trim(),
+            data: {
+              'type': 'reminder',
+              'route': 'teacher_reminders',
+              'teacherUid': teacherUid,
+            },
+          );
+        }
       } else {
         await PushClient.sendToTopic(
           topic: 'user_$teacherUid',

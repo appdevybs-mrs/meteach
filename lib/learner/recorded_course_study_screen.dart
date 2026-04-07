@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -14,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
+import '../services/course_feedback_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
@@ -74,6 +76,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   final Map<String, String> _selectedUnitByModule = <String, String>{};
   final Set<String> _expandedUnitDetails = <String>{};
   final Set<String> _expandedLessonDetails = <String>{};
+  final Set<String> _generatingModuleCertificateKeys = <String>{};
+  final Map<String, String> _teacherNameByUidCache = <String, String>{};
 
   @override
   void initState() {
@@ -376,6 +380,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       if (_isUnitCompleted(unit)) done++;
     }
     return done;
+  }
+
+  bool _isModuleCompleted(List<_RecordedUnit> moduleUnits) {
+    if (moduleUnits.isEmpty) return false;
+    return _moduleCompletedUnits(moduleUnits) == moduleUnits.length;
   }
 
   int _flatIndexOfSessionId(String sessionId) {
@@ -747,6 +756,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final moduleGroups = _unitsByModule.values.toList();
     final unitNodes = _units;
     final lessonNodes = _flatSessions.map((e) => e.session).toList();
+    final lessonSplitIndex = (lessonNodes.length / 2).ceil();
+    final lessonTopRow = lessonNodes.take(lessonSplitIndex).toList();
+    final lessonBottomRow = lessonNodes.skip(lessonSplitIndex).toList();
 
     Widget buildNode({
       required bool done,
@@ -767,6 +779,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
     }
 
+    Widget buildDotRow(List<Widget> dots) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: dots),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -780,77 +799,51 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              const Text(
-                'M',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: Color(0xFF64748B),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 6),
-              for (final units in moduleGroups) ...[
-                buildNode(
-                  done:
-                      _moduleCompletedUnits(units) == units.length &&
-                      units.isNotEmpty,
-                  size: 12,
-                  doneColor: const Color(0xFFEA580C),
-                ),
-                const SizedBox(width: 5),
-              ],
-              const SizedBox(width: 10),
-              const Text(
-                'U',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: Color(0xFF64748B),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 6),
-              for (final unit in unitNodes) ...[
-                buildNode(
-                  done: _isUnitCompleted(unit),
-                  size: 9,
-                  doneColor: const Color(0xFF0EA5E9),
-                ),
-                const SizedBox(width: 4),
-              ],
-              const SizedBox(width: 10),
-              const Text(
-                'L',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: Color(0xFF64748B),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 6),
-              for (final session in lessonNodes) ...[
-                buildNode(
-                  done: _isSessionCompleted(session),
-                  size: 6,
-                  doneColor: const Color(0xFF16A34A),
-                ),
-                const SizedBox(width: 3),
-              ],
-            ],
-          ),
-        ),
+        buildDotRow([
+          for (final units in moduleGroups) ...[
+            buildNode(
+              done:
+                  _moduleCompletedUnits(units) == units.length &&
+                  units.isNotEmpty,
+              size: 12,
+              doneColor: const Color(0xFFEA580C),
+            ),
+            const SizedBox(width: 5),
+          ],
+        ]),
+        const SizedBox(height: 6),
+        buildDotRow([
+          for (final unit in unitNodes) ...[
+            buildNode(
+              done: _isUnitCompleted(unit),
+              size: 9,
+              doneColor: const Color(0xFF0EA5E9),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ]),
+        const SizedBox(height: 6),
+        buildDotRow([
+          for (final session in lessonTopRow) ...[
+            buildNode(
+              done: _isSessionCompleted(session),
+              size: 6,
+              doneColor: const Color(0xFF16A34A),
+            ),
+            const SizedBox(width: 3),
+          ],
+        ]),
         const SizedBox(height: 4),
-        const Text(
-          'M = modules, U = units, L = lessons',
-          style: TextStyle(
-            color: Color(0xFF64748B),
-            fontWeight: FontWeight.w700,
-            fontSize: 11,
-          ),
-        ),
+        buildDotRow([
+          for (final session in lessonBottomRow) ...[
+            buildNode(
+              done: _isSessionCompleted(session),
+              size: 6,
+              doneColor: const Color(0xFF16A34A),
+            ),
+            const SizedBox(width: 3),
+          ],
+        ]),
       ],
     );
   }
@@ -870,6 +863,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         builder: (_) => RecordedVideoPlayerScreen(
           uid: _uid,
           courseKey: widget.courseKey,
+          courseId: _courseId,
           sessionId: session.id,
           sessionTitle: session.title,
           videoUrl: videoUrl,
@@ -928,7 +922,250 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return '';
   }
 
-  String _instructorFromCourseMap(Map<String, dynamic> courseMap) {
+  void _addNameParts(List<String> out, Set<String> seen, String raw) {
+    final extractedMapNames = RegExp(
+      r'name\s*:\s*([^,}]+)',
+      caseSensitive: false,
+    ).allMatches(raw);
+    for (final m in extractedMapNames) {
+      final cleaned = _cleanInstructorToken(m.group(1) ?? '');
+      if (cleaned.isEmpty) continue;
+      final key = cleaned.toLowerCase();
+      if (seen.add(key)) out.add(cleaned);
+    }
+
+    final withoutMapDumps = raw
+        .replaceAll(RegExp(r'\{[^}]*\}'), ' ')
+        .replaceAll(RegExp(r'\{[^,]*'), ' ');
+    for (final part in withoutMapDumps.split(',')) {
+      final cleaned = _cleanInstructorToken(part);
+      if (cleaned.isEmpty) continue;
+      final key = cleaned.toLowerCase();
+      if (seen.add(key)) out.add(cleaned);
+    }
+  }
+
+  String _cleanInstructorToken(String raw) {
+    var token = raw.trim();
+    if (token.isEmpty) return '';
+
+    final mapLikeMatch = RegExp(
+      r'name\s*:\s*([^,}]+)',
+      caseSensitive: false,
+    ).firstMatch(token);
+    if (mapLikeMatch != null) {
+      token = (mapLikeMatch.group(1) ?? '').trim();
+    }
+
+    token = token
+        .replaceAll(RegExp(r'[\{\}\[\]]'), ' ')
+        .replaceAll(
+          RegExp(
+            r'(uid|teacher_?uid)\s*:\s*[A-Za-z0-9_-]{6,}',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    token = token.replaceAll(RegExp("^[\"']+|[\"']+\$"), '').trim();
+    if (token.isEmpty) return '';
+    final lower = token.toLowerCase();
+    if (lower.contains('uid:') ||
+        lower.contains('teacheruid') ||
+        lower.contains('teacher_uid')) {
+      return '';
+    }
+    if (token.contains(':')) return '';
+    if (_looksLikeUidValue(token)) return '';
+    return token;
+  }
+
+  bool _looksLikeUidValue(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return false;
+    if (v.contains(' ') || v.contains(',')) return false;
+    if (!RegExp(r'^[A-Za-z0-9_-]{20,}$').hasMatch(v)) return false;
+    return RegExp(r'[A-Za-z]').hasMatch(v);
+  }
+
+  String _abbreviateInstructorName(String raw) {
+    final parts = raw
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) return parts.first;
+
+    final firstName = parts.first;
+    final last = parts.last;
+    final match = RegExp(r'[A-Za-z]').firstMatch(last);
+    if (match == null) return firstName;
+    final initial = match.group(0)!.toUpperCase();
+    return '$firstName $initial.';
+  }
+
+  String _joinedInstructorNames(List<String> names) {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final raw in names) {
+      _addNameParts(out, seen, raw);
+    }
+    if (out.length <= 1) {
+      return out.join(', ');
+    }
+    final abbreviated = out
+        .map(_abbreviateInstructorName)
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return abbreviated.join(', ');
+  }
+
+  Map<String, String>? _instructorEntryFromAny(
+    dynamic raw, {
+    String fallbackUid = '',
+  }) {
+    if (raw == null) return null;
+
+    if (raw is Map) {
+      final m = raw.map((k, v) => MapEntry(k.toString(), v));
+      final first = (m['first_name'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? '').toString().trim();
+      final fromParts = '$first $last'.trim();
+
+      final uid = _firstNonEmpty(m, ['uid', 'teacherUid', 'teacher_uid', 'id']);
+      final name = _firstNonEmpty(m, [
+        'name',
+        'teacherName',
+        'teacher_name',
+        'instructorName',
+        'instructor',
+        'fullName',
+        'full_name',
+      ]);
+
+      final resolvedUid = uid.isNotEmpty ? uid : fallbackUid.trim();
+      final resolvedName = name.isNotEmpty ? name : fromParts;
+      if (resolvedUid.isEmpty && resolvedName.isEmpty) return null;
+      return {'uid': resolvedUid, 'name': resolvedName};
+    }
+
+    final text = raw.toString().trim();
+    if (text.isEmpty) return null;
+    return {'uid': fallbackUid.trim(), 'name': text};
+  }
+
+  List<Map<String, String>> _instructorEntriesFromNode(dynamic node) {
+    final out = <Map<String, String>>[];
+
+    if (node == null) return out;
+
+    if (node is List) {
+      for (final item in node) {
+        final entry = _instructorEntryFromAny(item);
+        if (entry != null) out.add(entry);
+      }
+      return out;
+    }
+
+    if (node is Map) {
+      final m = node.map((k, v) => MapEntry(k.toString(), v));
+      if (m.containsKey('uid') ||
+          m.containsKey('name') ||
+          m.containsKey('teacherUid') ||
+          m.containsKey('teacherName')) {
+        final entry = _instructorEntryFromAny(m);
+        if (entry != null) out.add(entry);
+        return out;
+      }
+
+      final entries = m.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      for (final e in entries) {
+        final entry = _instructorEntryFromAny(e.value, fallbackUid: e.key);
+        if (entry != null) out.add(entry);
+      }
+      return out;
+    }
+
+    final text = node.toString().trim();
+    if (text.isNotEmpty) {
+      for (final part in text.split(',')) {
+        final name = part.trim();
+        if (name.isNotEmpty) out.add({'uid': '', 'name': name});
+      }
+    }
+    return out;
+  }
+
+  Future<String> _teacherNameFromUid(String uid) async {
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return '';
+
+    final cached = _teacherNameByUidCache[cleanUid];
+    if (cached != null) return cached;
+
+    try {
+      final snap = await _usersRef.child(cleanUid).get();
+      if (!snap.exists || snap.value is! Map) {
+        _teacherNameByUidCache[cleanUid] = '';
+        return '';
+      }
+
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final first = (m['first_name'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? '').toString().trim();
+      final full = '$first $last'.trim();
+
+      final resolved = full.isNotEmpty
+          ? full
+          : _firstNonEmpty(m, [
+              'name',
+              'teacherName',
+              'instructorName',
+              'displayName',
+            ]);
+
+      _teacherNameByUidCache[cleanUid] = resolved;
+      return resolved;
+    } catch (_) {
+      _teacherNameByUidCache[cleanUid] = '';
+      return '';
+    }
+  }
+
+  Future<List<String>> _instructorNamesFromCourseMap(
+    Map<String, dynamic> courseMap,
+  ) async {
+    final out = <String>[];
+    final seen = <String>{};
+
+    final fromStructured = <Map<String, String>>[
+      ..._instructorEntriesFromNode(courseMap['instructors']),
+      ..._instructorEntriesFromNode(courseMap['instructors_map']),
+    ];
+
+    for (final entry in fromStructured) {
+      final rawName = (entry['name'] ?? '').trim();
+      final uid = (entry['uid'] ?? '').trim();
+
+      if (rawName.isNotEmpty) {
+        _addNameParts(out, seen, rawName);
+      }
+
+      if (uid.isNotEmpty) {
+        final resolved = await _teacherNameFromUid(uid);
+        _addNameParts(out, seen, resolved);
+      } else if (_looksLikeUidValue(rawName)) {
+        final resolved = await _teacherNameFromUid(rawName);
+        _addNameParts(out, seen, resolved);
+      }
+    }
+
+    if (out.isNotEmpty) return out;
+
     final cls = courseMap['class'] is Map
         ? Map<String, dynamic>.from(courseMap['class'] as Map)
         : <String, dynamic>{};
@@ -938,7 +1175,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       'teacherName',
       'instructorName',
     ]);
-    if (fromClass.isNotEmpty) return fromClass;
+    _addNameParts(out, seen, fromClass);
 
     final fromTop = _firstNonEmpty(courseMap, [
       'instructor',
@@ -946,36 +1183,40 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       'teacherName',
       'instructorName',
     ]);
-    if (fromTop.isNotEmpty) return fromTop;
+    _addNameParts(out, seen, fromTop);
 
-    final instructors = courseMap['instructors'];
-    if (instructors is List && instructors.isNotEmpty) {
-      final first = instructors.first.toString().trim();
-      if (first.isNotEmpty) return first;
-    }
-    if (instructors is String && instructors.trim().isNotEmpty) {
-      final parts = instructors
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-      if (parts.isNotEmpty) return parts.first;
-    }
-    return '';
+    return out;
   }
 
   Future<String> _resolveInstructorName() async {
-    final local = _instructorFromCourseMap(widget.courseData);
-    if (local.isNotEmpty) return local;
+    try {
+      if (_courseId.isNotEmpty) {
+        final byCourseId = await _coursesRef.child(_courseId).get();
+        if (byCourseId.exists && byCourseId.value is Map) {
+          final names = await _instructorNamesFromCourseMap(
+            Map<String, dynamic>.from(byCourseId.value as Map),
+          );
+          final joined = _joinedInstructorNames(names);
+          if (joined.isNotEmpty) return joined;
+        }
+      }
+
+      if (widget.courseKey.trim().isNotEmpty) {
+        final byCourseKey = await _coursesRef.child(widget.courseKey).get();
+        if (byCourseKey.exists && byCourseKey.value is Map) {
+          final names = await _instructorNamesFromCourseMap(
+            Map<String, dynamic>.from(byCourseKey.value as Map),
+          );
+          final joined = _joinedInstructorNames(names);
+          if (joined.isNotEmpty) return joined;
+        }
+      }
+    } catch (_) {}
 
     try {
-      final snap = await _coursesRef.child(widget.courseKey).get();
-      if (snap.exists && snap.value is Map) {
-        final remote = _instructorFromCourseMap(
-          Map<String, dynamic>.from(snap.value as Map),
-        );
-        if (remote.isNotEmpty) return remote;
-      }
+      final localNames = await _instructorNamesFromCourseMap(widget.courseData);
+      final joined = _joinedInstructorNames(localNames);
+      if (joined.isNotEmpty) return joined;
     } catch (_) {}
 
     return 'Seddik. B';
@@ -996,12 +1237,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return _fmtYmd(DateTime.fromMillisecondsSinceEpoch(latest));
   }
 
-  String _unitCompletionDate(_RecordedUnit unit) {
+  String _moduleCompletionDate(List<_RecordedUnit> moduleUnits) {
     int latest = 0;
-    for (final session in unit.sessions) {
-      if (!_isSessionCompleted(session)) continue;
-      final p = _progressOf(session.id);
-      latest = math.max(latest, _sessionCompletionAt(p));
+    for (final unit in moduleUnits) {
+      for (final session in unit.sessions) {
+        if (!_isSessionCompleted(session)) continue;
+        final p = _progressOf(session.id);
+        latest = math.max(latest, _sessionCompletionAt(p));
+      }
     }
     if (latest <= 0) return _fmtYmd(DateTime.now());
     return _fmtYmd(DateTime.fromMillisecondsSinceEpoch(latest));
@@ -1423,37 +1666,108 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
-  Future<void> _onUnitCertificateTap({
-    required _RecordedUnit unit,
-    required int unitIndex,
+  String _moduleCertificateActionKey(String moduleLabel, int moduleIndex) {
+    final moduleKeyBase = _sanitizeIdPart(moduleLabel);
+    return moduleKeyBase.isNotEmpty
+        ? '${moduleKeyBase}_${moduleIndex + 1}'
+        : 'm${moduleIndex + 1}';
+  }
+
+  Widget _buildGeneratingCertificateDialog() {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 140),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const BrandedInlineLoader(
+          message: 'Preparing module certificate...',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onModuleCertificateTap({
+    required String moduleLabel,
+    required List<_RecordedUnit> moduleUnits,
+    required int moduleIndex,
   }) async {
+    final moduleKey = _moduleCertificateActionKey(moduleLabel, moduleIndex);
+    if (_generatingModuleCertificateKeys.contains(moduleKey)) return;
+
+    if (mounted) {
+      setState(() {
+        _generatingModuleCertificateKeys.add(moduleKey);
+      });
+    } else {
+      _generatingModuleCertificateKeys.add(moduleKey);
+    }
+
+    BuildContext? loadingDialogContext;
+
     try {
-      final moduleKey = unit.id.trim().isNotEmpty
-          ? _sanitizeIdPart(unit.id)
-          : 'm${unitIndex + 1}';
+      if (mounted) {
+        unawaited(
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) {
+              loadingDialogContext = dialogContext;
+              return _buildGeneratingCertificateDialog();
+            },
+          ),
+        );
+      }
+
       final certId = 'module_${_sanitizeIdPart(_courseId)}_$moduleKey';
       final cert = await _issueRecordedCertificate(
         certId: certId,
-        certificateTitle: '$_title - ${unit.displayTitle}',
-        trainingDate: _unitCompletionDate(unit),
+        certificateTitle: '$_title - $moduleLabel',
+        trainingDate: _moduleCompletionDate(moduleUnits),
         kind: 'milestone',
         moduleKey: moduleKey,
       );
       final bytes = await _certificatePdfService.generateCertificatePdfBytes(
         cert,
       );
+
+      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+        Navigator.of(loadingDialogContext!).pop();
+        loadingDialogContext = null;
+      }
+
       await _presentCertificate(
         bytes: bytes,
         defaultFileName:
-            'module_${unitIndex + 1}_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
+            'module_${moduleIndex + 1}_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
       );
     } catch (e) {
+      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+        Navigator.of(loadingDialogContext!).pop();
+        loadingDialogContext = null;
+      }
       if (!mounted) return;
       AppToast.show(
         context,
         toHumanError(e, fallback: 'Could not generate milestone certificate.'),
         type: AppToastType.error,
       );
+    } finally {
+      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+        Navigator.of(loadingDialogContext!).pop();
+      }
+      if (mounted) {
+        setState(() {
+          _generatingModuleCertificateKeys.remove(moduleKey);
+        });
+      } else {
+        _generatingModuleCertificateKeys.remove(moduleKey);
+      }
     }
   }
 
@@ -1509,11 +1823,19 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
-  Widget _buildUnitMilestoneCard({
-    required _RecordedUnit unit,
-    required int unitIndex,
+  Widget _buildModuleMilestoneCard({
+    required String moduleLabel,
+    required List<_RecordedUnit> moduleUnits,
+    required int moduleIndex,
   }) {
-    final completed = _isUnitCompleted(unit);
+    final completed = _isModuleCompleted(moduleUnits);
+    final moduleActionKey = _moduleCertificateActionKey(
+      moduleLabel,
+      moduleIndex,
+    );
+    final generating = _generatingModuleCertificateKeys.contains(
+      moduleActionKey,
+    );
 
     return Container(
       width: double.infinity,
@@ -1531,7 +1853,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           children: [
             Expanded(
               child: Text(
-                'Milestone • ${unit.displayTitle}',
+                'Milestone • $moduleLabel',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1543,9 +1865,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             ),
             const SizedBox(width: 10),
             FilledButton.icon(
-              onPressed: completed
-                  ? () =>
-                        _onUnitCertificateTap(unit: unit, unitIndex: unitIndex)
+              onPressed: completed && !generating
+                  ? () => _onModuleCertificateTap(
+                      moduleLabel: moduleLabel,
+                      moduleUnits: moduleUnits,
+                      moduleIndex: moduleIndex,
+                    )
                   : null,
               style: FilledButton.styleFrom(
                 backgroundColor: _kYbsDeepBlue,
@@ -1555,8 +1880,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 minimumSize: const Size(0, 34),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
               ),
-              icon: const Icon(Icons.download_rounded, size: 15),
-              label: const Text('Module certificate'),
+              icon: generating
+                  ? const SizedBox(
+                      width: 15,
+                      height: 15,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.download_rounded, size: 15),
+              label: Text(generating ? 'Preparing...' : 'Module certificate'),
             ),
           ],
         ),
@@ -2315,11 +2649,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   selectedUnit.sessions[i].id,
                                 ),
                               ),
-                            if (_isUnitCompleted(selectedUnit))
-                              _buildUnitMilestoneCard(
-                                unit: selectedUnit,
-                                unitIndex: _units.indexOf(selectedUnit),
-                              ),
+                            _buildModuleMilestoneCard(
+                              moduleLabel: moduleLabel,
+                              moduleUnits: moduleUnits,
+                              moduleIndex: moduleIndex,
+                            ),
                           ],
                         ),
                       ),
@@ -2330,6 +2664,146 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
       ],
     );
+  }
+
+  Future<void> _openReviewSheet() async {
+    if (_uid.trim().isEmpty) return;
+    final courseId = _courseId.trim().isEmpty ? widget.courseKey : _courseId;
+    final enrolled = await CourseFeedbackService.isUserEnrolledInCourse(
+      _uid,
+      courseId,
+    );
+    if (!mounted) return;
+    if (!enrolled) {
+      AppToast.show(
+        context,
+        'Only enrolled learners can add a review.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    DataSnapshot existing;
+    try {
+      existing = await FirebaseDatabase.instance
+          .ref('course_reviews/$courseId/$_uid')
+          .get();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    int rating = 5;
+    String comment = '';
+    if (existing.exists && existing.value is Map) {
+      final map = Map<String, dynamic>.from(existing.value as Map);
+      final parsedRating = CourseFeedbackService.asInt(map['rating']);
+      if (parsedRating >= 1 && parsedRating <= 5) rating = parsedRating;
+      comment = (map['comment'] ?? '').toString();
+    }
+
+    final commentC = TextEditingController(text: comment);
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setD) {
+            final media = MediaQuery.of(ctx);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                media.viewInsets.bottom + media.padding.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rate this recorded course',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    children: List.generate(5, (i) {
+                      final v = i + 1;
+                      return IconButton(
+                        onPressed: () => setD(() => rating = v),
+                        icon: Icon(
+                          v <= rating
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: const Color(0xFFF59E0B),
+                        ),
+                      );
+                    }),
+                  ),
+                  TextField(
+                    controller: commentC,
+                    maxLength: 500,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Comment',
+                      hintText: 'Share your feedback to help others enroll.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        if (commentC.text.trim().isEmpty) {
+                          AppToast.show(
+                            ctx,
+                            'Please add a comment before submitting.',
+                            type: AppToastType.error,
+                          );
+                          return;
+                        }
+                        Navigator.pop(ctx, true);
+                      },
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Submit review'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (submitted != true || !mounted) return;
+    try {
+      await CourseFeedbackService.upsertCourseReview(
+        courseId: courseId,
+        uid: _uid,
+        rating: rating,
+        comment: commentC.text,
+      );
+      if (!mounted) return;
+      AppToast.show(context, 'Your review was submitted for approval.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    }
   }
 
   PopupMenuButton<String> _buildMenuButton() {
@@ -2554,7 +3028,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        actions: [_buildMenuButton()],
+        actions: [
+          IconButton(
+            tooltip: 'Review course',
+            onPressed: _busy ? null : _openReviewSheet,
+            icon: const Icon(Icons.reviews_rounded),
+          ),
+          _buildMenuButton(),
+        ],
       ),
       body: learnerWebBodyFrame(
         context: context,

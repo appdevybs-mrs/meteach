@@ -7,14 +7,17 @@ import 'package:video_player/video_player.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
+import '../services/course_feedback_service.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
   const RecordedVideoPlayerScreen({
     super.key,
     required this.uid,
     required this.courseKey,
+    required this.courseId,
     required this.sessionId,
     required this.sessionTitle,
     required this.videoUrl,
@@ -22,6 +25,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
 
   final String uid;
   final String courseKey;
+  final String courseId;
   final String sessionId;
   final String sessionTitle;
   final String videoUrl;
@@ -32,7 +36,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
 }
 
 class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const String _usersNode = 'users';
   static const String _recordedProgressNode = 'recorded_progress';
 
@@ -49,6 +53,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _bookmarked = false;
   bool _showControls = true;
   bool _isFullscreen = false;
+  bool _commentsBusy = false;
 
   String? _error;
   String _notes = '';
@@ -61,6 +66,16 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Timer? _saveDebounce;
   Timer? _hideControlsTimer;
   bool _isDisposing = false;
+  late final TabController _tabController;
+  final TextEditingController _commentC = TextEditingController();
+  final FocusNode _commentFocus = FocusNode();
+  final TextEditingController _videoQuickCommentC = TextEditingController();
+  final FocusNode _videoQuickCommentFocus = FocusNode();
+  List<LessonCommentItem> _comments = const [];
+  final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
+  int _commentsVisible = 20;
+  final Set<String> _expandedComments = <String>{};
+  final Set<String> _expandedReplies = <String>{};
 
   void _debug(String message) {
     // no-op in production build
@@ -77,9 +92,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addObserver(this);
     _enableScreenRotations();
     _loadAndInit();
+    _loadComments();
   }
 
   @override
@@ -89,6 +106,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _progressSub?.cancel();
     _saveDebounce?.cancel();
     _hideControlsTimer?.cancel();
+    _tabController.dispose();
+    _commentC.dispose();
+    _commentFocus.dispose();
+    _videoQuickCommentC.dispose();
+    _videoQuickCommentFocus.dispose();
     _persistProgressNow();
     _controller?.removeListener(_videoListener);
     _controller?.dispose();
@@ -1009,6 +1031,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         const SizedBox(height: 10),
         _buildVideoArea(isLandscape: false),
         const SizedBox(height: 10),
+        _buildVideoInlineComposer(),
+        const SizedBox(height: 10),
         _buildCompactActionPanel(isLandscape: false),
       ],
     );
@@ -1029,10 +1053,47 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 children: [
                   _buildCompactStatusCard(),
                   const SizedBox(height: 10),
+                  _buildVideoInlineComposer(isLandscape: true),
+                  const SizedBox(height: 10),
                   _buildCompactActionPanel(isLandscape: true),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoInlineComposer({bool isLandscape = false}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _videoQuickCommentC,
+              focusNode: _videoQuickCommentFocus,
+              maxLength: 400,
+              minLines: 1,
+              maxLines: isLandscape ? 2 : 3,
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: 'Comment under this video...',
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Post comment',
+            onPressed: () => _postComment(fromVideoComposer: true),
+            icon: const Icon(Icons.send_rounded),
           ),
         ],
       ),
@@ -1054,6 +1115,496 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         right: false,
         child: _buildVideoArea(isLandscape: isLandscape),
       ),
+    );
+  }
+
+  String get _primaryFeedbackCourseId {
+    final id = widget.courseId.trim();
+    if (id.isNotEmpty) return id;
+    return widget.courseKey.trim();
+  }
+
+  List<String> get _feedbackCourseIds {
+    final ordered = <String>[];
+    final seen = <String>{};
+    final primary = _primaryFeedbackCourseId;
+    if (primary.isNotEmpty && seen.add(primary)) ordered.add(primary);
+    final secondary = widget.courseKey.trim();
+    if (secondary.isNotEmpty && seen.add(secondary)) ordered.add(secondary);
+    return ordered;
+  }
+
+  Future<void> _loadComments() async {
+    setState(() => _commentsBusy = true);
+    try {
+      final mergedById = <String, LessonCommentItem>{};
+      for (final courseId in _feedbackCourseIds) {
+        final comments = await CourseFeedbackService.listLessonComments(
+          courseId,
+          widget.sessionId,
+          visibleOnly: true,
+        );
+        for (final comment in comments) {
+          mergedById.putIfAbsent(comment.id, () => comment);
+        }
+      }
+
+      final comments = mergedById.values.toList();
+      comments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      final repliesMap = <String, List<Map<String, dynamic>>>{};
+      for (final c in comments.take(60)) {
+        final sourceCourseId = c.courseId.trim().isEmpty
+            ? _primaryFeedbackCourseId
+            : c.courseId.trim();
+        final replies = await CourseFeedbackService.listLessonReplies(
+          sourceCourseId,
+          widget.sessionId,
+          c.id,
+        );
+        repliesMap[c.id] = replies;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _comments = comments;
+        _repliesByComment
+          ..clear()
+          ..addAll(repliesMap);
+        _commentsBusy = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _commentsBusy = false);
+      AppToast.show(
+        context,
+        'Could not load comments right now.',
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  String _fmtDateTime(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  Future<void> _postComment({required bool fromVideoComposer}) async {
+    final controller = fromVideoComposer ? _videoQuickCommentC : _commentC;
+    final focus = fromVideoComposer ? _videoQuickCommentFocus : _commentFocus;
+    final text = controller.text.trim();
+    if (text.isEmpty) {
+      AppToast.show(
+        context,
+        'Write a comment first.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (text.length > 400) {
+      AppToast.show(
+        context,
+        'Comment is too long (max 400 chars).',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    await CourseFeedbackService.addLessonComment(
+      courseId: _primaryFeedbackCourseId,
+      lessonId: widget.sessionId,
+      uid: widget.uid,
+      text: text,
+      type: 'comment',
+    );
+    controller.clear();
+    await _loadComments();
+    if (!mounted) return;
+    if (!fromVideoComposer) {
+      _tabController.animateTo(1);
+    }
+    FocusScope.of(context).requestFocus(focus);
+    AppToast.show(context, 'Comment posted.');
+  }
+
+  Future<void> _replyToComment(String commentId, String courseId) async {
+    final c = TextEditingController();
+    final submit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reply'),
+        content: TextField(
+          controller: c,
+          maxLength: 400,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Write your reply',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reply'),
+          ),
+        ],
+      ),
+    );
+    if (submit != true) return;
+    final text = c.text.trim();
+    if (text.isEmpty) return;
+
+    await CourseFeedbackService.addLessonReply(
+      courseId: courseId,
+      lessonId: widget.sessionId,
+      commentId: commentId,
+      uid: widget.uid,
+      text: text,
+    );
+    await _loadComments();
+  }
+
+  Future<void> _reportComment(String commentId, String courseId) async {
+    await CourseFeedbackService.reportLessonComment(
+      courseId: courseId,
+      lessonId: widget.sessionId,
+      commentId: commentId,
+      uid: widget.uid,
+      reason: 'Reported by learner',
+    );
+    if (!mounted) return;
+    AppToast.show(context, 'Comment reported.');
+  }
+
+  Future<void> _openCommentActions(LessonCommentItem item) async {
+    final courseId = item.courseId.trim().isEmpty
+        ? _primaryFeedbackCourseId
+        : item.courseId;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.reply_rounded),
+                title: Text('Reply'),
+                subtitle: Text('Add a reply to this comment'),
+                onTap: () => Navigator.pop(ctx, 'reply'),
+              ),
+              ListTile(
+                leading: Icon(Icons.flag_outlined),
+                title: Text('Report'),
+                subtitle: Text('Report inappropriate content'),
+                onTap: () => Navigator.pop(ctx, 'report'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    if (action == 'reply') {
+      await _replyToComment(item.id, courseId);
+    } else if (action == 'report') {
+      await _reportComment(item.id, courseId);
+    }
+  }
+
+  Widget _buildCommentsPanel() {
+    final visible = _comments.take(_commentsVisible).toList();
+
+    return Column(
+      children: [
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentC,
+                    focusNode: _commentFocus,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    maxLength: 400,
+                    minLines: 1,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      isDense: true,
+                      hintText: 'Write a comment...',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Post',
+                  onPressed: () => _postComment(fromVideoComposer: false),
+                  icon: const Icon(Icons.send_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Refresh comments',
+                  onPressed: _loadComments,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: _commentsBusy
+              ? const Center(child: CircularProgressIndicator())
+              : _comments.isEmpty
+              ? const Center(child: Text('No comments yet for this lesson.'))
+              : RefreshIndicator(
+                  onRefresh: _loadComments,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+                    itemCount: visible.length + 1,
+                    itemBuilder: (context, i) {
+                      if (i >= visible.length) {
+                        if (_comments.length <= visible.length) {
+                          return const SizedBox(height: 1);
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Center(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _commentsVisible += 20;
+                                });
+                              },
+                              icon: const Icon(Icons.expand_more_rounded),
+                              label: const Text('Load more comments'),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final item = visible[i];
+                      final replies = _repliesByComment[item.id] ?? const [];
+                      final commentExpanded = _expandedComments.contains(
+                        item.id,
+                      );
+                      final replyExpanded = _expandedReplies.contains(item.id);
+                      final fullComment = item.text;
+                      final isLongComment = fullComment.length > 150;
+                      final shownComment = isLongComment && !commentExpanded
+                          ? '${fullComment.substring(0, 150)}...'
+                          : fullComment;
+
+                      final shownReplies = replyExpanded
+                          ? replies
+                          : const <Map<String, dynamic>>[];
+
+                      return GestureDetector(
+                        onLongPress: () => _openCommentActions(item),
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  ProfileAvatar(
+                                    name: item.displayName,
+                                    photoUrl: item.photoUrl,
+                                    radius: 12,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      '${item.firstName.isEmpty ? 'Learner' : item.firstName} (${item.abbr.isEmpty ? 'L' : item.abbr})',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    _fmtDateTime(item.createdAt),
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.52,
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  if (replies.isNotEmpty)
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: () {
+                                        setState(() {
+                                          if (replyExpanded) {
+                                            _expandedReplies.remove(item.id);
+                                          } else {
+                                            _expandedReplies.add(item.id);
+                                          }
+                                        });
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4),
+                                        child: Icon(
+                                          replyExpanded
+                                              ? Icons.keyboard_arrow_up_rounded
+                                              : Icons
+                                                    .keyboard_arrow_down_rounded,
+                                          size: 18,
+                                          color: const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                  color: const Color(0xFFF8FAFC),
+                                ),
+                                child: Text(
+                                  shownComment,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.black.withValues(alpha: 0.8),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (isLongComment)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        if (commentExpanded) {
+                                          _expandedComments.remove(item.id);
+                                        } else {
+                                          _expandedComments.add(item.id);
+                                        }
+                                      });
+                                    },
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 20),
+                                    ),
+                                    child: Text(
+                                      commentExpanded ? 'Collapse' : 'Expand',
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Long press for actions',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (replies.isNotEmpty && replyExpanded) ...[
+                                const Divider(height: 12),
+                                ...shownReplies.map((r) {
+                                  final rName = (r['firstName'] ?? 'User')
+                                      .toString();
+                                  final rAbbr = (r['abbr'] ?? 'U').toString();
+                                  final rPhoto = (r['photoUrl'] ?? '')
+                                      .toString();
+                                  final rText = (r['text'] ?? '').toString();
+                                  final rAt = CourseFeedbackService.asInt(
+                                    r['createdAt'],
+                                  );
+                                  return Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 10,
+                                      bottom: 6,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        ProfileAvatar(
+                                          name: rName,
+                                          photoUrl: rPhoto,
+                                          radius: 10,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '$rName ($rAbbr)',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              Text(
+                                                rText,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              Text(
+                                                _fmtDateTime(rAt),
+                                                style: TextStyle(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.5),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
@@ -1114,9 +1665,58 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 : _initialized
                 ? (_isFullscreen
                       ? _buildFullscreenLayout()
-                      : (isLandscape
-                            ? _buildLandscapeLayout()
-                            : _buildPortraitLayout()))
+                      : Column(
+                          children: [
+                            Container(
+                              color: Colors.white,
+                              child: TabBar(
+                                controller: _tabController,
+                                labelPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                tabs: const [
+                                  Tab(
+                                    height: 40,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.ondemand_video_rounded,
+                                          size: 18,
+                                        ),
+                                        SizedBox(width: 6),
+                                        Text('Video'),
+                                      ],
+                                    ),
+                                  ),
+                                  Tab(
+                                    height: 40,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.forum_rounded, size: 18),
+                                        SizedBox(width: 6),
+                                        Text('Comments'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: TabBarView(
+                                controller: _tabController,
+                                children: [
+                                  isLandscape
+                                      ? _buildLandscapeLayout()
+                                      : _buildPortraitLayout(),
+                                  _buildCommentsPanel(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ))
                 : const Center(
                     child: BrandedInlineLoader(message: 'Preparing player...'),
                   ),

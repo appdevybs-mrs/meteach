@@ -29,6 +29,7 @@ import '../shared/learner_web_layout.dart';
 import '../shared/learner_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/course_join_rules.dart';
+import '../shared/payment_status.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -58,6 +59,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey _dashboardCoursesListKey = GlobalKey();
 
   bool _drawerTourAttempted = false;
+  bool _paymentDueToastChecked = false;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<String>? _displayNameFuture;
@@ -94,6 +96,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
+      unawaited(_showPaymentDueToastOnLoginIfNeeded());
     });
   }
 
@@ -120,6 +123,128 @@ class _LearnerHomeState extends State<LearnerHome> {
       border: p.border,
       soft: p.soft,
     );
+  }
+
+  String _variantKeyOfCourse(Map<String, dynamic> course) {
+    final raw = (course['variantKey'] ?? course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    switch (raw) {
+      case 'in_class':
+      case 'inclass':
+      case 'in-class':
+      case 'in class':
+        return 'inclass';
+      case 'online':
+      case 'flexible':
+        return 'flexible';
+      case 'live':
+      case 'private':
+        return 'private';
+      case 'recorded':
+        return 'recorded';
+      default:
+        return raw;
+    }
+  }
+
+  int _sessionsDoneForPaymentCourse({
+    required Map<String, dynamic> course,
+    required String variantKey,
+  }) {
+    final attendance = course['attendance'];
+    switch (variantKey) {
+      case 'inclass':
+        return countHeldUniqueAttendanceDates(attendance);
+      case 'private':
+        return countPresentUniqueAttendanceDates(attendance);
+      case 'flexible':
+        final directOnline = countPresentOnlineAttendance(
+          course['online_attendance'],
+        );
+        if (directOnline > 0) return directOnline;
+
+        final bookingProgress = course['booking_progress'];
+        if (bookingProgress is Map) {
+          final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
+          final nestedOnline = countPresentOnlineAttendance(
+            bp['online_attendance'],
+          );
+          if (nestedOnline > 0) return nestedOnline;
+        }
+
+        return countPresentUniqueAttendanceDates(attendance);
+      default:
+        return countPresentUniqueAttendanceDates(attendance);
+    }
+  }
+
+  bool _isCoursePaymentNeeded(Map<String, dynamic> course) {
+    final variantKey = _variantKeyOfCourse(course);
+    if (variantKey == 'recorded') return false;
+
+    final summaryRaw = course['payment_summary'];
+    final summary = summaryRaw is Map
+        ? summaryRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    final sessionsPaidTotalRaw = paymentAsInt(summary['sessionsPaidTotal']);
+    final totalPaid = paymentAsInt(summary['totalPaid']);
+    final lastAmount = paymentAsInt(summary['lastAmount']);
+    final lastPaymentAt = paymentAsInt(summary['lastPaymentAt']);
+    final hasPaymentHistory =
+        totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
+
+    final sessionsPaidTotal = sessionsPaidTotalRaw > 0
+        ? sessionsPaidTotalRaw
+        : (hasPaymentHistory &&
+                  (variantKey == 'private' || variantKey == 'inclass')
+              ? 8
+              : 0);
+
+    if (sessionsPaidTotal <= 0) return false;
+
+    final sessionsDone = _sessionsDoneForPaymentCourse(
+      course: course,
+      variantKey: variantKey,
+    );
+
+    return isPaymentDueBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+    );
+  }
+
+  Future<void> _showPaymentDueToastOnLoginIfNeeded() async {
+    if (_paymentDueToastChecked) return;
+    _paymentDueToastChecked = true;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+
+    try {
+      final snap = await _db.child('users').child(uid).child('courses').get();
+      if (!snap.exists || snap.value is! Map) return;
+
+      final courses = (snap.value as Map).entries
+          .map((e) => e.value)
+          .whereType<Map>()
+          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+
+      final hasDue = courses.any(_isCoursePaymentNeeded);
+      if (!hasDue || !mounted) return;
+
+      AppToast.show(
+        context,
+        'تنبيه لطيف: يوجد دفع مستحق في إحدى دوراتك. يرجى التواصل مع الأكاديمية 💛\n'
+        'Friendly reminder: a payment is due for one of your courses. Please contact the academy 💛',
+        type: AppToastType.info,
+        duration: const Duration(seconds: 5),
+      );
+    } catch (_) {}
   }
 
   bool _hasTarget(GlobalKey key) => key.currentContext != null;

@@ -3,7 +3,7 @@ description: "Your Bridge School  – Not for The Certificate for The Skill"
 
 publish_to: 'none'
 
-version: 2.0.0+108
+version: 2.0.0+111
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -79,3 +79,6 @@ flutter:
     - assets/images/ybs_logo.png
     - assets/images/character.png
     - assets/images/DigitalCertificate.png
+    - assets/fonts/PlayfairDisplay-Regular.ttf
+    - assets/fonts/PlayfairDisplay-Bold.ttf
+    - assets/fonts/HughIsLife.ttf

@@ -507,16 +507,33 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       }
 
       final t = Map<String, dynamic>.from(tSnap.value as Map);
-      final type = (t['type'] ?? '').toString().trim();
+      final type = (t['type'] ?? '').toString().trim().toLowerCase();
+      var hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+      if (hwRefPath.isEmpty) {
+        final learnerUid = (t['learnerUid'] ?? '').toString().trim();
+        final courseKey = (t['courseKey'] ?? '').toString().trim();
+        final sessionId = (t['sessionId'] ?? '').toString().trim();
+        if (learnerUid.isNotEmpty &&
+            courseKey.isNotEmpty &&
+            sessionId.isNotEmpty) {
+          hwRefPath =
+              'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework';
+        }
+      }
 
-      if (type != 'homework') {
+      if (type != 'homework' && hwRefPath.isEmpty) {
         _snack('No Homework Found.');
         return;
       }
 
-      final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
       if (hwRefPath.isEmpty) {
         _snack('Homework link missing (homeworkRef).');
+        return;
+      }
+
+      final hwSnap = await _db.ref(hwRefPath).get();
+      if (!hwSnap.exists || hwSnap.value is! Map) {
+        _snack('No homework detected for this thread.');
         return;
       }
 
@@ -544,7 +561,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }) async {
     int score = 100;
     String note = '';
-    String status = 'approved';
+    String status = 'pass';
 
     try {
       final hwSnap = await _db.ref(hwRefPath).get();
@@ -553,8 +570,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         final s = hw['reviewScore'];
         if (s is num) score = s.toInt();
         note = (hw['reviewNote'] ?? '').toString();
-        final st = (hw['reviewStatus'] ?? '').toString().trim();
-        if (st == 'needs_work' || st == 'approved') status = st;
+        final st = (hw['reviewStatus'] ?? '').toString().trim().toLowerCase();
+        if (st == 'pass' || st == 'approved') status = 'pass';
+        if (st == 'redo' || st == 'needs_work') status = 'redo';
       }
     } catch (_) {}
 
@@ -599,18 +617,16 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                     ),
                     const SizedBox(height: 12),
                     RadioListTile<String>(
-                      value: 'approved',
+                      value: 'pass',
                       groupValue: status,
-                      onChanged: (v) =>
-                          setLocal(() => status = v ?? 'approved'),
-                      title: const Text('Approved ✅'),
+                      onChanged: (v) => setLocal(() => status = v ?? 'pass'),
+                      title: const Text('Pass ✅'),
                     ),
                     RadioListTile<String>(
-                      value: 'needs_work',
+                      value: 'redo',
                       groupValue: status,
-                      onChanged: (v) =>
-                          setLocal(() => status = v ?? 'needs_work'),
-                      title: const Text('Needs work 🔁'),
+                      onChanged: (v) => setLocal(() => status = v ?? 'redo'),
+                      title: const Text('Redo 🔁'),
                     ),
                   ],
                 ),
@@ -646,11 +662,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         'reviewStatus': status,
         'reviewScore': parsedScore,
         'reviewNote': noteText,
+        'needsRedo': status == 'redo',
       });
 
-      final preview = status == 'needs_work'
-          ? '🔁 Needs work • $parsedScore/100'
-          : '✅ Approved • $parsedScore/100';
+      final preview = status == 'redo'
+          ? '🔁 Redo • $parsedScore/100'
+          : '✅ Pass • $parsedScore/100';
 
       final Map<String, dynamic> updates = {
         'mail_threads/$threadId/updatedAt': now,
