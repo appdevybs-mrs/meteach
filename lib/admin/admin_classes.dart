@@ -80,6 +80,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ✅ Cache progress per class (so list scrolling is smooth)
   final Map<String, _ClassProg> _classProgCache = {};
   final Map<String, int> _syllabusSessionCountCache = <String, int>{};
+  final Map<String, Map<String, _RecordedSessionMeta>>
+  _recordedSessionMetaCache = <String, Map<String, _RecordedSessionMeta>>{};
   final Set<String> _progressRequestedClassIds = <String>{};
   final Set<String> _expandedClassIds = <String>{};
   List<Map<String, String>> get _teachers {
@@ -166,6 +168,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static bool _asBool(dynamic v) {
+    if (v is bool) return v;
+    final s = (v ?? '').toString().trim().toLowerCase();
+    return s == 'true' || s == '1';
   }
 
   bool _isLearnerRole(dynamic role) {
@@ -3044,6 +3052,209 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return out;
   }
 
+  Future<Map<String, _RecordedSessionMeta>> _loadRecordedSessionMeta(
+    String courseId,
+  ) async {
+    final cid = courseId.trim();
+    if (cid.isEmpty) return const <String, _RecordedSessionMeta>{};
+
+    final cached = _recordedSessionMetaCache[cid];
+    if (cached != null) return cached;
+
+    final out = <String, _RecordedSessionMeta>{};
+    try {
+      final snap = await _syllabiRef.child(cid).child('recorded').get();
+      if (snap.exists && snap.value is Map) {
+        final root = Map<dynamic, dynamic>.from(snap.value as Map);
+
+        void addSession(dynamic raw) {
+          if (raw is! Map) return;
+          final m = Map<String, dynamic>.from(raw);
+          final sessionId = (m['id'] ?? '').toString().trim();
+          if (sessionId.isEmpty) return;
+          final hasVideo = (m['videoUrl'] ?? '').toString().trim().isNotEmpty;
+          final hasMaterials = (m['materialsUrl'] ?? '')
+              .toString()
+              .trim()
+              .isNotEmpty;
+          out[sessionId] = _RecordedSessionMeta(
+            hasVideo: hasVideo,
+            hasMaterials: hasMaterials,
+          );
+        }
+
+        final modulesRaw = root['modules'];
+        if (modulesRaw is List) {
+          for (final module in modulesRaw) {
+            if (module is! Map) continue;
+            final moduleMap = Map<dynamic, dynamic>.from(module);
+            final unitsRaw = moduleMap['units'];
+            if (unitsRaw is! List) continue;
+            for (final unit in unitsRaw) {
+              if (unit is! Map) continue;
+              final unitMap = Map<dynamic, dynamic>.from(unit);
+              final lessonsRaw = unitMap['lessons'];
+              if (lessonsRaw is! List) continue;
+              for (final lesson in lessonsRaw) {
+                addSession(lesson);
+              }
+            }
+          }
+        } else {
+          final unitsRaw = root['units'];
+          if (unitsRaw is List) {
+            for (final unit in unitsRaw) {
+              if (unit is! Map) continue;
+              final unitMap = Map<dynamic, dynamic>.from(unit);
+              final sessionsRaw = unitMap['sessions'];
+              if (sessionsRaw is! List) continue;
+              for (final session in sessionsRaw) {
+                addSession(session);
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    _recordedSessionMetaCache[cid] = out;
+    return out;
+  }
+
+  Future<List<_RecordedCourseSummary>> _loadRecordedProgressSummaries() async {
+    final usersSnap = await _usersRef.get();
+    if (!usersSnap.exists || usersSnap.value is! Map) return const [];
+
+    final courseTitleById = <String, String>{};
+    for (final c in _courses) {
+      final cid = (c['id'] ?? '').toString().trim();
+      if (cid.isEmpty) continue;
+      final title = (c['title'] ?? '').toString().trim();
+      if (title.isNotEmpty) {
+        courseTitleById[cid] = title;
+      }
+    }
+
+    final usersMap = Map<dynamic, dynamic>.from(usersSnap.value as Map);
+    final out = <_RecordedCourseSummary>[];
+
+    for (final userEntry in usersMap.entries) {
+      final uid = userEntry.key.toString().trim();
+      if (uid.isEmpty) continue;
+      if (userEntry.value is! Map) continue;
+
+      final user = Map<String, dynamic>.from(userEntry.value as Map);
+      if (!_isLearnerRole(user['role'])) continue;
+
+      final first = (user['first_name'] ?? '').toString().trim();
+      final last = (user['last_name'] ?? '').toString().trim();
+      final fullName = '$first $last'.trim();
+      final email = (user['email'] ?? '').toString().trim();
+      final learnerName = fullName.isNotEmpty
+          ? fullName
+          : (email.isNotEmpty ? email : 'Learner');
+
+      final coursesRaw = user['courses'];
+      if (coursesRaw is! Map) continue;
+      final courses = Map<dynamic, dynamic>.from(coursesRaw);
+
+      for (final cEntry in courses.entries) {
+        final courseKey = cEntry.key.toString().trim();
+        if (courseKey.isEmpty || cEntry.value is! Map) continue;
+
+        final courseNode = Map<String, dynamic>.from(cEntry.value as Map);
+        final variantKey = _normalizeVariantKey(
+          (courseNode['variantKey'] ?? courseNode['variant'] ?? '').toString(),
+        );
+        if (variantKey != 'recorded') continue;
+
+        final courseId =
+            (courseNode['id'] ??
+                    courseNode['courseId'] ??
+                    courseNode['course_id'] ??
+                    '')
+                .toString()
+                .trim();
+        if (courseId.isEmpty) continue;
+
+        final titleRaw = (courseNode['title'] ?? '').toString().trim();
+        final courseTitle = titleRaw.isNotEmpty
+            ? titleRaw
+            : (courseTitleById[courseId] ?? 'Unknown course');
+
+        final progressRaw = courseNode['recorded_progress'];
+        final recordedProgress = progressRaw is Map
+            ? progressRaw.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
+
+        final sessionMeta = await _loadRecordedSessionMeta(courseId);
+
+        int totalSessions = sessionMeta.length;
+        int completedSessions = 0;
+
+        if (sessionMeta.isNotEmpty) {
+          for (final sessionEntry in sessionMeta.entries) {
+            final progressAny = recordedProgress[sessionEntry.key];
+            if (progressAny is! Map) continue;
+            final progress = progressAny.map((k, v) => MapEntry('$k', v));
+
+            final videoDone = _asBool(progress['videoCompleted']);
+            final materialsDone = _asBool(progress['materialsCompleted']);
+
+            final hasVideo = sessionEntry.value.hasVideo;
+            final hasMaterials = sessionEntry.value.hasMaterials;
+
+            bool done = false;
+            if (hasVideo && hasMaterials) {
+              done = videoDone || materialsDone;
+            } else if (hasVideo) {
+              done = videoDone;
+            } else if (hasMaterials) {
+              done = materialsDone;
+            }
+            if (done) completedSessions += 1;
+          }
+        } else if (recordedProgress.isNotEmpty) {
+          totalSessions = recordedProgress.length;
+          for (final value in recordedProgress.values) {
+            if (value is! Map) continue;
+            final progress = value.map((k, v) => MapEntry('$k', v));
+            if (_asBool(progress['videoCompleted']) ||
+                _asBool(progress['materialsCompleted'])) {
+              completedSessions += 1;
+            }
+          }
+        }
+
+        final progressPct = totalSessions > 0
+            ? ((completedSessions / totalSessions) * 100).round().clamp(0, 100)
+            : 0;
+
+        out.add(
+          _RecordedCourseSummary(
+            uid: uid,
+            learnerName: learnerName,
+            courseKey: courseKey,
+            courseId: courseId,
+            courseTitle: courseTitle,
+            completedSessions: completedSessions,
+            totalSessions: totalSessions,
+            progressPct: progressPct,
+          ),
+        );
+      }
+    }
+
+    out.sort((a, b) {
+      final n = a.learnerName.toLowerCase().compareTo(
+        b.learnerName.toLowerCase(),
+      );
+      if (n != 0) return n;
+      return a.courseTitle.toLowerCase().compareTo(b.courseTitle.toLowerCase());
+    });
+    return out;
+  }
+
   Widget _buildFlexibleAttendanceTab() {
     return FutureBuilder<List<_FlexCourseSummary>>(
       future: _loadFlexibleAttendanceSummaries(),
@@ -3190,6 +3401,32 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
+                                  item.sessionsPaidTotal > 0
+                                      ? 'Progress: ${((item.consumed / item.sessionsPaidTotal) * 100).round().clamp(0, 100)}%'
+                                      : 'Progress: no package total',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: item.sessionsPaidTotal > 0
+                                        ? (item.consumed /
+                                                  item.sessionsPaidTotal)
+                                              .clamp(0.0, 1.0)
+                                        : 0,
+                                    minHeight: 10,
+                                    backgroundColor: const Color(0xFFE5E7EB),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      _flexStatusColor(item.statusLabel),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
                                   'Deadline: ${_fmtDateOnlyMs(item.expiresAt)}',
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
@@ -3293,6 +3530,138 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
+  Widget _buildRecordedProgressTab() {
+    return FutureBuilder<List<_RecordedCourseSummary>>(
+      future: _loadRecordedProgressSummaries(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Text(
+              'Could not load recorded progress.',
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final rows = snap.data ?? const <_RecordedCourseSummary>[];
+        final totalCompleted = rows.fold<int>(
+          0,
+          (sum, item) => sum + item.completedSessions,
+        );
+        final totalSessions = rows.fold<int>(
+          0,
+          (sum, item) => sum + item.totalSessions,
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Showing ${rows.length} recorded learner-course items • $totalCompleted / $totalSessions sessions completed',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh recorded progress',
+                  onPressed: () => setState(() {}),
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: rows.isEmpty
+                  ? const Center(child: Text('No recorded progress found.'))
+                  : ListView.separated(
+                      itemCount: rows.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final item = rows[i];
+                        final progressValue = item.totalSessions > 0
+                            ? (item.completedSessions / item.totalSessions)
+                                  .clamp(0.0, 1.0)
+                            : 0.0;
+
+                        return Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(
+                              color: Colors.grey.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.learnerName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF1A2B48),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Course: ${item.courseTitle}',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Recorded progress: ${item.completedSessions} / ${item.totalSessions}',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Progress: ${item.progressPct}%',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: progressValue,
+                                    minHeight: 10,
+                                    backgroundColor: const Color(0xFFE5E7EB),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // -------------------- Build --------------------
 
   @override
@@ -3305,7 +3674,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Classes'),
@@ -3314,6 +3683,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             tabs: [
               Tab(text: 'Classes'),
               Tab(text: 'Flexible Attendance'),
+              Tab(text: 'Recorded Progress'),
             ],
           ),
         ),
@@ -3323,7 +3693,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: TabBarView(
-              children: [_buildClassesList(), _buildFlexibleAttendanceTab()],
+              children: [
+                _buildClassesList(),
+                _buildFlexibleAttendanceTab(),
+                _buildRecordedProgressTab(),
+              ],
             ),
           ),
         ),
@@ -3461,5 +3835,37 @@ class _FlexPaymentBlock {
     required this.expiresAt,
     required this.expiryMonths,
     required this.rows,
+  });
+}
+
+class _RecordedSessionMeta {
+  final bool hasVideo;
+  final bool hasMaterials;
+
+  const _RecordedSessionMeta({
+    required this.hasVideo,
+    required this.hasMaterials,
+  });
+}
+
+class _RecordedCourseSummary {
+  final String uid;
+  final String learnerName;
+  final String courseKey;
+  final String courseId;
+  final String courseTitle;
+  final int completedSessions;
+  final int totalSessions;
+  final int progressPct;
+
+  const _RecordedCourseSummary({
+    required this.uid,
+    required this.learnerName,
+    required this.courseKey,
+    required this.courseId,
+    required this.courseTitle,
+    required this.completedSessions,
+    required this.totalSessions,
+    required this.progressPct,
   });
 }

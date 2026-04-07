@@ -37,6 +37,7 @@ import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 import 'admin_admin_todos_screen.dart';
 import 'admin_course_reviews_screen.dart';
+import 'admin_priority_alerts_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -332,6 +333,22 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       card(
+        'Priority Alerts',
+        'Send one-time popup alerts',
+        _DashCard(
+          title: 'Priority Alerts',
+          subtitle: 'Send one-time popup alerts',
+          icon: Icons.campaign_rounded,
+          color: AdminHome.actionOrange,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminPriorityAlertsScreen(),
+            ),
+          ),
+        ),
+      ),
+      card(
         'Staff',
         'Teachers & staff',
         _StaffMailDashCard(
@@ -513,6 +530,22 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => const AdminTeacherRemindersScreen(),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Priority Alerts',
+        'Popup messages',
+        _DashCard(
+          title: 'Priority Alerts',
+          subtitle: 'Popup messages',
+          icon: Icons.campaign_rounded,
+          color: AdminHome.actionOrange,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminPriorityAlertsScreen(),
             ),
           ),
         ),

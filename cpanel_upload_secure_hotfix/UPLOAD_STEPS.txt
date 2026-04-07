@@ -1,0 +1,14 @@
+1) Open cPanel -> File Manager.
+2) Go to: public_html/app/secure
+3) Backup current files:
+   - bootstrap.php -> bootstrap.php.bak
+   - push_secure.php -> push_secure.php.bak
+4) Upload these files from this folder into public_html/app/secure and overwrite:
+   - bootstrap.php
+   - push_secure.php
+   - .htaccess
+5) In public_html/app/secure/bootstrap.php keep this line during testing:
+   const SECURE_API_DEBUG = true;
+6) Test push by sending one reminder from the app.
+7) If working, set:
+   const SECURE_API_DEBUG = false;

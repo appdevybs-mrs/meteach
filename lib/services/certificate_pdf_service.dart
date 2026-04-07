@@ -44,7 +44,7 @@ class CertificatePdfService {
     const double issuedDateTop = 565.00;
     const double instructorTop = 598;
     const double academicDirectorTop = 598;
-    const double certificateIdTop = 689.51;
+    const double certificateIdTop = 692.34;
 
     final issueDate = cert.createdAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
@@ -140,15 +140,15 @@ class CertificatePdfService {
                 ),
               ),
               pw.Positioned(
-                left: 224,
+                left: 218.33,
                 top: certificateIdTop,
                 child: pw.SizedBox(
                   width: 170,
                   child: pw.Text(
-                    cert.cvn,
+                    cert.cvn.toUpperCase(),
                     maxLines: 2,
                     style: pw.TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       font: playfairRegular,
                       color: PdfColor.fromInt(0xFF111827),
                     ),

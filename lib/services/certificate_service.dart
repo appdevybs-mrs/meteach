@@ -473,6 +473,28 @@ class CertificateService {
       }
     }
 
+    bool looksBrokenInstructor(String value) {
+      final v = value.trim().toLowerCase();
+      return v.contains('{') ||
+          v.contains('uid:') ||
+          v.contains('teacheruid') ||
+          v.contains('teacher_uid');
+    }
+
+    final incomingInstructor = instructorName.trim();
+    final existingInstructor = (existing?.certificate.instructorName ?? '')
+        .trim();
+    final chosenInstructor =
+        incomingInstructor.isNotEmpty &&
+            !looksBrokenInstructor(incomingInstructor)
+        ? incomingInstructor
+        : (existingInstructor.isNotEmpty &&
+                  !looksBrokenInstructor(existingInstructor)
+              ? existingInstructor
+              : incomingInstructor.isNotEmpty
+              ? incomingInstructor
+              : existingInstructor);
+
     final certBase = Certificate(
       key: certId,
       cvn: cvn,
@@ -498,7 +520,7 @@ class CertificateService {
       courseId: existing?.certificate.courseId ?? courseId,
       courseKey: existing?.certificate.courseKey ?? courseKey,
       moduleKey: existing?.certificate.moduleKey ?? moduleKey,
-      instructorName: existing?.certificate.instructorName ?? instructorName,
+      instructorName: chosenInstructor,
     );
 
     await _recordedCertRef(learnerUid, certId).set(certBase.toMap());

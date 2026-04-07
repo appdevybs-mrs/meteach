@@ -934,7 +934,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       if (seen.add(key)) out.add(cleaned);
     }
 
-    final withoutMapDumps = raw.replaceAll(RegExp(r'\{[^}]*\}'), ' ');
+    final withoutMapDumps = raw
+        .replaceAll(RegExp(r'\{[^}]*\}'), ' ')
+        .replaceAll(RegExp(r'\{[^,]*'), ' ');
     for (final part in withoutMapDumps.split(',')) {
       final cleaned = _cleanInstructorToken(part);
       if (cleaned.isEmpty) continue;
@@ -955,8 +957,27 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       token = (mapLikeMatch.group(1) ?? '').trim();
     }
 
+    token = token
+        .replaceAll(RegExp(r'[\{\}\[\]]'), ' ')
+        .replaceAll(
+          RegExp(
+            r'(uid|teacher_?uid)\s*:\s*[A-Za-z0-9_-]{6,}',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
     token = token.replaceAll(RegExp("^[\"']+|[\"']+\$"), '').trim();
     if (token.isEmpty) return '';
+    final lower = token.toLowerCase();
+    if (lower.contains('uid:') ||
+        lower.contains('teacheruid') ||
+        lower.contains('teacher_uid')) {
+      return '';
+    }
+    if (token.contains(':')) return '';
     if (_looksLikeUidValue(token)) return '';
     return token;
   }
@@ -969,13 +990,37 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return RegExp(r'[A-Za-z]').hasMatch(v);
   }
 
+  String _abbreviateInstructorName(String raw) {
+    final parts = raw
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) return parts.first;
+
+    final firstName = parts.first;
+    final last = parts.last;
+    final match = RegExp(r'[A-Za-z]').firstMatch(last);
+    if (match == null) return firstName;
+    final initial = match.group(0)!.toUpperCase();
+    return '$firstName $initial.';
+  }
+
   String _joinedInstructorNames(List<String> names) {
     final out = <String>[];
     final seen = <String>{};
     for (final raw in names) {
       _addNameParts(out, seen, raw);
     }
-    return out.join(', ');
+    if (out.length <= 1) {
+      return out.join(', ');
+    }
+    final abbreviated = out
+        .map(_abbreviateInstructorName)
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return abbreviated.join(', ');
   }
 
   Map<String, String>? _instructorEntryFromAny(
@@ -1104,17 +1149,19 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     for (final entry in fromStructured) {
       final rawName = (entry['name'] ?? '').trim();
-      String name = _cleanInstructorToken(rawName);
       final uid = (entry['uid'] ?? '').trim();
 
-      if (name.isEmpty && _looksLikeUidValue(rawName)) {
-        name = await _teacherNameFromUid(rawName);
+      if (rawName.isNotEmpty) {
+        _addNameParts(out, seen, rawName);
       }
 
-      if (name.isEmpty && uid.isNotEmpty) {
-        name = await _teacherNameFromUid(uid);
+      if (uid.isNotEmpty) {
+        final resolved = await _teacherNameFromUid(uid);
+        _addNameParts(out, seen, resolved);
+      } else if (_looksLikeUidValue(rawName)) {
+        final resolved = await _teacherNameFromUid(rawName);
+        _addNameParts(out, seen, resolved);
       }
-      _addNameParts(out, seen, name);
     }
 
     if (out.isNotEmpty) return out;

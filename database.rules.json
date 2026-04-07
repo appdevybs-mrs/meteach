@@ -308,6 +308,58 @@
       }
     },
 
+    "flash_messages": {
+      ".read": "auth != null",
+      "$targetUid": {
+        ".read": "auth != null && (auth.uid == $targetUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        "$alertId": {
+          ".write": "auth != null && (auth.uid == $targetUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+
+          "title": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 140"
+          },
+          "message": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 3000"
+          },
+          "status": {
+            ".validate": "newData.isString() && (newData.val() == 'new' || newData.val() == 'seen')"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber() || newData.val() == now"
+          },
+          "seenAt": {
+            ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null || newData.val() == now"
+          },
+          "resentFromId": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+
+          "targetUid": {
+            ".validate": "newData.isString() && newData.val() == $targetUid"
+          },
+          "targetRole": {
+            ".validate": "newData.isString() && (newData.val() == 'learner' || newData.val() == 'teacher' || newData.val() == 'admin')"
+          },
+          "targetName": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "targetEmail": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "createdByUid": {
+            ".validate": "newData.isString()"
+          },
+          "createdByName": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+
     "online_attendance": {
       ".read": "auth != null",
       ".write": "auth != null"
