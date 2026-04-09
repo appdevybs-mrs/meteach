@@ -3974,10 +3974,20 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String displaySubject(String raw) {
+      var s = raw.trim();
+      while (s.startsWith('[')) {
+        final close = s.indexOf(']');
+        if (close <= 0) break;
+        s = s.substring(close + 1).trimLeft();
+      }
+      return s;
+    }
+
     final title = _selectionMode
         ? '${_selectedMessageIds.length} selected'
         : (_peerNameShown.isEmpty ? 'Mail' : _peerNameShown);
-    final subjectTrim = widget.subject.trim();
+    final subjectTrim = displaySubject(widget.subject);
     final canReport = _peerIsLearner;
 
     TeacherTourGuide.schedule(

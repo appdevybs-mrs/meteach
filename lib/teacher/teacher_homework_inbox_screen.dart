@@ -29,6 +29,8 @@ class _TeacherHomeworkInboxScreenState
 
   Future<List<_HomeworkThreadView>>? _viewsFuture;
   String _rowsSignature = '';
+  final Set<String> _locallyDeletedThreadIds = <String>{};
+  final Map<String, bool> _localReviewedOverrideByHwRef = <String, bool>{};
 
   @override
   void initState() {
@@ -49,6 +51,16 @@ class _TeacherHomeworkInboxScreenState
     final subject = (m['subject'] ?? '').toString().trim().toLowerCase();
     if (subject.startsWith('[hw]')) return true;
     return false;
+  }
+
+  String _displaySubject(String raw) {
+    var s = raw.trim();
+    while (s.startsWith('[')) {
+      final close = s.indexOf(']');
+      if (close <= 0) break;
+      s = s.substring(close + 1).trimLeft();
+    }
+    return s;
   }
 
   int _toInt(dynamic v) {
@@ -89,6 +101,7 @@ class _TeacherHomeworkInboxScreenState
 
       final threadId = threadIdRaw.toString().trim();
       if (threadId.isEmpty) return;
+      if (_locallyDeletedThreadIds.contains(threadId)) return;
 
       out.add(
         _HomeworkThreadRow(
@@ -97,9 +110,9 @@ class _TeacherHomeworkInboxScreenState
           peerName: ((m['peerName'] ?? '').toString().trim().isEmpty)
               ? 'Learner'
               : (m['peerName'] ?? '').toString().trim(),
-          subject: ((m['subject'] ?? '').toString().trim().isEmpty)
+          subject: (_displaySubject((m['subject'] ?? '').toString()).isEmpty)
               ? 'Homework'
-              : (m['subject'] ?? '').toString().trim(),
+              : _displaySubject((m['subject'] ?? '').toString()),
           lastMessage: (m['lastMessage'] ?? '').toString().trim(),
           updatedAtMs: _toInt(m['updatedAt']),
           unreadCount: _toInt(m['unreadCount'] ?? m['unread']),
@@ -443,6 +456,22 @@ class _TeacherHomeworkInboxScreenState
       }
     } catch (_) {}
 
+    final localOverride = _localReviewedOverrideByHwRef[homeworkRefPath.trim()];
+    if (localOverride != null) {
+      reviewed = localOverride;
+      if (localOverride) {
+        if (reviewedAt <= 0) {
+          reviewedAt = DateTime.now().millisecondsSinceEpoch;
+        }
+        if (reviewStatus.isEmpty) reviewStatus = 'pass';
+        needsRedo = false;
+      } else {
+        reviewedAt = 0;
+        reviewStatus = '';
+        needsRedo = false;
+      }
+    }
+
     return _HomeworkThreadView(
       row: row,
       source: _HomeworkSource.inbox,
@@ -623,14 +652,30 @@ class _TeacherHomeworkInboxScreenState
     if (!ok) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    await _db.child('mail_index/$_meUid/${v.row.threadId}').update({
-      'deletedAt': now,
-    });
-    _viewsFuture = null;
-    if (mounted) setState(() {});
+    final tid = v.row.threadId.trim();
+    if (tid.isNotEmpty) {
+      _locallyDeletedThreadIds.add(tid);
+      _rowsSignature = '';
+      _viewsFuture = null;
+      if (mounted) setState(() {});
+    }
+    try {
+      await _db.child('mail_index/$_meUid/${v.row.threadId}').update({
+        'deletedAt': now,
+      });
+    } catch (_) {
+      if (tid.isNotEmpty) {
+        _locallyDeletedThreadIds.remove(tid);
+      }
+      _rowsSignature = '';
+      _viewsFuture = null;
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _restoreForMe(String threadId) async {
+    final tid = threadId.trim();
+    if (tid.isNotEmpty) _locallyDeletedThreadIds.remove(tid);
     await _db.child('mail_index/$_meUid/$threadId').update({'deletedAt': null});
     _viewsFuture = null;
     if (mounted) setState(() {});
@@ -638,29 +683,49 @@ class _TeacherHomeworkInboxScreenState
 
   Future<void> _markReviewed(_HomeworkThreadView v) async {
     if (v.homeworkRefPath.trim().isEmpty) return;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await _db.child(v.homeworkRefPath).update({
-      'reviewedAt': now,
-      'reviewStatus': 'pass',
-      'needsRedo': false,
-      'reviewNote': 'Marked reviewed from homework inbox.',
-    });
+    final hwRef = v.homeworkRefPath.trim();
+    _localReviewedOverrideByHwRef[hwRef] = true;
+    _rowsSignature = '';
     _viewsFuture = null;
     if (mounted) setState(() {});
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await _db.child(v.homeworkRefPath).update({
+        'reviewedAt': now,
+        'reviewStatus': 'pass',
+        'needsRedo': false,
+        'reviewNote': 'Marked reviewed from homework inbox.',
+      });
+    } catch (_) {
+      _localReviewedOverrideByHwRef.remove(hwRef);
+      _rowsSignature = '';
+      _viewsFuture = null;
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _markUnreviewed(_HomeworkThreadView v) async {
     if (v.homeworkRefPath.trim().isEmpty) return;
-    await _db.child(v.homeworkRefPath).update({
-      'reviewedAt': null,
-      'reviewStatus': '',
-      'reviewScore': null,
-      'reviewGrade': '',
-      'reviewNote': '',
-      'needsRedo': false,
-    });
+    final hwRef = v.homeworkRefPath.trim();
+    _localReviewedOverrideByHwRef[hwRef] = false;
+    _rowsSignature = '';
     _viewsFuture = null;
     if (mounted) setState(() {});
+    try {
+      await _db.child(v.homeworkRefPath).update({
+        'reviewedAt': null,
+        'reviewStatus': '',
+        'reviewScore': null,
+        'reviewGrade': '',
+        'reviewNote': '',
+        'needsRedo': false,
+      });
+    } catch (_) {
+      _localReviewedOverrideByHwRef.remove(hwRef);
+      _rowsSignature = '';
+      _viewsFuture = null;
+      if (mounted) setState(() {});
+    }
   }
 
   List<_HomeworkThreadView> _applyFilter(List<_HomeworkThreadView> views) {

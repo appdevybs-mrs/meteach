@@ -21,11 +21,14 @@ class TeacherMailScreen extends StatefulWidget {
 
 enum _InboxTabRole { learners, teachers, admin }
 
+enum _MailViewMode { latestFirst, byLearner }
+
 class _TeacherMailScreenState extends State<TeacherMailScreen> {
   final _db = FirebaseDatabase.instance;
   final _searchC = TextEditingController();
   Timer? _searchDebounce;
   String _q = '';
+  _MailViewMode _viewMode = _MailViewMode.latestFirst;
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
@@ -37,6 +40,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   final Map<String, String> _photoCache = {};
   final Map<String, Future<void>> _userFetchPending = {};
   final Set<String> _selfHealInFlight = <String>{};
+  final Set<String> _locallyDeletedThreadIds = <String>{};
 
   @override
   void initState() {
@@ -80,6 +84,16 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
 
     return 'learner';
+  }
+
+  String _displaySubject(String raw) {
+    var s = raw.trim();
+    while (s.startsWith('[')) {
+      final close = s.indexOf(']');
+      if (close <= 0) break;
+      s = s.substring(close + 1).trimLeft();
+    }
+    return s;
   }
 
   Future<void> _ensureUserCached(String uid) {
@@ -313,6 +327,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       unawaited(_selfHealIndexRow(threadId, m));
       final row = _TopicRow.fromMap(threadId, m);
       if (row.deletedAtMs != null) return;
+      if (_locallyDeletedThreadIds.contains(row.threadId)) return;
 
       if (row.threadId.trim().isEmpty) return;
       if (row.peerUid.trim().isEmpty && row.subject.trim().isEmpty) return;
@@ -415,6 +430,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         .where((r) => _matchesTab(tabRole, r))
         .where((r) => !r.isHomework)
         .toList();
+    if (_viewMode == _MailViewMode.latestFirst) {
+      return roleRows.length;
+    }
     final grouped = _groupByPeer(roleRows);
     return grouped.length;
   }
@@ -555,9 +573,13 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
+      _locallyDeletedThreadIds.add(row.threadId);
+      if (mounted) setState(() {});
       await _indexRef.child(row.threadId).update({'deletedAt': now});
       _snack('Deleted ✅');
     } catch (e) {
+      _locallyDeletedThreadIds.remove(row.threadId);
+      if (mounted) setState(() {});
       _snack('Delete failed: $e');
     }
   }
@@ -616,7 +638,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             threadId: row.threadId,
             peerUid: row.peerUid,
             peerName: _bestName(row),
-            subject: row.subject,
+            subject: _displaySubject(row.subject),
           ),
         ),
       );
@@ -950,7 +972,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         }
 
         int sent = 0;
-        final classSubject = '[$classId] $subject';
+        final classSubject = subject;
 
         for (final entry in cVal.entries) {
           final learnerUid = entry.key.toString().trim();
@@ -1047,6 +1069,36 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       );
     }
 
+    if (_viewMode == _MailViewMode.latestFirst) {
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
+        itemCount: filtered.length,
+        itemBuilder: (context, i) {
+          final r = filtered[i];
+          return _ThreadTile(
+            row: r,
+            timeLabel: _timeLabel(r.updatedAtMs),
+            onDelete: () => _deleteThreadForMe(r),
+            onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
+            onLongPress: () => _showThreadActions(r),
+            onOpen: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
+                  builder: (_) => TeacherMailThreadScreen(
+                    threadId: r.threadId,
+                    peerUid: r.peerUid,
+                    peerName: _bestName(r),
+                    subject: _displaySubject(r.subject),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    }
+
     final grouped = _groupByPeer(filtered);
     final groupKeys = grouped.keys.toList();
 
@@ -1097,7 +1149,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                         threadId: r.threadId,
                         peerUid: r.peerUid,
                         peerName: _bestName(r),
-                        subject: r.subject,
+                        subject: _displaySubject(r.subject),
                       ),
                     ),
                   );
@@ -1127,35 +1179,63 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           ),
         ],
       ),
-      child: TextField(
-        controller: _searchC,
-        decoration: InputDecoration(
-          hintText: 'Search subject, message or person...',
-          prefixIcon: const Icon(Icons.search_rounded),
-          suffixIcon: (_q.isEmpty)
-              ? null
-              : IconButton(
-                  tooltip: 'Clear',
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () {
-                    _searchDebounce?.cancel();
-                    _searchC.clear();
-                    setState(() => _q = '');
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _searchC,
+            decoration: InputDecoration(
+              hintText: 'Search subject, message or person...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: (_q.isEmpty)
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () {
+                        _searchDebounce?.cancel();
+                        _searchC.clear();
+                        setState(() => _q = '');
+                      },
+                    ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 16,
+              ),
+            ),
+            onChanged: (v) {
+              _searchDebounce?.cancel();
+              _searchDebounce = Timer(const Duration(milliseconds: 220), () {
+                if (!mounted) return;
+                setState(() => _q = v.trim().toLowerCase());
+              });
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Newest first'),
+                  selected: _viewMode == _MailViewMode.latestFirst,
+                  onSelected: (_) {
+                    setState(() => _viewMode = _MailViewMode.latestFirst);
                   },
                 ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 16,
+                ChoiceChip(
+                  label: const Text('Group by learner'),
+                  selected: _viewMode == _MailViewMode.byLearner,
+                  onSelected: (_) {
+                    setState(() => _viewMode = _MailViewMode.byLearner);
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-        onChanged: (v) {
-          _searchDebounce?.cancel();
-          _searchDebounce = Timer(const Duration(milliseconds: 220), () {
-            if (!mounted) return;
-            setState(() => _q = v.trim().toLowerCase());
-          });
-        },
+        ],
       ),
     );
   }
@@ -1492,12 +1572,21 @@ class _ThreadTile extends StatelessWidget {
         .toList();
   }
 
+  String _displaySubject(String raw) {
+    var s = raw.trim();
+    while (s.startsWith('[')) {
+      final close = s.indexOf(']');
+      if (close <= 0) break;
+      s = s.substring(close + 1).trimLeft();
+    }
+    return s;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final subject = row.subject.trim().isEmpty
-        ? '(No topic)'
-        : row.subject.trim();
+    final shownSubject = _displaySubject(row.subject);
+    final subject = shownSubject.isEmpty ? '(No topic)' : shownSubject;
     final preview = row.lastMessage.trim().isEmpty
         ? '(No messages yet)'
         : row.lastMessage.trim();
