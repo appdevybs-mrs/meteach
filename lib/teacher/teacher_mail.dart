@@ -1077,6 +1077,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           final r = filtered[i];
           return _ThreadTile(
             row: r,
+            displayName: _bestName(r),
+            photoUrl: _bestPhoto(r),
+            avatarColor: _avatarColor(
+              r.peerUid.isEmpty ? _bestName(r) : r.peerUid,
+              context,
+            ),
             timeLabel: _timeLabel(r.updatedAtMs),
             onDelete: () => _deleteThreadForMe(r),
             onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
@@ -1135,6 +1141,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             children: items.map((r) {
               return _ThreadTile(
                 row: r,
+                displayName: _bestName(r),
+                photoUrl: _bestPhoto(r),
+                avatarColor: _avatarColor(
+                  r.peerUid.isEmpty ? _bestName(r) : r.peerUid,
+                  context,
+                ),
                 timeLabel: _timeLabel(r.updatedAtMs),
                 onDelete: () => _deleteThreadForMe(r),
                 onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
@@ -1546,6 +1558,9 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
 class _ThreadTile extends StatelessWidget {
   const _ThreadTile({
     required this.row,
+    required this.displayName,
+    required this.photoUrl,
+    required this.avatarColor,
     required this.timeLabel,
     required this.onDelete,
     required this.onReview,
@@ -1554,23 +1569,14 @@ class _ThreadTile extends StatelessWidget {
   });
 
   final _TopicRow row;
+  final String displayName;
+  final String photoUrl;
+  final Color avatarColor;
   final String timeLabel;
   final VoidCallback onDelete;
   final VoidCallback? onReview;
   final VoidCallback onLongPress;
   final VoidCallback onOpen;
-
-  List<String> _hwParts(String subject) {
-    var s = subject.trim();
-    if (s.toUpperCase().startsWith('[HW]')) {
-      s = s.substring(4).trim();
-    }
-    return s
-        .split('•')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-  }
 
   String _displaySubject(String raw) {
     var s = raw.trim();
@@ -1582,32 +1588,31 @@ class _ThreadTile extends StatelessWidget {
     return s;
   }
 
+  String _firstSentence(String raw) {
+    final text = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (text.isEmpty) return '(No messages yet)';
+    final m = RegExp(r'^(.+?[.!?])(?:\s|$)').firstMatch(text);
+    if (m != null) return m.group(1)!;
+    return text;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final shownSubject = _displaySubject(row.subject);
     final subject = shownSubject.isEmpty ? '(No topic)' : shownSubject;
-    final preview = row.lastMessage.trim().isEmpty
-        ? '(No messages yet)'
-        : row.lastMessage.trim();
+    final preview = _firstSentence(row.lastMessage);
 
-    final isHomework = row.isHomework;
-    final parts = _hwParts(subject);
-    final hwCourse = parts.isNotEmpty ? parts.first : 'Homework';
-    final hwDate = parts.length >= 2 ? parts[1] : '';
-    final hwExtra = parts.length >= 3 ? parts[2] : '';
-
-    final bgColor = isHomework
-        ? Colors.orange.withValues(alpha: row.unreadCount > 0 ? 0.10 : 0.07)
-        : (row.unreadCount > 0
-              ? scheme.primary.withValues(alpha: 0.05)
-              : scheme.surfaceContainerHighest.withValues(alpha: 0.45));
-
-    final borderColor = isHomework
-        ? Colors.orange.withValues(alpha: 0.28)
-        : (row.unreadCount > 0
-              ? scheme.primary.withValues(alpha: 0.18)
-              : scheme.outline.withValues(alpha: 0.10));
+    final bgColor = row.unreadCount > 0
+        ? Color.alphaBlend(
+            scheme.primary.withValues(alpha: 0.07),
+            scheme.surface,
+          )
+        : scheme.surface;
+    final borderColor = row.unreadCount > 0
+        ? scheme.primary.withValues(alpha: 0.28)
+        : scheme.outline.withValues(alpha: 0.16);
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
@@ -1621,122 +1626,84 @@ class _ThreadTile extends StatelessWidget {
         onLongPress: onLongPress,
         onTap: onOpen,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (isHomework)
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.assignment_rounded,
-                    color: Colors.orange,
-                    size: 20,
-                  ),
-                ),
-              if (isHomework) const SizedBox(width: 12),
+              ProfileAvatar(
+                name: displayName,
+                photoUrl: photoUrl,
+                radius: 19,
+                fallbackBg: avatarColor.withValues(alpha: 0.14),
+                fallbackFg: avatarColor,
+                borderColor: avatarColor.withValues(alpha: 0.30),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (isHomework) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'Homework',
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            displayName.trim().isEmpty ? 'User' : displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        hwCourse,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: row.unreadCount > 0
-                              ? FontWeight.w900
-                              : FontWeight.w800,
-                          fontSize: 14,
-                          color: Colors.black.withValues(alpha: 0.88),
-                        ),
-                      ),
-                      if (hwDate.isNotEmpty || hwExtra.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          [
-                            hwDate,
-                            hwExtra,
-                          ].where((e) => e.isNotEmpty).join(' • '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
+                        if (timeLabel.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            timeLabel,
+                            style: textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ] else ...[
-                      Text(
-                        subject,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: row.unreadCount > 0
-                              ? FontWeight.w900
-                              : FontWeight.w800,
-                          fontSize: 13.5,
-                        ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subject,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: row.unreadCount > 0
+                            ? FontWeight.w900
+                            : FontWeight.w800,
+                        color: row.unreadCount > 0
+                            ? scheme.primary
+                            : scheme.onSurface,
                       ),
-                    ],
-                    const SizedBox(height: 8),
+                    ),
+                    const SizedBox(height: 5),
                     Text(
                       preview,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.grey.shade800,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                         height: 1.25,
-                        fontSize: 12.5,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (timeLabel.isNotEmpty)
-                    Text(
-                      timeLabel,
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                   if (row.unreadCount > 0) ...[
-                    const SizedBox(height: 8),
                     _UnreadPill(value: row.unreadCount),
+                    const SizedBox(height: 2),
                   ],
-                  const SizedBox(height: 2),
                   PopupMenuButton<String>(
                     tooltip: 'More',
                     onSelected: (v) {

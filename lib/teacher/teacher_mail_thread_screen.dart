@@ -2204,17 +2204,32 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 
   Widget _buildMessageMeta(_MailMsg m, {required bool mine}) {
+    final scheme = Theme.of(context).colorScheme;
+    final sender = mine
+        ? (_meDisplayName.trim().isEmpty ? 'You' : _meDisplayName)
+        : (_peerNameShown.trim().isEmpty ? 'User' : _peerNameShown);
+
     return Padding(
       padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
+            sender,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
             _fmtTime(m.createdAtMs),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: _navy.withValues(alpha: 0.50),
+              fontWeight: FontWeight.w700,
+              fontStyle: FontStyle.italic,
+              color: scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: 2),
