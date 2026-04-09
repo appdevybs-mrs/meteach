@@ -160,6 +160,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_index/$_uid/$threadId/unreadCount': 0,
       'mail_index/$_uid/$threadId/updatedAt': now,
       'mail_index/$_uid/$threadId/type': 'homework',
+      'mail_index/$_uid/$threadId/homeworkRef':
+          'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
 
       // my read state (optional but consistent)
       'mail_state/$_uid/$threadId/lastReadAt': now,
@@ -173,6 +175,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           : body,
       'mail_index/$teacherUid/$threadId/updatedAt': now,
       'mail_index/$teacherUid/$threadId/type': 'homework',
+      'mail_index/$teacherUid/$threadId/homeworkRef':
+          'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
       'mail_index/$teacherUid/$threadId/deletedAt': null,
       'mail_index/$teacherUid/$threadId/unreadCount': ServerValue.increment(1),
     };

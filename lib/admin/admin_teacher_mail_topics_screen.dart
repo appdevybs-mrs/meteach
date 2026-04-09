@@ -156,6 +156,7 @@ class _AdminTeacherMailTopicsScreenState
       // 1) create thread meta
       await _db.ref('mail_threads/$threadId').set({
         'subject': subject.trim(),
+        'type': 'mail',
         'createdAt': now,
         'updatedAt': now,
         'lastMessage': '',
@@ -165,6 +166,7 @@ class _AdminTeacherMailTopicsScreenState
       // 2) create index item for admin (me)
       await _indexRef.child(_meUid).child(threadId).set({
         'subject': subject.trim(),
+        'type': 'mail',
         'updatedAt': now,
         'lastMessage': '',
         'unreadCount': 0,
@@ -176,6 +178,7 @@ class _AdminTeacherMailTopicsScreenState
       // 3) create index item for teacher
       await _indexRef.child(widget.teacherUid).child(threadId).set({
         'subject': subject.trim(),
+        'type': 'mail',
         'updatedAt': now,
         'lastMessage': '',
         'unreadCount': 0,

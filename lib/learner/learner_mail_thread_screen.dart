@@ -317,7 +317,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (snap.exists && snap.value is Map) {
         final m = Map<String, dynamic>.from(snap.value as Map);
         final type = (m['type'] ?? '').toString().trim().toLowerCase();
-        if (type == 'homework') {
+        final hwRefPath = (m['homeworkRef'] ?? '').toString().trim();
+        if (type == 'homework' || hwRefPath.isNotEmpty) {
           isHomework = true;
         }
       }
@@ -335,8 +336,6 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (!tSnap.exists || tSnap.value is! Map) return;
 
       final m = Map<String, dynamic>.from(tSnap.value as Map);
-      if ((m['type'] ?? '').toString() != 'homework') return;
-
       final hwPath = (m['homeworkRef'] ?? '').toString().trim();
       if (hwPath.isEmpty) return;
 

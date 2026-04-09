@@ -23,6 +23,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final Map<String, String> _photoCache = {};
   final Map<String, Future<void>> _userFetchPending = {};
+  final Set<String> _selfHealInFlight = <String>{};
 
   Color get _navy => UiK.primaryBlue;
   Color get _orange => UiK.actionOrange;
@@ -178,14 +179,135 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         m.containsKey('peerName') ||
         m.containsKey('subject') ||
         m.containsKey('type') ||
+        m.containsKey('homeworkRef') ||
         m.containsKey('updatedAt') ||
         m.containsKey('lastMessage') ||
-        m.containsKey('unreadCount');
+        m.containsKey('lastMessagePreview') ||
+        m.containsKey('unreadCount') ||
+        m.containsKey('unread');
+  }
+
+  int _toIntAny(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _selfHealIndexRow(
+    String threadId,
+    Map<String, dynamic> row,
+  ) async {
+    final meUid = _meUid.trim();
+    if (meUid.isEmpty) return;
+    threadId = threadId.trim();
+    if (threadId.isEmpty) return;
+    if (_selfHealInFlight.contains(threadId)) return;
+
+    final rawType = (row['type'] ?? '').toString().trim().toLowerCase();
+    final rawHwRef = (row['homeworkRef'] ?? '').toString().trim();
+    final subject = (row['subject'] ?? '').toString().trim();
+    final subjectLower = subject.toLowerCase();
+    final hasUnreadCount = row.containsKey('unreadCount');
+    final hasLegacyUnread = row.containsKey('unread');
+    final needsType = rawType.isEmpty;
+    final needsHwRef = rawHwRef.isEmpty;
+    final looksHwByPrefix = subjectLower.startsWith('[hw]');
+    final needsLastMessage =
+        (row['lastMessage'] ?? '').toString().trim().isEmpty &&
+        (row['lastMessagePreview'] ?? '').toString().trim().isNotEmpty;
+
+    if (!needsType &&
+        !needsHwRef &&
+        !needsLastMessage &&
+        (!hasLegacyUnread || hasUnreadCount)) {
+      return;
+    }
+
+    _selfHealInFlight.add(threadId);
+    try {
+      final idxUpdates = <String, dynamic>{};
+
+      if (!hasUnreadCount && hasLegacyUnread) {
+        idxUpdates['unreadCount'] = _toIntAny(row['unread']);
+      }
+
+      if (needsLastMessage) {
+        final preview = (row['lastMessagePreview'] ?? '').toString().trim();
+        if (preview.isNotEmpty) idxUpdates['lastMessage'] = preview;
+      }
+
+      String resolvedType = rawType;
+      String resolvedHwRef = rawHwRef;
+
+      if (resolvedType.isEmpty && looksHwByPrefix) {
+        resolvedType = 'homework';
+      }
+
+      final needsThreadRead =
+          resolvedType.isEmpty || resolvedHwRef.isEmpty || looksHwByPrefix;
+
+      if (needsThreadRead) {
+        final tSnap = await _db.child('mail_threads/$threadId').get();
+        if (tSnap.exists && tSnap.value is Map) {
+          final t = (tSnap.value as Map).map((k, v) => MapEntry('$k', v));
+          final tSubject = (t['subject'] ?? '').toString().trim();
+          final tType = (t['type'] ?? '').toString().trim().toLowerCase();
+          final tHwRef = (t['homeworkRef'] ?? '').toString().trim();
+          final tLast = (t['lastMessage'] ?? '').toString().trim();
+          final tPreview = (t['lastMessagePreview'] ?? '').toString().trim();
+
+          String inferredType = tType;
+          if (inferredType.isEmpty) {
+            final subjLower = tSubject.toLowerCase();
+            inferredType = (tHwRef.isNotEmpty || subjLower.startsWith('[hw]'))
+                ? 'homework'
+                : 'mail';
+          }
+
+          if (resolvedType.isEmpty) resolvedType = inferredType;
+          if (resolvedHwRef.isEmpty && tHwRef.isNotEmpty) {
+            resolvedHwRef = tHwRef;
+          }
+
+          final threadUpdates = <String, dynamic>{};
+          if (tType.isEmpty) threadUpdates['type'] = inferredType;
+          if (tLast.isEmpty && tPreview.isNotEmpty) {
+            threadUpdates['lastMessage'] = tPreview;
+          }
+          if (threadUpdates.isNotEmpty) {
+            await _db.child('mail_threads/$threadId').update(threadUpdates);
+          }
+
+          if ((row['subject'] ?? '').toString().trim().isEmpty &&
+              tSubject.isNotEmpty) {
+            idxUpdates['subject'] = tSubject;
+          }
+          if ((row['lastMessage'] ?? '').toString().trim().isEmpty) {
+            if (tLast.isNotEmpty) idxUpdates['lastMessage'] = tLast;
+            if (tLast.isEmpty && tPreview.isNotEmpty) {
+              idxUpdates['lastMessage'] = tPreview;
+            }
+          }
+        }
+      }
+
+      if (resolvedType.isNotEmpty) idxUpdates['type'] = resolvedType;
+      if (resolvedHwRef.isNotEmpty) idxUpdates['homeworkRef'] = resolvedHwRef;
+
+      if (idxUpdates.isNotEmpty) {
+        await _db.child('mail_index/$meUid/$threadId').update(idxUpdates);
+      }
+    } catch (_) {
+      // best-effort migration only
+    } finally {
+      _selfHealInFlight.remove(threadId);
+    }
   }
 
   bool _isHomeworkRow(_TopicRow r) {
     final type = r.type.trim().toLowerCase();
     if (type == 'homework') return true;
+    if (r.homeworkRef.trim().isNotEmpty) return true;
     return r.subject.trim().toLowerCase().startsWith('[hw]');
   }
 
@@ -195,6 +317,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
     void addIfThreadObject(String threadId, Map obj) {
       final m = obj.map((kk, vvv) => MapEntry(kk.toString(), vvv));
+      unawaited(_selfHealIndexRow(threadId, m));
       final row = _TopicRow.fromMap(threadId, m);
       if (row.deletedAtMs != null) return;
       if (row.threadId.trim().isEmpty) return;
@@ -278,6 +401,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
         final Map<String, dynamic> updates = {
           'mail_threads/$threadId/subject': subject,
+          'mail_threads/$threadId/type': 'mail',
           'mail_threads/$threadId/createdAt': now,
           'mail_threads/$threadId/updatedAt': now,
           'mail_threads/$threadId/lastMessage': placeholderLastMessage,
@@ -285,6 +409,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'mail_threads/$threadId/participants/$toUid': true,
 
           'mail_index/$meUid/$threadId/subject': subject,
+          'mail_index/$meUid/$threadId/type': 'mail',
           'mail_index/$meUid/$threadId/updatedAt': now,
           'mail_index/$meUid/$threadId/lastMessage': placeholderLastMessage,
           'mail_index/$meUid/$threadId/unreadCount': 0,
@@ -293,6 +418,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'mail_index/$meUid/$threadId/deletedAt': null,
 
           'mail_index/$toUid/$threadId/subject': subject,
+          'mail_index/$toUid/$threadId/type': 'mail',
           'mail_index/$toUid/$threadId/updatedAt': now,
           'mail_index/$toUid/$threadId/lastMessage': placeholderLastMessage,
           'mail_index/$toUid/$threadId/unreadCount': 1,
@@ -1430,6 +1556,7 @@ class _TopicRow {
     required this.updatedAtMs,
     required this.unreadCount,
     required this.deletedAtMs,
+    required this.homeworkRef,
   });
 
   final String threadId;
@@ -1441,6 +1568,7 @@ class _TopicRow {
   final int updatedAtMs;
   final int unreadCount;
   final int? deletedAtMs;
+  final String homeworkRef;
 
   factory _TopicRow.fromMap(String threadId, Map<String, dynamic> m) {
     int toInt(dynamic v) {
@@ -1463,8 +1591,9 @@ class _TopicRow {
       subject: (m['subject'] ?? '').toString(),
       lastMessage: (m['lastMessage'] ?? '').toString(),
       updatedAtMs: toInt(m['updatedAt']),
-      unreadCount: toInt(m['unreadCount']),
+      unreadCount: toInt(m['unreadCount'] ?? m['unread']),
       deletedAtMs: toIntN(m['deletedAt']),
+      homeworkRef: (m['homeworkRef'] ?? '').toString(),
     );
   }
 }

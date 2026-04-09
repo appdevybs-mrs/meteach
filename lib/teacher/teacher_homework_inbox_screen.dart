@@ -43,9 +43,11 @@ class _TeacherHomeworkInboxScreenState
     final type = (m['type'] ?? '').toString().trim().toLowerCase();
     if (type == 'homework') return true;
 
+    final homeworkRef = (m['homeworkRef'] ?? '').toString().trim();
+    if (homeworkRef.isNotEmpty) return true;
+
     final subject = (m['subject'] ?? '').toString().trim().toLowerCase();
     if (subject.startsWith('[hw]')) return true;
-    if (subject.contains('homework')) return true;
     return false;
   }
 
@@ -100,7 +102,7 @@ class _TeacherHomeworkInboxScreenState
               : (m['subject'] ?? '').toString().trim(),
           lastMessage: (m['lastMessage'] ?? '').toString().trim(),
           updatedAtMs: _toInt(m['updatedAt']),
-          unreadCount: _toInt(m['unreadCount']),
+          unreadCount: _toInt(m['unreadCount'] ?? m['unread']),
           deletedAtMs: (m['deletedAt'] == null) ? null : _toInt(m['deletedAt']),
         ),
       );

@@ -589,6 +589,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final threadId = _threadIdFor(_uid, item.uid, item.courseId);
     final now = DateTime.now().millisecondsSinceEpoch;
     final learnerName = await _resolveLearnerName(item.uid, item.firstName);
+    final meEmail = (FirebaseAuth.instance.currentUser?.email ?? '').trim();
+    final meLabel = meEmail.isEmpty ? 'Teacher' : meEmail;
 
     final threadRef = _db.child('mail_threads').child(threadId);
     final tSnap = await threadRef.get();
@@ -596,8 +598,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       await threadRef.set({
         'participants': {_uid: true, item.uid: true},
         'subject': subject,
+        'type': 'mail',
         'createdAt': now,
         'updatedAt': now,
+        'lastMessage':
+            'Hi $learnerName, I saw your comment and wanted to help.',
         'lastMessageAt': now,
         'lastMessagePreview': 'Started from My Platform',
       });
@@ -608,19 +613,43 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       await _db.child('mail_messages').child(threadId).child(msgId).set({
         'fromUid': _uid,
         'body': 'Hi $learnerName, I saw your comment and wanted to help.',
+        'toUids': {item.uid: true},
+        'ccUids': {},
+        'bccUids': {},
+        'attachments': [],
+        'deletedFor': {},
+        'reactions': {},
         'createdAt': now,
       });
     }
 
+    final preview = 'Hi $learnerName, I saw your comment and wanted to help.';
+
     await _db.child('mail_index').child(_uid).child(threadId).update({
       'subject': subject,
+      'type': 'mail',
       'updatedAt': now,
-      'unread': 0,
+      'lastMessage': preview,
+      'unreadCount': 0,
+      'peerUid': item.uid,
+      'peerName': learnerName,
+      'deletedAt': null,
     });
     await _db.child('mail_index').child(item.uid).child(threadId).update({
       'subject': subject,
+      'type': 'mail',
       'updatedAt': now,
-      'unread': 1,
+      'lastMessage': preview,
+      'unreadCount': 1,
+      'peerUid': _uid,
+      'peerName': meLabel,
+      'deletedAt': null,
+    });
+
+    await _db.child('mail_threads').child(threadId).update({
+      'updatedAt': now,
+      'lastMessage': preview,
+      'type': 'mail',
     });
 
     if (!mounted) return;

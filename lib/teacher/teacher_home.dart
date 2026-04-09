@@ -502,7 +502,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       if (m['deletedAt'] != null) return;
       if (_isHomeworkThreadMeta(m)) return;
 
-      final unread = _toInt(m['unreadCount']);
+      final unread = _toInt(m['unreadCount'] ?? m['unread']);
       total += unread;
     });
 
@@ -512,9 +512,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   bool _isHomeworkThreadMeta(Map<String, dynamic> m) {
     final type = (m['type'] ?? '').toString().trim().toLowerCase();
     if (type == 'homework') return true;
+    final homeworkRef = (m['homeworkRef'] ?? '').toString().trim();
+    if (homeworkRef.isNotEmpty) return true;
     final subject = (m['subject'] ?? '').toString().trim().toLowerCase();
     if (subject.startsWith('[hw]')) return true;
-    if (subject.contains('homework')) return true;
     return false;
   }
 
