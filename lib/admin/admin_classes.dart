@@ -3962,6 +3962,40 @@ class _FlexLearnerDetailsTabs extends StatefulWidget {
 class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
   int _tabIndex = 0;
 
+  Color _reviewBg(int rating) {
+    switch (rating) {
+      case 5:
+        return const Color(0xFFE8F5E9);
+      case 4:
+        return const Color(0xFFF1F8E9);
+      case 3:
+        return const Color(0xFFFFF8E1);
+      case 2:
+        return const Color(0xFFFFF3E0);
+      case 1:
+        return const Color(0xFFFFEBEE);
+      default:
+        return const Color(0xFFF8FAFB);
+    }
+  }
+
+  Color _reviewBorder(int rating) {
+    switch (rating) {
+      case 5:
+        return const Color(0xFF66BB6A);
+      case 4:
+        return const Color(0xFF9CCC65);
+      case 3:
+        return const Color(0xFFFBC02D);
+      case 2:
+        return const Color(0xFFFFA726);
+      case 1:
+        return const Color(0xFFEF5350);
+      default:
+        return Colors.grey.withValues(alpha: 0.25);
+    }
+  }
+
   Widget _reviewStars(int rating) {
     if (rating < 1 || rating > 5) {
       return Text(
@@ -4038,28 +4072,10 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
           const SizedBox(height: 10),
           if (_tabIndex == 0) ...[
             Text(
-              'Paid amount: $paidAmount',
+              'Amount $paidAmount   Session paid ${item.sessionsPaidTotal}   Left $sessionsLeft',
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF1A2B48),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Sessions paid: ${item.sessionsPaidTotal}',
-              style: TextStyle(
-                color: Colors.grey.shade800,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Sessions left: $sessionsLeft',
-              style: TextStyle(
-                color: Colors.grey.shade800,
-                fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
             ),
@@ -4128,41 +4144,76 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                     row.reviewRating >= 1 && row.reviewRating <= 5
                     ? '${row.reviewRating}/5'
                     : '-';
+                final rating = row.reviewRating;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _reviewBg(rating),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.grey.withValues(alpha: 0.25),
-                    ),
+                    border: Border.all(color: _reviewBorder(rating)),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          '$i) S${row.sessionNo <= 0 ? '-' : row.sessionNo} • $lesson • $teacher • ${row.whenLabel} • Review: $reviewLabel',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.grey.shade800,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '$i) S${row.sessionNo <= 0 ? '-' : row.sessionNo} • $lesson',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1A2B48),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
+                          const SizedBox(width: 8),
+                          _reviewStars(row.reviewRating),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: 'Session details',
+                            onPressed: row.sessionNo <= 0
+                                ? null
+                                : () => widget.onOpenSessionDetails(row),
+                            icon: const Icon(
+                              Icons.error_outline_rounded,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Teacher: $teacher',
+                        style: TextStyle(
+                          color: Colors.grey.shade800,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      _reviewStars(row.reviewRating),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        tooltip: 'Session details',
-                        onPressed: row.sessionNo <= 0
-                            ? null
-                            : () => widget.onOpenSessionDetails(row),
-                        icon: const Icon(Icons.error_outline_rounded, size: 18),
-                        visualDensity: VisualDensity.compact,
+                      const SizedBox(height: 2),
+                      Text(
+                        row.whenLabel,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Review: $reviewLabel',
+                        style: TextStyle(
+                          color: Colors.grey.shade800,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
