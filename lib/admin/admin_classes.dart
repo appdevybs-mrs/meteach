@@ -80,6 +80,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ✅ Cache progress per class (so list scrolling is smooth)
   final Map<String, _ClassProg> _classProgCache = {};
   final Map<String, int> _syllabusSessionCountCache = <String, int>{};
+  final Map<String, Map<int, Map<String, dynamic>>> _flexibleSyllabusCache =
+      <String, Map<int, Map<String, dynamic>>>{};
   final Map<String, Map<String, _RecordedSessionMeta>>
   _recordedSessionMetaCache = <String, Map<String, _RecordedSessionMeta>>{};
   final Set<String> _progressRequestedClassIds = <String>{};
@@ -2128,6 +2130,237 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     _syllabusSessionCountCache[key] = totalSessions;
     return totalSessions;
   }
+
+  Future<Map<int, Map<String, dynamic>>> _loadFlexibleSyllabusSessions(
+    String courseId,
+  ) async {
+    final cid = courseId.trim();
+    if (cid.isEmpty) return const <int, Map<String, dynamic>>{};
+
+    final cached = _flexibleSyllabusCache[cid];
+    if (cached != null) return cached;
+
+    final out = <int, Map<String, dynamic>>{};
+    try {
+      final snap = await _syllabiRef.child(cid).child('flexible').get();
+      if (!snap.exists || snap.value is! Map) {
+        _flexibleSyllabusCache[cid] = out;
+        return out;
+      }
+
+      final root = Map<dynamic, dynamic>.from(snap.value as Map);
+      final units = root['units'];
+      int fallbackNo = 1;
+
+      if (units is List) {
+        for (final u in units) {
+          if (u is! Map) continue;
+          final um = Map<dynamic, dynamic>.from(u);
+          final sessions = um['sessions'];
+          if (sessions is! List) continue;
+
+          for (final s in sessions) {
+            if (s is! Map) continue;
+            final sm = Map<String, dynamic>.from(s as Map);
+            int no = _asInt(sm['sessionNo']);
+            if (no <= 0) no = _asInt(sm['sessionNumber']);
+            if (no <= 0) no = _asInt(sm['order']);
+            if (no <= 0) no = fallbackNo;
+
+            out[no] = {
+              'sessionNo': no,
+              'sessionTitle': (sm['sessionTitle'] ?? sm['title'] ?? '')
+                  .toString()
+                  .trim(),
+              'title': (sm['title'] ?? '').toString().trim(),
+              'objective': (sm['objective'] ?? '').toString().trim(),
+              'content': (sm['content'] ?? '').toString().trim(),
+              'homework': (sm['homework'] ?? '').toString().trim(),
+              'durationMinutes': _asInt(sm['durationMinutes']),
+              'source': 'syllabi/flexible',
+            };
+
+            fallbackNo += 1;
+          }
+        }
+      }
+
+      if (out.isEmpty) {
+        for (final entry in root.entries) {
+          final keyNo = int.tryParse(entry.key.toString()) ?? 0;
+          final raw = entry.value;
+          if (raw is! Map) continue;
+          final sm = Map<String, dynamic>.from(raw as Map);
+          int no = _asInt(sm['sessionNo']);
+          if (no <= 0) no = _asInt(sm['sessionNumber']);
+          if (no <= 0) no = _asInt(sm['order']);
+          if (no <= 0) no = keyNo;
+          if (no <= 0) continue;
+
+          out[no] = {
+            'sessionNo': no,
+            'sessionTitle': (sm['sessionTitle'] ?? sm['title'] ?? '')
+                .toString()
+                .trim(),
+            'title': (sm['title'] ?? '').toString().trim(),
+            'objective': (sm['objective'] ?? '').toString().trim(),
+            'content': (sm['content'] ?? '').toString().trim(),
+            'homework': (sm['homework'] ?? '').toString().trim(),
+            'durationMinutes': _asInt(sm['durationMinutes']),
+            'source': 'syllabi/flexible',
+          };
+        }
+      }
+    } catch (_) {}
+
+    _flexibleSyllabusCache[cid] = out;
+    return out;
+  }
+
+  Future<Map<String, dynamic>?> _loadFlexibleSessionInfoByNo(
+    String courseId,
+    int sessionNo,
+  ) async {
+    if (courseId.trim().isEmpty || sessionNo <= 0) return null;
+
+    final syllabus = await _loadFlexibleSyllabusSessions(courseId);
+    final fromSyllabus = syllabus[sessionNo];
+    if (fromSyllabus != null) return fromSyllabus;
+
+    try {
+      final snap = await _db
+          .child('booking_curriculum/$courseId/sessions/$sessionNo')
+          .get();
+      if (snap.exists && snap.value is Map) {
+        final m = Map<String, dynamic>.from(snap.value as Map);
+        return {
+          'sessionNo': sessionNo,
+          'sessionTitle': (m['sessionTitle'] ?? m['title'] ?? '')
+              .toString()
+              .trim(),
+          'title': (m['title'] ?? '').toString().trim(),
+          'objective': (m['objective'] ?? '').toString().trim(),
+          'content': (m['content'] ?? '').toString().trim(),
+          'homework': (m['homework'] ?? '').toString().trim(),
+          'durationMinutes': _asInt(m['durationMinutes']),
+          'source': 'booking_curriculum',
+        };
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  Future<void> _openFlexibleSessionDetailsSheet({
+    required String courseId,
+    required _FlexAttendanceRow row,
+  }) async {
+    if (row.sessionNo <= 0) return;
+
+    final info = await _loadFlexibleSessionInfoByNo(courseId, row.sessionNo);
+    if (!mounted) return;
+
+    final title = (info?['sessionTitle'] ?? info?['title'] ?? row.lessonTitle)
+        .toString()
+        .trim();
+    final objective = (info?['objective'] ?? '').toString().trim();
+    final content = (info?['content'] ?? '').toString().trim();
+    final homework = (info?['homework'] ?? '').toString().trim();
+    final source = (info?['source'] ?? 'not_found').toString().trim();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title.isEmpty
+                        ? 'Session ${row.sessionNo}'
+                        : 'Session ${row.sessionNo} — $title',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF1A2B48),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Teacher: ${row.teacherName.isEmpty ? '-' : row.teacherName}',
+                    style: TextStyle(
+                      color: Colors.grey.shade800,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Source: $source',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (row.taughtTitle.isNotEmpty &&
+                      title.isNotEmpty &&
+                      row.taughtTitle.toLowerCase() != title.toLowerCase()) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Teacher taught title: ${row.taughtTitle}',
+                      style: TextStyle(
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  _detailsBlock('Objective', objective),
+                  const SizedBox(height: 10),
+                  _detailsBlock('Content', content),
+                  const SizedBox(height: 10),
+                  _detailsBlock('Homework', homework),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailsBlock(String title, String body) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF1A2B48),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          body.isEmpty ? '-' : body,
+          style: TextStyle(
+            color: Colors.grey.shade800,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
   // -------------------- Classes List UI --------------------
 
   Widget _buildTopFilters() {
@@ -2813,30 +3046,22 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             ? courseTitleRaw
             : (mappedTitle.isNotEmpty ? mappedTitle : 'Unknown course');
 
+        final syllabusBySession = await _loadFlexibleSyllabusSessions(courseId);
         final syllabusTitleBySession = <int, String>{};
-        try {
-          final ss = await _db.child('syllabi/$courseId/flexible').get();
-          if (ss.exists && ss.value is Map) {
-            final rm = Map<dynamic, dynamic>.from(ss.value as Map);
-            for (final e in rm.entries) {
-              if (e.value is! Map) continue;
-              final sm = Map<String, dynamic>.from(e.value as Map);
-              final keyNo = int.tryParse(e.key.toString()) ?? 0;
-              final no = _asInt(sm['sessionNo']);
-              final order = _asInt(sm['order']);
-              final finalNo = no > 0
-                  ? no
-                  : (order > 0 ? order : (keyNo > 0 ? keyNo : 0));
-              if (finalNo <= 0) continue;
-              final title = (sm['sessionTitle'] ?? sm['title'] ?? '')
-                  .toString()
-                  .trim();
-              if (title.isNotEmpty) {
-                syllabusTitleBySession[finalNo] = title;
-              }
-            }
+        for (final e in syllabusBySession.entries) {
+          final title = (e.value['sessionTitle'] ?? e.value['title'] ?? '')
+              .toString();
+          if (title.trim().isNotEmpty) {
+            syllabusTitleBySession[e.key] = title.trim();
           }
-        } catch (_) {}
+        }
+        int syllabusSessionsTotal = await _loadSyllabusSessionCount(
+          courseId: courseId,
+          syllabusVariant: 'flexible',
+        );
+        if (syllabusSessionsTotal <= 0) {
+          syllabusSessionsTotal = syllabusBySession.length;
+        }
 
         DataSnapshot? progressSnap;
         try {
@@ -2846,6 +3071,26 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         } catch (_) {
           progressSnap = null;
         }
+
+        final reviewBySessionNo = <int, int>{};
+        try {
+          final reviewSnap = await _db
+              .child('booking_progress/$uid/$courseId/session_reviews')
+              .get();
+          if (reviewSnap.exists && reviewSnap.value is Map) {
+            final reviews = Map<dynamic, dynamic>.from(reviewSnap.value as Map);
+            for (final entry in reviews.entries) {
+              if (entry.value is! Map) continue;
+              final rm = Map<String, dynamic>.from(entry.value as Map);
+              final sessionNo = _asInt(rm['sessionNo']);
+              if (sessionNo <= 0) continue;
+              final rating = _asInt(rm['rating']);
+              if (rating >= 1 && rating <= 5) {
+                reviewBySessionNo[sessionNo] = rating;
+              }
+            }
+          }
+        } catch (_) {}
 
         final presentRows = <_FlexAttendanceRow>[];
         if (progressSnap != null &&
@@ -2866,16 +3111,41 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               ts = int.tryParse(tsRaw?.toString() ?? '') ?? 0;
             }
 
+            final sessionNo = _asInt(m['sessionNo']);
+            String taughtTitle = '';
+            final taughtItems = m['taughtItems'];
+            if (taughtItems is List) {
+              for (final item in taughtItems) {
+                if (item is! Map) continue;
+                final tm = Map<String, dynamic>.from(item);
+                final taughtNo = _asInt(tm['sessionNumber']);
+                if (sessionNo > 0 && taughtNo > 0 && taughtNo != sessionNo) {
+                  continue;
+                }
+                final title = (tm['title'] ?? '').toString().trim();
+                if (title.isNotEmpty) {
+                  taughtTitle = title;
+                  break;
+                }
+              }
+            }
+
             presentRows.add(
               _FlexAttendanceRow(
                 bookingKey: key.toString(),
-                sessionNo: _asInt(m['sessionNo']),
+                sessionNo: sessionNo,
                 dayKey: (m['dayKey'] ?? '').toString().trim(),
                 time: (m['time'] ?? '').toString().trim(),
                 startAt: ts,
-                teacherName: (m['teacherName'] ?? 'Teacher').toString().trim(),
-                lessonTitle:
-                    syllabusTitleBySession[_asInt(m['sessionNo'])] ?? '',
+                teacherName:
+                    (m['teacherName'] ??
+                            m['teacherNameFromBooking'] ??
+                            'Teacher')
+                        .toString()
+                        .trim(),
+                lessonTitle: syllabusTitleBySession[sessionNo] ?? taughtTitle,
+                taughtTitle: taughtTitle,
+                reviewRating: reviewBySessionNo[sessionNo] ?? 0,
               ),
             );
           });
@@ -2911,6 +3181,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         }
 
         final consumed = presentRows.length;
+        final coveredSessionNumbers = presentRows
+            .map((r) => r.sessionNo)
+            .where((s) => s > 0)
+            .toSet()
+            .length;
 
         final paymentsForUser = await loadPaymentsForUid(uid);
         bool paymentMatches(Map<String, dynamic> p) {
@@ -3033,6 +3308,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             courseTitle: courseTitle,
             sessionsPaidTotal: sessionsPaidTotal,
             consumed: consumed,
+            coveredSessionNumbers: coveredSessionNumbers,
+            syllabusSessionsTotal: syllabusSessionsTotal,
             expiresAt: expiresAt,
             statusLabel: statusLabel,
             rows: presentRows,
@@ -3401,9 +3678,36 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
+                                  item.syllabusSessionsTotal > 0
+                                      ? 'Course progress: ${item.coveredSessionNumbers} / ${item.syllabusSessionsTotal}'
+                                      : 'Course progress: -',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: item.syllabusSessionsTotal > 0
+                                        ? (item.coveredSessionNumbers /
+                                                  item.syllabusSessionsTotal)
+                                              .clamp(0.0, 1.0)
+                                        : 0,
+                                    minHeight: 10,
+                                    backgroundColor: const Color(0xFFE5E7EB),
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                          Color(0xFF2563EB),
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
                                   item.sessionsPaidTotal > 0
-                                      ? 'Progress: ${((item.consumed / item.sessionsPaidTotal) * 100).round().clamp(0, 100)}%'
-                                      : 'Progress: no package total',
+                                      ? 'Payment progress: ${item.consumed} / ${item.sessionsPaidTotal}'
+                                      : 'Payment progress: no package total',
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
                                     fontWeight: FontWeight.w700,
@@ -3433,90 +3737,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                if (item.paymentBlocks.isEmpty)
-                                  Text(
-                                    'No payment rows found for this course yet.',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  )
-                                else
-                                  ...item.paymentBlocks.asMap().entries.map((
-                                    e,
-                                  ) {
-                                    final idx = e.key;
-                                    final block = e.value;
-                                    final paidDate = block.paidAt > 0
-                                        ? _fmtDateOnlyMs(block.paidAt)
-                                        : '-';
-                                    final blockDeadline = block.expiresAt > 0
-                                        ? _fmtDateOnlyMs(block.expiresAt)
-                                        : _fmtDateOnlyMs(item.expiresAt);
-
-                                    return Container(
-                                      margin: const EdgeInsets.only(top: 8),
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF8FAFB),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: Colors.grey.withValues(
-                                            alpha: 0.25,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Payment ${idx + 1} • Paid: $paidDate • Amount: ${block.amount} • Studied: ${block.rows.length}${block.sessionsPaid > 0 ? ' / ${block.sessionsPaid}' : ''} • Deadline: $blockDeadline',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: Color(0xFF1A2B48),
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          if (block.rows.isEmpty)
-                                            Text(
-                                              'No studied sessions allocated to this payment yet.',
-                                              style: TextStyle(
-                                                color: Colors.grey.shade700,
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            )
-                                          else
-                                            ...block.rows.asMap().entries.map((
-                                              r,
-                                            ) {
-                                              final count = r.key + 1;
-                                              final row = r.value;
-                                              final lesson =
-                                                  row.lessonTitle.isEmpty
-                                                  ? '-'
-                                                  : row.lessonTitle;
-                                              return Padding(
-                                                padding: const EdgeInsets.only(
-                                                  bottom: 4,
-                                                ),
-                                                child: Text(
-                                                  '$count) Session ${row.sessionNo <= 0 ? '-' : row.sessionNo} • $lesson • ${row.whenLabel} • ${row.teacherName.isEmpty ? 'Teacher' : row.teacherName}',
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade800,
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              );
-                                            }),
-                                        ],
-                                      ),
+                                const SizedBox(height: 10),
+                                _FlexLearnerDetailsTabs(
+                                  item: item,
+                                  fmtDateOnlyMs: _fmtDateOnlyMs,
+                                  onOpenSessionDetails: (row) {
+                                    return _openFlexibleSessionDetailsSheet(
+                                      courseId: item.courseId,
+                                      row: row,
                                     );
-                                  }),
+                                  },
+                                ),
                               ],
                             ),
                           ),
@@ -3712,6 +3943,238 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
 // -------------------- Helpers --------------------
 
+class _FlexLearnerDetailsTabs extends StatefulWidget {
+  const _FlexLearnerDetailsTabs({
+    required this.item,
+    required this.fmtDateOnlyMs,
+    required this.onOpenSessionDetails,
+  });
+
+  final _FlexCourseSummary item;
+  final String Function(int) fmtDateOnlyMs;
+  final Future<void> Function(_FlexAttendanceRow row) onOpenSessionDetails;
+
+  @override
+  State<_FlexLearnerDetailsTabs> createState() =>
+      _FlexLearnerDetailsTabsState();
+}
+
+class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
+  int _tabIndex = 0;
+
+  Widget _reviewStars(int rating) {
+    if (rating < 1 || rating > 5) {
+      return Text(
+        'Review: Not rated',
+        style: TextStyle(
+          color: Colors.grey.shade700,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Review: ',
+          style: TextStyle(
+            color: Colors.grey.shade700,
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
+        ),
+        ...List.generate(5, (i) {
+          final on = i < rating;
+          return Icon(
+            on ? Icons.star_rounded : Icons.star_border_rounded,
+            size: 15,
+            color: const Color(0xFFF59E0B),
+          );
+        }),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final paidAmount = item.paymentBlocks.fold<int>(
+      0,
+      (sum, p) => sum + p.amount,
+    );
+    final sessionsLeft = (item.sessionsPaidTotal - item.consumed).clamp(
+      0,
+      9999,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ChoiceChip(
+                label: const Text('Payment'),
+                selected: _tabIndex == 0,
+                onSelected: (_) => setState(() => _tabIndex = 0),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Attendance'),
+                selected: _tabIndex == 1,
+                onSelected: (_) => setState(() => _tabIndex = 1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_tabIndex == 0) ...[
+            Text(
+              'Paid amount: $paidAmount',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1A2B48),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Sessions paid: ${item.sessionsPaidTotal}',
+              style: TextStyle(
+                color: Colors.grey.shade800,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Sessions left: $sessionsLeft',
+              style: TextStyle(
+                color: Colors.grey.shade800,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (item.paymentBlocks.isEmpty)
+              Text(
+                'No payment rows found for this course yet.',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              )
+            else
+              ...item.paymentBlocks.asMap().entries.map((e) {
+                final idx = e.key;
+                final block = e.value;
+                final paidDate = block.paidAt > 0
+                    ? widget.fmtDateOnlyMs(block.paidAt)
+                    : '-';
+                final blockDeadline = block.expiresAt > 0
+                    ? widget.fmtDateOnlyMs(block.expiresAt)
+                    : widget.fmtDateOnlyMs(item.expiresAt);
+                final blockLeft = (block.sessionsPaid - block.rows.length)
+                    .clamp(0, 9999);
+
+                return Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    'Payment ${idx + 1} | Paid: $paidDate | Amount: ${block.amount} | Studied: ${block.rows.length}${block.sessionsPaid > 0 ? ' / ${block.sessionsPaid}' : ''} | Left: ${block.sessionsPaid > 0 ? blockLeft : '-'} | Deadline: $blockDeadline',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1A2B48),
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+              }),
+          ] else ...[
+            if (item.rows.isEmpty)
+              Text(
+                'No attendance rows found.',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              )
+            else
+              ...item.rows.asMap().entries.map((entry) {
+                final i = entry.key + 1;
+                final row = entry.value;
+                final lesson = row.lessonTitle.isEmpty ? '-' : row.lessonTitle;
+                final teacher = row.teacherName.isEmpty
+                    ? 'Teacher'
+                    : row.teacherName;
+                final reviewLabel =
+                    row.reviewRating >= 1 && row.reviewRating <= 5
+                    ? '${row.reviewRating}/5'
+                    : '-';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '$i) S${row.sessionNo <= 0 ? '-' : row.sessionNo} • $lesson • $teacher • ${row.whenLabel} • Review: $reviewLabel',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey.shade800,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _reviewStars(row.reviewRating),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: 'Session details',
+                        onPressed: row.sessionNo <= 0
+                            ? null
+                            : () => widget.onOpenSessionDetails(row),
+                        icon: const Icon(Icons.error_outline_rounded, size: 18),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _ScheduleRow {
   _ScheduleRow({required this.day});
   String day;
@@ -3748,6 +4211,8 @@ class _FlexAttendanceRow {
   final int startAt;
   final String teacherName;
   final String lessonTitle;
+  final String taughtTitle;
+  final int reviewRating;
 
   const _FlexAttendanceRow({
     required this.bookingKey,
@@ -3757,6 +4222,8 @@ class _FlexAttendanceRow {
     required this.startAt,
     required this.teacherName,
     required this.lessonTitle,
+    required this.taughtTitle,
+    required this.reviewRating,
   });
 
   int get sortTs {
@@ -3791,6 +4258,8 @@ class _FlexCourseSummary {
   final String courseTitle;
   final int sessionsPaidTotal;
   final int consumed;
+  final int coveredSessionNumbers;
+  final int syllabusSessionsTotal;
   final int expiresAt;
   final String statusLabel;
   final List<_FlexAttendanceRow> rows;
@@ -3806,6 +4275,8 @@ class _FlexCourseSummary {
     required this.courseTitle,
     required this.sessionsPaidTotal,
     required this.consumed,
+    required this.coveredSessionNumbers,
+    required this.syllabusSessionsTotal,
     required this.expiresAt,
     required this.statusLabel,
     required this.rows,
