@@ -20,7 +20,6 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../services/notification_service.dart';
 import '../shared/app_theme.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 import 'attendance_history_screen.dart';
@@ -57,6 +56,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   bool _applyPending = false;
   List<_Occ> _lastUpcoming = const [];
   List<_Occ> _lastAllOcc = const [];
+  String _lastAppliedReminderPlanKey = '';
+
+  final Map<String, _OccCacheEntry> _occCache = <String, _OccCacheEntry>{};
+
+  bool _viewerReady = false;
+  bool _isAdminViewer = false;
+  String _viewerUid = '';
+  String _viewerName = '';
+  String _viewerSerial = '';
 
   @override
   void initState() {
@@ -84,13 +92,169 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     await NotificationService.I.requestPermissions();
 
     _prefs = await SharedPreferences.getInstance();
+    final viewer = await _loadViewerIdentity();
     if (!mounted) return;
 
     setState(() {
       _dailyEnabled = _prefs.getBool('reminders_daily_enabled') ?? false;
       _sessionEnabled = _prefs.getBool('reminders_session_enabled') ?? false;
       _prefsReady = true;
+      _viewerUid = viewer.uid;
+      _viewerName = viewer.name;
+      _viewerSerial = viewer.serial;
+      _isAdminViewer = viewer.isAdmin;
+      _viewerReady = true;
     });
+  }
+
+  Future<_ScheduleViewerIdentity> _loadViewerIdentity() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) {
+      return const _ScheduleViewerIdentity(
+        uid: '',
+        name: '',
+        serial: '',
+        isAdmin: false,
+      );
+    }
+
+    try {
+      final snap = await FirebaseDatabase.instance.ref('users/$uid').get();
+      if (!snap.exists || snap.value is! Map) {
+        return _ScheduleViewerIdentity(
+          uid: uid,
+          name: '',
+          serial: '',
+          isAdmin: false,
+        );
+      }
+
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final fn = (m['first_name'] ?? '').toString().trim();
+      final ln = (m['last_name'] ?? '').toString().trim();
+      final role = (m['role'] ?? '').toString().trim().toLowerCase();
+
+      return _ScheduleViewerIdentity(
+        uid: uid,
+        name: ('$fn $ln').trim(),
+        serial: (m['serial'] ?? '').toString().trim(),
+        isAdmin: role == 'admin',
+      );
+    } catch (_) {
+      return _ScheduleViewerIdentity(
+        uid: uid,
+        name: '',
+        serial: '',
+        isAdmin: false,
+      );
+    }
+  }
+
+  String _norm(String s) => s.trim().toLowerCase();
+
+  bool _matchesTeacherClass(Map<String, dynamic> classData) {
+    String curUid = '';
+    String curName = '';
+
+    final cur = classData['instructor_current'];
+    if (cur is Map) {
+      final curMap = Map<String, dynamic>.from(cur);
+      curUid = (curMap['uid'] ?? '').toString().trim();
+      curName = (curMap['name'] ?? '').toString().trim();
+    }
+
+    final legacyInstructorName = (classData['instructor'] ?? '')
+        .toString()
+        .trim();
+
+    final matchesUid = curUid.isNotEmpty && curUid == _viewerUid;
+
+    final matchesName =
+        _viewerName.isNotEmpty &&
+        _norm(
+              legacyInstructorName.isNotEmpty ? legacyInstructorName : curName,
+            ) ==
+            _norm(_viewerName);
+
+    final legacySerial =
+        (classData['instructorserial'] ?? classData['serial'] ?? '')
+            .toString()
+            .trim();
+    final matchesSerial =
+        _viewerSerial.isNotEmpty && legacySerial == _viewerSerial;
+
+    return matchesUid || matchesName || matchesSerial;
+  }
+
+  String _classCacheKey(Map<String, dynamic> cls) {
+    final id = (cls['class_id'] ?? cls['id'] ?? '').toString().trim();
+    if (id.isNotEmpty) return id;
+    return cls.hashCode.toString();
+  }
+
+  String _classScheduleSignature(Map<String, dynamic> cls) {
+    final schedule = (cls['schedule'] is Map)
+        ? Map<String, dynamic>.from(cls['schedule'] as Map)
+        : <String, dynamic>{};
+    final sessions = schedule['sessions'];
+    return [
+      (cls['status'] ?? '').toString(),
+      (cls['course_code'] ?? '').toString(),
+      (cls['course_title'] ?? '').toString(),
+      (schedule['first_session_date'] ?? '').toString(),
+      (schedule['sessions_count'] ?? '').toString(),
+      sessions.runtimeType.toString(),
+      sessions?.toString() ?? '',
+    ].join('|');
+  }
+
+  List<_Occ> _occurrencesForClassCached(Map<String, dynamic> cls) {
+    final key = _classCacheKey(cls);
+    final signature = _classScheduleSignature(cls);
+    final cached = _occCache[key];
+    if (cached != null && cached.signature == signature) {
+      return cached.items;
+    }
+
+    final items = _generateOccurrences(cls);
+    _occCache[key] = _OccCacheEntry(signature: signature, items: items);
+    return items;
+  }
+
+  void _pruneOccCache(List<Map<String, dynamic>> classes) {
+    final keep = <String>{};
+    for (final c in classes) {
+      keep.add(_classCacheKey(c));
+    }
+    _occCache.removeWhere((k, _) => !keep.contains(k));
+  }
+
+  List<_Occ> _buildReminderCandidates(List<_Occ> upcoming) {
+    final now = DateTime.now();
+    final maxToSchedule = _lastAllOcc.length < 30 ? _lastAllOcc.length : 30;
+    return upcoming
+        .where((e) => _isClassEnabled(e.classId))
+        .where((e) => _isDayEnabled(e.start))
+        .where((e) => e.start.isAfter(now))
+        .take(maxToSchedule)
+        .toList();
+  }
+
+  String _reminderPlanKey(List<_Occ> candidates) {
+    final sb = StringBuffer()
+      ..write('d:')
+      ..write(_dailyEnabled ? '1' : '0')
+      ..write(';s:')
+      ..write(_sessionEnabled ? '1' : '0')
+      ..write(';');
+    for (final o in candidates) {
+      sb
+        ..write(o.classId)
+        ..write('@')
+        ..write(o.start.millisecondsSinceEpoch)
+        ..write('|');
+    }
+    return sb.toString();
   }
 
   void _openSettingsSheet() {
@@ -238,7 +402,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     try {
       final upcoming = _lastUpcoming;
-      final allOcc = _lastAllOcc;
+      final reminderCandidates = _buildReminderCandidates(upcoming);
+      final planKey = _reminderPlanKey(reminderCandidates);
+      if (planKey == _lastAppliedReminderPlanKey) {
+        return;
+      }
 
       await NotificationService.I.cancelAll();
 
@@ -252,13 +420,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       }
 
       if (_sessionEnabled) {
-        final filtered = upcoming
-            .where((e) => _isClassEnabled(e.classId))
-            .where((e) => _isDayEnabled(e.start))
-            .where((e) => e.start.isAfter(DateTime.now()))
-            .take(30);
-
-        for (final o in filtered) {
+        for (final o in reminderCandidates) {
           await NotificationService.I.scheduleSessionReminder(
             classId: o.classId,
             title: 'Class Starting',
@@ -268,7 +430,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           );
         }
       }
-    } catch (_, __) {
+      _lastAppliedReminderPlanKey = planKey;
+    } catch (_) {
     } finally {
       _applyInProgress = false;
       if (_applyPending) {
@@ -280,8 +443,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     TeacherTourGuide.schedule(
       context,
       screenId: 'teacher_schedule',
@@ -357,7 +518,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             stream: _classesRef.onValue,
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting ||
-                  !_prefsReady) {
+                  !_prefsReady ||
+                  !_viewerReady) {
                 return Center(
                   child: CircularProgressIndicator(color: p.accent),
                 );
@@ -391,10 +553,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 );
               }
 
-              final currentUser = FirebaseAuth.instance.currentUser;
-              final myUid = currentUser?.uid;
-
-              if (myUid == null || myUid.isEmpty) {
+              if (_viewerUid.isEmpty) {
                 return _EmptyState(
                   palette: p,
                   icon: Icons.lock_outline_rounded,
@@ -403,102 +562,74 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 );
               }
 
-              final roleRef = FirebaseDatabase.instance.ref(
-                'users/$myUid/role',
-              );
+              final isAdmin = _isAdminViewer;
+              final visibleClasses = isAdmin
+                  ? rawClasses
+                  : rawClasses.where(_matchesTeacherClass).toList();
 
-              return FutureBuilder<DataSnapshot>(
-                future: roleRef.get(),
-                builder: (context, roleSnap) {
-                  if (!roleSnap.hasData) {
-                    return Center(
-                      child: CircularProgressIndicator(color: p.accent),
-                    );
-                  }
+              _pruneOccCache(visibleClasses);
 
-                  final role = (roleSnap.data?.value ?? '')
-                      .toString()
-                      .toLowerCase()
-                      .trim();
-                  final isAdmin = role == 'admin';
+              if (!isAdmin && visibleClasses.isEmpty) {
+                return _EmptyState(
+                  palette: p,
+                  icon: Icons.groups_rounded,
+                  title: 'No classes assigned',
+                  subtitle: 'No classes are assigned to this teacher yet.',
+                );
+              }
 
-                  final teacherOnlyClasses = rawClasses.where((c) {
-                    final instructorCurrent = c['instructor_current'];
-                    if (instructorCurrent is Map) {
-                      final ic = Map<String, dynamic>.from(instructorCurrent);
-                      final uid = ic['uid']?.toString();
-                      return uid == myUid;
-                    }
-                    return false;
-                  }).toList();
+              final allOcc = <_Occ>[];
+              for (final cls in visibleClasses) {
+                allOcc.addAll(_occurrencesForClassCached(cls));
+              }
+              allOcc.sort((a, b) => a.start.compareTo(b.start));
 
-                  final visibleClasses = isAdmin
-                      ? rawClasses
-                      : teacherOnlyClasses;
+              final now = DateTime.now();
+              final twoDaysAgo = now.subtract(const Duration(days: 2));
+              final recentAndUpcoming = allOcc
+                  .where((o) => o.end.isAfter(twoDaysAgo))
+                  .toList();
 
-                  if (!isAdmin && visibleClasses.isEmpty) {
-                    return _EmptyState(
-                      palette: p,
-                      icon: Icons.groups_rounded,
-                      title: 'No classes assigned',
-                      subtitle: 'No classes are assigned to this teacher yet.',
-                    );
-                  }
+              _latestAllOcc = allOcc;
+              _latestUpcoming = recentAndUpcoming;
 
-                  final allOcc = <_Occ>[];
-                  for (final cls in visibleClasses) {
-                    allOcc.addAll(_generateOccurrences(cls));
-                  }
-                  allOcc.sort((a, b) => a.start.compareTo(b.start));
-
-                  final now = DateTime.now();
-                  final twoDaysAgo = now.subtract(const Duration(days: 2));
-                  final recentAndUpcoming = allOcc
-                      .where((o) => o.end.isAfter(twoDaysAgo))
-                      .toList();
-
-                  _latestAllOcc = allOcc;
-                  _latestUpcoming = recentAndUpcoming;
-
-                  if (_prefsReady && !_didAutoApply) {
-                    _didAutoApply = true;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      _queueApplyAllReminders(
-                        upcoming: recentAndUpcoming,
-                        allOcc: allOcc,
-                      );
-                    });
-                  }
-
-                  return Column(
-                    children: [
-                      _ScheduleTopSummary(
-                        palette: p,
-                        totalClasses: visibleClasses.length,
-                        totalSessions: recentAndUpcoming.length,
-                        remindersOn: _sessionEnabled || _dailyEnabled,
-                        isAdmin: isAdmin,
-                      ),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            _buildGroupedSchedule(
-                              recentAndUpcoming,
-                              allOcc,
-                              visibleClasses,
-                            ),
-                            _buildCalendarView(
-                              allOcc,
-                              recentAndUpcoming,
-                              visibleClasses,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+              if (_prefsReady && !_didAutoApply) {
+                _didAutoApply = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _queueApplyAllReminders(
+                    upcoming: recentAndUpcoming,
+                    allOcc: allOcc,
                   );
-                },
+                });
+              }
+
+              return Column(
+                children: [
+                  _ScheduleTopSummary(
+                    palette: p,
+                    totalClasses: visibleClasses.length,
+                    totalSessions: recentAndUpcoming.length,
+                    remindersOn: _sessionEnabled || _dailyEnabled,
+                    isAdmin: isAdmin,
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _buildGroupedSchedule(
+                          recentAndUpcoming,
+                          allOcc,
+                          visibleClasses,
+                        ),
+                        _buildCalendarView(
+                          allOcc,
+                          recentAndUpcoming,
+                          visibleClasses,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               );
             },
           ),
@@ -923,12 +1054,18 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     if (firstDate == null) return [];
 
     final sessionsRaw = schedule['sessions'];
-    if (sessionsRaw is! List) return [];
-
-    final pattern = sessionsRaw
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    final pattern = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final it in sessionsRaw) {
+        if (it is! Map) continue;
+        pattern.add(Map<String, dynamic>.from(it));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final it in sessionsRaw.values) {
+        if (it is! Map) continue;
+        pattern.add(Map<String, dynamic>.from(it));
+      }
+    }
     if (pattern.isEmpty) return [];
 
     final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
@@ -996,16 +1133,34 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   int _weekdayFromShort(String day) {
-    const days = {
-      'Mon': 1,
-      'Tue': 2,
-      'Wed': 3,
-      'Thu': 4,
-      'Fri': 5,
-      'Sat': 6,
-      'Sun': 7,
-    };
-    return days[day] ?? 1;
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return DateTime.monday;
+    }
   }
 
   Future<void> _toggleClassNotif(
@@ -1041,6 +1196,27 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
+}
+
+class _ScheduleViewerIdentity {
+  const _ScheduleViewerIdentity({
+    required this.uid,
+    required this.name,
+    required this.serial,
+    required this.isAdmin,
+  });
+
+  final String uid;
+  final String name;
+  final String serial;
+  final bool isAdmin;
+}
+
+class _OccCacheEntry {
+  const _OccCacheEntry({required this.signature, required this.items});
+
+  final String signature;
+  final List<_Occ> items;
 }
 
 class _Occ {

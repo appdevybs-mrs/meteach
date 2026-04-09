@@ -144,7 +144,35 @@ function firebase_factory(): Factory
     $credentials = getenv('GOOGLE_APPLICATION_CREDENTIALS');
     $dbUrl = getenv('FIREBASE_DB_URL');
 
-    if (!$credentials || !$dbUrl) {
+    $credentials = is_string($credentials) ? trim($credentials) : '';
+    $dbUrl = is_string($dbUrl) ? trim($dbUrl) : '';
+
+    if ($credentials === '' || $dbUrl === '') {
+        $cfgPath = __DIR__ . '/secure_config.php';
+        if (is_file($cfgPath) && is_readable($cfgPath)) {
+            try {
+                $cfg = include $cfgPath;
+                if (is_array($cfg)) {
+                    if ($credentials === '') {
+                        $v = $cfg['GOOGLE_APPLICATION_CREDENTIALS'] ?? '';
+                        if (is_string($v) && trim($v) !== '') {
+                            $credentials = trim($v);
+                        }
+                    }
+                    if ($dbUrl === '') {
+                        $v = $cfg['FIREBASE_DB_URL'] ?? '';
+                        if (is_string($v) && trim($v) !== '') {
+                            $dbUrl = trim($v);
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                secure_log('secure_config load failed', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    if ($credentials === '' || $dbUrl === '') {
         json_response([
             'success' => false,
             'message' => 'Server misconfiguration: missing Firebase env vars.',

@@ -335,6 +335,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     String teacherUid,
   ) async {
     try {
+      final identity = await _loadTeacherIdentityForHome(teacherUid);
       final snap = await _db.child(classesNode).get();
       if (!snap.exists || snap.value == null || snap.value is! Map) {
         return null;
@@ -342,37 +343,109 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
       final raw = Map<dynamic, dynamic>.from(snap.value as Map);
       final now = DateTime.now();
-      final allUpcoming = <_HomeUpcomingClass>[];
+      _HomeUpcomingClass? bestUpcoming;
 
       for (final entry in raw.entries) {
         final value = entry.value;
         if (value is! Map) continue;
 
         final c = Map<String, dynamic>.from(value);
-
-        final instructorCurrent = c['instructor_current'];
-        if (instructorCurrent is! Map) continue;
-
-        final currentMap = Map<String, dynamic>.from(instructorCurrent);
-        final currentUid = (currentMap['uid'] ?? '').toString().trim();
-        if (currentUid != teacherUid) continue;
+        if (!_matchesTeacherForHome(
+          c,
+          teacherUid: teacherUid,
+          teacherName: identity.name,
+          teacherSerial: identity.serial,
+        )) {
+          continue;
+        }
 
         final occurrences = _generateOccurrencesForHome(c);
 
         for (final occ in occurrences) {
-          if (occ.start.isAfter(now)) {
-            allUpcoming.add(occ);
+          if (!occ.end.isAfter(now)) continue;
+
+          if (bestUpcoming == null) {
+            bestUpcoming = occ;
+            continue;
+          }
+
+          final best = bestUpcoming;
+
+          final occIsNow = !occ.start.isAfter(now) && occ.end.isAfter(now);
+          final bestIsNow = !best.start.isAfter(now) && best.end.isAfter(now);
+
+          if (occIsNow && !bestIsNow) {
+            bestUpcoming = occ;
+            continue;
+          }
+          if (occIsNow == bestIsNow && occ.start.isBefore(best.start)) {
+            bestUpcoming = occ;
           }
         }
       }
 
-      if (allUpcoming.isEmpty) return null;
-
-      allUpcoming.sort((a, b) => a.start.compareTo(b.start));
-      return allUpcoming.first;
+      return bestUpcoming;
     } catch (_) {
       return null;
     }
+  }
+
+  Future<_HomeTeacherIdentity> _loadTeacherIdentityForHome(String uid) async {
+    try {
+      final userSnap = await _db.child('$usersNode/$uid').get();
+      if (!userSnap.exists || userSnap.value is! Map) {
+        return const _HomeTeacherIdentity(name: '', serial: '');
+      }
+
+      final u = Map<String, dynamic>.from(userSnap.value as Map);
+      final fn = (u['first_name'] ?? '').toString().trim();
+      final ln = (u['last_name'] ?? '').toString().trim();
+      final teacherName = ('$fn $ln').trim();
+      final teacherSerial = (u['serial'] ?? '').toString().trim();
+
+      return _HomeTeacherIdentity(name: teacherName, serial: teacherSerial);
+    } catch (_) {
+      return const _HomeTeacherIdentity(name: '', serial: '');
+    }
+  }
+
+  bool _matchesTeacherForHome(
+    Map<String, dynamic> classData, {
+    required String teacherUid,
+    required String teacherName,
+    required String teacherSerial,
+  }) {
+    String curUid = '';
+    String curName = '';
+
+    final cur = classData['instructor_current'];
+    if (cur is Map) {
+      final curMap = Map<String, dynamic>.from(cur);
+      curUid = (curMap['uid'] ?? '').toString().trim();
+      curName = (curMap['name'] ?? '').toString().trim();
+    }
+
+    final legacyInstructorName = (classData['instructor'] ?? '')
+        .toString()
+        .trim();
+
+    final matchesUid = curUid.isNotEmpty && curUid == teacherUid;
+
+    final matchesName =
+        teacherName.isNotEmpty &&
+        _norm(
+              legacyInstructorName.isNotEmpty ? legacyInstructorName : curName,
+            ) ==
+            _norm(teacherName);
+
+    final legacySerial =
+        (classData['instructorserial'] ?? classData['serial'] ?? '')
+            .toString()
+            .trim();
+    final matchesSerial =
+        teacherSerial.isNotEmpty && legacySerial == teacherSerial;
+
+    return matchesUid || matchesName || matchesSerial;
   }
 
   List<_HomeUpcomingClass> _generateOccurrencesForHome(
@@ -390,12 +463,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (firstDate == null) return [];
 
     final sessionsRaw = schedule['sessions'];
-    if (sessionsRaw is! List) return [];
-
-    final pattern = sessionsRaw
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    final pattern = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final it in sessionsRaw) {
+        if (it is! Map) continue;
+        pattern.add(Map<String, dynamic>.from(it));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final it in sessionsRaw.values) {
+        if (it is! Map) continue;
+        pattern.add(Map<String, dynamic>.from(it));
+      }
+    }
     if (pattern.isEmpty) return [];
 
     final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
@@ -464,16 +543,34 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   int _weekdayFromShortForHome(String day) {
-    const days = {
-      'Mon': 1,
-      'Tue': 2,
-      'Wed': 3,
-      'Thu': 4,
-      'Fri': 5,
-      'Sat': 6,
-      'Sun': 7,
-    };
-    return days[day] ?? 1;
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return DateTime.monday;
+    }
   }
 
   int _countNotDoneReminders(dynamic snapshotValue) {
@@ -1192,6 +1289,13 @@ class _HomeUpcomingClass {
   final String courseTitle;
   final DateTime start;
   final DateTime end;
+}
+
+class _HomeTeacherIdentity {
+  const _HomeTeacherIdentity({required this.name, required this.serial});
+
+  final String name;
+  final String serial;
 }
 
 class _TeacherHomeWebRail extends StatelessWidget {

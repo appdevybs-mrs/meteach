@@ -347,6 +347,17 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     return 0;
   }
 
+  String _receiptLabel(_MailMsg m) {
+    if (m.fromUid != _meUid) return '';
+    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) {
+      return 'Seen ${_fmtReceiptAt(_peerLastReadAtMs)}';
+    }
+    if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
+      return 'Delivered ${_fmtReceiptAt(_peerLastDeliveredAtMs)}';
+    }
+    return '';
+  }
+
   bool _subjectLooksHomework(String subject) {
     return subject.trim().toLowerCase().startsWith('[hw]');
   }
@@ -1433,6 +1444,31 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     return '${two(d.hour)}:${two(d.minute)}';
   }
 
+  static String _fmtReceiptAt(int ms) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    final sameDay =
+        d.year == now.year && d.month == now.month && d.day == now.day;
+    final hhmm = _fmtTime(ms);
+    if (sameDay) return hhmm;
+    final month = months[(d.month - 1).clamp(0, 11)];
+    return '$month ${d.day}, $hhmm';
+  }
+
   double _messageMaxWidth(_MailMsg m) {
     final hasImage = m.attachments.any((a) {
       final name = (a['name'] ?? '').toString();
@@ -1922,6 +1958,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         ? (_meDisplayName.trim().isEmpty ? 'You' : _meDisplayName)
         : (_peerNameShown.trim().isEmpty ? 'User' : _peerNameShown);
     final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
+    final receiptLabel = mine ? _receiptLabel(m) : '';
 
     return Padding(
       padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
@@ -1955,6 +1992,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   ? scheme.primary
                   : scheme.onSurfaceVariant,
             ),
+            if (receiptLabel.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Text(
+                receiptLabel,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: receiptLevel == 2
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
           const SizedBox(width: 2),
           PopupMenuButton<String>(

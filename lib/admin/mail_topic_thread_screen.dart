@@ -280,6 +280,17 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     return 0;
   }
 
+  String _receiptLabel(_MailMsg m) {
+    if (m.fromUid != _meUid) return '';
+    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) {
+      return 'Seen ${_fmtReceiptAt(_peerLastReadAtMs)}';
+    }
+    if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
+      return 'Delivered ${_fmtReceiptAt(_peerLastDeliveredAtMs)}';
+    }
+    return '';
+  }
+
   List<_MailMsg> _parseMessages(dynamic data) {
     if (data is! Map) return [];
     final out = <_MailMsg>[];
@@ -869,6 +880,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                         final mine = m.fromUid == _meUid;
                         final scheme = Theme.of(context).colorScheme;
                         final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
+                        final receiptLabel = mine ? _receiptLabel(m) : '';
 
                         return GestureDetector(
                           onLongPress: () => _toggleMessageSelection(m),
@@ -934,6 +946,20 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                     ? scheme.primary
                                                     : scheme.onSurfaceVariant,
                                               ),
+                                              if (receiptLabel.isNotEmpty) ...[
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  receiptLabel,
+                                                  style: TextStyle(
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: receiptLevel == 2
+                                                        ? scheme.primary
+                                                        : scheme
+                                                              .onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ],
                                             ],
                                             const SizedBox(width: 6),
                                             if (!_selectionMode)
@@ -1066,6 +1092,32 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  static String _fmtReceiptAt(int ms) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final hhmm = '${two(d.hour)}:${two(d.minute)}';
+    final sameDay =
+        d.year == now.year && d.month == now.month && d.day == now.day;
+    if (sameDay) return hhmm;
+    final month = months[(d.month - 1).clamp(0, 11)];
+    return '$month ${d.day}, $hhmm';
   }
 }
 
