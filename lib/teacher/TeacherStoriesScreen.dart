@@ -8,12 +8,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
-import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
+import '../shared/shared_pdf_reader_screen.dart';
+import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
@@ -364,46 +365,58 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         _sortBy != 'updated_desc';
   }
 
-  Future<void> _openUrl({
-    required String url,
-    required String title,
-    required String emptyMessage,
-  }) async {
-    final cleanUrl = url.trim();
-
-    if (cleanUrl.isEmpty) {
+  Future<void> _openStory(Map<String, dynamic> story) async {
+    final link = (story['link'] ?? '').toString().trim();
+    if (link.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, SnackBar(content: Text(emptyMessage)));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('This story has no file.')),
+      );
       return;
     }
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            MaterialWebViewScreen.fromUrl(title: title, url: cleanUrl),
-      ),
-    );
-  }
+    final uri = Uri.tryParse(link);
+    if (uri == null) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid story link.')),
+      );
+      return;
+    }
 
-  Future<void> _openStory(Map<String, dynamic> story) async {
-    final link = (story['link'] ?? '').toString().trim();
-    final name = (story['name'] ?? 'Story').toString().trim();
-
-    await _openUrl(
-      url: link,
-      title: name.isEmpty ? 'Story' : name,
-      emptyMessage: 'This story has no file.',
-    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open browser.')),
+      );
+    }
   }
 
   Future<void> _openAudio(Map<String, dynamic> story) async {
     final audioUrl = (story['audioUrl'] ?? '').toString().trim();
     final name = (story['name'] ?? 'Story Audio').toString().trim();
+    final imageUrl = (story['thumbnail'] ?? '').toString().trim();
 
-    await _openUrl(
-      url: audioUrl,
-      title: name.isEmpty ? 'Story Audio' : '$name Audio',
-      emptyMessage: 'This story has no audio.',
+    if (audioUrl.isEmpty) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('This story has no audio.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SharedAudioPlayerScreen(
+          title: name.isEmpty ? 'Story Audio' : name,
+          audioUrl: audioUrl,
+          imageUrl: imageUrl,
+        ),
+      ),
     );
   }
 
@@ -411,10 +424,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
     final name = (story['name'] ?? 'Story PDF').toString().trim();
 
-    await _openUrl(
-      url: pdfUrl,
-      title: name.isEmpty ? 'Story PDF' : '$name PDF',
-      emptyMessage: 'This story has no PDF.',
+    if (pdfUrl.isEmpty) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('This story has no PDF.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SharedPdfReaderScreen(
+          title: name.isEmpty ? 'Story PDF' : name,
+          pdfUrl: pdfUrl,
+        ),
+      ),
     );
   }
 

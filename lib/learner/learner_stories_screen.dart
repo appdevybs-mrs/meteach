@@ -314,6 +314,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
 
   void _showStoryDetails(Map<String, dynamic> story) {
     final p = palette;
+    final hasRead = _hasRead(story);
+    final hasListen = _hasListen(story);
+    final hasWatch = _hasWatch(story);
     final title = (story['name'] ?? 'Story').toString().trim();
     final description = (story['description'] ?? '').toString().trim();
     final genre = (story['genre'] ?? '').toString().trim();
@@ -418,11 +421,11 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       _detailChip(p, Icons.schedule_rounded, lengthApprox),
                     if (scriptType.isNotEmpty)
                       _detailChip(p, Icons.article_rounded, scriptType),
-                    if (_hasRead(story))
+                    if (hasRead)
                       _detailChip(p, Icons.picture_as_pdf_rounded, 'Read'),
-                    if (_hasListen(story))
+                    if (hasListen)
                       _detailChip(p, Icons.headphones_rounded, 'Listen'),
-                    if (_hasWatch(story))
+                    if (hasWatch)
                       _detailChip(p, Icons.ondemand_video_rounded, 'Watch'),
                   ],
                 ),
@@ -506,78 +509,97 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 ],
                 const SizedBox(height: 20),
                 if (narrow) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _hasRead(story)
-                          ? () {
+                  if (hasRead)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _openRead(story);
+                        },
+                        icon: const Icon(Icons.picture_as_pdf_rounded),
+                        label: const Text('Read'),
+                      ),
+                    ),
+                  if (hasRead && hasListen) const SizedBox(height: 10),
+                  if (hasListen)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _openListen(story);
+                        },
+                        icon: const Icon(Icons.headphones_rounded),
+                        label: const Text('Listen'),
+                      ),
+                    ),
+                ] else ...[
+                  if (hasRead && hasListen)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () {
                               Navigator.of(ctx).pop();
                               _openRead(story);
-                            }
-                          : null,
-                      icon: const Icon(Icons.picture_as_pdf_rounded),
-                      label: const Text('Read'),
+                            },
+                            icon: const Icon(Icons.picture_as_pdf_rounded),
+                            label: const Text('Read'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              _openListen(story);
+                            },
+                            icon: const Icon(Icons.headphones_rounded),
+                            label: const Text('Listen'),
+                          ),
+                        ),
+                      ],
+                    )
+                  else if (hasRead)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _openRead(story);
+                        },
+                        icon: const Icon(Icons.picture_as_pdf_rounded),
+                        label: const Text('Read'),
+                      ),
+                    )
+                  else if (hasListen)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _openListen(story);
+                        },
+                        icon: const Icon(Icons.headphones_rounded),
+                        label: const Text('Listen'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
+                ],
+                if (hasWatch) ...[
+                  if (hasRead || hasListen) const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: _hasListen(story)
-                          ? () {
-                              Navigator.of(ctx).pop();
-                              _openListen(story);
-                            }
-                          : null,
-                      icon: const Icon(Icons.headphones_rounded),
-                      label: const Text('Listen'),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _openWatch(story);
+                      },
+                      icon: const Icon(Icons.ondemand_video_rounded),
+                      label: const Text('Watch'),
                     ),
                   ),
-                ] else ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _hasRead(story)
-                              ? () {
-                                  Navigator.of(ctx).pop();
-                                  _openRead(story);
-                                }
-                              : null,
-                          icon: const Icon(Icons.picture_as_pdf_rounded),
-                          label: const Text('Read'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _hasListen(story)
-                              ? () {
-                                  Navigator.of(ctx).pop();
-                                  _openListen(story);
-                                }
-                              : null,
-                          icon: const Icon(Icons.headphones_rounded),
-                          label: const Text('Listen'),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _hasWatch(story)
-                        ? () {
-                            Navigator.of(ctx).pop();
-                            _openWatch(story);
-                          }
-                        : null,
-                    icon: const Icon(Icons.ondemand_video_rounded),
-                    label: const Text('Watch'),
-                  ),
-                ),
               ],
             ),
           ),
@@ -831,6 +853,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
 
   Widget _buildStoryCard(Map<String, dynamic> story) {
     final p = palette;
+    final hasRead = _hasRead(story);
+    final hasListen = _hasListen(story);
+    final hasWatch = _hasWatch(story);
+    final hasAnyAction = hasRead || hasListen || hasWatch;
     final title = (story['name'] ?? 'Story').toString().trim();
     final genre = (story['genre'] ?? '').toString().trim();
     final level = (story['level'] ?? '').toString().trim();
@@ -878,49 +904,50 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                             : _fallbackCover(p),
                       ),
                     ),
-                    Positioned(
-                      top: 10,
-                      left: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_hasRead(story))
-                              const Padding(
-                                padding: EdgeInsets.only(right: 6),
-                                child: Icon(
-                                  Icons.picture_as_pdf_rounded,
+                    if (hasAnyAction)
+                      Positioned(
+                        top: 10,
+                        left: 10,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (hasRead)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 6),
+                                  child: Icon(
+                                    Icons.picture_as_pdf_rounded,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                ),
+                              if (hasListen)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 6),
+                                  child: Icon(
+                                    Icons.headphones_rounded,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                ),
+                              if (hasWatch)
+                                const Icon(
+                                  Icons.ondemand_video_rounded,
                                   color: Colors.white,
                                   size: 14,
                                 ),
-                              ),
-                            if (_hasListen(story))
-                              const Padding(
-                                padding: EdgeInsets.only(right: 6),
-                                child: Icon(
-                                  Icons.headphones_rounded,
-                                  color: Colors.white,
-                                  size: 14,
-                                ),
-                              ),
-                            if (_hasWatch(story))
-                              const Icon(
-                                Icons.ondemand_video_rounded,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 Expanded(
@@ -958,12 +985,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                           children: [
                             if (genre.isNotEmpty) _smallTag(p, genre),
                             if (level.isNotEmpty) _smallTag(p, level),
-                            if (_hasRead(story))
-                              _smallTag(p, 'Read', isAccent: true),
-                            if (_hasListen(story))
+                            if (hasRead) _smallTag(p, 'Read', isAccent: true),
+                            if (hasListen)
                               _smallTag(p, 'Listen', isAccent: true),
-                            if (_hasWatch(story))
-                              _smallTag(p, 'Watch', isAccent: true),
+                            if (hasWatch) _smallTag(p, 'Watch', isAccent: true),
                           ],
                         ),
                       ],
