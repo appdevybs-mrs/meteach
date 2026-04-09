@@ -160,6 +160,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   String _subject = '';
   bool _sending = false;
+  int _peerLastDeliveredAtMs = 0;
+  int _peerLastReadAtMs = 0;
   bool _fileUploading = false;
   double _fileUploadProgress = 0;
   String _uploadingFileName = '';
@@ -167,6 +169,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   final List<Map<String, String>> _attachments = [];
   final Set<String> _selectedMessageIds = <String>{};
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
+  StreamSubscription<DatabaseEvent>? _peerStateSub;
 
   bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
@@ -182,12 +185,14 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         .asBroadcastStream();
     _loadSubject();
     _markRead();
+    _listenPeerState();
   }
 
   @override
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
     _bodyC.dispose();
+    _peerStateSub?.cancel();
     super.dispose();
   }
 
@@ -225,12 +230,54 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _stateRef.child(_meUid).child(widget.threadId).update({
+        'lastDeliveredAt': now,
         'lastReadAt': now,
       });
       await _indexRef.child(_meUid).child(widget.threadId).update({
         'unreadCount': 0,
       });
     } catch (_) {}
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  void _listenPeerState() {
+    final peerUid = widget.peerUid.trim();
+    if (peerUid.isEmpty) return;
+    _peerStateSub = _stateRef
+        .child(peerUid)
+        .child(widget.threadId)
+        .onValue
+        .listen((event) {
+          final v = event.snapshot.value;
+          if (v is! Map) {
+            if (!mounted) return;
+            setState(() {
+              _peerLastDeliveredAtMs = 0;
+              _peerLastReadAtMs = 0;
+            });
+            return;
+          }
+          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+          if (!mounted) return;
+          setState(() {
+            _peerLastDeliveredAtMs = _asInt(m['lastDeliveredAt']);
+            _peerLastReadAtMs = _asInt(m['lastReadAt']);
+          });
+        });
+  }
+
+  int _messageReceiptLevel(_MailMsg m) {
+    if (m.fromUid != _meUid) return 0;
+    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) return 2;
+    if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
+      return 1;
+    }
+    return 0;
   }
 
   List<_MailMsg> _parseMessages(dynamic data) {
@@ -820,6 +867,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                       itemBuilder: (_, i) {
                         final m = msgs[i];
                         final mine = m.fromUid == _meUid;
+                        final scheme = Theme.of(context).colorScheme;
+                        final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
 
                         return GestureDetector(
                           onLongPress: () => _toggleMessageSelection(m),
@@ -861,9 +910,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                               mine ? 'Me' : widget.peerName,
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w800,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.6,
-                                                ),
+                                                color: scheme.onSurface,
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -872,11 +919,22 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                               _fmt(m.createdAtMs),
                                               style: TextStyle(
                                                 fontSize: 11,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.55,
-                                                ),
+                                                fontStyle: FontStyle.italic,
+                                                color: scheme.onSurfaceVariant,
                                               ),
                                             ),
+                                            if (receiptLevel > 0) ...[
+                                              const SizedBox(width: 6),
+                                              Icon(
+                                                receiptLevel == 2
+                                                    ? Icons.done_all_rounded
+                                                    : Icons.done_rounded,
+                                                size: 15,
+                                                color: receiptLevel == 2
+                                                    ? scheme.primary
+                                                    : scheme.onSurfaceVariant,
+                                              ),
+                                            ],
                                             const SizedBox(width: 6),
                                             if (!_selectionMode)
                                               PopupMenuButton<String>(

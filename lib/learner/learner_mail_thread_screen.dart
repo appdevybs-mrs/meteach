@@ -88,6 +88,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   String _meDisplayName = 'Learner';
   String _peerDisplayName = '';
   bool _isHomeworkThread = false;
+  int _peerLastDeliveredAtMs = 0;
+  int _peerLastReadAtMs = 0;
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -116,6 +118,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<void>? _completeSub;
+  StreamSubscription<DatabaseEvent>? _peerStateSub;
   String? _playingUrl;
   Duration _pos = Duration.zero;
   Duration _dur = Duration.zero;
@@ -176,6 +179,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         .onValue
         .asBroadcastStream();
     _markRead();
+    _listenPeerState();
     _loadNames();
     _loadThreadType();
 
@@ -214,6 +218,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     _durSub?.cancel();
     _stateSub?.cancel();
     _completeSub?.cancel();
+    _peerStateSub?.cancel();
     _audio.dispose();
 
     _recTicker?.cancel();
@@ -290,6 +295,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _stateRef.child(_meUid).child(widget.threadId).update({
+        'lastDeliveredAt': now,
         'lastReadAt': now,
       });
       await _indexRef.child(_meUid).child(widget.threadId).runTransaction((
@@ -304,6 +310,41 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         return Transaction.success(map);
       });
     } catch (_) {}
+  }
+
+  void _listenPeerState() {
+    final peerUid = widget.peerUid.trim();
+    if (peerUid.isEmpty) return;
+    _peerStateSub = _stateRef
+        .child(peerUid)
+        .child(widget.threadId)
+        .onValue
+        .listen((event) {
+          final v = event.snapshot.value;
+          if (v is! Map) {
+            if (!mounted) return;
+            setState(() {
+              _peerLastDeliveredAtMs = 0;
+              _peerLastReadAtMs = 0;
+            });
+            return;
+          }
+          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+          if (!mounted) return;
+          setState(() {
+            _peerLastDeliveredAtMs = _asInt(m['lastDeliveredAt']);
+            _peerLastReadAtMs = _asInt(m['lastReadAt']);
+          });
+        });
+  }
+
+  int _messageReceiptLevel(_MailMsg m) {
+    if (m.fromUid != _meUid) return 0;
+    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) return 2;
+    if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
+      return 1;
+    }
+    return 0;
   }
 
   bool _subjectLooksHomework(String subject) {
@@ -1876,19 +1917,45 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   }
 
   Widget _buildMessageMeta(_MailMsg m, {required bool mine}) {
+    final scheme = Theme.of(context).colorScheme;
+    final sender = mine
+        ? (_meDisplayName.trim().isEmpty ? 'You' : _meDisplayName)
+        : (_peerNameShown.trim().isEmpty ? 'User' : _peerNameShown);
+    final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
+
     return Padding(
       padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
+            sender,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
             _fmtTime(m.createdAtMs),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: _navy.withValues(alpha: 0.50),
+              fontWeight: FontWeight.w700,
+              fontStyle: FontStyle.italic,
+              color: scheme.onSurfaceVariant,
             ),
           ),
+          if (receiptLevel > 0) ...[
+            const SizedBox(width: 6),
+            Icon(
+              receiptLevel == 2 ? Icons.done_all_rounded : Icons.done_rounded,
+              size: 15,
+              color: receiptLevel == 2
+                  ? scheme.primary
+                  : scheme.onSurfaceVariant,
+            ),
+          ],
           const SizedBox(width: 2),
           PopupMenuButton<String>(
             padding: EdgeInsets.zero,

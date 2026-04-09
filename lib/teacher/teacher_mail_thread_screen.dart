@@ -141,6 +141,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   Map<String, String> _learnerCourseTitles = {};
   bool _loadingLearnerCourses = false;
   bool _loadedLearnerCourses = false;
+  int _peerLastDeliveredAtMs = 0;
+  int _peerLastReadAtMs = 0;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -149,6 +151,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<void>? _completeSub;
+  StreamSubscription<DatabaseEvent>? _peerStateSub;
   String? _playingUrl;
   Duration _pos = Duration.zero;
   Duration _dur = Duration.zero;
@@ -205,6 +208,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         .asBroadcastStream();
 
     _markRead();
+    _listenPeerState();
     _loadNames();
     _loadPeerRole();
     _loadThreadMeta();
@@ -244,6 +248,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     _durSub?.cancel();
     _stateSub?.cancel();
     _completeSub?.cancel();
+    _peerStateSub?.cancel();
     _audio.dispose();
 
     _recTicker?.cancel();
@@ -529,6 +534,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _stateRef.child(_meUid).child(widget.threadId).update({
+        'lastDeliveredAt': now,
         'lastReadAt': now,
       });
       await _indexRef.child(_meUid).child(widget.threadId).runTransaction((
@@ -543,6 +549,41 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         return Transaction.success(map);
       });
     } catch (_) {}
+  }
+
+  void _listenPeerState() {
+    final peerUid = widget.peerUid.trim();
+    if (peerUid.isEmpty) return;
+    _peerStateSub = _stateRef
+        .child(peerUid)
+        .child(widget.threadId)
+        .onValue
+        .listen((event) {
+          final v = event.snapshot.value;
+          if (v is! Map) {
+            if (!mounted) return;
+            setState(() {
+              _peerLastDeliveredAtMs = 0;
+              _peerLastReadAtMs = 0;
+            });
+            return;
+          }
+          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+          if (!mounted) return;
+          setState(() {
+            _peerLastDeliveredAtMs = _asInt(m['lastDeliveredAt']);
+            _peerLastReadAtMs = _asInt(m['lastReadAt']);
+          });
+        });
+  }
+
+  int _messageReceiptLevel(_MailMsg m) {
+    if (m.fromUid != _meUid) return 0;
+    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) return 2;
+    if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
+      return 1;
+    }
+    return 0;
   }
 
   List<_MailMsg> _parseMessages(dynamic data) {
@@ -2208,6 +2249,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final sender = mine
         ? (_meDisplayName.trim().isEmpty ? 'You' : _meDisplayName)
         : (_peerNameShown.trim().isEmpty ? 'User' : _peerNameShown);
+    final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
 
     return Padding(
       padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
@@ -2232,6 +2274,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               color: scheme.onSurfaceVariant,
             ),
           ),
+          if (receiptLevel > 0) ...[
+            const SizedBox(width: 6),
+            Icon(
+              receiptLevel == 2 ? Icons.done_all_rounded : Icons.done_rounded,
+              size: 15,
+              color: receiptLevel == 2
+                  ? scheme.primary
+                  : scheme.onSurfaceVariant,
+            ),
+          ],
           const SizedBox(width: 2),
           PopupMenuButton<String>(
             padding: EdgeInsets.zero,

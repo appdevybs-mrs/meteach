@@ -29,6 +29,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   Timer? _searchDebounce;
   String _q = '';
   _MailViewMode _viewMode = _MailViewMode.latestFirst;
+  bool _searchMode = false;
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
@@ -38,9 +39,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   final Map<String, String> _nameCache = {};
   final Map<String, String> _roleCache = {};
   final Map<String, String> _photoCache = {};
+  final Map<String, int> _userCacheFetchedAtMs = {};
   final Map<String, Future<void>> _userFetchPending = {};
   final Set<String> _selfHealInFlight = <String>{};
   final Set<String> _locallyDeletedThreadIds = <String>{};
+
+  static const int _userCacheTtlMs = 5 * 60 * 1000;
 
   @override
   void initState() {
@@ -100,9 +104,16 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     uid = uid.trim();
     if (uid.isEmpty) return Future.value();
 
-    if (_nameCache.containsKey(uid) &&
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final hasCompleteCache =
+        _nameCache.containsKey(uid) &&
         _roleCache.containsKey(uid) &&
-        _photoCache.containsKey(uid)) {
+        _photoCache.containsKey(uid);
+    final lastFetchedMs = _userCacheFetchedAtMs[uid] ?? 0;
+    final cacheFresh =
+        hasCompleteCache && (nowMs - lastFetchedMs) < _userCacheTtlMs;
+
+    if (cacheFresh) {
       return Future.value();
     }
 
@@ -143,6 +154,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         _nameCache[uid] = resolvedName;
         _roleCache[uid] = resolvedRole;
         _photoCache[uid] = resolvedPhoto;
+        _userCacheFetchedAtMs[uid] = DateTime.now().millisecondsSinceEpoch;
 
         if (changed && mounted) {
           setState(() {});
@@ -155,6 +167,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         _nameCache.putIfAbsent(uid, () => 'User');
         _roleCache.putIfAbsent(uid, () => 'learner');
         _photoCache.putIfAbsent(uid, () => '');
+        _userCacheFetchedAtMs[uid] = DateTime.now().millisecondsSinceEpoch;
 
         if (changed && mounted) {
           setState(() {});
@@ -1178,7 +1191,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 10),
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(18),
@@ -1191,63 +1204,76 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _searchC,
-            decoration: InputDecoration(
-              hintText: 'Search subject, message or person...',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: (_q.isEmpty)
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear',
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () {
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: _searchMode
+                  ? TextField(
+                      controller: _searchC,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Search subject, message or person...',
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                      onChanged: (v) {
                         _searchDebounce?.cancel();
-                        _searchC.clear();
-                        setState(() => _q = '');
+                        _searchDebounce = Timer(
+                          const Duration(milliseconds: 220),
+                          () {
+                            if (!mounted) return;
+                            setState(() => _q = v.trim().toLowerCase());
+                          },
+                        );
                       },
+                    )
+                  : SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Newest first'),
+                            selected: _viewMode == _MailViewMode.latestFirst,
+                            onSelected: (_) {
+                              setState(
+                                () => _viewMode = _MailViewMode.latestFirst,
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Group by learner'),
+                            selected: _viewMode == _MailViewMode.byLearner,
+                            onSelected: (_) {
+                              setState(
+                                () => _viewMode = _MailViewMode.byLearner,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 16,
+            ),
+            IconButton(
+              tooltip: _searchMode ? 'Close search' : 'Search',
+              icon: Icon(
+                _searchMode ? Icons.close_rounded : Icons.search_rounded,
               ),
+              onPressed: () {
+                setState(() {
+                  _searchMode = !_searchMode;
+                  if (!_searchMode) {
+                    _searchDebounce?.cancel();
+                    _searchC.clear();
+                    _q = '';
+                  }
+                });
+              },
             ),
-            onChanged: (v) {
-              _searchDebounce?.cancel();
-              _searchDebounce = Timer(const Duration(milliseconds: 220), () {
-                if (!mounted) return;
-                setState(() => _q = v.trim().toLowerCase());
-              });
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('Newest first'),
-                  selected: _viewMode == _MailViewMode.latestFirst,
-                  onSelected: (_) {
-                    setState(() => _viewMode = _MailViewMode.latestFirst);
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Group by learner'),
-                  selected: _viewMode == _MailViewMode.byLearner,
-                  onSelected: (_) {
-                    setState(() => _viewMode = _MailViewMode.byLearner);
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1359,21 +1385,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         appBar: AppBar(
           elevation: 0,
           scrolledUnderElevation: 0,
-          toolbarHeight: 72,
+          toolbarHeight: 60,
           titleSpacing: 16,
-          title: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Mailbox',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22),
-              ),
-              SizedBox(height: 2),
-              Text(
-                'Organized conversations with learners, teachers and administration',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-              ),
-            ],
+          title: const Text(
+            'Mailbox',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 21),
           ),
           actions: [const SizedBox.shrink()],
         ),
