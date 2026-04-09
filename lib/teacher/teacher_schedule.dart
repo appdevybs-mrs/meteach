@@ -39,6 +39,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+  bool _isCalendarExpanded = false;
 
   bool _dailyEnabled = false;
   bool _sessionEnabled = false;
@@ -354,19 +355,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   bool _isDayEnabled(DateTime d) {
     final key = 'remind_day_${_fmtKey(d)}';
     return _prefs.getBool(key) ?? true;
-  }
-
-  Future<void> _toggleDay(
-    DateTime day,
-    bool enabled,
-    List<_Occ> up,
-    List<_Occ> all,
-  ) async {
-    if (!_prefsReady) return;
-    final key = 'remind_day_${_fmtKey(day)}';
-    await _prefs.setBool(key, enabled);
-    if (mounted) setState(() {});
-    _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
 
   bool _hasConflict(_Occ current, List<_Occ> allOnDay) {
@@ -741,136 +729,151 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     return Column(
       children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          decoration: BoxDecoration(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Material(
             color: p.cardBg,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: p.border.withValues(alpha: 0.85)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 14,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: TableCalendar(
-            firstDay: DateTime.now().subtract(const Duration(days: 365)),
-            lastDay: DateTime.now().add(const Duration(days: 365)),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) => isSameDay(selected, day),
-            calendarFormat: CalendarFormat.month,
-            headerStyle: HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true,
-              titleTextStyle: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-              leftChevronIcon: Icon(
-                Icons.chevron_left_rounded,
-                color: p.primary,
-              ),
-              rightChevronIcon: Icon(
-                Icons.chevron_right_rounded,
-                color: p.primary,
-              ),
-            ),
-            daysOfWeekStyle: DaysOfWeekStyle(
-              weekdayStyle: TextStyle(
-                color: p.text.withValues(alpha: 0.72),
-                fontWeight: FontWeight.w700,
-              ),
-              weekendStyle: TextStyle(
-                color: p.text.withValues(alpha: 0.72),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            calendarStyle: CalendarStyle(
-              defaultTextStyle: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w700,
-              ),
-              weekendTextStyle: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w700,
-              ),
-              todayDecoration: BoxDecoration(
-                color: p.soft,
-                shape: BoxShape.circle,
-              ),
-              todayTextStyle: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w900,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: p.primary,
-                shape: BoxShape.circle,
-              ),
-              selectedTextStyle: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-              ),
-              markerDecoration: BoxDecoration(
-                color: p.accent,
-                shape: BoxShape.circle,
-              ),
-              markersMaxCount: 3,
-              outsideTextStyle: TextStyle(
-                color: p.text.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                setState(() => _isCalendarExpanded = !_isCalendarExpanded);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      size: 18,
+                      color: p.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _isCalendarExpanded
+                            ? 'Hide calendar to show more classes'
+                            : 'Show calendar',
+                        style: TextStyle(
+                          color: p.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _isCalendarExpanded
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      color: p.primary,
+                    ),
+                  ],
+                ),
               ),
             ),
-            onDaySelected: (s, f) => setState(() {
-              _selectedDay = s;
-              _focusedDay = f;
-            }),
-            eventLoader: (day) => byDay[_fmtKey(day)] ?? const [],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Container(
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 220),
+          crossFadeState: _isCalendarExpanded
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
+          firstChild: Container(
+            margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             decoration: BoxDecoration(
               color: p.cardBg,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: p.border),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 14,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            child: SwitchListTile(
-              activeThumbColor: p.accent,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 4,
-              ),
-              title: Text(
-                'Reminders for ${DateFormat('yyyy-MM-dd').format(selected)}',
-                style: TextStyle(
+            child: TableCalendar(
+              firstDay: DateTime.now().subtract(const Duration(days: 365)),
+              lastDay: DateTime.now().add(const Duration(days: 365)),
+              focusedDay: _focusedDay,
+              selectedDayPredicate: (day) => isSameDay(selected, day),
+              calendarFormat: CalendarFormat.month,
+              headerStyle: HeaderStyle(
+                formatButtonVisible: false,
+                titleCentered: true,
+                titleTextStyle: TextStyle(
                   color: p.primary,
                   fontWeight: FontWeight.w900,
-                  fontSize: 14,
+                  fontSize: 16,
+                ),
+                leftChevronIcon: Icon(
+                  Icons.chevron_left_rounded,
+                  color: p.primary,
+                ),
+                rightChevronIcon: Icon(
+                  Icons.chevron_right_rounded,
+                  color: p.primary,
                 ),
               ),
-              subtitle: Text(
-                'Disable = no reminders for all classes on this date',
-                style: TextStyle(
-                  color: p.text.withValues(alpha: 0.68),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
+              daysOfWeekStyle: DaysOfWeekStyle(
+                weekdayStyle: TextStyle(
+                  color: p.text.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w700,
+                ),
+                weekendStyle: TextStyle(
+                  color: p.text.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              value: _isDayEnabled(selected),
-              onChanged: (v) => _toggleDay(selected, v, upcoming, allOcc),
-              secondary: Icon(
-                _isDayEnabled(selected)
-                    ? Icons.notifications_active_rounded
-                    : Icons.notifications_off_rounded,
-                color: _isDayEnabled(selected)
-                    ? p.accent
-                    : p.text.withValues(alpha: 0.45),
+              calendarStyle: CalendarStyle(
+                defaultTextStyle: TextStyle(
+                  color: p.text,
+                  fontWeight: FontWeight.w700,
+                ),
+                weekendTextStyle: TextStyle(
+                  color: p.text,
+                  fontWeight: FontWeight.w700,
+                ),
+                todayDecoration: BoxDecoration(
+                  color: p.soft,
+                  shape: BoxShape.circle,
+                ),
+                todayTextStyle: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                ),
+                selectedDecoration: BoxDecoration(
+                  color: p.primary,
+                  shape: BoxShape.circle,
+                ),
+                selectedTextStyle: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+                markerDecoration: BoxDecoration(
+                  color: p.accent,
+                  shape: BoxShape.circle,
+                ),
+                markersMaxCount: 3,
+                outsideTextStyle: TextStyle(
+                  color: p.text.withValues(alpha: 0.35),
+                ),
               ),
+              onDaySelected: (s, f) => setState(() {
+                _selectedDay = s;
+                _focusedDay = f;
+              }),
+              eventLoader: (day) => byDay[_fmtKey(day)] ?? const [],
             ),
           ),
+          secondChild: const SizedBox.shrink(),
         ),
         Expanded(
           child: events.isEmpty

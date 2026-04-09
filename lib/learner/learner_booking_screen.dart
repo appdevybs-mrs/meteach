@@ -1450,6 +1450,66 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final homework = (m['homework'] ?? '').toString().trim();
     final duration = _toInt(m['durationMinutes'], fallback: 0);
 
+    final cid = courseId;
+    if (cid == null || cid.trim().isEmpty) {
+      _toast('Course info is missing. Please reopen this screen.');
+      return;
+    }
+
+    String teacherName = '';
+    bool attendedSession = false;
+    int rating = 5;
+    int existingCreatedAt = 0;
+
+    try {
+      final attendanceSnap = await _progressRef(
+        cid,
+      ).child('online_attendance').get();
+      if (attendanceSnap.exists && attendanceSnap.value is Map) {
+        final attendanceMap = _asStringKeyMap(attendanceSnap.value);
+        for (final entry in attendanceMap.entries) {
+          final raw = entry.value;
+          if (raw is! Map) continue;
+          final rec = _asStringKeyMap(raw);
+          final recSessionNo = _toInt(rec['sessionNo'], fallback: 0);
+          if (recSessionNo != sessionNo) continue;
+
+          final recTeacherName =
+              (rec['teacherName'] ?? rec['teacherNameFromBooking'] ?? '')
+                  .toString()
+                  .trim();
+          if (teacherName.isEmpty && recTeacherName.isNotEmpty) {
+            teacherName = recTeacherName;
+          }
+
+          final present = _toBool(rec['present']);
+          if (present) {
+            attendedSession = true;
+            if (recTeacherName.isNotEmpty) teacherName = recTeacherName;
+          }
+        }
+      }
+
+      final reviewSnap = await _progressRef(
+        cid,
+      ).child('session_reviews/$sessionNo').get();
+      if (reviewSnap.exists && reviewSnap.value is Map) {
+        final review = _asStringKeyMap(reviewSnap.value);
+        final savedRating = _toInt(review['rating'], fallback: 0);
+        if (savedRating >= 1 && savedRating <= 5) rating = savedRating;
+        existingCreatedAt = _toInt(review['createdAt'], fallback: 0);
+
+        final savedTeacher = (review['teacherName'] ?? '').toString().trim();
+        if (teacherName.isEmpty && savedTeacher.isNotEmpty) {
+          teacherName = savedTeacher;
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    bool submitting = false;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1461,99 +1521,235 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       builder: (_) {
         final bottomPad = MediaQuery.of(context).padding.bottom;
         return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                      color: primaryBlue,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _kv('Session', '$sessionNo / $_effectiveTotalSessions'),
-                  if (duration > 0) _kv('Duration', '$duration min'),
-                  const SizedBox(height: 10),
-                  if (objective.isNotEmpty) ...[
-                    const Text(
-                      'Objectives',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      objective,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (content.isNotEmpty) ...[
-                    const Text(
-                      'Content',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      content,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (homework.isNotEmpty) ...[
-                    const Text(
-                      'Homework',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      homework,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: actionOrange,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+          child: StatefulBuilder(
+            builder: (ctx, setModalState) {
+              Future<void> submitSessionReview() async {
+                if (!attendedSession) {
+                  AppToast.show(
+                    context,
+                    'You can review this session after attending it.',
+                    type: AppToastType.error,
+                  );
+                  return;
+                }
+
+                if (rating < 1 || rating > 5) {
+                  AppToast.show(
+                    context,
+                    'Please choose a rating from 1 to 5 stars.',
+                    type: AppToastType.error,
+                  );
+                  return;
+                }
+
+                setModalState(() => submitting = true);
+                try {
+                  final payload = <String, dynamic>{
+                    'sessionNo': sessionNo,
+                    'rating': rating,
+                    'teacherName': teacherName,
+                    'updatedAt': ServerValue.timestamp,
+                  };
+                  if (existingCreatedAt > 0) {
+                    payload['createdAt'] = existingCreatedAt;
+                  } else {
+                    payload['createdAt'] = ServerValue.timestamp;
+                  }
+
+                  await _progressRef(
+                    cid,
+                  ).child('session_reviews/$sessionNo').set(payload);
+                  existingCreatedAt = existingCreatedAt > 0
+                      ? existingCreatedAt
+                      : DateTime.now().millisecondsSinceEpoch;
+
+                  if (!mounted) return;
+                  AppToast.show(context, 'Session review submitted.');
+                } catch (e) {
+                  if (!mounted) return;
+                  AppToast.show(
+                    context,
+                    toHumanError(e),
+                    type: AppToastType.error,
+                  );
+                } finally {
+                  if (mounted) {
+                    setModalState(() => submitting = false);
+                  }
+                }
+              }
+
+              return Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          color: primaryBlue,
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(fontWeight: FontWeight.w900),
+                      const SizedBox(height: 8),
+                      _kv('Session', '$sessionNo / $_effectiveTotalSessions'),
+                      if (duration > 0) _kv('Duration', '$duration min'),
+                      _kv('Teacher', teacherName.isEmpty ? '-' : teacherName),
+                      const SizedBox(height: 10),
+                      if (objective.isNotEmpty) ...[
+                        const Text(
+                          'Objectives',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          objective,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (content.isNotEmpty) ...[
+                        const Text(
+                          'Content',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          content,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (homework.isNotEmpty) ...[
+                        const Text(
+                          'Homework',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          homework,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: uiBorder.withValues(alpha: 0.9),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Rate this session',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 2,
+                              children: List.generate(5, (i) {
+                                final star = i + 1;
+                                return IconButton(
+                                  tooltip: '$star star${star == 1 ? '' : 's'}',
+                                  onPressed: attendedSession
+                                      ? () => setModalState(() => rating = star)
+                                      : null,
+                                  icon: Icon(
+                                    star <= rating
+                                        ? Icons.star_rounded
+                                        : Icons.star_border_rounded,
+                                    color: const Color(0xFFF59E0B),
+                                  ),
+                                );
+                              }),
+                            ),
+                            if (!attendedSession)
+                              Text(
+                                'You can review this session after attending it.',
+                                style: TextStyle(
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: actionOrange,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: (!attendedSession || submitting)
+                                    ? null
+                                    : submitSessionReview,
+                                child: Text(
+                                  submitting
+                                      ? 'Submitting...'
+                                      : 'Submit review',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: actionOrange,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text(
+                            'Close',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         );
       },

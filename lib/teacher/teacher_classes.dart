@@ -37,7 +37,14 @@ import 'teacher_class_progress_screen.dart';
 import 'teacher_learner_gallery_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
-  const TeacherClassesScreen({super.key});
+  const TeacherClassesScreen({
+    super.key,
+    this.initialMainTab = 0,
+    this.initialOnlineTab = 0,
+  });
+
+  final int initialMainTab;
+  final int initialOnlineTab;
 
   @override
   State<TeacherClassesScreen> createState() => _TeacherClassesScreenState();
@@ -84,8 +91,16 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
-    _tab = TabController(length: 2, vsync: this);
-    _onlineTab = TabController(length: 3, vsync: this);
+    _tab = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialMainTab.clamp(0, 1).toInt(),
+    );
+    _onlineTab = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialOnlineTab.clamp(0, 2).toInt(),
+    );
     _loadAll();
   }
 

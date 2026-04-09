@@ -1436,8 +1436,9 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                         }
 
                         final cid = _courseIdOf(course);
-                        if (cid.isEmpty)
+                        if (cid.isEmpty) {
                           return stateChipForDone(privatePresent);
+                        }
 
                         return FutureBuilder<DataSnapshot>(
                           future: _db
@@ -1457,14 +1458,16 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-              _InfoLine(
-                palette: p,
-                icon: Icons.person_outline_rounded,
-                text: instructor.isEmpty
-                    ? 'Teacher: -'
-                    : 'Teacher: $instructor',
-              ),
-              const SizedBox(height: 8),
+              if (variantKey != 'flexible') ...[
+                _InfoLine(
+                  palette: p,
+                  icon: Icons.person_outline_rounded,
+                  text: instructor.isEmpty
+                      ? 'Teacher: -'
+                      : 'Teacher: $instructor',
+                ),
+                const SizedBox(height: 8),
+              ],
               if (isRecorded)
                 FutureBuilder<Map<String, int>>(
                   future: _progressCounts(course),

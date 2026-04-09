@@ -51,7 +51,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   final GlobalKey _homeworkCardKey = GlobalKey();
   final GlobalKey _remindersCardKey = GlobalKey();
   final GlobalKey _overviewPanelKey = GlobalKey();
-  final GlobalKey _classesCardKey = GlobalKey();
   final GlobalKey _nextClassCardKey = GlobalKey();
 
   Stream<DatabaseEvent>? _remindersStream;
@@ -60,7 +59,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Future<_ClassesSummary>? _classesSummaryFuture;
   Future<int>? _upcomingOnlineCountFuture;
   Future<String>? _displayNameFuture;
-  Future<_HomeUpcomingClass?>? _nextUpcomingClassFuture;
+  Future<List<_HomeUpcomingClass>>? _nextUpcomingClassesFuture;
 
   @override
   void initState() {
@@ -84,7 +83,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       _displayNameFuture = _myDisplayName();
-      _nextUpcomingClassFuture = _loadNextUpcomingClassForHome(uid);
+      _nextUpcomingClassesFuture = _loadNextUpcomingClassesForHome(uid);
     }
   }
 
@@ -104,7 +103,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _displayNameFuture = _myDisplayName();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
-      _nextUpcomingClassFuture = _loadNextUpcomingClassForHome(uid);
+      _nextUpcomingClassesFuture = _loadNextUpcomingClassesForHome(uid);
     });
 
     await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -331,19 +330,19 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     }
   }
 
-  Future<_HomeUpcomingClass?> _loadNextUpcomingClassForHome(
+  Future<List<_HomeUpcomingClass>> _loadNextUpcomingClassesForHome(
     String teacherUid,
   ) async {
     try {
       final identity = await _loadTeacherIdentityForHome(teacherUid);
       final snap = await _db.child(classesNode).get();
       if (!snap.exists || snap.value == null || snap.value is! Map) {
-        return null;
+        return const [];
       }
 
       final raw = Map<dynamic, dynamic>.from(snap.value as Map);
       final now = DateTime.now();
-      _HomeUpcomingClass? bestUpcoming;
+      final candidates = <_HomeUpcomingClass>[];
 
       for (final entry in raw.entries) {
         final value = entry.value;
@@ -363,30 +362,32 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
         for (final occ in occurrences) {
           if (!occ.end.isAfter(now)) continue;
-
-          if (bestUpcoming == null) {
-            bestUpcoming = occ;
-            continue;
-          }
-
-          final best = bestUpcoming;
-
-          final occIsNow = !occ.start.isAfter(now) && occ.end.isAfter(now);
-          final bestIsNow = !best.start.isAfter(now) && best.end.isAfter(now);
-
-          if (occIsNow && !bestIsNow) {
-            bestUpcoming = occ;
-            continue;
-          }
-          if (occIsNow == bestIsNow && occ.start.isBefore(best.start)) {
-            bestUpcoming = occ;
-          }
+          candidates.add(occ);
         }
       }
 
-      return bestUpcoming;
+      if (candidates.isEmpty) return const [];
+
+      candidates.sort((a, b) => a.start.compareTo(b.start));
+
+      final liveNow = candidates.where((occ) {
+        return !occ.start.isAfter(now) && occ.end.isAfter(now);
+      }).toList();
+
+      final anchor = liveNow.isNotEmpty
+          ? liveNow.first.start
+          : candidates.first.start;
+
+      final sameDay = candidates.where((occ) {
+        return occ.start.year == anchor.year &&
+            occ.start.month == anchor.month &&
+            occ.start.day == anchor.day;
+      }).toList();
+
+      sameDay.sort((a, b) => a.start.compareTo(b.start));
+      return sameDay;
     } catch (_) {
-      return null;
+      return const [];
     }
   }
 
@@ -829,11 +830,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           targetKey: _overviewPanelKey,
         ),
         TeacherTourHint(
-          title: 'Classes shortcut',
-          line: 'Use this card to open your classes list quickly.',
-          targetKey: _classesCardKey,
-        ),
-        TeacherTourHint(
           title: 'Next class',
           line:
               'This card highlights your next scheduled class and opens the schedule details.',
@@ -1126,33 +1122,32 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       classesCount: s.classesCount,
                                       learnersCount: s.learnersCount,
                                       upcomingOnlineCount: upcoming,
+                                      onOpenClasses: () => _pushScreen(
+                                        const TeacherClassesScreen(
+                                          initialMainTab: 0,
+                                        ),
+                                      ),
+                                      onOpenOnline: () => _pushScreen(
+                                        const TeacherClassesScreen(
+                                          initialMainTab: 1,
+                                          initialOnlineTab: 0,
+                                        ),
+                                      ),
                                     ),
                                   );
                                 },
                               );
                             },
                           ),
-                          const SizedBox(height: 14),
-                          KeyedSubtree(
-                            key: _classesCardKey,
-                            child: _SingleDashboardActionCard(
-                              palette: p,
-                              icon: Icons.school_rounded,
-                              title: 'My Classes',
-                              subtitle: 'Open your classes',
-                              onTap: () =>
-                                  _pushScreen(const TeacherClassesScreen()),
-                            ),
-                          ),
                           const SizedBox(height: 12),
-                          FutureBuilder<_HomeUpcomingClass?>(
-                            future: _nextUpcomingClassFuture,
+                          FutureBuilder<List<_HomeUpcomingClass>>(
+                            future: _nextUpcomingClassesFuture,
                             builder: (context, snap) {
                               return KeyedSubtree(
                                 key: _nextClassCardKey,
                                 child: _NextComingClassCard(
                                   palette: p,
-                                  upcomingClass: snap.data,
+                                  upcomingClasses: snap.data ?? const [],
                                   onTap: () =>
                                       _pushScreen(const TeacherSchedule()),
                                 ),
@@ -2002,12 +1997,16 @@ class _OverviewPanel extends StatelessWidget {
     required this.classesCount,
     required this.learnersCount,
     required this.upcomingOnlineCount,
+    required this.onOpenClasses,
+    required this.onOpenOnline,
   });
 
   final _HomePalette palette;
   final int classesCount;
   final int learnersCount;
   final int upcomingOnlineCount;
+  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenOnline;
 
   @override
   Widget build(BuildContext context) {
@@ -2045,6 +2044,7 @@ class _OverviewPanel extends StatelessWidget {
                   label: 'Classes',
                   value: '$classesCount',
                   icon: Icons.school_rounded,
+                  onTap: onOpenClasses,
                 ),
               ),
               const SizedBox(width: 8),
@@ -2065,6 +2065,7 @@ class _OverviewPanel extends StatelessWidget {
                   icon: Icons.videocam_rounded,
                   badgeCount: upcomingOnlineCount,
                   badgeColor: Colors.red,
+                  onTap: onOpenOnline,
                 ),
               ),
             ],
@@ -2083,6 +2084,7 @@ class _OverviewStatBox extends StatelessWidget {
     required this.icon,
     this.badgeCount = 0,
     this.badgeColor,
+    this.onTap,
   });
 
   final _HomePalette palette;
@@ -2091,10 +2093,11 @@ class _OverviewStatBox extends StatelessWidget {
   final IconData icon;
   final int badgeCount;
   final Color? badgeColor;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final content = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
         color: palette.soft.withValues(alpha: 0.7),
@@ -2154,93 +2157,15 @@ class _OverviewStatBox extends StatelessWidget {
         ],
       ),
     );
-  }
-}
 
-class _SingleDashboardActionCard extends StatelessWidget {
-  const _SingleDashboardActionCard({
-    required this.palette,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+    if (onTap == null) return content;
 
-  final _HomePalette palette;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
     return Material(
-      color: palette.cardBg,
-      borderRadius: BorderRadius.circular(20),
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: palette.border.withValues(alpha: 0.8)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: palette.soft,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: palette.primary),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.text.withValues(alpha: 0.60),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: palette.text.withValues(alpha: 0.45),
-              ),
-            ],
-          ),
-        ),
+        child: content,
       ),
     );
   }
@@ -2249,149 +2174,286 @@ class _SingleDashboardActionCard extends StatelessWidget {
 class _NextComingClassCard extends StatelessWidget {
   const _NextComingClassCard({
     required this.palette,
-    required this.upcomingClass,
+    required this.upcomingClasses,
     required this.onTap,
   });
 
   final _HomePalette palette;
-  final _HomeUpcomingClass? upcomingClass;
+  final List<_HomeUpcomingClass> upcomingClasses;
   final VoidCallback onTap;
+
+  String _fmtCountdown(Duration d) {
+    if (d.inSeconds <= 0) return 'Starting now';
+    if (d.inDays >= 1) {
+      final hours = d.inHours % 24;
+      return '${d.inDays}d ${hours}h';
+    }
+    if (d.inHours >= 1) {
+      final mins = d.inMinutes % 60;
+      return '${d.inHours}h ${mins}m';
+    }
+    if (d.inMinutes >= 1) {
+      final secs = d.inSeconds % 60;
+      return '${d.inMinutes}m ${secs}s';
+    }
+    return '${d.inSeconds}s';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final c = upcomingClass;
+    final classes = upcomingClasses;
 
-    return Material(
-      color: palette.cardBg,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
+    if (classes.isEmpty) {
+      return Material(
+        color: palette.cardBg,
         borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: palette.border.withValues(alpha: 0.8)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Next Coming Class',
+                  style: TextStyle(
+                    color: palette.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'No upcoming classes found.',
+                  style: TextStyle(
+                    color: palette.text.withValues(alpha: 0.70),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: c == null
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Next Coming Class',
-                      style: TextStyle(
-                        color: palette.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
+        ),
+      );
+    }
+
+    return Column(
+      children: classes.asMap().entries.map((entry) {
+        final index = entry.key;
+        final c = entry.value;
+
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: index == classes.length - 1 ? 0 : 10,
+          ),
+          child: Material(
+            color: palette.cardBg,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: onTap,
+              child: StreamBuilder<DateTime>(
+                stream: Stream<DateTime>.periodic(
+                  const Duration(seconds: 1),
+                  (_) => DateTime.now(),
+                ),
+                initialData: DateTime.now(),
+                builder: (context, snapshot) {
+                  final now = snapshot.data ?? DateTime.now();
+                  final isLive = !now.isBefore(c.start) && now.isBefore(c.end);
+                  final untilStart = c.start.difference(now);
+                  final isSoon =
+                      !isLive &&
+                      untilStart.inSeconds > 0 &&
+                      untilStart.inSeconds <= 300;
+
+                  final countdownText = isLive
+                      ? 'LIVE'
+                      : 'Starts in ${_fmtCountdown(untilStart)}';
+
+                  final countdownBg = isLive
+                      ? const Color(0xFFE8F5E9)
+                      : (isSoon
+                            ? const Color(0xFFFFEBEE)
+                            : palette.soft.withValues(alpha: 0.72));
+                  final countdownBorder = isLive
+                      ? const Color(0xFFB9E2C5)
+                      : (isSoon
+                            ? const Color(0xFFE57373)
+                            : palette.border.withValues(alpha: 0.75));
+                  final countdownColor = isLive
+                      ? const Color(0xFF1B5E20)
+                      : (isSoon ? const Color(0xFFB71C1C) : palette.primary);
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSoon
+                            ? const Color(0xFFE57373)
+                            : palette.border.withValues(alpha: 0.8),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'No upcoming classes found.',
-                      style: TextStyle(
-                        color: palette.text.withValues(alpha: 0.70),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Next Coming Class',
-                      style: TextStyle(
-                        color: palette.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: palette.soft,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            Icons.access_time_rounded,
-                            color: palette.primary,
-                          ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                c.courseTitle.isNotEmpty
-                                    ? c.courseTitle
-                                    : 'Untitled Class',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                index == 0
+                                    ? 'Next Coming Class'
+                                    : 'Same Day Class',
                                 style: TextStyle(
                                   color: palette.primary,
                                   fontWeight: FontWeight.w900,
-                                  fontSize: 14,
+                                  fontSize: 15,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                c.courseCode.isNotEmpty
-                                    ? c.courseCode
-                                    : 'No course code',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.text.withValues(alpha: 0.65),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
                               ),
-                            ],
-                          ),
+                              decoration: BoxDecoration(
+                                color: countdownBg,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: countdownBorder),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isLive
+                                        ? Icons.circle
+                                        : (isSoon
+                                              ? Icons.warning_amber_rounded
+                                              : Icons.timer_rounded),
+                                    size: isLive ? 8 : 14,
+                                    color: isLive ? Colors.red : countdownColor,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    countdownText,
+                                    style: TextStyle(
+                                      color: countdownColor,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: palette.soft,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Icon(
+                                Icons.access_time_rounded,
+                                color: palette.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    c.courseTitle.isNotEmpty
+                                        ? c.courseTitle
+                                        : 'Untitled Class',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.primary,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    c.courseCode.isNotEmpty
+                                        ? c.courseCode
+                                        : 'No course code',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.text.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _InfoChip(
+                              palette: palette,
+                              icon: Icons.calendar_today_rounded,
+                              text: DateFormat('EEE, MMM d').format(c.start),
+                            ),
+                            _InfoChip(
+                              palette: palette,
+                              icon: Icons.schedule_rounded,
+                              text:
+                                  '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
+                            ),
+                            _InfoChip(
+                              palette: palette,
+                              icon: Icons.badge_rounded,
+                              text: 'ID: ${c.classId}',
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _InfoChip(
-                          palette: palette,
-                          icon: Icons.calendar_today_rounded,
-                          text: DateFormat('EEE, MMM d').format(c.start),
-                        ),
-                        _InfoChip(
-                          palette: palette,
-                          icon: Icons.schedule_rounded,
-                          text:
-                              '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
-                        ),
-                        _InfoChip(
-                          palette: palette,
-                          icon: Icons.badge_rounded,
-                          text: 'ID: ${c.classId}',
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-        ),
-      ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
