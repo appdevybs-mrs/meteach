@@ -83,6 +83,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   final Map<String, Map<String, String>> _learnerMiniCache = {};
   final Map<String, String> _sessionTitleCache = {};
   final Map<String, String> _courseTitleCache = {};
+  final Map<String, bool> _expandedLearnersByBooking = {};
 
   late TabController _tab;
   late TabController _onlineTab;
@@ -2357,8 +2358,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final uids = b.learnerUids;
     if (uids.isEmpty) return const SizedBox.shrink();
 
-    final show = uids.take(3).toList();
-    final more = uids.length - show.length;
+    final hasToggle = uids.length > 1;
+    final expanded = _expandedLearnersByBooking[b.bookingKey] == true;
+    final show = expanded || !hasToggle ? uids : uids.take(1).toList();
+    final more = expanded ? 0 : (uids.length - show.length);
 
     return Container(
       width: double.infinity,
@@ -2371,53 +2374,90 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Learners (preview)',
-            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Learners',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: p.primary,
+                  ),
+                ),
+              ),
+              if (hasToggle)
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _expandedLearnersByBooking[b.bookingKey] = !expanded;
+                    });
+                  },
+                  tooltip: expanded ? 'Collapse learners' : 'Show all learners',
+                  icon: AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: p.primary,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
-          ...show.map((uid) {
-            return FutureBuilder<Map<String, String>>(
-              future: _loadLearnerMini(uid),
-              builder: (context, snap) {
-                final full = (snap.data?['full'] ?? '').trim();
-                final profilePhotoUrl = (snap.data?['profilePhoto'] ?? '')
-                    .trim();
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: Column(
+              key: ValueKey<bool>(expanded),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...show.map((uid) {
+                  return FutureBuilder<Map<String, String>>(
+                    future: _loadLearnerMini(uid),
+                    builder: (context, snap) {
+                      final full = (snap.data?['full'] ?? '').trim();
+                      final profilePhotoUrl = (snap.data?['profilePhoto'] ?? '')
+                          .trim();
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      _learnerAvatar(
-                        profilePhotoUrl: profilePhotoUrl,
-                        size: 28,
-                      ),
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            _learnerAvatar(
+                              profilePhotoUrl: profilePhotoUrl,
+                              size: 28,
+                            ),
 
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          full.isEmpty ? 'Learner' : full,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: p.text.withValues(alpha: 0.72),
-                          ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                full.isEmpty ? 'Learner' : full,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: p.text.withValues(alpha: 0.72),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
+                  );
+                }),
+                if (more > 0)
+                  Text(
+                    '… +$more more',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: p.text.withValues(alpha: 0.72),
+                    ),
                   ),
-                );
-              },
-            );
-          }),
-
-          if (more > 0)
-            Text(
-              '… +$more more',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: p.text.withValues(alpha: 0.72),
-              ),
+              ],
             ),
+          ),
         ],
       ),
     );

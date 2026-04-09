@@ -3830,6 +3830,135 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     return out;
   }
 
+  Future<List<int>> _paymentSessionBoundariesForCourse({
+    required String uid,
+    required String courseKey,
+    required String courseId,
+    required String courseTitle,
+    required String courseCode,
+    required String variantKey,
+  }) async {
+    if (!_variantUsesSessions(variantKey)) return const <int>[];
+
+    final rows = <Map<String, int>>[];
+    var sequence = 0;
+    try {
+      final snap = await _paymentsRef.orderByChild('uid').equalTo(uid).get();
+      if (!snap.exists || snap.value is! Map) return const <int>[];
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      raw.forEach((_, value) {
+        if (value is! Map) return;
+
+        final pay = Map<String, dynamic>.from(value);
+        if (!_paymentMatchesCourse(
+          payment: pay,
+          courseKey: courseKey,
+          courseId: courseId,
+          courseTitle: courseTitle,
+          courseCode: courseCode,
+        )) {
+          return;
+        }
+
+        final payVariant = _normalizeVariantKey(
+          (pay['variantKey'] ?? pay['deliveryKey'] ?? pay['variant'] ?? '')
+              .toString(),
+        );
+        final sameVariant = payVariant == variantKey;
+        final maybeLegacySessionRow =
+            payVariant.isEmpty &&
+            (variantKey == 'inclass' || variantKey == 'private');
+        if (!(sameVariant || maybeLegacySessionRow)) return;
+
+        var sessionsPaid = _asInt(pay['sessionsPaid']);
+        final amount = _asInt(pay['amount']);
+        if (sessionsPaid <= 0 &&
+            amount > 0 &&
+            (variantKey == 'inclass' || variantKey == 'private')) {
+          sessionsPaid = 8;
+        }
+        if (sessionsPaid <= 0) return;
+
+        final paidAt = _asInt(pay['paidAt']);
+        final createdAt = _asInt(pay['createdAt']);
+        final stamp = paidAt > 0 ? paidAt : createdAt;
+
+        rows.add({
+          'stamp': stamp,
+          'sessionsPaid': sessionsPaid,
+          'sortId': sequence,
+        });
+        sequence += 1;
+      });
+    } catch (_) {
+      return const <int>[];
+    }
+
+    if (rows.isEmpty) return const <int>[];
+
+    rows.sort((a, b) {
+      final byStamp = _asInt(a['stamp']).compareTo(_asInt(b['stamp']));
+      if (byStamp != 0) return byStamp;
+      return _asInt(a['sortId']).compareTo(_asInt(b['sortId']));
+    });
+
+    final boundaries = <int>[];
+    var cumulative = 0;
+    for (final row in rows) {
+      cumulative += _asInt(row['sessionsPaid']);
+      if (cumulative > 0) boundaries.add(cumulative);
+    }
+    return boundaries;
+  }
+
+  bool _attendanceRowConsumesPaidSession({
+    required String variantKey,
+    required Map<String, dynamic>? learnerRec,
+  }) {
+    if (learnerRec == null) return false;
+
+    final v = _normalizeVariantKey(variantKey);
+    if (v == 'inclass') return true;
+    if (v == 'private') return paymentRecordIsPresent(learnerRec);
+    if (v == 'flexible') return paymentRecordIsPresent(learnerRec);
+    return false;
+  }
+
+  Widget _paymentBoundaryDivider(int paymentIndex) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              height: 1,
+              thickness: 1,
+              color: AdminLearnersScreen.uiBorders,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Next payment block (${paymentIndex + 1})',
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Divider(
+              height: 1,
+              thickness: 1,
+              color: AdminLearnersScreen.uiBorders,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<int> _sessionsConsumedForCourse({
     required String uid,
     required String courseId,
@@ -4865,6 +4994,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       final totalSessions = _parseTotalSessions(
         (courseNode['duration'] ?? '').toString(),
       );
+      final paymentBoundariesFuture = _paymentSessionBoundariesForCourse(
+        uid: widget.uid,
+        courseKey: courseKey,
+        courseId: courseId,
+        courseTitle: (courseNode['title'] ?? '').toString(),
+        courseCode: (courseNode['course_code'] ?? '').toString(),
+        variantKey: variantKey,
+      );
 
       return FutureBuilder<DataSnapshot>(
         key: ValueKey('attendance-online-${widget.uid}-$courseId'),
@@ -4934,31 +5071,30 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             return '-';
           }
 
-          return ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              _coursePicker(keys),
-              const SizedBox(height: 8),
-              _miniCard(
-                child: Text(
-                  totalSessions > 0
-                      ? 'Flexible consumed sessions: ${presentRows.length} / $totalSessions'
-                      : 'Flexible consumed sessions: ${presentRows.length}',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (presentRows.isEmpty)
-                const _MiniState(text: 'No present attendance recorded yet.')
-              else
-                ...presentRows.asMap().entries.map((entry) {
-                  final i = entry.key;
-                  final m = entry.value;
-                  final when = formatWhen(m);
-                  final sessionNo = _asInt(m['sessionNo']);
-                  final teacher = (m['teacherName'] ?? '').toString().trim();
+          return FutureBuilder<List<int>>(
+            future: paymentBoundariesFuture,
+            builder: (context, boundariesSnap) {
+              final boundaries = boundariesSnap.data ?? const <int>[];
+              final attendanceTiles = <Widget>[];
+              var consumedCount = 0;
+              var boundaryIndex = 0;
 
-                  return Padding(
+              for (final entry in presentRows.asMap().entries) {
+                final i = entry.key;
+                final m = entry.value;
+
+                while (boundaryIndex < boundaries.length &&
+                    consumedCount >= boundaries[boundaryIndex]) {
+                  attendanceTiles.add(_paymentBoundaryDivider(boundaryIndex));
+                  boundaryIndex += 1;
+                }
+
+                final when = formatWhen(m);
+                final sessionNo = _asInt(m['sessionNo']);
+                final teacher = (m['teacherName'] ?? '').toString().trim();
+
+                attendanceTiles.add(
+                  Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Container(
                       decoration: BoxDecoration(
@@ -5023,9 +5159,34 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                         ],
                       ),
                     ),
-                  );
-                }),
-            ],
+                  ),
+                );
+                consumedCount += 1;
+              }
+
+              return ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _coursePicker(keys),
+                  const SizedBox(height: 8),
+                  _miniCard(
+                    child: Text(
+                      totalSessions > 0
+                          ? 'Flexible consumed sessions: ${presentRows.length} / $totalSessions'
+                          : 'Flexible consumed sessions: ${presentRows.length}',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (presentRows.isEmpty)
+                    const _MiniState(
+                      text: 'No present attendance recorded yet.',
+                    )
+                  else
+                    ...attendanceTiles,
+                ],
+              );
+            },
           );
         },
       );
@@ -5063,6 +5224,15 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         final totalSessions = _parseTotalSessions(
           cMap['duration']?.toString() ?? '',
         );
+        final paymentBoundariesFuture = _paymentSessionBoundariesForCourse(
+          uid: widget.uid,
+          courseKey: courseKey,
+          courseId: courseId,
+          courseTitle: (courseNode['title'] ?? cMap['title'] ?? '').toString(),
+          courseCode: (courseNode['course_code'] ?? cMap['course_code'] ?? '')
+              .toString(),
+          variantKey: variantKey,
+        );
 
         return FutureBuilder<DataSnapshot>(
           key: ValueKey('class-att-$classId'),
@@ -5076,61 +5246,61 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                 ? '$taughtCount / $totalSessions'
                 : '$taughtCount';
 
-            return ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                _coursePicker(keys),
-                const SizedBox(height: 8),
-                _miniCard(
-                  child: Text(
-                    'Lessons taught: $label',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (classSessions.isEmpty)
-                  const _MiniState(text: 'No class sessions recorded yet.')
-                else
-                  ...classSessions.asMap().entries.map((entry) {
-                    final i = entry.key;
-                    final classRec = entry.value;
+            return FutureBuilder<List<int>>(
+              future: paymentBoundariesFuture,
+              builder: (context, boundariesSnap) {
+                final boundaries = boundariesSnap.data ?? const <int>[];
+                final attendanceTiles = <Widget>[];
+                var consumedCount = 0;
+                var boundaryIndex = 0;
 
-                    final sid = (classRec['sessionId'] ?? '').toString().trim();
-                    final date = (classRec['date'] ?? '').toString();
+                for (final entry in classSessions.asMap().entries) {
+                  final i = entry.key;
+                  final classRec = entry.value;
 
-                    final learnerRec = sid.isEmpty ? null : learnerBySid[sid];
-                    final statusRaw = (learnerRec?['status'] ?? '')
-                        .toString()
-                        .trim();
-                    final status = statusRaw.toLowerCase();
+                  while (boundaryIndex < boundaries.length &&
+                      consumedCount >= boundaries[boundaryIndex]) {
+                    attendanceTiles.add(_paymentBoundaryDivider(boundaryIndex));
+                    boundaryIndex += 1;
+                  }
 
-                    final teacher = (classRec['teacherName'] ?? '').toString();
-                    final taught = classRec['taught'] is Map
-                        ? (classRec['taught'] as Map)
-                        : null;
-                    final taughtTitle = taught == null
-                        ? ''
-                        : (taught['title'] ?? '').toString();
+                  final sid = (classRec['sessionId'] ?? '').toString().trim();
+                  final date = (classRec['date'] ?? '').toString();
 
-                    Color bar;
-                    Color tint;
+                  final learnerRec = sid.isEmpty ? null : learnerBySid[sid];
+                  final statusRaw = (learnerRec?['status'] ?? '')
+                      .toString()
+                      .trim();
+                  final status = statusRaw.toLowerCase();
 
-                    if (status == 'present') {
-                      bar = const Color(0xFF157A3D);
-                      tint = const Color(0xFF157A3D).withValues(alpha: 0.08);
-                    } else if (status == 'absent') {
-                      bar = Colors.red;
-                      tint = Colors.red.withValues(alpha: 0.08);
-                    } else {
-                      bar = const Color(0xFF64748B);
-                      tint = const Color(0xFF64748B).withValues(alpha: 0.08);
-                    }
+                  final teacher = (classRec['teacherName'] ?? '').toString();
+                  final taught = classRec['taught'] is Map
+                      ? (classRec['taught'] as Map)
+                      : null;
+                  final taughtTitle = taught == null
+                      ? ''
+                      : (taught['title'] ?? '').toString();
 
-                    final shownStatus = statusRaw.isEmpty
-                        ? 'not registered'
-                        : statusRaw;
+                  Color bar;
+                  Color tint;
 
-                    return Padding(
+                  if (status == 'present') {
+                    bar = const Color(0xFF157A3D);
+                    tint = const Color(0xFF157A3D).withValues(alpha: 0.08);
+                  } else if (status == 'absent') {
+                    bar = Colors.red;
+                    tint = Colors.red.withValues(alpha: 0.08);
+                  } else {
+                    bar = const Color(0xFF64748B);
+                    tint = const Color(0xFF64748B).withValues(alpha: 0.08);
+                  }
+
+                  final shownStatus = statusRaw.isEmpty
+                      ? 'not registered'
+                      : statusRaw;
+
+                  attendanceTiles.add(
+                    Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Container(
                         decoration: BoxDecoration(
@@ -5195,9 +5365,36 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           ],
                         ),
                       ),
-                    );
-                  }),
-              ],
+                    ),
+                  );
+
+                  if (_attendanceRowConsumesPaidSession(
+                    variantKey: variantKey,
+                    learnerRec: learnerRec,
+                  )) {
+                    consumedCount += 1;
+                  }
+                }
+
+                return ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _coursePicker(keys),
+                    const SizedBox(height: 8),
+                    _miniCard(
+                      child: Text(
+                        'Lessons taught: $label',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (classSessions.isEmpty)
+                      const _MiniState(text: 'No class sessions recorded yet.')
+                    else
+                      ...attendanceTiles,
+                  ],
+                );
+              },
             );
           },
         );

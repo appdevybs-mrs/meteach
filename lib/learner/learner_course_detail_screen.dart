@@ -89,6 +89,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       {}; // sessionNumber -> sessionId (fallback)
   Map<int, String> _sessionTitleByNumber =
       {}; // sessionNumber -> title (for online taughtSummary)
+  Map<int, Map<String, dynamic>> _sessionReviewsByNo = {};
 
   // ✅ meetings total (optional)
   int? _plannedMeetings;
@@ -743,6 +744,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       _coveredSessionIds = {};
       _sessionIdByNumber = {};
       _sessionTitleByNumber = {};
+      _sessionReviewsByNo = {};
       _plannedMeetings = null;
       _derivedSessionsPaidTotal = 0;
       _derivedSessionsReady = false;
@@ -1086,6 +1088,30 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       final List<Map<String, dynamic>> onlineList = [];
       if (_courseId.isNotEmpty) {
         try {
+          final reviewSnap = await _db
+              .child('booking_progress/$_uid/$_courseId/session_reviews')
+              .get();
+          if (reviewSnap.exists && reviewSnap.value is Map) {
+            final rm = Map<String, dynamic>.from(reviewSnap.value as Map);
+            final byNo = <int, Map<String, dynamic>>{};
+            for (final e in rm.entries) {
+              if (e.value is! Map) continue;
+              final rec = Map<String, dynamic>.from(e.value as Map);
+              final sn = _asInt(rec['sessionNo']);
+              if (sn <= 0) continue;
+              final rating = _asInt(rec['rating']);
+              if (rating < 1 || rating > 5) continue;
+              byNo[sn] = rec;
+            }
+            _sessionReviewsByNo = byNo;
+          } else {
+            _sessionReviewsByNo = {};
+          }
+        } catch (_) {
+          _sessionReviewsByNo = {};
+        }
+
+        try {
           final oSnap = await _onlineAttendanceRef.get();
           if (oSnap.exists && oSnap.value is Map) {
             final om = Map<String, dynamic>.from(oSnap.value as Map);
@@ -1129,6 +1155,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 dateLabel = (time.isEmpty) ? dayKey : '$dayKey  $time';
               }
 
+              final review = sessionNo > 0
+                  ? _sessionReviewsByNo[sessionNo]
+                  : null;
+              final reviewRating = _asInt(review?['rating']);
+
               onlineList.add({
                 'source': 'online',
                 'meetingId': bookingKey,
@@ -1136,6 +1167,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 'status': present ? 'present' : 'absent',
                 'taughtSummary': taughtSummary,
                 'sessionNo': sessionNo,
+                'reviewRating': (reviewRating >= 1 && reviewRating <= 5)
+                    ? reviewRating
+                    : 0,
+                'reviewCreatedAt': _asInt(review?['createdAt']),
                 'startAt': startAt,
                 'dayKey': dayKey,
                 'time': time,
@@ -1248,6 +1283,218 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         .where((x) => (x['status'] ?? '').toString().toLowerCase() == 'present')
         .length;
     return {'total': total, 'present': present};
+  }
+
+  void _applySessionReviewToAttendance({
+    required int sessionNo,
+    required int rating,
+    required int createdAt,
+    required String teacherName,
+  }) {
+    if (sessionNo <= 0) return;
+
+    _sessionReviewsByNo[sessionNo] = {
+      'sessionNo': sessionNo,
+      'rating': rating,
+      'createdAt': createdAt,
+      'teacherName': teacherName,
+    };
+
+    for (final row in _onlineAttendance) {
+      if (_asInt(row['sessionNo']) != sessionNo) continue;
+      row['reviewRating'] = rating;
+      row['reviewCreatedAt'] = createdAt;
+    }
+
+    for (final row in _attendanceAll) {
+      if ((row['source'] ?? '').toString() != 'online') continue;
+      if (_asInt(row['sessionNo']) != sessionNo) continue;
+      row['reviewRating'] = rating;
+      row['reviewCreatedAt'] = createdAt;
+    }
+  }
+
+  Future<void> _openSessionReviewSheetForAttendance(
+    Map<String, dynamic> row,
+  ) async {
+    final sessionNo = _asInt(row['sessionNo']);
+    if (sessionNo <= 0 || _uid.trim().isEmpty || _courseId.trim().isEmpty) {
+      return;
+    }
+
+    final isPresent =
+        (row['status'] ?? '').toString().toLowerCase().trim() == 'present';
+    if (!isPresent) {
+      AppToast.show(
+        context,
+        'You can review this session after attending it.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    final teacherName =
+        (row['teacherName'] ??
+                row['teacherNameFromBooking'] ??
+                row['teacher_name'] ??
+                '')
+            .toString()
+            .trim();
+    final taughtSummary = (row['taughtSummary'] ?? '').toString().trim();
+
+    int rating = _asInt(row['reviewRating']);
+    if (rating < 1 || rating > 5) {
+      final saved = _sessionReviewsByNo[sessionNo];
+      final savedRating = _asInt(saved?['rating']);
+      rating = (savedRating >= 1 && savedRating <= 5) ? savedRating : 5;
+    }
+
+    int existingCreatedAt = _asInt(row['reviewCreatedAt']);
+    if (existingCreatedAt <= 0) {
+      existingCreatedAt = _asInt(_sessionReviewsByNo[sessionNo]?['createdAt']);
+    }
+
+    if (!mounted) return;
+
+    bool submitting = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        return StatefulBuilder(
+          builder: (context, setD) {
+            Future<void> submit() async {
+              if (rating < 1 || rating > 5) {
+                AppToast.show(
+                  context,
+                  'Please choose a rating from 1 to 5 stars.',
+                  type: AppToastType.error,
+                );
+                return;
+              }
+
+              setD(() => submitting = true);
+              try {
+                final payload = <String, dynamic>{
+                  'sessionNo': sessionNo,
+                  'rating': rating,
+                  'teacherName': teacherName,
+                  'updatedAt': ServerValue.timestamp,
+                  'createdAt': existingCreatedAt > 0
+                      ? existingCreatedAt
+                      : ServerValue.timestamp,
+                };
+
+                await _db
+                    .child(
+                      'booking_progress/$_uid/$_courseId/session_reviews/$sessionNo',
+                    )
+                    .set(payload);
+
+                final nextCreatedAt = existingCreatedAt > 0
+                    ? existingCreatedAt
+                    : DateTime.now().millisecondsSinceEpoch;
+
+                if (!mounted) return;
+                setState(() {
+                  _applySessionReviewToAttendance(
+                    sessionNo: sessionNo,
+                    rating: rating,
+                    createdAt: nextCreatedAt,
+                    teacherName: teacherName,
+                  );
+                });
+
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                AppToast.show(context, 'Session review submitted.');
+              } catch (e) {
+                if (!context.mounted) return;
+                AppToast.show(
+                  context,
+                  toHumanError(e),
+                  type: AppToastType.error,
+                );
+              } finally {
+                if (context.mounted) {
+                  setD(() => submitting = false);
+                }
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                media.viewInsets.bottom + media.padding.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    taughtSummary.isEmpty
+                        ? 'Session $sessionNo'
+                        : taughtSummary,
+                    style: const TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Teacher: ${teacherName.isEmpty ? '-' : teacherName}',
+                    style: UiK.subtleText(),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Rate this session',
+                    style: TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 4,
+                    children: List.generate(5, (i) {
+                      final v = i + 1;
+                      return IconButton(
+                        onPressed: submitting
+                            ? null
+                            : () => setD(() => rating = v),
+                        icon: Icon(
+                          v <= rating
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: const Color(0xFFF59E0B),
+                        ),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: submitting ? null : submit,
+                      icon: const Icon(Icons.send_rounded),
+                      label: Text(
+                        submitting ? 'Submitting...' : 'Submit review',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   // -------------------- Progress grouping helper --------------------
@@ -2287,6 +2534,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final tagText = isOnline ? 'Online' : 'In-class';
 
     final sessionNo = _asInt(a['sessionNo']);
+    final teacherName =
+        (a['teacherName'] ??
+                a['teacherNameFromBooking'] ??
+                a['teacher_name'] ??
+                '')
+            .toString()
+            .trim();
+    final reviewRating = _asInt(a['reviewRating']);
 
     return Card(
       elevation: 0,
@@ -2387,9 +2642,47 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
                         style: UiK.subtleText(),
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Teacher: ${teacherName.isEmpty ? '-' : teacherName}',
+                        style: UiK.subtleText(),
+                      ),
                       if (taughtSummary.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text('Taught: $taughtSummary', style: UiK.subtleText()),
+                      ],
+                      if (isOnline && isPresent && sessionNo > 0) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(5, (i) {
+                                final on = (i + 1) <= reviewRating;
+                                return Icon(
+                                  on
+                                      ? Icons.star_rounded
+                                      : Icons.star_border_rounded,
+                                  size: 18,
+                                  color: const Color(0xFFF59E0B),
+                                );
+                              }),
+                            ),
+                            TextButton.icon(
+                              onPressed: () =>
+                                  _openSessionReviewSheetForAttendance(a),
+                              icon: const Icon(Icons.rate_review_rounded),
+                              label: Text(
+                                (reviewRating >= 1 && reviewRating <= 5)
+                                    ? 'Update review'
+                                    : 'Review session',
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                       if (!isOnline && unitTitle.isNotEmpty) ...[
                         const SizedBox(height: 2),
