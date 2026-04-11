@@ -5,8 +5,6 @@ import 'package:intl/intl.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherOnlineCircleScreen extends StatefulWidget {
@@ -368,17 +366,6 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_online_circle',
-      hints: const [
-        TeacherTourHint(
-          title: 'Online circle',
-          line:
-              'Create or update your online circle topic, link, and session details.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,

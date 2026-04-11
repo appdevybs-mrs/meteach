@@ -9,7 +9,6 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/ybs_busy_logo.dart';
-import '../shared/learner_tour_guide.dart';
 import '../services/course_feedback_service.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
@@ -1610,21 +1609,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_recorded_video',
-      hints: const [
-        LearnerTourHint(
-          title: 'تشغيل الفيديو',
-          line:
-              'استخدم أزرار التشغيل والتقديم والتحكم لمتابعة الدرس كما يلائمك.',
-        ),
-        LearnerTourHint(
-          title: 'الملاحظات',
-          line: 'يمكنك كتابة ملاحظاتك وحفظها لكل جلسة فيديو.',
-        ),
-      ],
-    );
 
     final title = widget.sessionTitle.trim().isEmpty
         ? 'Session Video'

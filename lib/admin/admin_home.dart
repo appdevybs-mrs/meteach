@@ -27,10 +27,7 @@ import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/payment_status.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
@@ -128,23 +125,25 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    await AppLoading.run(context, () async {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
 
-    // ✅ stop "single device" listener
-    await SessionManager.stopListening();
+      // ✅ stop "single device" listener
+      await SessionManager.stopListening();
 
-    // ✅ remove FCM token record
-    try {
-      if (userId != null && userId.isNotEmpty) {
-        await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-      }
-    } catch (_) {}
+      // ✅ remove FCM token record
+      try {
+        if (userId != null && userId.isNotEmpty) {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+        }
+      } catch (_) {}
 
-    try {
-      await appThemeController.resetToDefault();
-    } catch (_) {}
+      try {
+        await appThemeController.resetToDefault();
+      } catch (_) {}
 
-    await FirebaseAuth.instance.signOut();
+      await FirebaseAuth.instance.signOut();
+    }, message: 'Logging out...');
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
@@ -158,50 +157,6 @@ class _AdminHomeState extends State<AdminHome> {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.schedule(
-      context,
-      screenId: 'admin_home',
-      hints: [
-        const AdminTourHint(
-          title: 'لوحة الإدارة',
-          line:
-              'تمثل هذه الشاشة مركز التحكم الرئيسي لإدارة الأقسام التشغيلية والأكاديمية في المنصة.',
-          highlightShape: AppTourHighlightShape.fullscreen,
-        ),
-        AdminTourHint(
-          title: 'زر القائمة',
-          line:
-              'استخدم هذا الزر لفتح القائمة الجانبية وتبديل وضع العرض بين الإدارة والاستقبال.',
-          targetKey: _menuButtonKey,
-          highlightShape: AppTourHighlightShape.circle,
-        ),
-        AdminTourHint(
-          title: 'شبكة أدوات الإدارة',
-          line:
-              'تضم هذه الشبكة البطاقات الرئيسية للوصول السريع إلى الدورات والصفوف والمدفوعات وبقية الأقسام.',
-          targetKey: _cardsGridKey,
-        ),
-        AdminTourHint(
-          title: 'بطاقة المدفوعات',
-          line:
-              'توفر هذه البطاقة نقطة دخول مباشرة لإدارة السجلات المالية ومتابعة عمليات الدفع.',
-          targetKey: _paymentsCardKey,
-        ),
-        AdminTourHint(
-          title: 'بطاقة المتعلمين',
-          line:
-              'تتيح هذه البطاقة متابعة بيانات المتعلمين وحالة الالتزام المالي ومستوى التتبع الدراسي.',
-          targetKey: _learnersCardKey,
-        ),
-        AdminTourHint(
-          title: 'بطاقة الملفات المشتركة',
-          line:
-              'من هذه البطاقة يمكنك مراجعة الملفات المشتركة بين المعلمين وإدارتها على مستوى النظام.',
-          targetKey: _sharedCardKey,
-        ),
-      ],
-    );
-
     final user = FirebaseAuth.instance.currentUser;
 
     final width = MediaQuery.of(context).size.width;
@@ -4091,13 +4046,6 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_force_update_all',
-      title: 'اعدادات التطبيق',
-      line: 'هنا تضبط رقم النسخة الاجبارية ورسائل التحديث للتطبيق.',
-    );
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(

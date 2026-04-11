@@ -12,13 +12,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../services/route_state.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -534,6 +533,8 @@ class _AdminTeacherMailThreadScreenState
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.teacherUid);
+          final eventId = 'mail_${_threadId}_$now';
+          final topic = 'user_${widget.teacherUid}';
           final payload = {
             'type': 'mail',
             'route': 'mail_thread',
@@ -545,17 +546,26 @@ class _AdminTeacherMailThreadScreenState
               await PushClient.sendToToken(
                 token: token,
                 targetUid: widget.teacherUid,
-                eventId: 'mail_${_threadId}_$now',
+                eventId: eventId,
                 title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
                 message: preview80.isEmpty
                     ? 'You received new mail'
                     : preview80,
                 data: payload,
               );
-            } catch (_) {
+            } catch (e, st) {
+              await PushErrorLogger.logFailure(
+                screen: 'admin/admin_teacher_mail_thread',
+                action: 'mail_push_token_fallback_topic',
+                error: e,
+                stackTrace: st,
+                targetUid: widget.teacherUid,
+                token: token,
+                eventId: eventId,
+              );
               await PushClient.sendToTopic(
-                topic: 'user_${widget.teacherUid}',
-                eventId: 'mail_${_threadId}_$now',
+                topic: topic,
+                eventId: eventId,
                 title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
                 message: preview80.isEmpty
                     ? 'You received new mail'
@@ -565,14 +575,23 @@ class _AdminTeacherMailThreadScreenState
             }
           } else {
             await PushClient.sendToTopic(
-              topic: 'user_${widget.teacherUid}',
-              eventId: 'mail_${_threadId}_$now',
+              topic: topic,
+              eventId: eventId,
               title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: payload,
             );
           }
-        } catch (_) {}
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_teacher_mail_thread',
+            action: 'mail_push_final_failure',
+            error: e,
+            stackTrace: st,
+            targetUid: widget.teacherUid,
+            eventId: 'mail_${_threadId}_$now',
+          );
+        }
       }());
     } catch (e) {
       // ✅ restore user input if failed
@@ -895,12 +914,6 @@ class _AdminTeacherMailThreadScreenState
         ? '${_selectedMessageIds.length} selected'
         : (teacherName.isEmpty ? 'Mail' : 'Mail — $teacherName');
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_teacher_mail_thread',
-      title: 'محادثة البريد',
-      line: 'هنا تقرأ الرسائل مع المعلم وترسل ردودا او مرفقات.',
-    );
 
     return Scaffold(
       appBar: AppBar(

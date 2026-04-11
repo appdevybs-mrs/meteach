@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
-import '../shared/learner_tour_guide.dart';
 
 class LearnerGamesScreen extends StatefulWidget {
   const LearnerGamesScreen({super.key});
@@ -765,20 +764,6 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_games',
-      hints: const [
-        LearnerTourHint(
-          title: 'البحث في الألعاب',
-          line: 'أدخل اسم اللعبة أو التصنيف للوصول إلى اللعبة بسرعة.',
-        ),
-        LearnerTourHint(
-          title: 'تفاصيل اللعبة',
-          line: 'اضغط بطاقة اللعبة لعرض الوصف والقواعد قبل البدء باللعب.',
-        ),
-      ],
-    );
 
     return Scaffold(
       body: learnerWebBodyFrame(

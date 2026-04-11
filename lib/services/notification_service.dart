@@ -30,13 +30,15 @@ class NotificationService {
   static const int dailyReminderId = 900001;
 
   // Separate channels so users can control Daily vs Session alerts independently in Android settings.
-  static const String _dailyChannelId = 'daily_reminders_channel';
+  static const String _dailyChannelId = 'daily_reminders_channel_v2';
   static const String _dailyChannelName = 'Daily Reminders';
   static const String _dailyChannelDesc = 'Daily reminder notifications';
 
-  static const String _sessionChannelId = 'class_reminders_channel';
+  static const String _sessionChannelId = 'class_reminders_channel_v2';
   static const String _sessionChannelName = 'Class Reminders';
   static const String _sessionChannelDesc = 'Reminders for classes';
+  static const String _soundName = 'ybs_notify';
+  static const String _iosSoundName = 'ybs_notify.caf';
 
   String _sessionEventId(String classId, DateTime sessionStart, String kind) {
     final raw = 'session|$kind|$classId|${sessionStart.toIso8601String()}';
@@ -69,7 +71,11 @@ class NotificationService {
 
     // Init notifications (v20 uses named param "settings")
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidInit);
+    const darwinInit = DarwinInitializationSettings();
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: darwinInit,
+    );
 
     await _plugin.initialize(
       settings: initSettings,
@@ -90,6 +96,8 @@ class NotificationService {
           _dailyChannelName,
           description: _dailyChannelDesc,
           importance: Importance.defaultImportance,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound(_soundName),
         ),
       );
 
@@ -99,6 +107,8 @@ class NotificationService {
           _sessionChannelName,
           description: _sessionChannelDesc,
           importance: Importance.max,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound(_soundName),
         ),
       );
     }
@@ -124,7 +134,10 @@ class NotificationService {
         channelDescription: _dailyChannelDesc,
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound(_soundName),
       ),
+      iOS: DarwinNotificationDetails(sound: _iosSoundName),
     );
   }
 
@@ -137,7 +150,10 @@ class NotificationService {
         channelDescription: _sessionChannelDesc,
         importance: Importance.max,
         priority: Priority.high,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound(_soundName),
       ),
+      iOS: DarwinNotificationDetails(sound: _iosSoundName),
     );
   }
 
@@ -180,7 +196,10 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.high,
         actions: actions,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound(_soundName),
       ),
+      iOS: const DarwinNotificationDetails(sound: _iosSoundName),
     );
   }
 

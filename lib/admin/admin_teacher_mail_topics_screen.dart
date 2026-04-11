@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'mail_topic_thread_screen.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminTeacherMailTopicsScreen extends StatefulWidget {
   const AdminTeacherMailTopicsScreen({
@@ -207,12 +205,6 @@ class _AdminTeacherMailTopicsScreenState
   Widget build(BuildContext context) {
     final teacherName = _teacherDisplayName();
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_teacher_mail_topics',
-      title: 'مواضيع بريد المعلم',
-      line: 'من هذه الشاشة تتابع مواضيع البريد مع المعلم وتضيف موضوع جديد.',
-    );
 
     return Scaffold(
       appBar: AppBar(

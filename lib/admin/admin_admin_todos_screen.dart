@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
@@ -236,6 +237,8 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
   }) async {
     try {
       final token = await _getFcmToken(assignee.uid);
+      final eventId = 'admin_todo_create_${todoId}_${assignee.uid}';
+      final topic = 'user_${assignee.uid}';
       final payload = {
         'type': 'admin_todo',
         'route': 'admin_todos',
@@ -248,15 +251,24 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
           await PushClient.sendToToken(
             token: token,
             targetUid: assignee.uid,
-            eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+            eventId: eventId,
             title: 'New admin TODO',
             message: draft.title,
             data: payload,
           );
-        } catch (_) {
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_admin_todos',
+            action: 'todo_create_push_token_fallback_topic',
+            error: e,
+            stackTrace: st,
+            targetUid: assignee.uid,
+            token: token,
+            eventId: eventId,
+          );
           await PushClient.sendToTopic(
-            topic: 'user_${assignee.uid}',
-            eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+            topic: topic,
+            eventId: eventId,
             title: 'New admin TODO',
             message: draft.title,
             data: payload,
@@ -264,14 +276,23 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
         }
       } else {
         await PushClient.sendToTopic(
-          topic: 'user_${assignee.uid}',
-          eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+          topic: topic,
+          eventId: eventId,
           title: 'New admin TODO',
           message: draft.title,
           data: payload,
         );
       }
-    } catch (_) {}
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'admin/admin_admin_todos',
+        action: 'todo_create_push_final_failure',
+        error: e,
+        stackTrace: st,
+        targetUid: assignee.uid,
+        eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+      );
+    }
   }
 
   Future<void> _notifyCreatorOnUpdate({
@@ -287,6 +308,8 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       final token = await _getFcmToken(creatorUid);
       final title = action == 'done' ? 'TODO completed' : 'TODO seen';
       final body = '$_myName: ${todo.title.trim()}';
+      final eventId = 'admin_todo_update_${todoId}_$action';
+      final topic = 'user_$creatorUid';
       final payload = {
         'type': 'admin_todo',
         'route': 'admin_todos',
@@ -300,15 +323,24 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
           await PushClient.sendToToken(
             token: token,
             targetUid: creatorUid,
-            eventId: 'admin_todo_update_${todoId}_$action',
+            eventId: eventId,
             title: title,
             message: body,
             data: payload,
           );
-        } catch (_) {
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_admin_todos',
+            action: 'todo_update_push_token_fallback_topic',
+            error: e,
+            stackTrace: st,
+            targetUid: creatorUid,
+            token: token,
+            eventId: eventId,
+          );
           await PushClient.sendToTopic(
-            topic: 'user_$creatorUid',
-            eventId: 'admin_todo_update_${todoId}_$action',
+            topic: topic,
+            eventId: eventId,
             title: title,
             message: body,
             data: payload,
@@ -316,14 +348,23 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
         }
       } else {
         await PushClient.sendToTopic(
-          topic: 'user_$creatorUid',
-          eventId: 'admin_todo_update_${todoId}_$action',
+          topic: topic,
+          eventId: eventId,
           title: title,
           message: body,
           data: payload,
         );
       }
-    } catch (_) {}
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'admin/admin_admin_todos',
+        action: 'todo_update_push_final_failure',
+        error: e,
+        stackTrace: st,
+        targetUid: creatorUid,
+        eventId: 'admin_todo_update_${todoId}_$action',
+      );
+    }
   }
 
   Future<void> _markSeenIfNeeded(String todoId, _AdminTodo todo) async {

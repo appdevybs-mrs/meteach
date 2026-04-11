@@ -25,9 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_learner_profile_screen.dart';
 import 'take_attendance_screen.dart';
@@ -1217,22 +1215,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_classes',
-      hints: const [
-        TeacherTourHint(
-          title: 'Teaching workspace',
-          line:
-              'Switch between in-class and online sessions from the top tabs.',
-        ),
-        TeacherTourHint(
-          title: 'Class actions',
-          line:
-              'Open attendance, learner profile, progress, and gallery tools from each card.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -2875,22 +2857,6 @@ class _OnlineTakeAttendanceScreenState
         '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_online_take_attendance',
-      hints: const [
-        TeacherTourHint(
-          title: 'Online attendance',
-          line:
-              'Mark each learner as present or absent for this online session.',
-        ),
-        TeacherTourHint(
-          title: 'Save records',
-          line:
-              'Use the save button in the app bar to store attendance updates.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -3467,17 +3433,6 @@ class _OnlineAttendanceHistoryScreenState
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_online_attendance_history',
-      hints: const [
-        TeacherTourHint(
-          title: 'Attendance history',
-          line:
-              'Review previously saved present and absent marks for this session.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -3824,17 +3779,6 @@ class _OnlineAttendanceStatsScreenState
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_online_attendance_stats',
-      hints: const [
-        TeacherTourHint(
-          title: 'Online stats',
-          line:
-              'This page summarizes online attendance totals for the selected course.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,

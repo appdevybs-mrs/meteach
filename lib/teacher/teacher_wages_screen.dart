@@ -5,8 +5,6 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherWagesScreen extends StatefulWidget {
@@ -229,17 +227,6 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_wages',
-      hints: const [
-        TeacherTourHint(
-          title: 'Wages dashboard',
-          line:
-              'Track paid and pending wage entries, then confirm when required.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,

@@ -11,14 +11,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:async';
 import '../services/backend_api.dart';
+import '../services/push_error_logger.dart';
 import '../services/route_state.dart'; // ✅ ADD THIS
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class MailUploadClient {
   MailUploadClient({
@@ -746,6 +745,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
+          final eventId = 'mail_${widget.threadId}_$now';
+          final topic = 'user_${widget.peerUid}';
           final payload = {
             'type': 'mail',
             'route': 'mail_thread',
@@ -757,17 +758,26 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               await PushClient.sendToToken(
                 token: token,
                 targetUid: widget.peerUid,
-                eventId: 'mail_${widget.threadId}_$now',
+                eventId: eventId,
                 title: _subject.isEmpty ? 'New mail' : _subject,
                 message: preview80.isEmpty
                     ? 'You received new mail'
                     : preview80,
                 data: payload,
               );
-            } catch (_) {
+            } catch (e, st) {
+              await PushErrorLogger.logFailure(
+                screen: 'admin/mail_topic_thread',
+                action: 'mail_push_token_fallback_topic',
+                error: e,
+                stackTrace: st,
+                targetUid: widget.peerUid,
+                token: token,
+                eventId: eventId,
+              );
               await PushClient.sendToTopic(
-                topic: 'user_${widget.peerUid}',
-                eventId: 'mail_${widget.threadId}_$now',
+                topic: topic,
+                eventId: eventId,
                 title: _subject.isEmpty ? 'New mail' : _subject,
                 message: preview80.isEmpty
                     ? 'You received new mail'
@@ -777,14 +787,23 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
             }
           } else {
             await PushClient.sendToTopic(
-              topic: 'user_${widget.peerUid}',
-              eventId: 'mail_${widget.threadId}_$now',
+              topic: topic,
+              eventId: eventId,
               title: _subject.isEmpty ? 'New mail' : _subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: payload,
             );
           }
-        } catch (_) {}
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/mail_topic_thread',
+            action: 'mail_push_final_failure',
+            error: e,
+            stackTrace: st,
+            targetUid: widget.peerUid,
+            eventId: 'mail_${widget.threadId}_$now',
+          );
+        }
       }());
     } catch (e) {
       // ✅ restore input on failure
@@ -813,12 +832,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         ? '${_selectedMessageIds.length} selected'
         : baseTitle;
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_mail_topic_thread',
-      title: 'محادثة الموضوع',
-      line: 'استخدم هذه الشاشة لمتابعة الرسائل داخل موضوع بريد محدد.',
-    );
 
     return Scaffold(
       appBar: AppBar(

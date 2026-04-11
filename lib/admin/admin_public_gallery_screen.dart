@@ -13,9 +13,7 @@ import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
-import '../shared/admin_tour_guide.dart';
 import '../shared/media_download.dart';
-import '../shared/screen_help_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
@@ -1374,12 +1372,6 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_public_gallery',
-      title: 'المعرض العام',
-      line: 'من هنا تستعرض وسائط المعرض العام ومعرض المتعلمين.',
-    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -2271,12 +2263,6 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_learner_gallery',
-      title: 'معرض المتعلم',
-      line: 'تعرض هذه الشاشة ملفات المتعلم ويمكنك حذف او فتح اي عنصر.',
-    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -3047,12 +3033,6 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
         ? 'Admin'
         : uploaderName.trim();
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_public_gallery_viewer',
-      title: 'عارض الوسائط',
-      line: 'هنا تفتح الصورة او الفيديو بالحجم الكامل مع معلومات الرفع.',
-    );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -3222,12 +3202,6 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
         ? 'Admin'
         : uploaderName.trim();
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_learner_gallery_viewer',
-      title: 'عارض معرض المتعلم',
-      line: 'تستطيع من هذه الشاشة معاينة الوسائط الخاصة بالمتعلم بالتفصيل.',
-    );
 
     return Scaffold(
       backgroundColor: Colors.black,

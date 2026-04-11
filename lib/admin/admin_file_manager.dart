@@ -12,8 +12,6 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminFileManager extends StatefulWidget {
   const AdminFileManager({super.key});
@@ -40,12 +38,6 @@ class _AdminFileManagerState extends State<AdminFileManager>
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_file_manager',
-      title: 'مدير الملفات',
-      line: 'هذه الصفحة لادارة ملفات الدورات والالعاب ورفع الملفات الجديدة.',
-    );
 
     return Scaffold(
       appBar: AppBar(
@@ -644,12 +636,6 @@ class _FileBrowserState extends State<_FileBrowser>
   Widget build(BuildContext context) {
     super.build(context);
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_file_browser',
-      title: 'متصفح الملفات',
-      line: 'من هذا القسم تتصفح المجلدات والملفات وتنفذ عمليات الادارة.',
-    );
 
     return Scaffold(
       body: adminWebBodyFrame(
@@ -2297,12 +2283,6 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   Widget build(BuildContext context) {
     super.build(context);
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_games_manager',
-      title: 'ادارة الالعاب',
-      line: 'هنا تدير مكتبة الالعاب وتضيف او تعدل محتوى كل لعبة.',
-    );
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(

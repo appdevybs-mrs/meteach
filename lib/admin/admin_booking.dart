@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
 import '../shared/admin_web_layout.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminBookingScreen extends StatefulWidget {
   const AdminBookingScreen({super.key});
@@ -1521,13 +1519,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_booking',
-      title: 'ادارة الحجز',
-      line:
-          'من هذه الشاشة تتابع الحجوزات وتفلترها حسب الدورة والمعلم والتاريخ.',
-    );
 
     final course = _selectedCourse();
     final filtered = _filteredSlots();

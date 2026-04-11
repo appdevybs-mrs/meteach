@@ -13,10 +13,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/payment_status.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
@@ -1189,25 +1187,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     );
   }
 
-  Future<void> _showPaymentsHelpDialog() async {
-    await ScreenHelpGuide.show(
-      context,
-      role: GuideRole.admin,
-      screenId: 'admin_payments',
-      screenTitle: 'Payments',
-    );
-  }
-
   // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_payments',
-      title: 'ادارة المدفوعات',
-      line: 'من هذه الشاشة تسجل الدفعات وتراجع التفاصيل حسب المتعلم والدورة.',
-    );
 
     return StreamBuilder<DatabaseEvent>(
       stream: _paymentsRef
@@ -1381,17 +1364,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             iconTheme: const IconThemeData(
               color: AdminPaymentsScreen.primaryBlue,
             ),
-            title: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: _showPaymentsHelpDialog,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                child: Text(
-                  'Payments',
-                  style: TextStyle(
-                    color: AdminPaymentsScreen.primaryBlue,
-                    fontWeight: FontWeight.w900,
-                  ),
+            title: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              child: Text(
+                'Payments',
+                style: TextStyle(
+                  color: AdminPaymentsScreen.primaryBlue,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ),

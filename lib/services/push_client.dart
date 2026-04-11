@@ -5,6 +5,32 @@ import 'package:uuid/uuid.dart';
 
 import 'backend_api.dart';
 
+class PushSendException implements Exception {
+  PushSendException({
+    required this.message,
+    required this.endpoint,
+    required this.mode,
+    required this.target,
+    required this.eventId,
+    this.statusCode,
+    this.responseBody,
+  });
+
+  final String message;
+  final Uri endpoint;
+  final String mode;
+  final String target;
+  final String eventId;
+  final int? statusCode;
+  final String? responseBody;
+
+  @override
+  String toString() {
+    final code = statusCode == null ? '' : ' HTTP $statusCode';
+    return 'PushSendException($mode->$target$code): $message';
+  }
+}
+
 class PushClient {
   static const Duration _timeout = Duration(seconds: 12);
   static final Uuid _uuid = Uuid();
@@ -48,6 +74,26 @@ class PushClient {
     return out;
   }
 
+  static Never _throwPushFailure({
+    required String mode,
+    required Uri endpoint,
+    required String target,
+    required Map<String, String> data,
+    required String message,
+    int? statusCode,
+    String? responseBody,
+  }) {
+    throw PushSendException(
+      message: message,
+      endpoint: endpoint,
+      mode: mode,
+      target: target,
+      eventId: (data['eventId'] ?? '').trim(),
+      statusCode: statusCode,
+      responseBody: responseBody,
+    );
+  }
+
   /// Send to one device token
   static Future<void> sendToToken({
     required String token,
@@ -84,18 +130,42 @@ class PushClient {
         .timeout(_timeout);
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw Exception('Push failed HTTP ${res.statusCode}: ${res.body}');
+      _throwPushFailure(
+        mode: 'token',
+        endpoint: endpoint,
+        target: token,
+        data: body['data'] as Map<String, String>,
+        message: 'Push failed with non-2xx response.',
+        statusCode: res.statusCode,
+        responseBody: res.body,
+      );
     }
 
     dynamic decoded;
     try {
       decoded = jsonDecode(res.body);
     } catch (_) {
-      throw Exception('Push failed: invalid JSON response: ${res.body}');
+      _throwPushFailure(
+        mode: 'token',
+        endpoint: endpoint,
+        target: token,
+        data: body['data'] as Map<String, String>,
+        message: 'Push failed: invalid JSON response.',
+        statusCode: res.statusCode,
+        responseBody: res.body,
+      );
     }
 
     if (decoded is Map && decoded['success'] != true) {
-      throw Exception('Push failed: ${res.body}');
+      _throwPushFailure(
+        mode: 'token',
+        endpoint: endpoint,
+        target: token,
+        data: body['data'] as Map<String, String>,
+        message: 'Push failed: API returned success=false.',
+        statusCode: res.statusCode,
+        responseBody: res.body,
+      );
     }
   }
 
@@ -130,18 +200,42 @@ class PushClient {
         .timeout(_timeout);
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw Exception('Push failed HTTP ${res.statusCode}: ${res.body}');
+      _throwPushFailure(
+        mode: 'topic',
+        endpoint: endpoint,
+        target: topic,
+        data: body['data'] as Map<String, String>,
+        message: 'Push failed with non-2xx response.',
+        statusCode: res.statusCode,
+        responseBody: res.body,
+      );
     }
 
     dynamic decoded;
     try {
       decoded = jsonDecode(res.body);
     } catch (_) {
-      throw Exception('Push failed: invalid JSON response: ${res.body}');
+      _throwPushFailure(
+        mode: 'topic',
+        endpoint: endpoint,
+        target: topic,
+        data: body['data'] as Map<String, String>,
+        message: 'Push failed: invalid JSON response.',
+        statusCode: res.statusCode,
+        responseBody: res.body,
+      );
     }
 
     if (decoded is Map && decoded['success'] != true) {
-      throw Exception('Push failed: ${res.body}');
+      _throwPushFailure(
+        mode: 'topic',
+        endpoint: endpoint,
+        target: topic,
+        data: body['data'] as Map<String, String>,
+        message: 'Push failed: API returned success=false.',
+        statusCode: res.statusCode,
+        responseBody: res.body,
+      );
     }
   }
 }

@@ -12,7 +12,6 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
-import '../shared/learner_tour_guide.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 
@@ -2176,21 +2175,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_profile',
-      hints: const [
-        LearnerTourHint(
-          title: 'تعديل الملف الشخصي',
-          line:
-              'يمكنك من هذه الصفحة تحديث بياناتك العامة وصورتك ومعلوماتك الشخصية.',
-        ),
-        LearnerTourHint(
-          title: 'حفظ التغييرات',
-          line: 'بعد أي تعديل، اضغط زر الحفظ في أعلى الشاشة.',
-        ),
-      ],
-    );
 
     final p = palette;
     final email = (_user['email'] ?? '').toString();

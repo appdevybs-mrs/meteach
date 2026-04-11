@@ -7,7 +7,6 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
-import '../shared/learner_tour_guide.dart';
 
 class LearnerRegulationsScreen extends StatefulWidget {
   const LearnerRegulationsScreen({super.key});
@@ -209,16 +208,6 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_regulations',
-      hints: const [
-        LearnerTourHint(
-          title: 'لوائح الأكاديمية',
-          line: 'تجد هنا القوانين والسياسات الأساسية المنظمة للدراسة.',
-        ),
-      ],
-    );
 
     return Directionality(
       textDirection: TextDirection.rtl,

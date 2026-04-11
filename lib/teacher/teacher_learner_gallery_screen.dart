@@ -15,8 +15,6 @@ import '../services/backend_api.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/media_download.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
@@ -589,16 +587,6 @@ class _TeacherLearnerGalleryScreenState
         ? widget.classId
         : widget.classTitle.trim();
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_learner_gallery',
-      hints: const [
-        TeacherTourHint(
-          title: 'Learner gallery',
-          line: 'View and manage photos or videos shared for this learner.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1495,16 +1483,6 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
         ? 'Teacher'
         : teacherName.trim();
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_learner_gallery_viewer',
-      hints: const [
-        TeacherTourHint(
-          title: 'Viewer',
-          line: 'Open media in full view and review upload details.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: Colors.black,

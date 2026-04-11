@@ -14,8 +14,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/teacher_web_layout.dart';
@@ -455,17 +453,6 @@ class _TeacherSyllabusDetailsScreenState
   Widget build(BuildContext context) {
     final c = _course;
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_syllabus_details',
-      hints: const [
-        TeacherTourHint(
-          title: 'Syllabus details',
-          line:
-              'Use tabs to switch variants and inspect modules, units, lessons, and resources.',
-        ),
-      ],
-    );
 
     return Directionality(
       textDirection: TextDirection.ltr,

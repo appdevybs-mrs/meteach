@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/route_state.dart';
+import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../utils/io_delete.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -21,8 +22,6 @@ import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
@@ -951,6 +950,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
+          final eventId = 'mail_${widget.threadId}_$now';
+          final topic = 'user_${widget.peerUid}';
           final payload = {
             'type': 'mail',
             'route': 'mail_thread',
@@ -962,17 +963,26 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               await PushClient.sendToToken(
                 token: token,
                 targetUid: widget.peerUid,
-                eventId: 'mail_${widget.threadId}_$now',
+                eventId: eventId,
                 title: widget.subject.isEmpty ? 'New mail' : widget.subject,
                 message: preview80.isEmpty
                     ? 'You received new mail'
                     : preview80,
                 data: payload,
               );
-            } catch (_) {
+            } catch (e, st) {
+              await PushErrorLogger.logFailure(
+                screen: 'teacher/teacher_mail_thread',
+                action: 'mail_push_token_fallback_topic',
+                error: e,
+                stackTrace: st,
+                targetUid: widget.peerUid,
+                token: token,
+                eventId: eventId,
+              );
               await PushClient.sendToTopic(
-                topic: 'user_${widget.peerUid}',
-                eventId: 'mail_${widget.threadId}_$now',
+                topic: topic,
+                eventId: eventId,
                 title: widget.subject.isEmpty ? 'New mail' : widget.subject,
                 message: preview80.isEmpty
                     ? 'You received new mail'
@@ -982,14 +992,23 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             }
           } else {
             await PushClient.sendToTopic(
-              topic: 'user_${widget.peerUid}',
-              eventId: 'mail_${widget.threadId}_$now',
+              topic: topic,
+              eventId: eventId,
               title: widget.subject.isEmpty ? 'New mail' : widget.subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: payload,
             );
           }
-        } catch (_) {}
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'teacher/teacher_mail_thread',
+            action: 'mail_push_final_failure',
+            error: e,
+            stackTrace: st,
+            targetUid: widget.peerUid,
+            eventId: 'mail_${widget.threadId}_$now',
+          );
+        }
       }());
     }
   }
@@ -4107,21 +4126,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final subjectTrim = displaySubject(widget.subject);
     final canReport = _peerIsLearner;
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_mail_thread',
-      hints: const [
-        TeacherTourHint(
-          title: 'Conversation thread',
-          line: 'Read messages, search the thread, and open shared files here.',
-        ),
-        TeacherTourHint(
-          title: 'Send message',
-          line:
-              'Use the composer area at the bottom to send text, audio, or attachments.',
-        ),
-      ],
-    );
 
     return Scaffold(
       appBar: AppBar(

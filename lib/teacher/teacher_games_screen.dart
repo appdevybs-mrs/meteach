@@ -14,8 +14,6 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherGamesScreen extends StatefulWidget {
@@ -2192,21 +2190,6 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_games',
-      hints: const [
-        TeacherTourHint(
-          title: 'Games manager',
-          line:
-              'Manage learning games, categories, and publishing status here.',
-        ),
-        TeacherTourHint(
-          title: 'Add game',
-          line: 'Use the Add Game button to create a new playable activity.',
-        ),
-      ],
-    );
 
     return Scaffold(
       appBar: AppBar(

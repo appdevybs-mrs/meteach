@@ -19,7 +19,6 @@ import '../services/course_feedback_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
-import '../shared/learner_tour_guide.dart';
 import '../shared/learner_web_layout.dart';
 import 'recorded_video_player_screen.dart';
 
@@ -2859,20 +2858,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_recorded_course',
-      hints: const [
-        LearnerTourHint(
-          title: 'الدروس المسجلة',
-          line: 'اختر الوحدة، ثم افتح الفيديو أو مواد القراءة لكل جلسة.',
-        ),
-        LearnerTourHint(
-          title: 'شهادة الدورة',
-          line: 'بعد استكمال المتطلبات يمكنك تنزيل الشهادة أو طباعتها.',
-        ),
-      ],
-    );
 
     final Widget content;
 

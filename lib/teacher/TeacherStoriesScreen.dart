@@ -15,7 +15,6 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import '../shared/shared_story_audio_player_screen.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
@@ -3167,20 +3166,6 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_stories',
-      hints: const [
-        TeacherTourHint(
-          title: 'Stories manager',
-          line: 'Create, search, and organize story content for your learners.',
-        ),
-        TeacherTourHint(
-          title: 'Add story',
-          line: 'Use the Add Story button to publish a new story item.',
-        ),
-      ],
-    );
 
     return Scaffold(
       appBar: AppBar(

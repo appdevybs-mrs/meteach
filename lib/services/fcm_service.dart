@@ -10,18 +10,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../admin/admin_classes.dart';
+import '../admin/admin_mail_inbox_screen.dart';
 import '../admin/admin_payments.dart';
+import '../admin/admin_priority_alerts_screen.dart';
 import '../admin/admin_teacher_reminders_screen.dart';
 import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
 import '../admin/admin_admin_todos_screen.dart';
 import '../learner/learner_booking_screen.dart';
 import '../learner/learner_courses_screen.dart';
+import '../learner/learner_mail_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../main.dart'; // appNavigatorKey + messengerKey
 import '../shared/app_feedback.dart';
 import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
+import '../teacher/teacher_mail.dart';
 import '../teacher/teacher_mail_thread_screen.dart';
 import 'mail_thread_by_id_screen.dart'; // safe fallback only
 import 'route_state.dart';
@@ -54,10 +58,12 @@ class FCMService {
   bool _initialized = false;
   final Set<String> _handledTapKeys = <String>{};
 
-  static const String chMessages = 'ch_messages';
-  static const String chReminders = 'ch_reminders';
-  static const String chMail = 'ch_mail';
-  static const String chDefault = 'ch_default';
+  static const String chMessages = 'ch_messages_v2';
+  static const String chReminders = 'ch_reminders_v2';
+  static const String chMail = 'ch_mail_v2';
+  static const String chDefault = 'ch_default_v2';
+  static const String _soundName = 'ybs_notify';
+  static const String _iosSoundName = 'ybs_notify.caf';
 
   String _canonicalType(dynamic raw) {
     final type = (raw ?? '').toString().trim().toLowerCase();
@@ -178,7 +184,11 @@ class FCMService {
     }
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidInit);
+    const darwinInit = DarwinInitializationSettings();
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: darwinInit,
+    );
 
     await _local.initialize(
       settings: initSettings,
@@ -210,6 +220,8 @@ class FCMService {
           'Messages',
           description: 'Chat message notifications',
           importance: Importance.max,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound(_soundName),
         ),
       );
       await androidPlugin.createNotificationChannel(
@@ -218,6 +230,8 @@ class FCMService {
           'Reminders',
           description: 'Reminders and class alerts',
           importance: Importance.max,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound(_soundName),
         ),
       );
       await androidPlugin.createNotificationChannel(
@@ -226,6 +240,8 @@ class FCMService {
           'Mail',
           description: 'Mail and inbox notifications',
           importance: Importance.high,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound(_soundName),
         ),
       );
       await androidPlugin.createNotificationChannel(
@@ -234,6 +250,8 @@ class FCMService {
           'General',
           description: 'General notifications',
           importance: Importance.high,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound(_soundName),
         ),
       );
     }
@@ -261,7 +279,9 @@ class FCMService {
     if (type == 'message') {
       channelId = chMessages;
       channelName = 'Messages';
-    } else if (type == 'reminder' || type == 'admin_todo') {
+    } else if (type == 'reminder' ||
+        type == 'admin_todo' ||
+        type == 'flash_message') {
       channelId = chReminders;
       channelName = 'Reminders';
     } else if (type == 'mail') {
@@ -292,7 +312,10 @@ class FCMService {
           channelName,
           importance: Importance.high,
           priority: Priority.high,
+          playSound: true,
+          sound: const RawResourceAndroidNotificationSound(_soundName),
         ),
+        iOS: const DarwinNotificationDetails(sound: _iosSoundName),
       ),
       payload: data.isEmpty ? null : jsonEncode(data),
     );
@@ -419,7 +442,10 @@ class FCMService {
     final peerUid = (data['peerUid'] ?? '').toString().trim();
     final seededPeerName = (data['peerName'] ?? '').toString().trim();
 
-    if (threadId.isEmpty || peerUid.isEmpty) return;
+    if (threadId.isEmpty || peerUid.isEmpty) {
+      await _openMessageCenterByRole();
+      return;
+    }
     if (RouteState.currentMailThreadId == threadId) return;
 
     final nav = await _waitForNavigator();
@@ -605,7 +631,7 @@ class FCMService {
     final route = (data['route'] ?? '').toString().trim().toLowerCase();
     final type = _canonicalType(data['type']);
 
-    if (route == 'mail_thread' || type == 'mail') {
+    if (route == 'mail_thread' || type == 'mail' || type == 'message') {
       return 'mail';
     }
     if (route == 'teacher_reminders' || type == 'reminder') {
@@ -620,7 +646,43 @@ class FCMService {
     if (type == 'payment') {
       return 'payment';
     }
+    if (route == 'flash_messages' || type == 'flash_message') {
+      return 'flash_message';
+    }
     return '';
+  }
+
+  Future<void> _openMessageCenterByRole() async {
+    final role = await _fetchCurrentUserRole();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (role == 'teacher') {
+      nav.push(MaterialPageRoute(builder: (_) => const TeacherMailScreen()));
+      return;
+    }
+    if (role == 'learner') {
+      nav.push(MaterialPageRoute(builder: (_) => const LearnerMailScreen()));
+      return;
+    }
+    if (role == 'admin') {
+      nav.push(MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()));
+    }
+  }
+
+  Future<void> _openFlashAlertByRole() async {
+    final role = await _fetchCurrentUserRole();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (role == 'admin') {
+      nav.push(
+        MaterialPageRoute(builder: (_) => const AdminPriorityAlertsScreen()),
+      );
+      return;
+    }
+
+    nav.popUntil((route) => route.isFirst);
   }
 
   String _tapDedupKey(Map<String, dynamic> data) {
@@ -698,6 +760,10 @@ class FCMService {
       }
       if (action == 'payment') {
         await _openPaymentByRole(data);
+        return;
+      }
+      if (action == 'flash_message') {
+        await _openFlashAlertByRole();
       }
     });
   }

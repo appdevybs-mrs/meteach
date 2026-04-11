@@ -3,8 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
 
@@ -1503,17 +1501,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_take_attendance',
-      hints: const [
-        TeacherTourHint(
-          title: 'Take attendance',
-          line:
-              'Mark learners as present or absent, then save this attendance session.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: appBg,

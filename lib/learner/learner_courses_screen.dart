@@ -9,7 +9,6 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/watermark_background.dart';
-import '../shared/learner_tour_guide.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import 'learner_course_detail_screen.dart';
@@ -1105,20 +1104,6 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_courses',
-      hints: const [
-        LearnerTourHint(
-          title: 'الدورات المسندة',
-          line: 'تعرض هذه الصفحة جميع دوراتك الحالية مع حالة كل دورة.',
-        ),
-        LearnerTourHint(
-          title: 'فتح الدورة',
-          line: 'اضغط زر فتح الدورة للدخول إلى التفاصيل أو المحتوى المسجل.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,

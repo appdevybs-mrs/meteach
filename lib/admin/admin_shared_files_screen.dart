@@ -7,10 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
 import '../shared/admin_web_layout.dart';
-import '../shared/admin_tour_guide.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminSharedFilesScreen extends StatefulWidget {
   const AdminSharedFilesScreen({super.key});
@@ -117,13 +115,6 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_shared_files',
-      title: 'الملفات المشتركة',
-      line:
-          'تعرض هذه الشاشة جميع الملفات المشتركة بين المعلمين مع صلاحية الحذف الإداري.',
-    );
 
     return Scaffold(
       appBar: AppBar(

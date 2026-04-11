@@ -11,11 +11,9 @@ import 'package:video_player/video_player.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 enum _LeaveChoice { save, discard, cancel }
@@ -1784,21 +1782,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_profile',
-      hints: const [
-        TeacherTourHint(
-          title: 'Profile settings',
-          line:
-              'Edit your personal details, teaching info, and media from this screen.',
-        ),
-        TeacherTourHint(
-          title: 'Save changes',
-          line: 'Use save actions to keep updates before leaving the page.',
-        ),
-      ],
-    );
 
     return PopScope(
       canPop: !_hasUnsavedChanges && !_busy,

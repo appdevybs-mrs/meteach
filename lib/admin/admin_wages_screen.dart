@@ -5,8 +5,6 @@ import 'admin_wages_export_excel.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
@@ -435,12 +433,6 @@ class AdminWagesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_wages',
-      title: 'سجل الاجور',
-      line: 'تعرض هذه الشاشة اجور المعلمين والمتعلمين مع حالات الدفع والتأكيد.',
-    );
 
     final paymentsRef = FirebaseDatabase.instance.ref('payments');
     final classesRef = FirebaseDatabase.instance.ref('classes');

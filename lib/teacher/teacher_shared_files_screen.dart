@@ -13,8 +13,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherSharedFilesScreen extends StatefulWidget {
@@ -581,16 +579,6 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_shared_files',
-      hints: const [
-        TeacherTourHint(
-          title: 'Shared documents',
-          line: 'Upload and manage shared document files for all teachers.',
-        ),
-      ],
-    );
 
     return Scaffold(
       appBar: AppBar(

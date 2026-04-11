@@ -8,13 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
+import '../services/push_error_logger.dart';
 import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
   const AdminTeacherRemindersScreen({super.key, this.teacherUid, this.teacher});
@@ -313,7 +312,16 @@ class _AdminTeacherRemindersScreenState
               'teacherUid': teacherUid,
             },
           );
-        } catch (_) {
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_teacher_reminders',
+            action: 'teacher_reminder_push_token_fallback_topic',
+            error: e,
+            stackTrace: st,
+            targetUid: teacherUid,
+            token: token,
+            eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
+          );
           await PushClient.sendToTopic(
             topic: 'user_$teacherUid',
             eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
@@ -349,7 +357,15 @@ class _AdminTeacherRemindersScreenState
         'status': 'sent',
         'error': null,
       });
-    } catch (e) {
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'admin/admin_teacher_reminders',
+        action: 'teacher_reminder_push_final_failure',
+        error: e,
+        stackTrace: st,
+        targetUid: teacherUid,
+        eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
+      );
       await ref.child('push').update({
         'status': 'error',
         'error': e.toString(),
@@ -955,12 +971,6 @@ class _AdminTeacherRemindersScreenState
   Widget build(BuildContext context) {
     final teacherName = (widget.teacher?.fullName ?? '').toString().trim();
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_teacher_reminders',
-      title: 'تذكيرات المعلمين',
-      line: 'من هذه الشاشة ترسل التذكيرات للمعلمين وتتابع حالتها.',
-    );
 
     return Scaffold(
       appBar: AppBar(

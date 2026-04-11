@@ -5,11 +5,10 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../shared/app_theme.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 /// Teacher side reminders:
@@ -146,7 +145,15 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
           'title': r.title,
         },
       );
-    } catch (e) {
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'teacher/teacher_reminder',
+        action: 'notify_admins_on_reminder_update',
+        error: e,
+        stackTrace: st,
+        topic: 'admins',
+        eventId: 'teacher_reminder_${_uid ?? ''}_${reminderId}_$action',
+      );
       _snack('Admin notify failed: $e');
     } finally {
       _notifying.remove(key);
@@ -691,17 +698,6 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_reminders',
-      hints: const [
-        TeacherTourHint(
-          title: 'Reminders',
-          line:
-              'Open reminders, mark them as done, and follow linked resources.',
-        ),
-      ],
-    );
 
     if (_uid == null) {
       return Scaffold(

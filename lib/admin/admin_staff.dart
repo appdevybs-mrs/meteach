@@ -13,9 +13,7 @@ import 'admin_teacher_mail_topics_screen.dart';
 import '../shared/profile_avatar.dart';
 import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
 import '../shared/admin_web_layout.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key});
@@ -305,12 +303,6 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_staff',
-      title: 'قائمة الموظفين',
-      line: 'من هنا تدير حسابات الموظفين والمعلمين وتفتح ملفاتهم.',
-    );
 
     return Scaffold(
       backgroundColor: AdminStaffScreen.appBg,
@@ -2163,12 +2155,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_staff_editor',
-      title: 'محرر الموظف',
-      line: 'هذه الشاشة لتعديل بيانات الموظف وصلاحياته ثم حفظ التغييرات.',
-    );
 
     return Scaffold(
       backgroundColor: AdminStaffScreen.appBg,
@@ -2838,12 +2824,6 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_teacher_learners',
-      title: 'متعلمين المعلم',
-      line: 'تعرض هذه الشاشة جميع المتعلمين المرتبطين بالمعلم المحدد.',
-    );
 
     final db = FirebaseDatabase.instance;
 

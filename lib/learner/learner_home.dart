@@ -26,8 +26,6 @@ import 'learner_booking_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
-import '../shared/learner_tour_guide.dart';
-import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 
@@ -52,40 +50,16 @@ class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey _drawerMailKey = GlobalKey();
   final GlobalKey _drawerRegulationsKey = GlobalKey();
   final GlobalKey _drawerThemeKey = GlobalKey();
-  final GlobalKey _drawerRestartTourKey = GlobalKey();
   final GlobalKey _drawerLogoutKey = GlobalKey();
   final GlobalKey _dashboardHomeworkCardKey = GlobalKey();
   final GlobalKey _dashboardBookingCardKey = GlobalKey();
   final GlobalKey _dashboardCoursesListKey = GlobalKey();
 
-  bool _drawerTourAttempted = false;
   bool _paymentDueToastChecked = false;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<String>? _displayNameFuture;
   Future<String>? _profilePhotoFuture;
-
-  static const List<LearnerTourHint> _quickStartHints = [
-    LearnerTourHint(
-      title: 'مرحبًا بك',
-      line: 'هذه جولة تعريفية موجزة تساعدك على فهم آلية استخدام التطبيق.',
-      highlightShape: AppTourHighlightShape.fullscreen,
-    ),
-    LearnerTourHint(
-      title: 'الشاشة الرئيسية للمتعلم',
-      line:
-          'تبدأ الجولة من هذه الشاشة لمتابعة الدورات والحجوزات والواجبات والتذكيرات.',
-      highlightShape: AppTourHighlightShape.fullscreen,
-    ),
-    LearnerTourHint(
-      title: 'القائمة الجانبية',
-      line: 'استخدم زر القائمة للانتقال المنظم بين جميع صفحات المتعلم.',
-    ),
-    LearnerTourHint(
-      title: 'إعادة الجولة',
-      line: 'يمكنك إعادة الجولة لاحقًا من القائمة الجانبية في أي وقت.',
-    ),
-  ];
 
   @override
   void initState() {
@@ -247,175 +221,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     } catch (_) {}
   }
 
-  bool _hasTarget(GlobalKey key) => key.currentContext != null;
-
-  List<LearnerTourHint> _homeScreenHints({bool onlyVisibleTargets = false}) {
-    final hints = <LearnerTourHint>[
-      const LearnerTourHint(
-        title: 'الشاشة الرئيسية للمتعلم',
-        line:
-            'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
-        highlightShape: AppTourHighlightShape.fullscreen,
-      ),
-    ];
-
-    if (!onlyVisibleTargets || _hasTarget(_menuIconKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'زر القائمة',
-          line: 'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
-          targetKey: _menuIconKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-          showFinger: false,
-        ),
-      );
-    }
-
-    return hints;
-  }
-
-  List<LearnerTourHint> _homeDashboardHints({bool onlyVisibleTargets = false}) {
-    final hints = <LearnerTourHint>[];
-
-    if (!onlyVisibleTargets || _hasTarget(_dashboardHomeworkCardKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'بطاقة الواجبات',
-          line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
-          targetKey: _dashboardHomeworkCardKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      );
-    }
-
-    if (!onlyVisibleTargets || _hasTarget(_dashboardBookingCardKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'بطاقة الحجز',
-          line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
-          targetKey: _dashboardBookingCardKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      );
-    }
-
-    if (!onlyVisibleTargets || _hasTarget(_dashboardCoursesListKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'قائمة الدورات',
-          line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
-          targetKey: _dashboardCoursesListKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      );
-    }
-
-    return hints;
-  }
-
-  List<LearnerTourHint> _drawerMenuHints({bool onlyVisibleTargets = false}) {
-    final hints = <LearnerTourHint>[];
-
-    void addIfVisible(LearnerTourHint hint) {
-      if (!onlyVisibleTargets ||
-          hint.targetKey == null ||
-          (hint.targetKey?.currentContext != null)) {
-        hints.add(hint);
-      }
-    }
-
-    addIfVisible(
-      LearnerTourHint(
-        title: 'دوراتي',
-        line: 'من هذا الخيار يمكنك الوصول إلى جميع دوراتك بسهولة.',
-        targetKey: _drawerCoursesKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'القصص',
-        line: 'يحتوي هذا القسم على القصص للقراءة والاستماع والمشاهدة.',
-        targetKey: _drawerStoriesKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'المعرض',
-        line: 'من هنا يمكنك مشاهدة صورك وملفاتك في المعرض.',
-        targetKey: _drawerGalleryKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'الألعاب',
-        line: 'يخصص هذا القسم للتدريب التعليمي بطريقة تفاعلية.',
-        targetKey: _drawerGamesKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'مدرب الدراسة',
-        line: 'يساعدك هذا القسم في تنظيم الأهداف والخطة الأسبوعية.',
-        targetKey: _drawerCoachKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'البريد',
-        line: 'يتيح لك هذا القسم متابعة الرسائل والمحادثات مع المعلمين.',
-        targetKey: _drawerMailKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'الملف الشخصي',
-        line: 'من هذا القسم يمكنك مراجعة بياناتك الشخصية وصورتك.',
-        targetKey: _drawerProfileKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'اللوائح',
-        line: 'راجع من هنا لوائح الأكاديمية وسياساتها المعتمدة.',
-        targetKey: _drawerRegulationsKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'إعدادات المظهر',
-        line: 'يمكنك تعديل المظهر العام للتطبيق من هذا القسم.',
-        targetKey: _drawerThemeKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'إعادة الجولة',
-        line: 'استخدم هذا الخيار لإعادة عرض الإرشادات التعليمية.',
-        targetKey: _drawerRestartTourKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-    addIfVisible(
-      LearnerTourHint(
-        title: 'تسجيل الخروج',
-        line: 'استخدم هذا الزر لتسجيل الخروج من الحساب بأمان.',
-        targetKey: _drawerLogoutKey,
-        highlightShape: AppTourHighlightShape.roundedRectangle,
-      ),
-    );
-
-    return hints;
-  }
-
   void _pushScreen(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
@@ -435,72 +240,34 @@ class _LearnerHomeState extends State<LearnerHome> {
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
-  Future<void> _maybeStartDrawerTour() async {
-    if (_drawerTourAttempted || !mounted) return;
-    _drawerTourAttempted = true;
-
-    final shouldShow = await LearnerTourGuide.shouldShow('learner_drawer_menu');
-    if (!shouldShow || !mounted) return;
-
-    await Future<void>.delayed(const Duration(milliseconds: 450));
-    if (!mounted) return;
-    _scaffoldKey.currentState?.openDrawer();
-
-    await _waitForDrawerReady();
-    if (!mounted) return;
-    await WidgetsBinding.instance.endOfFrame;
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-
-    final hints = _drawerMenuHints(onlyVisibleTargets: true);
-    if (hints.isEmpty) return;
-
-    await LearnerTourGuide.maybeStart(
-      context,
-      screenId: 'learner_drawer_menu',
-      hints: hints,
-    );
-  }
-
-  Future<void> _waitForDrawerReady() async {
-    for (var i = 0; i < 20; i++) {
-      if (!mounted) return;
-      final drawerOpen = _scaffoldKey.currentState?.isDrawerOpen ?? false;
-      final hasFirstTarget = _drawerCoursesKey.currentContext != null;
-      if (drawerOpen && hasFirstTarget) {
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 220));
-  }
-
   Future<void> _logout(BuildContext context) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    await AppLoading.run(context, () async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    await SessionManager.stopListening();
+      await SessionManager.stopListening();
 
-    if (uid != null && uid.isNotEmpty) {
+      if (uid != null && uid.isNotEmpty) {
+        try {
+          // intentionally empty (your original)
+        } catch (_) {}
+      }
+
       try {
-        // intentionally empty (your original)
+        await FirebaseMessaging.instance.deleteToken();
       } catch (_) {}
-    }
 
-    try {
-      await FirebaseMessaging.instance.deleteToken();
-    } catch (_) {}
+      if (uid != null && uid.isNotEmpty) {
+        try {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+        } catch (_) {}
+      }
 
-    if (uid != null && uid.isNotEmpty) {
       try {
-        await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+        await appThemeController.resetToDefault();
       } catch (_) {}
-    }
 
-    try {
-      await appThemeController.resetToDefault();
-    } catch (_) {}
-
-    await FirebaseAuth.instance.signOut();
+      await FirebaseAuth.instance.signOut();
+    }, message: 'Logging out...');
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
@@ -606,23 +373,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     final isWebDashboard = kIsWeb && MediaQuery.of(context).size.width >= 1100;
     final webDesktop = isLearnerWebDesktop(context, minWidth: 1280);
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_quick_start',
-      hints: _quickStartHints,
-      isQuickStart: true,
-    );
-
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_home',
-      hints: _homeScreenHints(onlyVisibleTargets: true),
-    );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeStartDrawerTour();
-    });
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -651,7 +401,6 @@ class _LearnerHomeState extends State<LearnerHome> {
           mailTileKey: _drawerMailKey,
           regulationsTileKey: _drawerRegulationsKey,
           themeTileKey: _drawerThemeKey,
-          restartTourTileKey: _drawerRestartTourKey,
           logoutButtonKey: _drawerLogoutKey,
           onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
           onOpenMail: () => _pushScreen(LearnerMailScreen()),
@@ -663,39 +412,6 @@ class _LearnerHomeState extends State<LearnerHome> {
           onOpenRegulations: () =>
               _pushScreen(const LearnerRegulationsScreen()),
           onOpenThemeSettings: _openThemeSheet,
-          onRestartTour: () async {
-            await LearnerTourGuide.resetAll();
-            if (!mounted || !context.mounted) return;
-            final homeHints = _homeScreenHints(onlyVisibleTargets: true);
-            final dashboardHints = _homeDashboardHints(
-              onlyVisibleTargets: true,
-            );
-            await LearnerTourGuide.startNow(
-              context,
-              screenId: 'learner_quick_start',
-              hints: _quickStartHints,
-              isQuickStart: true,
-            );
-            if (!mounted || !context.mounted) return;
-            if (homeHints.isNotEmpty) {
-              await LearnerTourGuide.startNow(
-                context,
-                screenId: 'learner_home',
-                hints: homeHints,
-              );
-            }
-            if (!mounted || !context.mounted) return;
-            if (dashboardHints.isNotEmpty) {
-              await LearnerTourGuide.startNow(
-                context,
-                screenId: 'learner_home_dashboard',
-                hints: dashboardHints,
-              );
-            }
-            _drawerTourAttempted = false;
-            if (!mounted || !context.mounted) return;
-            await _maybeStartDrawerTour();
-          },
           onLogout: () => _logout(context),
         ),
 
@@ -834,16 +550,25 @@ class _LearnerDashboardLite extends StatefulWidget {
 class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   Future<List<_CourseProgressItem>>? _progressFuture;
+  Future<_JoinFabPayload?>? _joinFabFuture;
   Timer? _progressRefreshTimer;
+  Timer? _joinFabRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _progressFuture = _loadProgressItems();
+    _joinFabFuture = _findJoinFabPayload();
     _progressRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!mounted) return;
       setState(() {
         _progressFuture = _loadProgressItems();
+      });
+    });
+    _joinFabRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      setState(() {
+        _joinFabFuture = _findJoinFabPayload();
       });
     });
   }
@@ -851,48 +576,431 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   @override
   void dispose() {
     _progressRefreshTimer?.cancel();
+    _joinFabRefreshTimer?.cancel();
     super.dispose();
   }
 
-  bool _hasTarget(GlobalKey key) => key.currentContext != null;
+  String _joinTwo(int n) => n < 10 ? '0$n' : '$n';
 
-  List<LearnerTourHint> _dashboardHints({bool onlyVisibleTargets = false}) {
-    final hints = <LearnerTourHint>[];
+  String _joinDateKey(DateTime d) =>
+      '${d.year}-${_joinTwo(d.month)}-${_joinTwo(d.day)}';
 
-    if (!onlyVisibleTargets || _hasTarget(widget.homeworkCardKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'بطاقة الواجبات',
-          line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
-          targetKey: widget.homeworkCardKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      );
+  DateTime? _joinParseSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int _joinWeekdayFromShort(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return 0;
+    }
+  }
+
+  DateTime? _joinParseYmd(String ymd) {
+    final p = ymd.trim().split('-');
+    if (p.length != 3) return null;
+    final y = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    final d = int.tryParse(p[2]);
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  String _joinReadFirstNonEmptyMap(Map<String, dynamic> m, List<String> keys) {
+    for (final k in keys) {
+      final v = (m[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  DateTime? _joinNextPrivateSessionStart({
+    required Map<String, dynamic> schedule,
+    required DateTime now,
+  }) {
+    final firstDate = _joinParseYmd(
+      (schedule['first_session_date'] ?? '').toString(),
+    );
+    if (firstDate == null) return null;
+
+    final sessions = schedule['sessions'];
+    final sessionNodes = <Map<String, dynamic>>[];
+    if (sessions is List) {
+      for (final it in sessions) {
+        if (it is! Map) continue;
+        sessionNodes.add(it.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessions is Map) {
+      for (final it in sessions.values) {
+        if (it is! Map) continue;
+        sessionNodes.add(it.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    if (sessionNodes.isEmpty) return null;
+
+    DateTime? best;
+    final firstDay = DateTime(firstDate.year, firstDate.month, firstDate.day);
+
+    for (int i = 0; i <= 7; i++) {
+      final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+      if (day.isBefore(firstDay)) continue;
+
+      for (final s in sessionNodes) {
+        final weekday = _joinWeekdayFromShort((s['day'] ?? '').toString());
+        if (weekday <= 0 || weekday != day.weekday) continue;
+
+        final startTime = (s['start_time'] ?? '').toString().trim();
+        final hm = startTime.split(':');
+        if (hm.length != 2) continue;
+        final h = int.tryParse(hm[0]);
+        final m = int.tryParse(hm[1]);
+        if (h == null || m == null) continue;
+
+        final start = DateTime(day.year, day.month, day.day, h, m);
+        final duration = _toInt(s['duration_min']);
+        final safeDuration = duration > 0 ? duration : 60;
+        final end = start.add(Duration(minutes: safeDuration));
+        if (end.isBefore(now)) continue;
+
+        if (best == null || start.isBefore(best)) {
+          best = start;
+        }
+      }
     }
 
-    if (!onlyVisibleTargets || _hasTarget(widget.bookingCardKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'بطاقة الحجز',
-          line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
-          targetKey: widget.bookingCardKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      );
+    return best;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadJoinFabCourses() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return [];
+
+    final snap = await _db.child('users/$uid/courses').get();
+    final v = snap.value;
+    if (v is! Map) return [];
+
+    final raw = Map<dynamic, dynamic>.from(v);
+    final temp = <Map<String, dynamic>>[];
+
+    for (final e in raw.entries) {
+      final key = e.key.toString();
+      final val = e.value;
+      if (val is! Map) continue;
+
+      final m = Map<String, dynamic>.from(val);
+
+      final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
+      final courseId = realCourseId.isNotEmpty ? realCourseId : key;
+
+      final classMap = (m['class'] is Map)
+          ? Map<String, dynamic>.from(m['class'] as Map)
+          : <String, dynamic>{};
+
+      final variantKey = resolveCourseDeliveryKey(m);
+      final isFlexible = variantKey == 'flexible';
+      final isPrivateOnline = isPrivateOnlineCourse(m);
+      if (!isFlexible && !isPrivateOnline) continue;
+
+      final classId = (classMap['class_id'] ?? '').toString().trim();
+      temp.add({
+        'courseId': courseId,
+        'classId': classId,
+        'variantKey': variantKey,
+        'title': (m['title'] ?? m['course_title'] ?? 'Course').toString(),
+      });
     }
 
-    if (!onlyVisibleTargets || _hasTarget(widget.coursesListKey)) {
-      hints.add(
-        LearnerTourHint(
-          title: 'قائمة الدورات',
-          line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
-          targetKey: widget.coursesListKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      );
+    return temp;
+  }
+
+  String _joinBookingKey(String courseId, String dayKey, String hhmm) =>
+      '$courseId|$dayKey|$hhmm';
+
+  Future<Set<String>> _loadAttendedBookingKeys({
+    required String uid,
+    required String courseId,
+  }) async {
+    final out = <String>{};
+    try {
+      final snap = await _db
+          .child('booking_progress/$uid/$courseId/online_attendance')
+          .get();
+      if (snap.exists && snap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(snap.value as Map);
+        for (final k in m.keys) {
+          out.add(k.toString());
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  Future<String> _loadFlexibleMeetUrl({
+    required String teacherId,
+    required String courseId,
+  }) async {
+    if (teacherId.trim().isEmpty || courseId.trim().isEmpty) return '';
+    try {
+      final snap = await _db
+          .child('booking_availability/$teacherId/$courseId')
+          .get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = Map<String, dynamic>.from(v);
+        final meetUrl =
+            (m['meetUrl'] ??
+                    m['meet_url'] ??
+                    m['googleMeetUrl'] ??
+                    m['google_meet_url'] ??
+                    '')
+                .toString()
+                .trim();
+        if (meetUrl.isNotEmpty) return meetUrl;
+      }
+
+      final fallback = await _db
+          .child('users/$teacherId/google_meet_url')
+          .get();
+      return (fallback.value ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<String> _loadPrivateMeetUrl({required String teacherId}) async {
+    if (teacherId.trim().isEmpty) return '';
+    try {
+      final snap = await _db.child('users/$teacherId/google_meet_url').get();
+      return (snap.value ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<_JoinFabPayload?> _findJoinFabPayload() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return null;
+
+    final courses = await _loadJoinFabCourses();
+    if (courses.isEmpty) return null;
+
+    final now = DateTime.now();
+    _JoinFabPayload? best;
+
+    final attendedCache = <String, Set<String>>{};
+
+    for (final c in courses) {
+      final variantKey = (c['variantKey'] ?? '').toString();
+      final cid = (c['courseId'] ?? '').toString().trim();
+      if (cid.isEmpty) continue;
+
+      if (variantKey == 'private') {
+        final classId = (c['classId'] ?? '').toString().trim();
+        if (classId.isEmpty) continue;
+
+        Map<String, dynamic> classNode = <String, dynamic>{};
+        try {
+          final classSnap = await _db.child('classes/$classId').get();
+          final cv = classSnap.value;
+          if (cv is Map) {
+            classNode = cv.map((k, v) => MapEntry(k.toString(), v));
+          }
+        } catch (_) {}
+
+        final scheduleRaw = classNode['schedule'];
+        if (scheduleRaw is! Map) continue;
+        final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
+
+        final nextStart = _joinNextPrivateSessionStart(
+          schedule: schedule,
+          now: now,
+        );
+        if (nextStart == null || !canJoinFromStart(nextStart)) continue;
+
+        final teacherId =
+            _joinReadFirstNonEmptyMap(classNode, [
+              'teacherUid',
+              'teacher_uid',
+              'teacherId',
+              'teacher_id',
+              'instructorUid',
+            ]).isNotEmpty
+            ? _joinReadFirstNonEmptyMap(classNode, [
+                'teacherUid',
+                'teacher_uid',
+                'teacherId',
+                'teacher_id',
+                'instructorUid',
+              ])
+            : ((classNode['instructor_current'] is Map)
+                  ? _joinReadFirstNonEmptyMap(
+                      Map<String, dynamic>.from(
+                        classNode['instructor_current'] as Map,
+                      ),
+                      const ['uid'],
+                    )
+                  : '');
+        if (teacherId.isEmpty) continue;
+
+        final meetUrl = await _loadPrivateMeetUrl(teacherId: teacherId);
+        if (meetUrl.isEmpty) continue;
+
+        final payload = _JoinFabPayload(
+          meetUrl: meetUrl,
+          start: nextStart,
+          source: 'private_online',
+        );
+
+        final bestNow = best;
+        if (bestNow == null || payload.start.isBefore(bestNow.start)) {
+          best = payload;
+        }
+        continue;
+      }
+
+      final dk = _joinDateKey(now);
+      final snap = await _db.child('booking_reservations/$cid/$dk').get();
+      final v = snap.value;
+      if (v is! Map) continue;
+      final m = Map<dynamic, dynamic>.from(v);
+
+      final attended =
+          attendedCache[cid] ??
+          await _loadAttendedBookingKeys(uid: uid, courseId: cid);
+      attendedCache[cid] = attended;
+
+      for (final e in m.entries) {
+        final hhmm = e.key.toString();
+        final node = e.value;
+        if (node is! Map) continue;
+
+        final start = _joinParseSlotStart(dk, hhmm);
+        if (start == null || !canJoinFromStart(start)) continue;
+
+        final sm = Map<dynamic, dynamic>.from(node);
+
+        Future<void> considerCandidate(
+          Map<dynamic, dynamic> slotLike,
+          String teacherKey,
+        ) async {
+          final learners = slotLike['learners'];
+          if (learners is! Map) return;
+
+          final lm = Map<dynamic, dynamic>.from(learners);
+          if (!lm.containsKey(uid)) return;
+
+          final bookingKey = _joinBookingKey(cid, dk, hhmm);
+          if (attended.contains(bookingKey)) return;
+
+          final teacherId = (slotLike['teacherId'] ?? teacherKey)
+              .toString()
+              .trim();
+          if (teacherId.isEmpty) return;
+
+          final meetUrl = await _loadFlexibleMeetUrl(
+            teacherId: teacherId,
+            courseId: cid,
+          );
+          if (meetUrl.isEmpty) return;
+
+          final payload = _JoinFabPayload(
+            meetUrl: meetUrl,
+            start: start,
+            source: 'flexible',
+          );
+
+          final bestNow = best;
+          if (bestNow == null || payload.start.isBefore(bestNow.start)) {
+            best = payload;
+          }
+        }
+
+        if (sm['learners'] is Map) {
+          await considerCandidate(sm, '');
+          continue;
+        }
+
+        for (final te in sm.entries) {
+          final teacherKey = te.key.toString();
+          final teacherNode = te.value;
+          if (teacherNode is! Map) continue;
+          await considerCandidate(
+            Map<dynamic, dynamic>.from(teacherNode),
+            teacherKey,
+          );
+        }
+      }
     }
 
-    return hints;
+    return best;
+  }
+
+  Future<void> _openJoinFabUrl(String url) async {
+    var u = url.trim();
+    if (u.isEmpty) return;
+
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      if (!mounted || !context.mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid meeting link.')),
+      );
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted && context.mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open the link.')),
+      );
+    }
   }
 
   _HomePalette get palette => _toHomePalette(appThemeController.palette);
@@ -1904,14 +2012,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isNarrowPhone = screenWidth < 420;
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     final p = palette;
-
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_home_dashboard',
-      hints: _dashboardHints(onlyVisibleTargets: true),
-    );
 
     if (uid.isEmpty) {
       return Center(
@@ -1923,116 +2027,181 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     }
 
     return SafeArea(
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          16 + (bottomPad > 0 ? bottomPad : 12),
-        ),
+      child: Stack(
         children: [
-          const SizedBox(height: 8),
-
-          _SectionTitle(palette: p, title: 'Homework • Reminders • Mail'),
-          const SizedBox(height: 10),
-          Row(
+          ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              104 + (bottomPad > 0 ? bottomPad : 12),
+            ),
             children: [
-              Expanded(
-                child: _LearnerHomeworkHomeCard(
-                  compact: true,
-                  targetKey: widget.homeworkCardKey,
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(child: _RemindersHomeCard(compact: true)),
-              const SizedBox(width: 8),
-              const Expanded(child: _LearnerMailHomeCard(compact: true)),
-            ],
-          ),
-          FutureBuilder<bool>(
-            future: _hasFlexibleBookableCourse(),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const SizedBox.shrink();
-              }
+              const SizedBox(height: 8),
 
-              final hasFlexible = snap.data ?? false;
-              if (!hasFlexible) {
-                return const SizedBox.shrink();
-              }
+              _SectionTitle(palette: p, title: 'Homework • Reminders • Mail'),
+              const SizedBox(height: 10),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final tiny = constraints.maxWidth < 350;
+                  final gap = tiny ? 6.0 : 8.0;
 
-              return Column(
-                children: [
-                  _SectionTitle(palette: p, title: 'Booking'),
-                  const SizedBox(height: 10),
-                  KeyedSubtree(
-                    key: widget.bookingCardKey,
-                    child: const _BookingTopCard(),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              );
-            },
-          ),
-
-          const SizedBox(height: 10),
-          KeyedSubtree(
-            key: widget.coursesListKey,
-            child: FutureBuilder<List<_CourseProgressItem>>(
-              future: _progressFuture,
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return _LoadingCard(
-                    palette: p,
-                    text: 'Loading your progress...',
-                  );
-                }
-
-                final items = snap.data ?? const <_CourseProgressItem>[];
-                if (items.isEmpty) {
-                  return _EmptyCard(
-                    palette: p,
-                    text: 'No course progress found yet.',
-                  );
-                }
-
-                final hasJoinCards = items.any((e) => e.isPrivateOnline);
-
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final textScale = MediaQuery.textScalerOf(context).scale(1);
-                    final useSingle =
-                        constraints.maxWidth < 360 ||
-                        (textScale > 1.15 && constraints.maxWidth < 900);
-                    final crossAxisCount = useSingle
-                        ? 1
-                        : constraints.maxWidth >= 960
-                        ? 3
-                        : 2;
-
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: items.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        childAspectRatio: hasJoinCards
-                            ? (useSingle ? 0.92 : 0.86)
-                            : 1,
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _LearnerHomeworkHomeCard(
+                          compact: true,
+                          targetKey: widget.homeworkCardKey,
+                        ),
                       ),
-                      itemBuilder: (context, i) {
-                        return _ProgressCard(
-                          palette: p,
-                          item: items[i],
-                          onTap: () =>
-                              _openCoursesScreen(courseKey: items[i].courseKey),
+                      SizedBox(width: gap),
+                      const Expanded(child: _RemindersHomeCard(compact: true)),
+                      SizedBox(width: gap),
+                      const Expanded(
+                        child: _LearnerMailHomeCard(compact: true),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              FutureBuilder<bool>(
+                future: _hasFlexibleBookableCourse(),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final hasFlexible = snap.data ?? false;
+                  if (!hasFlexible) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Column(
+                    children: [
+                      _SectionTitle(palette: p, title: 'Booking (حجز)'),
+                      const SizedBox(height: 10),
+                      KeyedSubtree(
+                        key: widget.bookingCardKey,
+                        child: const _BookingTopCard(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  );
+                },
+              ),
+
+              const SizedBox(height: 10),
+              KeyedSubtree(
+                key: widget.coursesListKey,
+                child: FutureBuilder<List<_CourseProgressItem>>(
+                  future: _progressFuture,
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return _LoadingCard(
+                        palette: p,
+                        text: 'Loading your progress...',
+                      );
+                    }
+
+                    final items = snap.data ?? const <_CourseProgressItem>[];
+                    if (items.isEmpty) {
+                      return _EmptyCard(
+                        palette: p,
+                        text: 'No course progress found yet.',
+                      );
+                    }
+
+                    final hasJoinCards = items.any((e) => e.isPrivateOnline);
+
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final textScale = MediaQuery.textScalerOf(
+                          context,
+                        ).scale(1);
+                        final useSingle =
+                            constraints.maxWidth < 360 ||
+                            (textScale > 1.15 && constraints.maxWidth < 900);
+                        final crossAxisCount = useSingle
+                            ? 1
+                            : constraints.maxWidth >= 960
+                            ? 3
+                            : 2;
+
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: items.length,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                childAspectRatio: hasJoinCards
+                                    ? (useSingle ? 0.92 : 0.86)
+                                    : 1,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                              ),
+                          itemBuilder: (context, i) {
+                            return _ProgressCard(
+                              palette: p,
+                              item: items[i],
+                              onTap: () => _openCoursesScreen(
+                                courseKey: items[i].courseKey,
+                              ),
+                            );
+                          },
                         );
                       },
                     );
                   },
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            left: isNarrowPhone ? 16 : null,
+            right: isNarrowPhone ? 16 : 18,
+            bottom: 14 + (bottomPad > 0 ? bottomPad : 0),
+            child: FutureBuilder<_JoinFabPayload?>(
+              future: _joinFabFuture,
+              builder: (context, snap) {
+                final payload = snap.data;
+                if (payload == null) return const SizedBox.shrink();
+
+                if (isNarrowPhone) {
+                  return SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton.icon(
+                      onPressed: () => _openJoinFabUrl(payload.meetUrl),
+                      icon: const Icon(Icons.video_call_rounded),
+                      label: const Text(
+                        'Join Now',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: p.accent,
+                        foregroundColor: Colors.white,
+                        elevation: 8,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return FloatingActionButton.extended(
+                  heroTag: 'learner_home_join_fab',
+                  onPressed: () => _openJoinFabUrl(payload.meetUrl),
+                  backgroundColor: p.accent,
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  icon: const Icon(Icons.video_call_rounded),
+                  label: const Text(
+                    'Join Now',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 );
               },
             ),
@@ -3640,7 +3809,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Booking',
+                        'Booking (حجز)',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -4080,6 +4249,18 @@ class _MeetInfo {
   final int durationMinutes;
 
   _MeetInfo({required this.meetUrl, required this.durationMinutes});
+}
+
+class _JoinFabPayload {
+  final String meetUrl;
+  final DateTime start;
+  final String source;
+
+  _JoinFabPayload({
+    required this.meetUrl,
+    required this.start,
+    required this.source,
+  });
 }
 
 Future<void> _openBookingCoursePicker(BuildContext context) async {
@@ -4590,85 +4771,105 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                 courseKeysWithUndone: courseKeysWithUndone,
               );
             },
-            child: Container(
-              decoration: BoxDecoration(
-                color: p.cardBg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 7),
-                  ),
-                ],
-              ),
-              padding: EdgeInsets.all(compact ? 12 : 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: compact ? 40 : 46,
-                        height: compact ? 40 : 46,
-                        decoration: BoxDecoration(
-                          color: p.soft,
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        child: Icon(Icons.assignment_rounded, color: p.primary),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final tiny = compact && constraints.maxWidth < 112;
+                final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+                final iconSize = tiny ? 18.0 : 22.0;
+                final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+                return Container(
+                  decoration: BoxDecoration(
+                    color: p.cardBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, 7),
                       ),
-                      if (undoneTotal > 0)
-                        Positioned(
-                          right: -8,
-                          top: -8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: Text(
-                              undoneTotal > 99 ? '99+' : '$undoneTotal',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Homework',
-                    style: TextStyle(
-                      color: p.primary,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
+                  padding: EdgeInsets.all(contentPadding),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: iconBox,
+                            height: iconBox,
+                            decoration: BoxDecoration(
+                              color: p.soft,
+                              borderRadius: BorderRadius.circular(
+                                tiny ? 12 : 15,
+                              ),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.assignment_rounded,
+                              color: p.primary,
+                              size: iconSize,
+                            ),
+                          ),
+                          if (undoneTotal > 0)
+                            Positioned(
+                              right: tiny ? -6 : -8,
+                              top: tiny ? -6 : -8,
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: tiny ? 6 : 8,
+                                  vertical: tiny ? 2 : 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Text(
+                                  undoneTotal > 99 ? '99+' : '$undoneTotal',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: tiny ? 9 : 11,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: tiny ? 10 : 18),
+                      Text(
+                        'Homework',
+                        style: TextStyle(
+                          color: p.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: tiny ? 12 : 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.text.withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w700,
+                          fontSize: tiny ? 10 : 12,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.62),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         );
@@ -4715,90 +4916,103 @@ class _RemindersHomeCard extends StatelessWidget {
               ),
             );
           },
-          child: Container(
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.all(compact ? 12 : 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: compact ? 40 : 46,
-                      height: compact ? 40 : 46,
-                      decoration: BoxDecoration(
-                        color: p.soft,
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: p.border.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.notifications_active_rounded,
-                        color: p.primary,
-                      ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final tiny = compact && constraints.maxWidth < 112;
+              final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+              final iconSize = tiny ? 18.0 : 22.0;
+              final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: p.cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 7),
                     ),
-                    if (unread > 0)
-                      Positioned(
-                        right: -8,
-                        top: -8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: Text(
-                            unread > 99 ? '99+' : '$unread',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
-                SizedBox(height: compact ? 12 : 18),
-                Text(
-                  'Reminders',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: compact ? 14 : 16,
-                  ),
+                padding: EdgeInsets.all(contentPadding),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: iconBox,
+                          height: iconBox,
+                          decoration: BoxDecoration(
+                            color: p.soft,
+                            borderRadius: BorderRadius.circular(tiny ? 12 : 15),
+                            border: Border.all(
+                              color: p.border.withValues(alpha: 0.85),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.notifications_active_rounded,
+                            color: p.primary,
+                            size: iconSize,
+                          ),
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            right: tiny ? -6 : -8,
+                            top: tiny ? -6 : -8,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: tiny ? 6 : 8,
+                                vertical: tiny ? 2 : 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Text(
+                                unread > 99 ? '99+' : '$unread',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: tiny ? 9 : 11,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                    Text(
+                      'Reminders',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: tiny ? 12 : (compact ? 14 : 16),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.62),
+                        fontWeight: FontWeight.w700,
+                        fontSize: tiny ? 10 : 12,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.62),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -4842,87 +5056,103 @@ class _LearnerMailHomeCard extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
             );
           },
-          child: Container(
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.all(compact ? 12 : 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: compact ? 40 : 46,
-                      height: compact ? 40 : 46,
-                      decoration: BoxDecoration(
-                        color: p.soft,
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: p.border.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      child: Icon(Icons.mail_rounded, color: p.primary),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final tiny = compact && constraints.maxWidth < 112;
+              final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+              final iconSize = tiny ? 18.0 : 22.0;
+              final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: p.cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 7),
                     ),
-                    if (unread > 0)
-                      Positioned(
-                        right: -8,
-                        top: -8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: Text(
-                            unread > 99 ? '99+' : '$unread',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
-                SizedBox(height: compact ? 12 : 18),
-                Text(
-                  'Mail',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: compact ? 14 : 16,
-                  ),
+                padding: EdgeInsets.all(contentPadding),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: iconBox,
+                          height: iconBox,
+                          decoration: BoxDecoration(
+                            color: p.soft,
+                            borderRadius: BorderRadius.circular(tiny ? 12 : 15),
+                            border: Border.all(
+                              color: p.border.withValues(alpha: 0.85),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.mail_rounded,
+                            color: p.primary,
+                            size: iconSize,
+                          ),
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            right: tiny ? -6 : -8,
+                            top: tiny ? -6 : -8,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: tiny ? 6 : 8,
+                                vertical: tiny ? 2 : 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Text(
+                                unread > 99 ? '99+' : '$unread',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: tiny ? 9 : 11,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                    Text(
+                      'Mail',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: tiny ? 12 : (compact ? 14 : 16),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.62),
+                        fontWeight: FontWeight.w700,
+                        fontSize: tiny ? 10 : 12,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.62),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -5326,7 +5556,6 @@ class _LearnerDrawer extends StatelessWidget {
     required this.mailTileKey,
     required this.regulationsTileKey,
     required this.themeTileKey,
-    required this.restartTourTileKey,
     required this.logoutButtonKey,
     required this.onOpenProfile,
     required this.onOpenMail,
@@ -5337,7 +5566,6 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenStudyCoach,
     required this.onOpenRegulations,
     required this.onOpenThemeSettings,
-    required this.onRestartTour,
     required this.onLogout,
   });
 
@@ -5353,7 +5581,6 @@ class _LearnerDrawer extends StatelessWidget {
   final GlobalKey mailTileKey;
   final GlobalKey regulationsTileKey;
   final GlobalKey themeTileKey;
-  final GlobalKey restartTourTileKey;
   final GlobalKey logoutButtonKey;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
@@ -5364,7 +5591,6 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenStudyCoach;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
-  final VoidCallback onRestartTour;
   final VoidCallback onLogout;
 
   @override
@@ -5548,17 +5774,6 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenThemeSettings();
-                    },
-                  ),
-                  _DrawerTile(
-                    targetKey: restartTourTileKey,
-                    palette: palette,
-                    icon: Icons.tour_rounded,
-                    title: 'إعادة الجولة',
-                    subtitle: 'إعادة عرض إرشادات التطبيق',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onRestartTour();
                     },
                   ),
                 ],

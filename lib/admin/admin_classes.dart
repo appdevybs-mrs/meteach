@@ -36,8 +36,6 @@ import 'package:intl/intl.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 import 'admin_learners.dart';
@@ -3897,12 +3895,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_classes',
-      title: 'ادارة الصفوف',
-      line: 'هذه الشاشة تعرض كل الصفوف وتسمح باضافة صف جديد او تعديل صف موجود.',
-    );
 
     return DefaultTabController(
       length: 3,

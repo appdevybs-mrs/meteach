@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
@@ -241,20 +242,31 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
 
     try {
       final token = await _getFcmToken(target.uid);
+      final eventId = 'flash_${target.uid}_${ref.key ?? ''}';
+      final topic = 'user_${target.uid}';
       if (token != null) {
         try {
           await PushClient.sendToToken(
             token: token,
             targetUid: target.uid,
-            eventId: 'flash_${target.uid}_${ref.key ?? ''}',
+            eventId: eventId,
             title: 'Priority alert',
             message: draft.title,
             data: payload,
           );
-        } catch (_) {
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_priority_alerts',
+            action: 'priority_alert_push_token_fallback_topic',
+            error: e,
+            stackTrace: st,
+            targetUid: target.uid,
+            token: token,
+            eventId: eventId,
+          );
           await PushClient.sendToTopic(
-            topic: 'user_${target.uid}',
-            eventId: 'flash_${target.uid}_${ref.key ?? ''}',
+            topic: topic,
+            eventId: eventId,
             title: 'Priority alert',
             message: draft.title,
             data: payload,
@@ -262,15 +274,22 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
         }
       } else {
         await PushClient.sendToTopic(
-          topic: 'user_${target.uid}',
-          eventId: 'flash_${target.uid}_${ref.key ?? ''}',
+          topic: topic,
+          eventId: eventId,
           title: 'Priority alert',
           message: draft.title,
           data: payload,
         );
       }
-    } catch (_) {
-      // Alert is already saved; keep push failure silent.
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'admin/admin_priority_alerts',
+        action: 'priority_alert_push_final_failure',
+        error: e,
+        stackTrace: st,
+        targetUid: target.uid,
+        eventId: 'flash_${target.uid}_${ref.key ?? ''}',
+      );
     }
   }
 

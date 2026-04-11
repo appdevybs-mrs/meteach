@@ -7,7 +7,6 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
-import '../shared/learner_tour_guide.dart';
 
 class LearnerHomeworkScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2...
@@ -588,20 +587,6 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_homework',
-      hints: const [
-        LearnerTourHint(
-          title: 'قائمة الواجبات',
-          line: 'تتضمن هذه القائمة الواجبات المطلوبة منك بحسب الجلسات.',
-        ),
-        LearnerTourHint(
-          title: 'التحديث',
-          line: 'استخدم زر التحديث لمزامنة أحدث حالة للواجبات.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: UiK.appBg,

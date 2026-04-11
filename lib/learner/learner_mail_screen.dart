@@ -9,7 +9,6 @@ import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_thread_screen.dart';
 import '../shared/app_feedback.dart';
-import '../shared/learner_tour_guide.dart';
 import '../shared/profile_avatar.dart';
 
 class LearnerMailScreen extends StatefulWidget {
@@ -528,20 +527,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     final uid = _meUid;
     final ref = _db.child('mail_index/$uid');
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_mail',
-      hints: const [
-        LearnerTourHint(
-          title: 'صندوق الرسائل',
-          line: 'تعرض هذه الصفحة جميع المحادثات بينك وبين المعلم أو الصف.',
-        ),
-        LearnerTourHint(
-          title: 'رسالة جديدة',
-          line: 'يتيح لك زر الرسالة الجديدة إرسال رسالة مباشرة.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: Colors.white,

@@ -16,13 +16,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../services/route_state.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
-import '../shared/learner_tour_guide.dart';
 
 class LearnerMailThreadScreen extends StatefulWidget {
   const LearnerMailThreadScreen({
@@ -756,6 +756,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
+          final eventId = 'mail_${widget.threadId}_$now';
+          final topic = 'user_${widget.peerUid}';
           final payload = {
             'type': 'mail',
             'route': 'mail_thread',
@@ -767,17 +769,26 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
               await PushClient.sendToToken(
                 token: token,
                 targetUid: widget.peerUid,
-                eventId: 'mail_${widget.threadId}_$now',
+                eventId: eventId,
                 title: widget.subject.isEmpty ? 'New mail' : widget.subject,
                 message: preview80.isEmpty
                     ? 'You received new mail'
                     : preview80,
                 data: payload,
               );
-            } catch (_) {
+            } catch (e, st) {
+              await PushErrorLogger.logFailure(
+                screen: 'learner/learner_mail_thread',
+                action: 'mail_push_token_fallback_topic',
+                error: e,
+                stackTrace: st,
+                targetUid: widget.peerUid,
+                token: token,
+                eventId: eventId,
+              );
               await PushClient.sendToTopic(
-                topic: 'user_${widget.peerUid}',
-                eventId: 'mail_${widget.threadId}_$now',
+                topic: topic,
+                eventId: eventId,
                 title: widget.subject.isEmpty ? 'New mail' : widget.subject,
                 message: preview80.isEmpty
                     ? 'You received new mail'
@@ -787,14 +798,23 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             }
           } else {
             await PushClient.sendToTopic(
-              topic: 'user_${widget.peerUid}',
-              eventId: 'mail_${widget.threadId}_$now',
+              topic: topic,
+              eventId: eventId,
               title: widget.subject.isEmpty ? 'New mail' : widget.subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: payload,
             );
           }
-        } catch (_) {}
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'learner/learner_mail_thread',
+            action: 'mail_push_final_failure',
+            error: e,
+            stackTrace: st,
+            targetUid: widget.peerUid,
+            eventId: 'mail_${widget.threadId}_$now',
+          );
+        }
       }());
     } catch (e) {
       _bodyC.text = bodyBackup;
@@ -2205,21 +2225,6 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_mail_thread',
-      hints: const [
-        LearnerTourHint(
-          title: 'المحادثة',
-          line: 'يمكنك هنا متابعة الرسائل كاملة داخل الموضوع ذاته.',
-        ),
-        LearnerTourHint(
-          title: 'الإرسال',
-          line:
-              'اكتب رسالتك ثم اضغط إرسال، ويمكنك أيضًا إرسال ملف صوتي أو مرفق.',
-        ),
-      ],
-    );
 
     final title = _selectionMode
         ? '${_selectedMessageIds.length} selected'

@@ -3,8 +3,6 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 import '../shared/watermark_background.dart';
 import 'teacher_syllabus_details_screen.dart';
@@ -18,11 +16,16 @@ class TeacherSyllabiScreen extends StatefulWidget {
 
 class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final TextEditingController _searchController = TextEditingController();
 
   bool _loading = true;
   String? _error;
 
   List<_SyllabusLite> _items = const [];
+  String _query = '';
+  String _variantFilter = 'all';
+  bool _searchMode = false;
+  bool _deepSearch = false;
 
   @override
   void initState() {
@@ -34,6 +37,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
   @override
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -100,6 +104,14 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
         ]);
 
         final variants = _extractAvailableVariants(courseMap);
+        final searchIndex = _buildSearchIndex(
+          courseMap: courseMap,
+          courseId: courseId,
+          title: title,
+          code: code,
+          duration: duration,
+          variants: variants,
+        );
 
         out.add(
           _SyllabusLite(
@@ -109,6 +121,8 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
             duration: duration,
             updatedAt: updatedAt,
             variants: variants,
+            normalSearchText: searchIndex.normalText,
+            deepEntries: searchIndex.deepEntries,
           ),
         );
       });
@@ -172,6 +186,223 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
     return out;
   }
 
+  _SearchIndex _buildSearchIndex({
+    required Map<String, dynamic> courseMap,
+    required String courseId,
+    required String title,
+    required String code,
+    required String duration,
+    required List<String> variants,
+  }) {
+    final normalParts = <String>[
+      courseId,
+      title,
+      code,
+      duration,
+      ...variants.map(_variantLabel),
+    ];
+
+    for (final key in const ['inclass', 'flexible', 'private', 'recorded']) {
+      final variant = _asStringKeyMap(courseMap[key]);
+      if (variant == null) continue;
+      normalParts.addAll([
+        _readString(variant['title']),
+        _readString(variant['courseCode']),
+        _readString(variant['duration']),
+      ]);
+    }
+
+    final deepEntries = <_DeepSearchEntry>[];
+    for (final key in const ['inclass', 'flexible', 'private', 'recorded']) {
+      deepEntries.addAll(_extractVariantDeepEntries(key, courseMap));
+    }
+
+    return _SearchIndex(
+      normalText: _searchText(normalParts),
+      deepEntries: deepEntries,
+    );
+  }
+
+  List<_DeepSearchEntry> _extractVariantDeepEntries(
+    String variantKey,
+    Map<String, dynamic> courseMap,
+  ) {
+    final variant = _asStringKeyMap(courseMap[variantKey]);
+    if (variant == null) return const <_DeepSearchEntry>[];
+
+    final variantLabel = _variantLabel(variantKey);
+    final out = <_DeepSearchEntry>[];
+
+    final modules = _asListOfMaps(variant['modules']);
+    if (modules.isNotEmpty) {
+      for (int mi = 0; mi < modules.length; mi++) {
+        final module = modules[mi];
+        final moduleLabel = _firstNonEmpty([
+          _readString(module['otherTitle']),
+          _readString(module['title']),
+          'Module ${mi + 1}',
+        ]);
+        final units = _asListOfMaps(module['units']);
+        _appendDeepEntriesFromUnits(
+          out: out,
+          variantLabel: variantLabel,
+          moduleLabel: moduleLabel,
+          unitMaps: units,
+          primarySessionKey: 'lessons',
+        );
+      }
+    }
+
+    _appendDeepEntriesFromUnits(
+      out: out,
+      variantLabel: variantLabel,
+      moduleLabel: '',
+      unitMaps: _asListOfMaps(variant['units']),
+      primarySessionKey: variantKey == 'recorded' ? 'lessons' : 'sessions',
+    );
+
+    return out;
+  }
+
+  void _appendDeepEntriesFromUnits({
+    required List<_DeepSearchEntry> out,
+    required String variantLabel,
+    required String moduleLabel,
+    required List<Map<String, dynamic>> unitMaps,
+    required String primarySessionKey,
+  }) {
+    for (int ui = 0; ui < unitMaps.length; ui++) {
+      final unit = unitMaps[ui];
+      final unitLabel = _firstNonEmpty([
+        _readString(unit['otherTitle']),
+        _readString(unit['title']),
+        'Unit ${ui + 1}',
+      ]);
+
+      final unitContext = _searchText([variantLabel, moduleLabel, unitLabel]);
+
+      out.add(
+        _DeepSearchEntry(
+          haystack: _searchText([
+            variantLabel,
+            moduleLabel,
+            unitLabel,
+            _readString(unit['id']),
+            _readString(unit['description']),
+          ]),
+          context: unitContext,
+        ),
+      );
+
+      List<Map<String, dynamic>> sessions = _asListOfMaps(
+        unit[primarySessionKey],
+      );
+      if (sessions.isEmpty) {
+        sessions = _asListOfMaps(
+          unit[primarySessionKey == 'lessons' ? 'sessions' : 'lessons'],
+        );
+      }
+
+      for (int si = 0; si < sessions.length; si++) {
+        final session = sessions[si];
+        final sessionLabel = _firstNonEmpty([
+          _readString(session['title']),
+          _readString(session['id']),
+          'Session ${si + 1}',
+        ]);
+
+        final sessionContext = _searchText([
+          variantLabel,
+          moduleLabel,
+          unitLabel,
+          sessionLabel,
+        ]);
+
+        out.add(
+          _DeepSearchEntry(
+            haystack: _searchText([
+              variantLabel,
+              moduleLabel,
+              unitLabel,
+              _readString(unit['id']),
+              _readString(unit['description']),
+              _readString(session['id']),
+              _readString(session['title']),
+              _readString(session['skillType']),
+              _readString(session['objective']),
+              _readString(session['content']),
+              _readString(session['homework']),
+            ]),
+            context: sessionContext,
+          ),
+        );
+      }
+    }
+  }
+
+  static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
+    final out = <Map<String, dynamic>>[];
+
+    if (node is List) {
+      for (final x in node) {
+        if (x is Map) out.add(Map<String, dynamic>.from(x));
+      }
+      return out;
+    }
+
+    if (node is Map) {
+      final mm = Map<dynamic, dynamic>.from(node);
+      for (final entry in mm.entries) {
+        final value = entry.value;
+        if (value is Map) out.add(Map<String, dynamic>.from(value));
+      }
+      return out;
+    }
+
+    return out;
+  }
+
+  static String _searchText(List<String> parts) => parts
+      .map((e) => e.trim().toLowerCase())
+      .where((e) => e.isNotEmpty)
+      .join(' ');
+
+  List<_SyllabusLite> _filteredItems() {
+    final q = _query.trim().toLowerCase();
+
+    return _items.where((item) {
+      final matchesVariant =
+          _variantFilter == 'all' || item.variants.contains(_variantFilter);
+      if (!matchesVariant) return false;
+      if (q.isEmpty) return true;
+
+      final normalMatch = item.normalSearchText.contains(q);
+      if (!_deepSearch) return normalMatch;
+      if (normalMatch) return true;
+
+      for (final entry in item.deepEntries) {
+        if (entry.haystack.contains(q)) return true;
+      }
+      return false;
+    }).toList();
+  }
+
+  String? _deepMatchContext(_SyllabusLite item) {
+    final q = _query.trim().toLowerCase();
+    if (!_deepSearch || q.isEmpty) return null;
+
+    final out = <String>[];
+    for (final entry in item.deepEntries) {
+      if (!entry.haystack.contains(q)) continue;
+      if (out.contains(entry.context)) continue;
+      out.add(entry.context);
+      if (out.length >= 2) break;
+    }
+
+    if (out.isEmpty) return null;
+    return out.join('  •  ');
+  }
+
   static String _readString(dynamic v) => (v ?? '').toString().trim();
 
   static String _firstNonEmpty(List<String> values) {
@@ -226,17 +457,10 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
 
   @override
   Widget build(BuildContext context) {
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_syllabi',
-      hints: const [
-        TeacherTourHint(
-          title: 'Syllabi list',
-          line:
-              'Browse available course syllabi and open details for each course.',
-        ),
-      ],
-    );
+    final filteredItems = _filteredItems();
+    final hasActiveQuery = _query.trim().isNotEmpty;
+    final hasActiveFilter = _variantFilter != 'all';
+
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -300,30 +524,79 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
                     children: [
-                      _HeroCard(palette: p, totalCount: _items.length),
-                      const SizedBox(height: 14),
-                      ..._items.map((it) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _SyllabusTile(
-                            palette: p,
-                            title: it.title,
-                            code: it.code,
-                            duration: it.duration,
-                            updatedLabel: _fmtDate(it.updatedAt),
-                            variants: it.variants.map(_variantLabel).toList(),
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => TeacherSyllabusDetailsScreen(
-                                    courseId: it.courseId,
+                      _SyllabiSearchBar(
+                        palette: p,
+                        controller: _searchController,
+                        deepSearch: _deepSearch,
+                        searchMode: _searchMode,
+                        variantFilter: _variantFilter,
+                        shownCount: filteredItems.length,
+                        totalCount: _items.length,
+                        onQueryChanged: (value) {
+                          setState(() {
+                            _query = value;
+                          });
+                        },
+                        onClearQuery: () {
+                          _searchController.clear();
+                          setState(() {
+                            _query = '';
+                          });
+                        },
+                        onToggleDeep: () {
+                          setState(() {
+                            _deepSearch = !_deepSearch;
+                          });
+                        },
+                        onToggleSearchMode: () {
+                          setState(() {
+                            _searchMode = !_searchMode;
+                          });
+                          if (_searchMode) FocusScope.of(context).unfocus();
+                        },
+                        onVariantChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _variantFilter = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (filteredItems.isEmpty)
+                        _InfoBox(
+                          palette: p,
+                          title: 'No matches',
+                          message: hasActiveQuery || hasActiveFilter
+                              ? 'No syllabi match your current search/filter.'
+                              : 'No syllabi are available right now.',
+                          icon: Icons.search_off_rounded,
+                        )
+                      else
+                        ...filteredItems.map((it) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _SyllabusTile(
+                              palette: p,
+                              title: it.title,
+                              code: it.code,
+                              duration: it.duration,
+                              updatedLabel: _fmtDate(it.updatedAt),
+                              variants: it.variants.map(_variantLabel).toList(),
+                              matchContext: _deepMatchContext(it),
+                              matchQuery: _query,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        TeacherSyllabusDetailsScreen(
+                                          courseId: it.courseId,
+                                        ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      }),
+                                );
+                              },
+                            ),
+                          );
+                        }),
                     ],
                   ),
           ),
@@ -341,6 +614,8 @@ class _SyllabusLite {
     required this.duration,
     required this.updatedAt,
     required this.variants,
+    required this.normalSearchText,
+    required this.deepEntries,
   });
 
   final String courseId;
@@ -349,93 +624,223 @@ class _SyllabusLite {
   final String duration;
   final int updatedAt;
   final List<String> variants;
+  final String normalSearchText;
+  final List<_DeepSearchEntry> deepEntries;
 }
 
 /* ================== UI ================== */
 
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.palette, required this.totalCount});
+class _SyllabiSearchBar extends StatelessWidget {
+  const _SyllabiSearchBar({
+    required this.palette,
+    required this.controller,
+    required this.deepSearch,
+    required this.searchMode,
+    required this.variantFilter,
+    required this.shownCount,
+    required this.totalCount,
+    required this.onQueryChanged,
+    required this.onClearQuery,
+    required this.onToggleDeep,
+    required this.onToggleSearchMode,
+    required this.onVariantChanged,
+  });
 
   final AppPalette palette;
+  final TextEditingController controller;
+  final bool deepSearch;
+  final bool searchMode;
+  final String variantFilter;
+  final int shownCount;
   final int totalCount;
+  final ValueChanged<String> onQueryChanged;
+  final VoidCallback onClearQuery;
+  final VoidCallback onToggleDeep;
+  final VoidCallback onToggleSearchMode;
+  final ValueChanged<String?> onVariantChanged;
 
   @override
   Widget build(BuildContext context) {
+    final hasText = controller.text.trim().isNotEmpty;
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.border.withValues(alpha: 0.9)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Curriculum Center',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.82),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Available Syllabi',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 22,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Open any course to view its detailed syllabus and structure.',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.86),
-              fontWeight: FontWeight.w700,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.menu_book_rounded,
-                  color: Colors.white,
-                  size: 18,
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  textInputAction: TextInputAction.search,
+                  onChanged: onQueryChanged,
+                  decoration: InputDecoration(
+                    hintText: deepSearch
+                        ? 'Deep search topics, grammar, objective, content...'
+                        : 'Search course title, code, variant...',
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: palette.primary,
+                    ),
+                    suffixIcon: hasText
+                        ? IconButton(
+                            tooltip: 'Clear',
+                            onPressed: onClearQuery,
+                            icon: const Icon(Icons.clear_rounded),
+                          )
+                        : null,
+                    isDense: true,
+                    filled: true,
+                    fillColor: palette.soft.withValues(alpha: 0.55),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: palette.border.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: palette.border.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: palette.primary,
+                        width: 1.2,
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '$totalCount course${totalCount == 1 ? '' : 's'} found',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: onToggleDeep,
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: deepSearch
+                        ? palette.primary.withValues(alpha: 0.1)
+                        : palette.soft,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: deepSearch
+                          ? palette.primary.withValues(alpha: 0.65)
+                          : palette.border.withValues(alpha: 0.85),
+                    ),
+                  ),
+                  child: Text(
+                    'Deep',
+                    style: TextStyle(
+                      color: deepSearch ? palette.primary : palette.text,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: searchMode ? 'Show filter' : 'Search focus mode',
+                onPressed: onToggleSearchMode,
+                icon: Icon(
+                  searchMode ? Icons.close_rounded : Icons.search_rounded,
+                  color: palette.accent,
+                ),
+              ),
+            ],
+          ),
+          if (!searchMode) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 42,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: palette.soft.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: palette.border.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: variantFilter,
+                        isExpanded: true,
+                        borderRadius: BorderRadius.circular(12),
+                        dropdownColor: palette.cardBg,
+                        style: TextStyle(
+                          color: palette.text,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All variants'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'inclass',
+                            child: Text('In-Class'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'flexible',
+                            child: Text('Flexible'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'private',
+                            child: Text('Private'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'recorded',
+                            child: Text('Recorded'),
+                          ),
+                        ],
+                        onChanged: onVariantChanged,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: palette.soft.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: palette.border.withValues(alpha: 0.82),
+                    ),
+                  ),
+                  child: Text(
+                    '$shownCount / $totalCount',
+                    style: TextStyle(
+                      color: palette.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -450,6 +855,8 @@ class _SyllabusTile extends StatelessWidget {
     required this.duration,
     required this.updatedLabel,
     required this.variants,
+    this.matchContext,
+    this.matchQuery = '',
     required this.onTap,
   });
 
@@ -459,7 +866,63 @@ class _SyllabusTile extends StatelessWidget {
   final String duration;
   final String updatedLabel;
   final List<String> variants;
+  final String? matchContext;
+  final String matchQuery;
   final VoidCallback onTap;
+
+  List<TextSpan> _buildHighlightedSpans({
+    required String text,
+    required String query,
+    required TextStyle normalStyle,
+    required TextStyle highlightStyle,
+  }) {
+    final terms =
+        query
+            .trim()
+            .toLowerCase()
+            .split(RegExp(r'\s+'))
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => b.length.compareTo(a.length));
+
+    if (terms.isEmpty) return [TextSpan(text: text, style: normalStyle)];
+
+    final lower = text.toLowerCase();
+    final marks = List<bool>.filled(text.length, false);
+
+    for (final term in terms) {
+      int start = 0;
+      while (start < lower.length) {
+        final idx = lower.indexOf(term, start);
+        if (idx < 0) break;
+        final end = idx + term.length;
+        for (int i = idx; i < end && i < marks.length; i++) {
+          marks[i] = true;
+        }
+        start = idx + 1;
+      }
+    }
+
+    final spans = <TextSpan>[];
+    int i = 0;
+    while (i < text.length) {
+      final highlighted = marks[i];
+      int j = i + 1;
+      while (j < text.length && marks[j] == highlighted) {
+        j++;
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(i, j),
+          style: highlighted ? highlightStyle : normalStyle,
+        ),
+      );
+      i = j;
+    }
+
+    return spans;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -511,6 +974,34 @@ class _SyllabusTile extends StatelessWidget {
                       height: 1.2,
                     ),
                   ),
+                  if ((matchContext ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 7),
+                    RichText(
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      text: TextSpan(
+                        children: _buildHighlightedSpans(
+                          text: matchContext!,
+                          query: matchQuery,
+                          normalStyle: TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: FontWeight.w700,
+                            color: palette.text.withValues(alpha: 0.74),
+                          ),
+                          highlightStyle: TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: FontWeight.w900,
+                            color: palette.primary,
+                            backgroundColor: palette.soft.withValues(
+                              alpha: 0.8,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
@@ -565,6 +1056,20 @@ class _SyllabusTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SearchIndex {
+  const _SearchIndex({required this.normalText, required this.deepEntries});
+
+  final String normalText;
+  final List<_DeepSearchEntry> deepEntries;
+}
+
+class _DeepSearchEntry {
+  const _DeepSearchEntry({required this.haystack, required this.context});
+
+  final String haystack;
+  final String context;
 }
 
 class _Pill extends StatelessWidget {

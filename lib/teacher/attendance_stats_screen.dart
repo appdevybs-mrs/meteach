@@ -3,8 +3,6 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class AttendanceStatsScreen extends StatefulWidget {
@@ -395,17 +393,6 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_attendance_stats',
-      hints: const [
-        TeacherTourHint(
-          title: 'Attendance statistics',
-          line:
-              'Use this page to track attendance performance and risk levels per learner.',
-        ),
-      ],
-    );
 
     final rows =
         _stats.entries.map((e) {

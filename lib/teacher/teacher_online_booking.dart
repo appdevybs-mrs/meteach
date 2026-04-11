@@ -5,8 +5,6 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/screen_help_guide.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherOnlineBookingScreen extends StatefulWidget {
@@ -898,57 +896,11 @@ class _TeacherOnlineBookingScreenState
     return '${take.join(', ')}$more';
   }
 
-  void _showHelp(String title, String text) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: p.cardBg,
-        title: Text(
-          title,
-          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-        ),
-        content: Text(
-          text,
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w700,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'OK',
-              style: TextStyle(color: p.accent, fontWeight: FontWeight.w900),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final weeklySlots = _totalWeeklySlots();
     final selectedCount = _selectedCoursesCount();
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_online_booking',
-      hints: const [
-        TeacherTourHint(
-          title: 'Online availability',
-          line:
-              'Turn booking on, choose courses, and define your weekly slots.',
-        ),
-        TeacherTourHint(
-          title: 'Save setup',
-          line:
-              'Save your availability after changing days, hours, or meeting link.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1019,14 +971,6 @@ class _TeacherOnlineBookingScreenState
                   _CardBox(
                     palette: p,
                     title: '1) Status',
-                    trailing: _MiniHelpButton(
-                      palette: p,
-                      onTap: () => _showHelp(
-                        'Teacher status',
-                        'Turn this ON to accept bookings.\n'
-                            'Turning it OFF is blocked if you still have upcoming bookings.',
-                      ),
-                    ),
                     child: Column(
                       children: [
                         _ToggleRowCard(
@@ -1047,15 +991,6 @@ class _TeacherOnlineBookingScreenState
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _MiniHelpButton(
-                          palette: p,
-                          onTap: () => _showHelp(
-                            'Courses',
-                            'Tick the courses you want to teach.\n'
-                                'All checked courses will use the same schedule and Meet link when you save.',
-                          ),
-                        ),
-                        const SizedBox(width: 6),
                         InkWell(
                           borderRadius: BorderRadius.circular(999),
                           onTap: () {
@@ -1152,13 +1087,6 @@ class _TeacherOnlineBookingScreenState
                   _CardBox(
                     palette: p,
                     title: '3) Session setup',
-                    trailing: _MiniHelpButton(
-                      palette: p,
-                      onTap: () => _showHelp(
-                        'Session setup',
-                        'This Meet link and duration are saved for all checked courses.',
-                      ),
-                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1186,14 +1114,6 @@ class _TeacherOnlineBookingScreenState
                   _CardBox(
                     palette: p,
                     title: '4) Weekly timetable',
-                    trailing: _MiniHelpButton(
-                      palette: p,
-                      onTap: () => _showHelp(
-                        'Weekly timetable',
-                        'Pick the 1-hour slots you want to offer every week.\n'
-                            'There is no minimum coverage rule here anymore.',
-                      ),
-                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1432,18 +1352,6 @@ class _CardBox extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _MiniHelpButton extends StatelessWidget {
-  const _MiniHelpButton({required this.palette, required this.onTap});
-
-  final AppPalette palette;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.shrink();
   }
 }
 

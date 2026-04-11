@@ -25,6 +25,7 @@ function is_allowed_push_type(string $type): bool
         'reminder' => true,
         'admin_todo' => true,
         'mail' => true,
+        'flash_message' => true,
         'booking' => true,
         'payment' => true,
         'session' => true,
@@ -126,6 +127,23 @@ function save_push_inbox_for_admin_topic($db, string $eventId, string $title, st
     }
 }
 
+function push_channel_for_type(string $type): string
+{
+    if ($type === 'message') {
+        return 'ch_messages_v2';
+    }
+
+    if ($type === 'mail') {
+        return 'ch_mail_v2';
+    }
+
+    if ($type === 'reminder' || $type === 'admin_todo' || $type === 'flash_message') {
+        return 'ch_reminders_v2';
+    }
+
+    return 'ch_default_v2';
+}
+
 $auth = require_auth(['admin', 'teacher', 'learner']);
 $payload = request_json();
 
@@ -191,6 +209,25 @@ try {
     $db = $auth['factory']->createDatabase();
     $cloudMessageClass = 'Kreait\\Firebase\\Messaging\\CloudMessage';
     $notificationClass = 'Kreait\\Firebase\\Messaging\\Notification';
+    $androidConfigClass = 'Kreait\\Firebase\\Messaging\\AndroidConfig';
+    $apnsConfigClass = 'Kreait\\Firebase\\Messaging\\ApnsConfig';
+
+    $channelId = push_channel_for_type($type);
+    $androidConfig = $androidConfigClass::fromArray([
+        'priority' => 'high',
+        'notification' => [
+            'channel_id' => $channelId,
+            'sound' => 'ybs_notify',
+        ],
+    ]);
+    $apnsConfig = $apnsConfigClass::fromArray([
+        'headers' => ['apns-priority' => '10'],
+        'payload' => [
+            'aps' => [
+                'sound' => 'ybs_notify.caf',
+            ],
+        ],
+    ]);
 
     $eventKey = hash('sha256', implode('|', [$eventId, $mode, $targetValue]));
     $eventRef = $db->getReference('push_events/' . $eventKey);
@@ -219,6 +256,8 @@ try {
 
         $msg = $cloudMessageClass::withTarget('token', $token)
             ->withNotification($notificationClass::create($title, $message))
+            ->withAndroidConfig($androidConfig)
+            ->withApnsConfig($apnsConfig)
             ->withData($safeData);
 
         $messageId = (string) $messaging->send($msg);
@@ -243,6 +282,8 @@ try {
 
     $msg = $cloudMessageClass::withTarget('topic', $targetValue)
         ->withNotification($notificationClass::create($title, $message))
+        ->withAndroidConfig($androidConfig)
+        ->withApnsConfig($apnsConfig)
         ->withData($safeData);
 
     $messageId = (string) $messaging->send($msg);

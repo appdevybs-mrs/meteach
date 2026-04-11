@@ -13,15 +13,14 @@ import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/admin_web_layout.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/ybs_busy_logo.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
+import '../services/push_error_logger.dart';
 import '../services/backend_api.dart';
 import 'admin_learner_mail_topics_screen.dart';
-import '../shared/admin_tour_guide.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key, this.initialSearch = ''});
@@ -399,12 +398,6 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_learners',
-      title: 'قائمة المتعلمين',
-      line: 'من هنا تبحث عن المتعلمين وتفتح تفاصيلهم او تضيف متعلم جديد.',
-    );
 
     return Scaffold(
       backgroundColor: AdminLearnersScreen.appBg,
@@ -997,7 +990,16 @@ class _LearnersListState extends State<_LearnersList>
             message: message,
             data: payload,
           );
-        } catch (_) {
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_learners',
+            action: 'learner_reminder_push_token_fallback_topic',
+            error: e,
+            stackTrace: st,
+            targetUid: uid,
+            token: token,
+            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+          );
           await PushClient.sendToTopic(
             topic: 'user_$uid',
             eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
@@ -1024,7 +1026,15 @@ class _LearnersListState extends State<_LearnersList>
 
       if (!mounted) return;
       _toast('Reminder saved & push sent ✅');
-    } catch (e) {
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'admin/admin_learners',
+        action: 'learner_reminder_push_final_failure',
+        error: e,
+        stackTrace: st,
+        targetUid: uid,
+        eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+      );
       await reminderRef.update({
         'status': 'push_error',
         'push/error': e.toString(),
@@ -2248,12 +2258,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_learner_editor',
-      title: 'محرر بيانات المتعلم',
-      line: 'استخدم هذه الشاشة لتعديل بيانات المتعلم والحفظ بعد المراجعة.',
-    );
 
     return Scaffold(
       backgroundColor: AdminLearnersScreen.appBg,

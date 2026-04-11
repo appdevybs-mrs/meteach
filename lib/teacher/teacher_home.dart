@@ -10,10 +10,8 @@ import 'teacher_public_gallery_screen.dart';
 import 'teacher_online_circle_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
-import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/first_login_agreement.dart';
 import '../shared/session_manager.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 import 'TeacherStoriesScreen.dart';
 import 'teacher_classes.dart';
@@ -45,7 +43,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuButtonKey = GlobalKey();
-  final GlobalKey _guideButtonKey = GlobalKey();
   final GlobalKey _heroCardKey = GlobalKey();
   final GlobalKey _inboxCardKey = GlobalKey();
   final GlobalKey _homeworkCardKey = GlobalKey();
@@ -110,21 +107,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    await AppLoading.run(context, () async {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
 
-    await SessionManager.stopListening();
+      await SessionManager.stopListening();
 
-    try {
-      if (userId != null && userId.isNotEmpty) {
-        await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-      }
-    } catch (_) {}
+      try {
+        if (userId != null && userId.isNotEmpty) {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+        }
+      } catch (_) {}
 
-    try {
-      await appThemeController.resetToDefault();
-    } catch (_) {}
+      try {
+        await appThemeController.resetToDefault();
+      } catch (_) {}
 
-    await FirebaseAuth.instance.signOut();
+      await FirebaseAuth.instance.signOut();
+    }, message: 'Logging out...');
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
@@ -776,68 +775,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       100,
     );
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_home',
-      hints: [
-        const TeacherTourHint(
-          title: 'Teacher dashboard',
-          line:
-              'This screen is your operational center for classes, mail, reminders, and daily actions.',
-          highlightShape: AppTourHighlightShape.fullscreen,
-        ),
-        TeacherTourHint(
-          title: 'Open menu',
-          line:
-              'Use this button to open all teacher tools and navigation links.',
-          targetKey: _menuButtonKey,
-          highlightShape: AppTourHighlightShape.circle,
-        ),
-        TeacherTourHint(
-          title: 'Guide',
-          line: 'Tap here anytime to restart the guided tour for this screen.',
-          targetKey: _guideButtonKey,
-          highlightShape: AppTourHighlightShape.circle,
-        ),
-        TeacherTourHint(
-          title: 'Teacher summary',
-          line:
-              'This card shows your profile shortcut and quick access to your teaching schedule.',
-          targetKey: _heroCardKey,
-        ),
-        TeacherTourHint(
-          title: 'Inbox status',
-          line:
-              'This indicator shows unread mail and opens the teacher mailbox directly.',
-          targetKey: _inboxCardKey,
-        ),
-        TeacherTourHint(
-          title: 'Reminders status',
-          line:
-              'This card shows pending reminders and opens your reminders management screen.',
-          targetKey: _remindersCardKey,
-        ),
-        TeacherTourHint(
-          title: 'Homework inbox',
-          line:
-              'This card opens homework conversations only, separated from regular mail.',
-          targetKey: _homeworkCardKey,
-        ),
-        TeacherTourHint(
-          title: 'Overview panel',
-          line:
-              'This section summarizes classes, learners, and upcoming online sessions.',
-          targetKey: _overviewPanelKey,
-        ),
-        TeacherTourHint(
-          title: 'Next class',
-          line:
-              'This card highlights your next scheduled class and opens the schedule details.',
-          targetKey: _nextClassCardKey,
-        ),
-      ],
-    );
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -875,26 +812,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           onOpenMyPlatform: () => _pushScreen(const TeacherMyPlatformScreen()),
 
           onOpenThemeSettings: _openThemeSheet,
-          onRestartTour: () async {
-            await TeacherTourGuide.resetAll();
-            if (!context.mounted) return;
-            await TeacherTourGuide.startNow(
-              context,
-              screenId: 'teacher_home',
-              hints: const [
-                TeacherTourHint(
-                  title: 'Teacher dashboard',
-                  line:
-                      'This is your main hub for classes, reminders, and quick actions.',
-                ),
-                TeacherTourHint(
-                  title: 'Open menu',
-                  line:
-                      'Use the menu button to open all teacher tools and screens.',
-                ),
-              ],
-            );
-          },
           onLogout: () => _logout(context),
         ),
         appBar: AppBar(
@@ -1016,7 +933,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           Row(
                             children: [
                               Expanded(
-                                flex: 5,
+                                flex: 1,
                                 child: StreamBuilder<DatabaseEvent>(
                                   stream: _mailIndexStream,
                                   builder: (context, snap) {
@@ -1039,9 +956,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                   },
                                 ),
                               ),
-                              SizedBox(width: isWideWeb ? 16 : 12),
+                              SizedBox(width: isWideWeb ? 16 : 8),
                               Expanded(
-                                flex: 4,
+                                flex: 1,
                                 child: StreamBuilder<DatabaseEvent>(
                                   stream: _mailIndexStream,
                                   builder: (context, snap) {
@@ -1072,9 +989,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                   },
                                 ),
                               ),
-                              SizedBox(width: isWideWeb ? 16 : 12),
+                              SizedBox(width: isWideWeb ? 16 : 8),
                               Expanded(
-                                flex: 5,
+                                flex: 1,
                                 child: StreamBuilder<DatabaseEvent>(
                                   stream: _remindersStream,
                                   builder: (context, snap) {
@@ -1512,7 +1429,6 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenRegulations,
     required this.onOpenSyllabi,
     required this.onOpenThemeSettings,
-    required this.onRestartTour,
     required this.onOpenShared,
     required this.onOpenMyPlatform,
     required this.onLogout,
@@ -1533,7 +1449,6 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenSyllabi;
   final VoidCallback onOpenThemeSettings;
-  final VoidCallback onRestartTour;
   final VoidCallback onOpenShared;
   final VoidCallback onOpenMyPlatform;
   final VoidCallback onOpenGames;
@@ -1728,16 +1643,6 @@ class _TeacherDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenMyPlatform();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: Icons.tour_rounded,
-                    title: 'Restart Guide',
-                    subtitle: 'Show onboarding steps again',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onRestartTour();
                     },
                   ),
                   _DrawerTile(
@@ -2471,26 +2376,35 @@ class _InfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.soft.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: palette.primary),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: palette.primary,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
+    final maxChipWidth = MediaQuery.sizeOf(context).width < 360 ? 170.0 : 220.0;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxChipWidth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: palette.soft.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: palette.primary),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2515,77 +2429,93 @@ class _MiniStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.border.withValues(alpha: 0.65)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 6),
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 112;
+        final iconBoxSize = compact ? 34.0 : 42.0;
+        final iconSize = compact ? 20.0 : 24.0;
+        final horizontalPadding = compact ? 8.0 : 12.0;
+        final verticalPadding = compact ? 10.0 : 12.0;
+        final gap = compact ? 6.0 : 10.0;
+        final valueFontSize = compact ? 12.0 : 13.0;
+        final showChevron = onTap != null && !compact;
+
+        return Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: palette.soft,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: palette.primary),
+          decoration: BoxDecoration(
+            color: palette.cardBg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: palette.border.withValues(alpha: 0.65)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
               ),
-              if (badgeCount > 0)
-                Positioned(
-                  right: -8,
-                  top: -8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: badgeColor ?? Colors.red,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: Text(
-                      badgeCount > 99 ? '99+' : badgeCount.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: palette.primary,
-                fontWeight: FontWeight.w900,
-                fontSize: 13,
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: iconBoxSize,
+                    height: iconBoxSize,
+                    decoration: BoxDecoration(
+                      color: palette.soft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: palette.primary, size: iconSize),
+                  ),
+                  if (badgeCount > 0)
+                    Positioned(
+                      right: compact ? -6 : -8,
+                      top: compact ? -6 : -8,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 5 : 6,
+                          vertical: compact ? 1.5 : 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeColor ?? Colors.red,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: Text(
+                          badgeCount > 99 ? '99+' : badgeCount.toString(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: compact ? 9 : 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
+              SizedBox(width: gap),
+              Expanded(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: valueFontSize,
+                  ),
+                ),
+              ),
+              if (showChevron)
+                const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+            ],
           ),
-          if (onTap != null)
-            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-        ],
-      ),
+        );
+      },
     );
 
     if (onTap == null) return content;

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminAttendanceOverviewScreen extends StatefulWidget {
   const AdminAttendanceOverviewScreen({super.key});
@@ -1078,12 +1076,6 @@ class _AdminAttendanceOverviewScreenState
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_attendance_overview',
-      title: 'ملخص الحضور',
-      line: 'تعرض هذه الشاشة احصائيات الحضور ضمن الفترة الزمنية المختارة.',
-    );
 
     final rangeTitle =
         'Selected Range (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})';
@@ -1200,12 +1192,6 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_attendance_details',
-      title: 'تفاصيل الحضور',
-      line: 'هنا تظهر سجلات الحضور التفصيلية لكل متعلم داخل الصف.',
-    );
 
     final sorted = [...rows]
       ..sort((a, b) {
@@ -1386,12 +1372,6 @@ class AdminMissingAttendanceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_missing_attendance',
-      title: 'الحصص بدون حضور',
-      line: 'هذه الشاشة تعرض الحصص التي لا تحتوي على سجلات حضور مكتملة.',
-    );
 
     final sorted = [...rows]
       ..sort((a, b) {

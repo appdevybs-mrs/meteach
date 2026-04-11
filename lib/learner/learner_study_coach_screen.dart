@@ -8,7 +8,6 @@ import '../shared/app_theme.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
-import '../shared/learner_tour_guide.dart';
 
 class LearnerStudyCoachScreen extends StatefulWidget {
   const LearnerStudyCoachScreen({super.key});
@@ -346,21 +345,6 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_study_coach',
-      hints: const [
-        LearnerTourHint(
-          title: 'مدرب الدراسة',
-          line:
-              'تساعدك هذه الصفحة على إعداد خطة أسبوعية ومتابعة الإنجاز اليومي.',
-        ),
-        LearnerTourHint(
-          title: 'المهام اليومية',
-          line: 'ضع علامة إكمال عند إنجاز كل مهمة ليظهر تقدمك بدقة.',
-        ),
-      ],
-    );
 
     final p = palette;
 

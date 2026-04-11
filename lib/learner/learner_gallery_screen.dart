@@ -3,7 +3,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/services.dart';
-import '../shared/learner_tour_guide.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/media_download.dart';
 
@@ -70,21 +69,6 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_gallery',
-      hints: const [
-        LearnerTourHint(
-          title: 'المعرض',
-          line:
-              'تتضمن هذه الصفحة الصور ومقاطع الفيديو المرسلة إليك من المعلمين.',
-        ),
-        LearnerTourHint(
-          title: 'فتح الوسائط',
-          line: 'اضغط أي عنصر لعرضه بالحجم الكامل.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -645,20 +629,6 @@ class _LearnerGalleryViewerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isVideo = type.trim().toLowerCase() == 'video';
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_gallery_viewer',
-      hints: const [
-        LearnerTourHint(
-          title: 'عرض العنصر',
-          line: 'تعرض هذه الصفحة الصورة أو الفيديو بالحجم الكامل.',
-        ),
-        LearnerTourHint(
-          title: 'معلومات العنصر',
-          line: 'أسفل الشاشة ستجد اسم المعلم واسم الصف وتاريخ الإضافة.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: Colors.black,

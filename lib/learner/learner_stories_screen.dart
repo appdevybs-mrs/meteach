@@ -7,7 +7,6 @@ import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
-import '../shared/learner_tour_guide.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
@@ -1110,20 +1109,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_stories',
-      hints: const [
-        LearnerTourHint(
-          title: 'البحث في القصص',
-          line: 'استخدم البحث للوصول إلى القصة المناسبة بسرعة.',
-        ),
-        LearnerTourHint(
-          title: 'فتح القصة',
-          line: 'تتيح لك كل بطاقة القراءة أو الاستماع أو مشاهدة المحتوى.',
-        ),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: p.appBg,

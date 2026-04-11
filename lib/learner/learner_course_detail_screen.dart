@@ -36,7 +36,6 @@ import '../shared/payment_status.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
-import '../shared/learner_tour_guide.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../services/course_feedback_service.dart';
@@ -1758,21 +1757,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    LearnerTourGuide.schedule(
-      context,
-      screenId: 'learner_course_detail',
-      hints: const [
-        LearnerTourHint(
-          title: 'تبويبات الدورة',
-          line:
-              'انتقل بين تبويبات الدفع والحضور والتقدم لمتابعة جميع التفاصيل.',
-        ),
-        LearnerTourHint(
-          title: 'الواجبات',
-          line: 'ينقلك زر الواجبات في الأعلى مباشرةً إلى واجبات هذه الدورة.',
-        ),
-      ],
-    );
 
     final counts = _attendanceCountsAll();
 

@@ -6,8 +6,6 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
-import '../shared/admin_tour_guide.dart';
-import '../shared/screen_help_guide.dart';
 
 class AdminContractScreen extends StatefulWidget {
   const AdminContractScreen({super.key});
@@ -541,12 +539,6 @@ class _AdminContractScreenState extends State<AdminContractScreen>
   Widget build(BuildContext context) {
     final activeLabel = _activeLabel();
 
-    AdminTourGuide.scheduleSimple(
-      context,
-      screenId: 'admin_contract',
-      title: 'العقود واللوائح',
-      line: 'من هذه الشاشة تدير نصوص العقود واللوائح الخاصة بالاكاديمية.',
-    );
 
     return Scaffold(
       backgroundColor: appBg,

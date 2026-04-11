@@ -4,9 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
-import '../shared/teacher_tour_guide.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherClassProgressScreen extends StatefulWidget {
@@ -435,17 +433,6 @@ class _TeacherClassProgressScreenState
     final scale = mq.textScaleFactor;
     final clampedScale = scale.clamp(0.85, 1.20);
 
-    TeacherTourGuide.schedule(
-      context,
-      screenId: 'teacher_class_progress',
-      hints: const [
-        TeacherTourHint(
-          title: 'Class progress',
-          line:
-              'Check learner progress, completion percentage, and pacing health here.',
-        ),
-      ],
-    );
 
     return MediaQuery(
       data: mq.copyWith(textScaler: TextScaler.linear(clampedScale.toDouble())),
