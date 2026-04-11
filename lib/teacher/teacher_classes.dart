@@ -79,6 +79,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   List<_OnlineBooking> _onlineAll = [];
 
   final Map<String, Map<String, String>> _learnerMiniCache = {};
+  final Map<String, String> _learnerBioCache = {};
+  final Map<String, Future<List<_TeacherHandoffRow>>> _handoffCache = {};
   final Map<String, String> _sessionTitleCache = {};
   final Map<String, String> _courseTitleCache = {};
   final Map<String, bool> _expandedLearnersByBooking = {};
@@ -211,6 +213,214 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final out = {'full': '', 'profilePhoto': ''};
     _learnerMiniCache[uid] = out;
     return out;
+  }
+
+  Future<String> _loadLearnerBio(String uid) async {
+    final key = uid.trim();
+    if (key.isEmpty) return '';
+    if (_learnerBioCache.containsKey(key)) return _learnerBioCache[key]!;
+
+    try {
+      final snap = await _usersRef.child(key).child('about_me').get();
+      final bio = (snap.value ?? '').toString().trim();
+      _learnerBioCache[key] = bio;
+      return bio;
+    } catch (_) {
+      _learnerBioCache[key] = '';
+      return '';
+    }
+  }
+
+  String _fmtWhenFromRow(_TeacherHandoffRow row) {
+    if (row.startAt > 0) {
+      final d = DateTime.fromMillisecondsSinceEpoch(row.startAt);
+      return '${d.year}-${_two(d.month)}-${_two(d.day)} ${_two(d.hour)}:${_two(d.minute)}';
+    }
+    if (row.dayKey.isNotEmpty && row.time.isNotEmpty) {
+      return '${row.dayKey} ${row.time}';
+    }
+    if (row.dayKey.isNotEmpty) return row.dayKey;
+    return '-';
+  }
+
+  Future<List<_TeacherHandoffRow>> _loadTeacherHandoffRows({
+    required String learnerUid,
+    required String courseId,
+  }) async {
+    final uid = learnerUid.trim();
+    final cid = courseId.trim();
+    if (uid.isEmpty || cid.isEmpty) return const [];
+
+    final out = <_TeacherHandoffRow>[];
+    try {
+      final snap = await _db
+          .child('$bookingProgressNode/$uid/$cid/online_attendance')
+          .get();
+      if (!snap.exists || snap.value is! Map) return out;
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      for (final e in raw.entries) {
+        if (e.value is! Map) continue;
+        final m = Map<String, dynamic>.from(e.value as Map);
+
+        final sessionNo = _asInt(m['sessionNo']);
+        final present = m['present'] == true;
+        final dayKey = _safeStr(m['dayKey']);
+        final time = _safeStr(m['time']);
+        final startAt = _asInt(m['startAt']);
+        final teacherName = _safeStr(
+          m['teacherName'] ?? m['teacherNameFromBooking'],
+        );
+        final teacherRating = _asInt(m['teacherRating']).clamp(0, 5);
+        final teacherComment = _safeStr(m['teacherComment']);
+        final noteAt = _asInt(m['teacherCommentUpdatedAt']);
+
+        out.add(
+          _TeacherHandoffRow(
+            bookingKey: e.key.toString(),
+            sessionNo: sessionNo,
+            present: present,
+            dayKey: dayKey,
+            time: time,
+            startAt: startAt,
+            teacherName: teacherName,
+            teacherRating: teacherRating,
+            teacherComment: teacherComment,
+            noteUpdatedAt: noteAt,
+          ),
+        );
+      }
+    } catch (_) {}
+
+    out.sort((a, b) => b.sortMs.compareTo(a.sortMs));
+    return out;
+  }
+
+  Future<List<_TeacherHandoffRow>> _handoffRowsFor(
+    String learnerUid,
+    String courseId,
+  ) {
+    final key = '${learnerUid.trim()}|${courseId.trim()}';
+    return _handoffCache.putIfAbsent(
+      key,
+      () => _loadTeacherHandoffRows(learnerUid: learnerUid, courseId: courseId),
+    );
+  }
+
+  Future<void> _openLearnerHandoffSheet({
+    required String learnerUid,
+    required String courseId,
+    required String courseTitle,
+  }) async {
+    final mini = await _loadLearnerMini(learnerUid);
+    final name = (mini['full'] ?? '').trim().isEmpty
+        ? 'Learner'
+        : (mini['full'] ?? '').trim();
+    final rows = await _handoffRowsFor(learnerUid, courseId);
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final h = MediaQuery.of(ctx).size.height;
+        final latestNote = rows.where((r) => r.teacherNoteExists).toList();
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Container(
+              height: h * 0.74,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: p.cardBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              ),
+              child: ListView(
+                children: [
+                  Text(
+                    '$name • ${courseTitle.trim().isEmpty ? courseId : courseTitle}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (latestNote.isNotEmpty) ...[
+                    Text(
+                      'Latest note for next teacher',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: p.soft.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.84),
+                        ),
+                      ),
+                      child: Text(
+                        'S${latestNote.first.sessionNo <= 0 ? '-' : latestNote.first.sessionNo} • ${latestNote.first.teacherRating > 0 ? '${latestNote.first.teacherRating}★' : 'No stars'}\n${latestNote.first.teacherComment.isEmpty ? 'No comment text.' : latestNote.first.teacherComment}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: p.text.withValues(alpha: 0.82),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Text(
+                    'Previous sessions (same course)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (rows.isEmpty)
+                    Text(
+                      'No previous online flexible sessions found.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withValues(alpha: 0.75),
+                      ),
+                    )
+                  else
+                    ...rows.map((r) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: p.cardBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.84),
+                          ),
+                        ),
+                        child: Text(
+                          '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo} • ${r.present ? 'Present' : 'Absent'} • ${r.teacherName.isEmpty ? 'Teacher' : r.teacherName}${r.teacherNoteExists ? ' • ${r.teacherRating > 0 ? '${r.teacherRating}★' : 'No stars'}${r.teacherComment.isEmpty ? '' : ' • ${r.teacherComment}'}' : ''}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withValues(alpha: 0.82),
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _learnerAvatar({required String profilePhotoUrl, double size = 38}) {
@@ -784,6 +994,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     String courseId,
     int sessionNo,
     String courseTitle,
+    List<String> learnerUids,
   ) async {
     final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
     if (!mounted) return;
@@ -805,6 +1016,12 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final homework = (info['homework'] ?? '').toString().trim();
     final materialsUrl = (info['materialsUrl'] ?? '').toString().trim();
     final duration = _asInt(info['durationMinutes'] ?? 0);
+    final uniqueLearners = learnerUids
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    var selectedLearnerUid = uniqueLearners.isEmpty ? '' : uniqueLearners.first;
 
     await showModalBottomSheet(
       context: context,
@@ -819,131 +1036,479 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                      color: p.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Course: $courseLabel',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: p.text.withValues(alpha: 0.72),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  if (duration > 0)
-                    Text(
-                      'Duration: $duration min',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: p.text.withValues(alpha: 0.72),
+            child: DefaultTabController(
+              length: 2,
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.8,
+                child: Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: p.soft.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: TabBar(
+                        labelColor: p.primary,
+                        unselectedLabelColor: p.text.withValues(alpha: 0.65),
+                        indicatorColor: p.accent,
+                        tabs: const [
+                          Tab(text: 'Course Details'),
+                          Tab(text: 'Learners'),
+                        ],
                       ),
                     ),
-                  const SizedBox(height: 14),
-                  if (objective.isNotEmpty) ...[
-                    Text(
-                      'Objectives',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.primary,
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                    color: p.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Course: $courseLabel',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: p.text.withValues(alpha: 0.72),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                if (duration > 0)
+                                  Text(
+                                    'Duration: $duration min',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: p.text.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                const SizedBox(height: 14),
+                                if (objective.isNotEmpty) ...[
+                                  Text(
+                                    'Objectives',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: p.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    objective,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: p.text.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                                if (content.isNotEmpty) ...[
+                                  Text(
+                                    'Content',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: p.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    content,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: p.text.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                                if (homework.isNotEmpty) ...[
+                                  Text(
+                                    'Homework',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: p.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    homework,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: p.text.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                                if (materialsUrl.isNotEmpty) ...[
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: p.accent,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                      onPressed: () =>
+                                          _openExternalUrl(materialsUrl),
+                                      icon: const Icon(Icons.slideshow_rounded),
+                                      label: const Text(
+                                        'Open materials',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                              ],
+                            ),
+                          ),
+                          StatefulBuilder(
+                            builder: (context, setLocal) {
+                              if (uniqueLearners.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    'No learners linked to this booking.',
+                                    style: TextStyle(
+                                      color: p.text.withValues(alpha: 0.75),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              return Column(
+                                children: [
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: uniqueLearners.map((uid) {
+                                        return FutureBuilder<
+                                          Map<String, String>
+                                        >(
+                                          future: _loadLearnerMini(uid),
+                                          builder: (context, snap) {
+                                            final name =
+                                                (snap.data?['full'] ?? '')
+                                                    .trim();
+                                            return ChoiceChip(
+                                              selected:
+                                                  selectedLearnerUid == uid,
+                                              onSelected: (_) => setLocal(
+                                                () => selectedLearnerUid = uid,
+                                              ),
+                                              label: Text(
+                                                name.isEmpty ? 'Learner' : name,
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Expanded(
+                                    child: FutureBuilder<Map<String, String>>(
+                                      future: _loadLearnerMini(
+                                        selectedLearnerUid,
+                                      ),
+                                      builder: (context, miniSnap) {
+                                        final mini =
+                                            miniSnap.data ??
+                                            const <String, String>{};
+                                        final name =
+                                            (mini['full'] ?? '').trim().isEmpty
+                                            ? 'Learner'
+                                            : mini['full']!.trim();
+
+                                        return FutureBuilder<String>(
+                                          future: _loadLearnerBio(
+                                            selectedLearnerUid,
+                                          ),
+                                          builder: (context, bioSnap) {
+                                            final bio = (bioSnap.data ?? '')
+                                                .trim();
+                                            return ListView(
+                                              children: [
+                                                Text(
+                                                  name,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 16,
+                                                    color: p.primary,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  bio.isEmpty
+                                                      ? 'No profile bio yet.'
+                                                      : bio,
+                                                  style: TextStyle(
+                                                    color: p.text.withValues(
+                                                      alpha: 0.8,
+                                                    ),
+                                                    fontWeight: FontWeight.w700,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                FutureBuilder<
+                                                  List<_TeacherHandoffRow>
+                                                >(
+                                                  future: _handoffRowsFor(
+                                                    selectedLearnerUid,
+                                                    courseId,
+                                                  ),
+                                                  builder: (context, hsnap) {
+                                                    final rows =
+                                                        hsnap.data ??
+                                                        const <
+                                                          _TeacherHandoffRow
+                                                        >[];
+                                                    final latest = rows
+                                                        .where(
+                                                          (r) => r
+                                                              .teacherNoteExists,
+                                                        )
+                                                        .toList();
+
+                                                    return Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          'Previous sessions (same course)',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w900,
+                                                            color: p.primary,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        if (hsnap
+                                                                .connectionState ==
+                                                            ConnectionState
+                                                                .waiting)
+                                                          Padding(
+                                                            padding:
+                                                                const EdgeInsets.symmetric(
+                                                                  vertical: 8,
+                                                                ),
+                                                            child: SizedBox(
+                                                              width: 18,
+                                                              height: 18,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2,
+                                                                    color: p
+                                                                        .accent,
+                                                                  ),
+                                                            ),
+                                                          )
+                                                        else if (rows.isEmpty)
+                                                          Text(
+                                                            'No previous flexible sessions found.',
+                                                            style: TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              color: p.text
+                                                                  .withValues(
+                                                                    alpha: 0.75,
+                                                                  ),
+                                                            ),
+                                                          )
+                                                        else ...[
+                                                          if (latest.isNotEmpty)
+                                                            Container(
+                                                              margin:
+                                                                  const EdgeInsets.only(
+                                                                    bottom: 8,
+                                                                  ),
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    10,
+                                                                  ),
+                                                              decoration: BoxDecoration(
+                                                                color: p.soft
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.2,
+                                                                    ),
+                                                                borderRadius:
+                                                                    BorderRadius.circular(
+                                                                      12,
+                                                                    ),
+                                                                border: Border.all(
+                                                                  color: p
+                                                                      .border
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.84,
+                                                                      ),
+                                                                ),
+                                                              ),
+                                                              child: Text(
+                                                                'Latest note: ${latest.first.teacherRating > 0 ? '${latest.first.teacherRating}★' : 'No stars'}${latest.first.teacherComment.isEmpty ? '' : ' • ${latest.first.teacherComment}'}',
+                                                                style: TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w800,
+                                                                  color: p.text
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.82,
+                                                                      ),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ...rows.take(12).map((
+                                                            r,
+                                                          ) {
+                                                            return Container(
+                                                              margin:
+                                                                  const EdgeInsets.only(
+                                                                    bottom: 8,
+                                                                  ),
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    10,
+                                                                  ),
+                                                              decoration: BoxDecoration(
+                                                                color: p.cardBg,
+                                                                borderRadius:
+                                                                    BorderRadius.circular(
+                                                                      12,
+                                                                    ),
+                                                                border: Border.all(
+                                                                  color: p
+                                                                      .border
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.84,
+                                                                      ),
+                                                                ),
+                                                              ),
+                                                              child: Text(
+                                                                '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo} • ${r.present ? 'Present' : 'Absent'}${r.teacherName.isEmpty ? '' : ' • ${r.teacherName}'}${r.teacherNoteExists ? ' • ${r.teacherRating > 0 ? '${r.teacherRating}★' : 'No stars'}${r.teacherComment.isEmpty ? '' : ' • ${r.teacherComment}'}' : ''}',
+                                                                style: TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
+                                                                  color: p.text
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.82,
+                                                                      ),
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }),
+                                                        ],
+                                                        const SizedBox(
+                                                          height: 12,
+                                                        ),
+                                                      ],
+                                                    );
+                                                  },
+                                                ),
+                                                SizedBox(
+                                                  width: double.infinity,
+                                                  child: FilledButton.icon(
+                                                    style: FilledButton.styleFrom(
+                                                      backgroundColor:
+                                                          p.primary,
+                                                      foregroundColor:
+                                                          Colors.white,
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              12,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    onPressed: () {
+                                                      Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                          builder: (_) =>
+                                                              TeacherLearnerProfileScreen(
+                                                                learnerUid:
+                                                                    selectedLearnerUid,
+                                                                learnerName:
+                                                                    name,
+                                                              ),
+                                                        ),
+                                                      );
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .person_outline_rounded,
+                                                    ),
+                                                    label: const Text(
+                                                      'Open full learner profile',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      objective,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: p.text.withValues(alpha: 0.72),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (content.isNotEmpty) ...[
-                    Text(
-                      'Content',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      content,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: p.text.withValues(alpha: 0.72),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (homework.isNotEmpty) ...[
-                    Text(
-                      'Homework',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      homework,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: p.text.withValues(alpha: 0.72),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (materialsUrl.isNotEmpty) ...[
+                    const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: p.accent,
-                          foregroundColor: Colors.white,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: p.primary,
+                          side: BorderSide(color: p.border),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        onPressed: () => _openExternalUrl(materialsUrl),
-                        icon: const Icon(Icons.slideshow_rounded),
-                        label: const Text(
-                          'Open materials',
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'Close',
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
                   ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.primary,
-                        side: BorderSide(color: p.border),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -2171,6 +2736,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   b.courseId,
                   b.sessionNo,
                   b.courseTitle,
+                  b.learnerUids,
                 ),
                 icon: Icon(Icons.info_outline_rounded, color: p.accent),
                 label: Text(
@@ -2405,24 +2971,42 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            _learnerAvatar(
-                              profilePhotoUrl: profilePhotoUrl,
-                              size: 28,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => _openLearnerHandoffSheet(
+                            learnerUid: uid,
+                            courseId: b.courseId,
+                            courseTitle: b.courseTitle,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2,
+                              vertical: 4,
                             ),
-
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                full.isEmpty ? 'Learner' : full,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: p.text.withValues(alpha: 0.72),
+                            child: Row(
+                              children: [
+                                _learnerAvatar(
+                                  profilePhotoUrl: profilePhotoUrl,
+                                  size: 28,
                                 ),
-                              ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    full.isEmpty ? 'Learner' : full,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: p.text.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.sticky_note_2_outlined,
+                                  size: 16,
+                                  color: p.text.withValues(alpha: 0.55),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       );
                     },
@@ -2527,6 +3111,40 @@ class _AvailMeta {
       teacherName = '';
 }
 
+class _TeacherHandoffRow {
+  final String bookingKey;
+  final int sessionNo;
+  final bool present;
+  final String dayKey;
+  final String time;
+  final int startAt;
+  final String teacherName;
+  final int teacherRating;
+  final String teacherComment;
+  final int noteUpdatedAt;
+
+  const _TeacherHandoffRow({
+    required this.bookingKey,
+    required this.sessionNo,
+    required this.present,
+    required this.dayKey,
+    required this.time,
+    required this.startAt,
+    required this.teacherName,
+    required this.teacherRating,
+    required this.teacherComment,
+    required this.noteUpdatedAt,
+  });
+
+  bool get teacherNoteExists => teacherRating > 0 || teacherComment.isNotEmpty;
+
+  int get sortMs {
+    if (startAt > 0) return startAt;
+    if (noteUpdatedAt > 0) return noteUpdatedAt;
+    return 0;
+  }
+}
+
 class _OnlineBooking {
   final String bookingKey;
   final String courseId;
@@ -2589,6 +3207,8 @@ class _OnlineTakeAttendanceScreenState
   String lockReason = '';
 
   final Map<String, bool> presentMap = {};
+  final Map<String, int> teacherRatingMap = {};
+  final Map<String, TextEditingController> _commentControllers = {};
 
   final Map<String, Map<String, String>> _localLearnerMiniCache = {};
 
@@ -2598,6 +3218,8 @@ class _OnlineTakeAttendanceScreenState
     appThemeController.addListener(_onThemeChanged);
     for (final uid in widget.booking.learnerUids) {
       presentMap[uid] = true;
+      teacherRatingMap[uid] = 0;
+      _commentController(uid);
     }
     _loadExistingBookingAttendance();
   }
@@ -2605,6 +3227,9 @@ class _OnlineTakeAttendanceScreenState
   @override
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
+    for (final c in _commentControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -2688,6 +3313,17 @@ class _OnlineTakeAttendanceScreenState
 
   String _safeStr(dynamic v) => (v ?? '').toString().trim();
 
+  TextEditingController _commentController(String uid) {
+    return _commentControllers.putIfAbsent(uid, TextEditingController.new);
+  }
+
+  int _normalizedRating(dynamic v) {
+    final x = _toInt(v);
+    if (x < 0) return 0;
+    if (x > 5) return 5;
+    return x;
+  }
+
   Future<void> _loadExistingBookingAttendance() async {
     setState(() => loadingExisting = true);
     try {
@@ -2706,11 +3342,17 @@ class _OnlineTakeAttendanceScreenState
           for (final uid in widget.booking.learnerUids) {
             final raw = lm[uid];
             bool present = false;
+            int teacherRating = 0;
+            String teacherComment = '';
             if (raw is Map) {
               final mm = raw.map((k, vv) => MapEntry(k.toString(), vv));
               present = mm['present'] == true;
+              teacherRating = _normalizedRating(mm['teacherRating']);
+              teacherComment = _safeStr(mm['teacherComment']);
             }
             presentMap[uid] = present;
+            teacherRatingMap[uid] = teacherRating;
+            _commentController(uid).text = teacherComment;
           }
         }
       }
@@ -2773,7 +3415,17 @@ class _OnlineTakeAttendanceScreenState
 
       final Map<String, dynamic> learners = {};
       for (final uid in widget.booking.learnerUids) {
-        learners[uid] = {'present': presentMap[uid] == true};
+        final rating = _normalizedRating(teacherRatingMap[uid]);
+        final comment = _commentController(uid).text.trim();
+        final hasTeacherNote = rating > 0 || comment.isNotEmpty;
+        learners[uid] = {
+          'present': presentMap[uid] == true,
+          'teacherRating': rating,
+          'teacherComment': comment,
+          'teacherCommentUpdatedAt': hasTeacherNote ? ServerValue.timestamp : 0,
+          'teacherCommentByUid': hasTeacherNote ? widget.teacherUid : '',
+          'teacherCommentByName': hasTeacherNote ? widget.teacherName : '',
+        };
       }
 
       final payload = {
@@ -2798,6 +3450,9 @@ class _OnlineTakeAttendanceScreenState
 
       for (final uid in widget.booking.learnerUids) {
         final isPresent = presentMap[uid] == true;
+        final rating = _normalizedRating(teacherRatingMap[uid]);
+        final comment = _commentController(uid).text.trim();
+        final hasTeacherNote = rating > 0 || comment.isNotEmpty;
 
         await _learnerAttendanceRef(uid).set({
           'bookingKey': widget.booking.bookingKey,
@@ -2809,6 +3464,11 @@ class _OnlineTakeAttendanceScreenState
           'teacherName': widget.teacherName,
           'sessionNo': widget.booking.sessionNo,
           'present': isPresent,
+          'teacherRating': rating,
+          'teacherComment': comment,
+          'teacherCommentUpdatedAt': hasTeacherNote ? ServerValue.timestamp : 0,
+          'teacherCommentByUid': hasTeacherNote ? widget.teacherUid : '',
+          'teacherCommentByName': hasTeacherNote ? widget.teacherName : '',
           'taughtItems': taughtItems,
           'updatedAt': ServerValue.timestamp,
         });
@@ -3000,6 +3660,9 @@ class _OnlineTakeAttendanceScreenState
                   else
                     ...b.learnerUids.map((uid) {
                       final v = presentMap[uid] == true;
+                      final rating = _normalizedRating(teacherRatingMap[uid]);
+                      final commentC = _commentController(uid);
+                      final readOnly = !canEditCurrent || loadingExisting;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
@@ -3010,46 +3673,114 @@ class _OnlineTakeAttendanceScreenState
                           ),
                           color: p.soft.withValues(alpha: 0.18),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: FutureBuilder<Map<String, String>>(
-                                future: _loadLearnerMini(uid),
-                                builder: (context, snap) {
-                                  final name = (snap.data?['full'] ?? 'Learner')
-                                      .trim();
-                                  final profilePhotoUrl =
-                                      (snap.data?['profilePhoto'] ?? '').trim();
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FutureBuilder<Map<String, String>>(
+                                    future: _loadLearnerMini(uid),
+                                    builder: (context, snap) {
+                                      final name =
+                                          (snap.data?['full'] ?? 'Learner')
+                                              .trim();
+                                      final profilePhotoUrl =
+                                          (snap.data?['profilePhoto'] ?? '')
+                                              .trim();
 
-                                  return Row(
-                                    children: [
-                                      _learnerAvatar(
-                                        profilePhotoUrl: profilePhotoUrl,
-                                        size: 36,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          name.isEmpty ? 'Learner' : name,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: p.text,
+                                      return Row(
+                                        children: [
+                                          _learnerAvatar(
+                                            profilePhotoUrl: profilePhotoUrl,
+                                            size: 36,
                                           ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              name.isEmpty ? 'Learner' : name,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.text,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Switch(
+                                  value: v,
+                                  onChanged: readOnly
+                                      ? null
+                                      : (x) =>
+                                            setState(() => presentMap[uid] = x),
+                                  activeThumbColor: p.accent,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Teacher handoff',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: p.primary,
+                                fontSize: 12,
                               ),
                             ),
-
-                            const SizedBox(width: 10),
-                            Switch(
-                              value: v,
-                              onChanged: (!canEditCurrent || loadingExisting)
-                                  ? null
-                                  : (x) => setState(() => presentMap[uid] = x),
-                              activeThumbColor: p.accent,
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 2,
+                              children: List.generate(5, (i) {
+                                final on = i < rating;
+                                return IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 34,
+                                    minHeight: 34,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: readOnly
+                                      ? null
+                                      : () => setState(
+                                          () => teacherRatingMap[uid] = i + 1,
+                                        ),
+                                  icon: Icon(
+                                    on
+                                        ? Icons.star_rounded
+                                        : Icons.star_border_rounded,
+                                    color: on ? p.accent : p.text,
+                                    size: 20,
+                                  ),
+                                  tooltip: '${i + 1} stars',
+                                );
+                              }),
+                            ),
+                            TextField(
+                              controller: commentC,
+                              enabled: !readOnly,
+                              minLines: 2,
+                              maxLines: 3,
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Comment for next teacher (same course)',
+                                filled: true,
+                                fillColor: p.cardBg,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: p.border),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: p.border),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 10,
+                                ),
+                              ),
                             ),
                           ],
                         ),

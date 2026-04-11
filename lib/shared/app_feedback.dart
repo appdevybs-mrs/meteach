@@ -273,12 +273,17 @@ class AppLoading {
     BuildContext context,
     Future<T> Function() task, {
     String message = 'Please wait...',
+    bool isLogout = false,
   }) async {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) =>
-          PopScope(canPop: false, child: _AppLoadingDialog(message: message)),
+      builder: (_) => PopScope(
+        canPop: false,
+        child: isLogout
+            ? _LogoutLoadingDialog(message: message)
+            : _AppLoadingDialog(message: message),
+      ),
     );
 
     try {
@@ -345,6 +350,122 @@ class _AppLoadingDialog extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF0F172A),
                 height: 1.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LogoutLoadingDialog extends StatefulWidget {
+  const _LogoutLoadingDialog({required this.message});
+
+  final String message;
+
+  @override
+  State<_LogoutLoadingDialog> createState() => _LogoutLoadingDialogState();
+}
+
+class _LogoutLoadingDialogState extends State<_LogoutLoadingDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = Tween<double>(
+      begin: 0.94,
+      end: 1.04,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    final glow = Tween<double>(
+      begin: 0.08,
+      end: 0.18,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 300),
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: scale.value,
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF1D4ED8,
+                          ).withValues(alpha: glow.value),
+                          blurRadius: 16,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: child,
+                  ),
+                );
+              },
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/ybs_logo.png',
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.school_rounded,
+                    size: 38,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              widget.message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+                color: Color(0xFF64748B),
+                height: 1.25,
               ),
             ),
           ],

@@ -398,7 +398,6 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: AdminLearnersScreen.appBg,
       appBar: AppBar(
@@ -826,7 +825,7 @@ class _LearnersListState extends State<_LearnersList>
         out[peerUid] = (out[peerUid] ?? 0) + unread;
       });
       return out;
-    });
+    }).asBroadcastStream();
   }
 
   Widget _badge(int count) {
@@ -1727,7 +1726,7 @@ class _LearnersListState extends State<_LearnersList>
   }
 }
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends StatefulWidget {
   const _TopBar({
     required this.hint,
     required this.value,
@@ -1741,6 +1740,36 @@ class _TopBar extends StatelessWidget {
   final List<_FilterChipItem> filters;
 
   @override
+  State<_TopBar> createState() => _TopBarState();
+}
+
+class _TopBarState extends State<_TopBar> {
+  late final TextEditingController _searchC;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchC = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TopBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != _searchC.text) {
+      _searchC.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchC.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
@@ -1748,10 +1777,26 @@ class _TopBar extends StatelessWidget {
       child: Column(
         children: [
           TextField(
-            onChanged: onChanged,
+            controller: _searchC,
+            onChanged: widget.onChanged,
             decoration: InputDecoration(
-              hintText: hint,
+              hintText: widget.hint,
               prefixIcon: const Icon(Icons.search),
+              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _searchC,
+                builder: (_, value, child) {
+                  final hasText = value.text.trim().isNotEmpty;
+                  if (!hasText) return const SizedBox.shrink();
+                  return IconButton(
+                    tooltip: 'Clear search',
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    onPressed: () {
+                      _searchC.clear();
+                      widget.onChanged('');
+                    },
+                  );
+                },
+              ),
               filled: true,
               fillColor: AdminLearnersScreen.appBg,
               border: OutlineInputBorder(
@@ -1764,16 +1809,16 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
-          if (filters.isNotEmpty) ...[
+          if (widget.filters.isNotEmpty) ...[
             const SizedBox(height: 10),
             SizedBox(
               height: 38,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: filters.length,
+                itemCount: widget.filters.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
-                  final f = filters[i];
+                  final f = widget.filters[i];
                   return ChoiceChip(
                     label: Text(f.label),
                     selected: f.selected,
@@ -2257,7 +2302,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
-
 
     return Scaffold(
       backgroundColor: AdminLearnersScreen.appBg,

@@ -303,7 +303,6 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: AdminStaffScreen.appBg,
       appBar: AppBar(
@@ -561,14 +560,6 @@ class _StaffListState extends State<_StaffList>
 
   final _db = FirebaseDatabase.instance;
 
-  // same stable thread id logic as AdminTeacherMailThreadScreen
-  static String _pairThreadId(String a, String b) {
-    final x = a.trim();
-    final y = b.trim();
-    if (x.compareTo(y) < 0) return '${x}_$y';
-    return '${y}_$x';
-  }
-
   int _parseUnread(dynamic v) {
     if (v == null) return 0;
     if (v is int) return v;
@@ -586,6 +577,28 @@ class _StaffListState extends State<_StaffList>
       if (status == 'new') count++;
     });
     return count;
+  }
+
+  Map<String, int> _mailUnreadByPeer(dynamic root) {
+    final out = <String, int>{};
+    if (root is! Map) return out;
+
+    final index = Map<dynamic, dynamic>.from(root);
+    for (final entry in index.entries) {
+      final raw = entry.value;
+      if (raw is! Map) continue;
+      final m = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (m['deletedAt'] != null) continue;
+
+      final peerUid = (m['peerUid'] ?? '').toString().trim();
+      if (peerUid.isEmpty) continue;
+
+      final unread = _parseUnread(m['unreadCount']);
+      if (unread <= 0) continue;
+      out[peerUid] = (out[peerUid] ?? 0) + unread;
+    }
+
+    return out;
   }
 
   String _cleanPhone(String raw) {
@@ -809,348 +822,349 @@ class _StaffListState extends State<_StaffList>
 
               final meUid = FirebaseAuth.instance.currentUser?.uid;
 
-              return ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                itemCount: filtered.length,
-                itemBuilder: (context, i) {
-                  final row = filtered[i];
-                  final u = row.staff;
+              Widget buildStaffList(Map<String, int> mailUnreadByPeer) {
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, i) {
+                    final row = filtered[i];
+                    final u = row.staff;
 
-                  // unread is relevant for teacher conversations
-                  final canShowMailBadge =
-                      meUid != null && u.role == StaffRole.teacher;
-                  final threadId = canShowMailBadge
-                      ? _pairThreadId(meUid, row.uid)
-                      : '';
+                    // unread is relevant for teacher conversations
+                    final canShowMailBadge =
+                        meUid != null && u.role == StaffRole.teacher;
+                    final unread = canShowMailBadge
+                        ? (mailUnreadByPeer[row.uid] ?? 0)
+                        : 0;
+                    final reminderUnreadRef = u.role == StaffRole.teacher
+                        ? _db.ref('reminders').child(row.uid)
+                        : null;
+                    final phoneMain = u.phone1.trim().isNotEmpty
+                        ? u.phone1.trim()
+                        : u.phone2.trim();
+                    final canOpenProfile = u.role == StaffRole.teacher;
+                    final profilePhoto = u.primaryProfilePhoto;
+                    final dense = widget.webDenseMode && kIsWeb;
 
-                  final unreadRef = canShowMailBadge
-                      ? _db
-                            .ref('mail_index')
-                            .child(meUid)
-                            .child(threadId)
-                            .child('unreadCount')
-                      : null;
-                  final reminderUnreadRef = u.role == StaffRole.teacher
-                      ? _db.ref('reminders').child(row.uid)
-                      : null;
-                  final phoneMain = u.phone1.trim().isNotEmpty
-                      ? u.phone1.trim()
-                      : u.phone2.trim();
-                  final canOpenProfile = u.role == StaffRole.teacher;
-                  final profilePhoto = u.primaryProfilePhoto;
-                  final dense = widget.webDenseMode && kIsWeb;
+                    return Card(
+                      margin: EdgeInsets.only(bottom: dense ? 7 : 10),
+                      elevation: 0,
+                      color: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(dense ? 12 : 16),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.all(dense ? 9 : 12),
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () =>
+                                  _openTeacherQuickActions(context, row.uid, u),
+                              onLongPress: () =>
+                                  _openTeacherQuickActions(context, row.uid, u),
 
-                  return Card(
-                    margin: EdgeInsets.only(bottom: dense ? 7 : 10),
-                    elevation: 0,
-                    color: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(dense ? 12 : 16),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(dense ? 9 : 12),
-                      child: Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () =>
-                                _openTeacherQuickActions(context, row.uid, u),
-                            onLongPress: () =>
-                                _openTeacherQuickActions(context, row.uid, u),
-
-                            // ✅ Avatar + Mail badge
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                CircleAvatar(
-                                  radius: dense ? 18 : 21,
-                                  backgroundColor: Colors.transparent,
-                                  child: ProfileAvatar(
-                                    name: u.fullName,
-                                    photoUrl: profilePhoto,
+                              // ✅ Avatar + Mail badge
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  CircleAvatar(
                                     radius: dense ? 18 : 21,
-                                    fallbackBg: AdminStaffScreen.appBg,
-                                    fallbackFg: AdminStaffScreen.primaryBlue,
-                                    borderColor: AdminStaffScreen.uiBorders
-                                        .withValues(alpha: 0.75),
+                                    backgroundColor: Colors.transparent,
+                                    child: ProfileAvatar(
+                                      name: u.fullName,
+                                      photoUrl: profilePhoto,
+                                      radius: dense ? 18 : 21,
+                                      fallbackBg: AdminStaffScreen.appBg,
+                                      fallbackFg: AdminStaffScreen.primaryBlue,
+                                      borderColor: AdminStaffScreen.uiBorders
+                                          .withValues(alpha: 0.75),
+                                    ),
                                   ),
-                                ),
-                                if (unreadRef != null)
-                                  Positioned(
-                                    right: -2,
-                                    top: -2,
-                                    child: StreamBuilder<DatabaseEvent>(
-                                      stream: unreadRef.onValue,
-                                      builder: (_, snap) {
-                                        final unread = _parseUnread(
-                                          snap.data?.snapshot.value,
-                                        );
-                                        if (unread <= 0) {
-                                          return const SizedBox.shrink();
-                                        }
-
-                                        final txt = unread > 99
-                                            ? '99+'
-                                            : unread.toString();
-
-                                        return IgnorePointer(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
+                                  if (unread > 0)
+                                    Positioned(
+                                      right: -2,
+                                      top: -2,
+                                      child: IgnorePointer(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red,
+                                            borderRadius: BorderRadius.circular(
+                                              999,
                                             ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red,
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                              border: Border.all(
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          constraints: const BoxConstraints(
+                                            minWidth: 18,
+                                            minHeight: 18,
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              unread > 99
+                                                  ? '99+'
+                                                  : unread.toString(),
+                                              style: const TextStyle(
                                                 color: Colors.white,
-                                                width: 2,
-                                              ),
-                                            ),
-                                            constraints: const BoxConstraints(
-                                              minWidth: 18,
-                                              minHeight: 18,
-                                            ),
-                                            child: Center(
-                                              child: Text(
-                                                txt,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 11,
-                                                ),
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 11,
                                               ),
                                             ),
                                           ),
-                                        );
-                                      },
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                if (reminderUnreadRef != null)
-                                  Positioned(
-                                    left: -2,
-                                    top: -2,
-                                    child: StreamBuilder<DatabaseEvent>(
-                                      stream: reminderUnreadRef.onValue,
-                                      builder: (_, snap) {
-                                        final unread = _parseReminderUnread(
-                                          snap.data?.snapshot.value,
-                                        );
-                                        if (unread <= 0) {
-                                          return const SizedBox.shrink();
-                                        }
+                                  if (reminderUnreadRef != null)
+                                    Positioned(
+                                      left: -2,
+                                      top: -2,
+                                      child: StreamBuilder<DatabaseEvent>(
+                                        stream: reminderUnreadRef.onValue,
+                                        builder: (_, snap) {
+                                          final unread = _parseReminderUnread(
+                                            snap.data?.snapshot.value,
+                                          );
+                                          if (unread <= 0) {
+                                            return const SizedBox.shrink();
+                                          }
 
-                                        final txt = unread > 9
-                                            ? '9+'
-                                            : unread.toString();
+                                          final txt = unread > 9
+                                              ? '9+'
+                                              : unread.toString();
 
-                                        return IgnorePointer(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFF98D28),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                              border: Border.all(
-                                                color: Colors.white,
-                                                width: 2,
-                                              ),
-                                            ),
-                                            constraints: const BoxConstraints(
-                                              minWidth: 18,
-                                              minHeight: 18,
-                                            ),
-                                            child: Center(
-                                              child: Text(
-                                                txt,
-                                                style: const TextStyle(
+                                          return IgnorePointer(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF98D28),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                                border: Border.all(
                                                   color: Colors.white,
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 11,
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              constraints: const BoxConstraints(
+                                                minWidth: 18,
+                                                minHeight: 18,
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  txt,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 11,
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        );
-                                      },
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          SizedBox(width: dense ? 9 : 12),
-                          Expanded(
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: canOpenProfile
-                                  ? () => _openTeacherProfileSheet(
-                                      context,
-                                      teacherUid: row.uid,
-                                      staff: u,
-                                    )
-                                  : null,
-                              child: Padding(
-                                // small padding so InkWell feels nice but doesn't change layout much
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 2,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      u.fullName.isEmpty
-                                          ? '(No name)'
-                                          : u.fullName,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: AdminStaffScreen.primaryBlue,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      u.email.isEmpty ? '(No email)' : u.email,
-                                      style: TextStyle(
-                                        fontSize: dense ? 11 : 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.black.withValues(
-                                          alpha: 0.55,
+                            SizedBox(width: dense ? 9 : 12),
+                            Expanded(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: canOpenProfile
+                                    ? () => _openTeacherProfileSheet(
+                                        context,
+                                        teacherUid: row.uid,
+                                        staff: u,
+                                      )
+                                    : null,
+                                child: Padding(
+                                  // small padding so InkWell feels nice but doesn't change layout much
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 2,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        u.fullName.isEmpty
+                                            ? '(No name)'
+                                            : u.fullName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: AdminStaffScreen.primaryBlue,
                                         ),
                                       ),
-                                    ),
-                                    SizedBox(height: dense ? 4 : 6),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        _Pill(label: u.role.label),
-                                        _Pill(
-                                          label: u.status.label,
-                                          bg: _statusBg(u.status),
-                                          fg: _statusFg(u.status),
-                                        ),
-                                        if (u.dob.trim().isNotEmpty)
-                                          _Pill(label: '🎂 ${u.dob}'),
-                                      ],
-                                    ),
-                                    if (!dense &&
-                                        u.role == StaffRole.teacher &&
-                                        phoneMain.isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      GestureDetector(
-                                        onLongPress: () => _openPhoneActions(
-                                          context,
-                                          phoneMain,
-                                        ),
-                                        child: _Pill(
-                                          label: 'Phone: $phoneMain',
-                                          bg: const Color(0xFFEAF2FF),
-                                          fg: AdminStaffScreen.primaryBlue,
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        u.email.isEmpty
+                                            ? '(No email)'
+                                            : u.email,
+                                        style: TextStyle(
+                                          fontSize: dense ? 11 : 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black.withValues(
+                                            alpha: 0.55,
+                                          ),
                                         ),
                                       ),
-                                    ],
-                                    if (!dense &&
-                                        u.role == StaffRole.teacher) ...[
-                                      const SizedBox(height: 8),
+                                      SizedBox(height: dense ? 4 : 6),
                                       Wrap(
                                         spacing: 8,
                                         runSpacing: 8,
                                         children: [
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                _openTeacherLearners(
-                                                  context,
-                                                  teacherUid: row.uid,
-                                                  staff: u,
-                                                ),
-                                            icon: const Icon(
-                                              Icons.groups_rounded,
-                                              size: 18,
-                                            ),
-                                            label: const Text('Learners'),
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor:
-                                                  AdminStaffScreen.primaryBlue,
-                                              side: BorderSide(
-                                                color: AdminStaffScreen
-                                                    .uiBorders
-                                                    .withValues(alpha: 0.9),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 8,
-                                                  ),
-                                            ),
+                                          _Pill(label: u.role.label),
+                                          _Pill(
+                                            label: u.status.label,
+                                            bg: _statusBg(u.status),
+                                            fg: _statusFg(u.status),
                                           ),
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                _openTeacherProfileSheet(
-                                                  context,
-                                                  teacherUid: row.uid,
-                                                  staff: u,
-                                                ),
-                                            icon: const Icon(
-                                              Icons.perm_media_rounded,
-                                              size: 18,
-                                            ),
-                                            label: const Text('Profile'),
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor:
-                                                  AdminStaffScreen.actionOrange,
-                                              side: BorderSide(
-                                                color: AdminStaffScreen
-                                                    .actionOrange
-                                                    .withValues(alpha: 0.45),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 8,
-                                                  ),
-                                            ),
-                                          ),
+                                          if (u.dob.trim().isNotEmpty)
+                                            _Pill(label: '🎂 ${u.dob}'),
                                         ],
                                       ),
+                                      if (!dense &&
+                                          u.role == StaffRole.teacher &&
+                                          phoneMain.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        GestureDetector(
+                                          onLongPress: () => _openPhoneActions(
+                                            context,
+                                            phoneMain,
+                                          ),
+                                          child: _Pill(
+                                            label: 'Phone: $phoneMain',
+                                            bg: const Color(0xFFEAF2FF),
+                                            fg: AdminStaffScreen.primaryBlue,
+                                          ),
+                                        ),
+                                      ],
+                                      if (!dense &&
+                                          u.role == StaffRole.teacher) ...[
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _openTeacherLearners(
+                                                    context,
+                                                    teacherUid: row.uid,
+                                                    staff: u,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.groups_rounded,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Learners'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    AdminStaffScreen
+                                                        .primaryBlue,
+                                                side: BorderSide(
+                                                  color: AdminStaffScreen
+                                                      .uiBorders
+                                                      .withValues(alpha: 0.9),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 8,
+                                                    ),
+                                              ),
+                                            ),
+                                            OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _openTeacherProfileSheet(
+                                                    context,
+                                                    teacherUid: row.uid,
+                                                    staff: u,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.perm_media_rounded,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Profile'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    AdminStaffScreen
+                                                        .actionOrange,
+                                                side: BorderSide(
+                                                  color: AdminStaffScreen
+                                                      .actionOrange
+                                                      .withValues(alpha: 0.45),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 8,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ],
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          PopupMenuButton<_RowAction>(
-                            tooltip: 'Actions',
-                            onSelected: (a) async {
-                              if (a == _RowAction.edit) {
-                                if (widget.onEdit != null) {
-                                  await widget.onEdit!(row.uid, u);
+                            const SizedBox(width: 8),
+                            PopupMenuButton<_RowAction>(
+                              tooltip: 'Actions',
+                              onSelected: (a) async {
+                                if (a == _RowAction.edit) {
+                                  if (widget.onEdit != null) {
+                                    await widget.onEdit!(row.uid, u);
+                                  }
+                                  return;
                                 }
-                                return;
-                              }
-                              await widget.onAction(row.uid, u, a);
-                            },
-                            itemBuilder: (_) {
-                              final items = <PopupMenuEntry<_RowAction>>[];
-                              if (widget.onEdit != null) {
-                                items.add(
-                                  const PopupMenuItem(
-                                    value: _RowAction.edit,
-                                    child: Text('Edit'),
-                                  ),
-                                );
-                                items.add(const PopupMenuDivider());
-                              }
-                              items.addAll(widget.actionsBuilder(row.uid, u));
-                              return items;
-                            },
-                          ),
-                        ],
+                                await widget.onAction(row.uid, u, a);
+                              },
+                              itemBuilder: (_) {
+                                final items = <PopupMenuEntry<_RowAction>>[];
+                                if (widget.onEdit != null) {
+                                  items.add(
+                                    const PopupMenuItem(
+                                      value: _RowAction.edit,
+                                      child: Text('Edit'),
+                                    ),
+                                  );
+                                  items.add(const PopupMenuDivider());
+                                }
+                                items.addAll(widget.actionsBuilder(row.uid, u));
+                                return items;
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    );
+                  },
+                );
+              }
+
+              if (meUid == null || meUid.trim().isEmpty) {
+                return buildStaffList(const <String, int>{});
+              }
+
+              return StreamBuilder<DatabaseEvent>(
+                stream: _db.ref('mail_index').child(meUid).onValue,
+                builder: (context, mailSnap) {
+                  final unreadByPeer = _mailUnreadByPeer(
+                    mailSnap.data?.snapshot.value,
                   );
+                  return buildStaffList(unreadByPeer);
                 },
               );
             },
@@ -2155,7 +2169,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
 
-
     return Scaffold(
       backgroundColor: AdminStaffScreen.appBg,
       appBar: AppBar(
@@ -2824,7 +2837,6 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final db = FirebaseDatabase.instance;
 
     return Scaffold(

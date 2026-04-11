@@ -250,6 +250,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return 'Open';
   }
 
+  String _sessionLabel(int sessionNo) {
+    return sessionNo <= 0 ? 'Session —' : 'Session $sessionNo';
+  }
+
   Color _statusColorForSlot(_AdminBookedSlot s) {
     if (s.start.isBefore(DateTime.now())) return Colors.grey.shade700;
     if (s.learnerCount >= 6) return Colors.red.shade700;
@@ -958,37 +962,83 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return out;
   }
 
+  Future<List<int>> _loadCourseSessionNumbers(String courseId) async {
+    final cid = courseId.trim();
+    if (cid.isEmpty) return const <int>[];
+
+    final out = <int>{};
+    try {
+      final snap = await _db.child('booking_curriculum/$cid/sessions').get();
+      if (snap.exists && snap.value is Map) {
+        final root = (snap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        for (final entry in root.entries) {
+          final keyNo = int.tryParse(entry.key.toString()) ?? 0;
+          if (keyNo > 0) out.add(keyNo);
+
+          final raw = entry.value;
+          if (raw is! Map) continue;
+
+          final m = raw.map((k, v) => MapEntry(k.toString(), v));
+          int no = _toInt(m['sessionNo'], fallback: 0);
+          if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
+          if (no <= 0) no = _toInt(m['order'], fallback: 0);
+          if (no > 0) out.add(no);
+        }
+      }
+    } catch (_) {}
+
+    final sorted = out.toList()..sort();
+    return sorted;
+  }
+
   Future<void> _pickRescheduleTarget(
     _AdminBookedSlot sourceSlot,
     String learnerUid,
     BuildContext detailsSheetContext,
   ) async {
     final available = await _buildAvailableSlotsForCourse(sourceSlot.courseId);
+    final sessionOptions = await _loadCourseSessionNumbers(sourceSlot.courseId);
 
     if (!mounted) return;
 
-    final possible = available.where((s) {
+    final basePossible = available.where((s) {
       if (s.dayKey == sourceSlot.dayKey &&
           s.time == sourceSlot.time &&
           s.teacherId == sourceSlot.teacherId) {
         return false;
       }
-      if (s.start.isBefore(DateTime.now().subtract(const Duration(minutes: 1))))
+      if (s.start.isBefore(
+        DateTime.now().subtract(const Duration(minutes: 1)),
+      )) {
         return false;
-      if (s.groupSessionNo != null && s.groupSessionNo != sourceSlot.sessionNo)
-        return false;
+      }
       if (s.isFull) return false;
       return true;
     }).toList();
 
-    if (possible.isEmpty) {
+    if (sourceSlot.sessionNo > 0 &&
+        !sessionOptions.contains(sourceSlot.sessionNo)) {
+      sessionOptions.add(sourceSlot.sessionNo);
+      sessionOptions.sort();
+    }
+
+    if (sessionOptions.isEmpty) {
+      sessionOptions.add(sourceSlot.sessionNo <= 0 ? 0 : sourceSlot.sessionNo);
+    }
+
+    if (basePossible.isEmpty) {
       _toast('No valid target slots found.');
       return;
     }
 
     String query = '';
+    int selectedSessionNo = sourceSlot.sessionNo > 0
+        ? sourceSlot.sessionNo
+        : sessionOptions.first;
 
-    final chosen = await showModalBottomSheet<_AvailSlot>(
+    final chosen = await showModalBottomSheet<_RescheduleChoice>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -999,11 +1049,16 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       builder: (_) {
         return StatefulBuilder(
           builder: (context, setInner) {
-            final filtered = possible.where((s) {
+            final bySession = basePossible.where((s) {
+              if (s.groupSessionNo == null) return true;
+              return s.groupSessionNo == selectedSessionNo;
+            }).toList();
+
+            final filtered = bySession.where((s) {
               if (query.trim().isEmpty) return true;
               final q = query.trim().toLowerCase();
               final text =
-                  '${s.teacherName} ${s.dayKey} ${s.time} ${_friendlyDateLong(s.start)}'
+                  '${s.teacherName} ${s.dayKey} ${s.time} ${_friendlyDateLong(s.start)} ${_sessionLabel(selectedSessionNo)}'
                       .toLowerCase();
               return text.contains(q);
             }).toList();
@@ -1030,6 +1085,40 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      initialValue: selectedSessionNo,
+                      isDense: true,
+                      decoration: InputDecoration(
+                        labelText: 'Study session',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: uiBorder),
+                        ),
+                      ),
+                      items: sessionOptions
+                          .map(
+                            (no) => DropdownMenuItem<int>(
+                              value: no,
+                              child: Text(
+                                _sessionLabel(no),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) {
+                          return;
+                        }
+                        setInner(() => selectedSessionNo = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
                     TextField(
                       decoration: InputDecoration(
                         hintText: 'Search teacher / date / time',
@@ -1066,7 +1155,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
                                 return InkWell(
                                   borderRadius: BorderRadius.circular(14),
-                                  onTap: () => Navigator.pop(context, s),
+                                  onTap: () => Navigator.pop(
+                                    context,
+                                    _RescheduleChoice(
+                                      slot: s,
+                                      sessionNo: selectedSessionNo,
+                                    ),
+                                  ),
                                   child: Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
@@ -1096,7 +1191,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                         const SizedBox(height: 3),
                                         Text(
                                           s.groupSessionNo == null
-                                              ? 'Empty slot • Capacity ${s.bookedCount}/$cap'
+                                              ? '${_sessionLabel(selectedSessionNo)} • Empty slot • Capacity ${s.bookedCount}/$cap'
                                               : 'Session ${s.groupSessionNo} group • Capacity ${s.bookedCount}/$cap',
                                           style: TextStyle(
                                             fontWeight: FontWeight.w800,
@@ -1127,7 +1222,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     await _moveLearnerToNewSlot(
       sourceSlot: sourceSlot,
       learnerUid: learnerUid,
-      target: chosen,
+      target: chosen.slot,
+      targetSessionNo: chosen.sessionNo,
       detailsSheetContext: detailsSheetContext,
     );
   }
@@ -1136,6 +1232,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     required _AdminBookedSlot sourceSlot,
     required String learnerUid,
     required _AvailSlot target,
+    required int targetSessionNo,
     required BuildContext detailsSheetContext,
   }) async {
     if (busyAction) return;
@@ -1146,6 +1243,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         title: const Text('Reschedule booking'),
         content: Text(
           'Move this learner?\n\n'
+          '${_sessionLabel(sourceSlot.sessionNo)} → ${_sessionLabel(targetSessionNo)}\n\n'
           'From:\n${_friendlyDateLong(sourceSlot.start)} at ${sourceSlot.time}\n${sourceSlot.teacherName}\n\n'
           'To:\n${_friendlyDateLong(target.start)} at ${target.time}\n${target.teacherName}',
         ),
@@ -1192,7 +1290,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         }
 
         final existingSession = _toInt(node['sessionNo'], fallback: 0);
-        if (existingSession > 0 && existingSession != sourceSlot.sessionNo) {
+        if (existingSession > 0 && existingSession != targetSessionNo) {
           return Transaction.abort();
         }
 
@@ -1206,7 +1304,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         learners[learnerUid] = true;
         node['teacherId'] = target.teacherId;
         node['teacherName'] = target.teacherName;
-        node['sessionNo'] = sourceSlot.sessionNo;
+        node['sessionNo'] = targetSessionNo;
         node['learners'] = learners;
         node['createdAt'] = ServerValue.timestamp;
 
@@ -1519,7 +1617,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     final course = _selectedCourse();
     final filtered = _filteredSlots();
 
@@ -2447,6 +2544,13 @@ class _AvailSlot {
     final cap = maxLearnersPerSlot <= 0 ? 6 : maxLearnersPerSlot;
     return bookedCount >= cap;
   }
+}
+
+class _RescheduleChoice {
+  final _AvailSlot slot;
+  final int sessionNo;
+
+  _RescheduleChoice({required this.slot, required this.sessionNo});
 }
 
 // ========================= Small UI Widgets =========================

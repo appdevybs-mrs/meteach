@@ -241,33 +241,38 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    await AppLoading.run(context, () async {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
+    await AppLoading.run(
+      context,
+      () async {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
 
-      await SessionManager.stopListening();
+        await SessionManager.stopListening();
 
-      if (uid != null && uid.isNotEmpty) {
+        if (uid != null && uid.isNotEmpty) {
+          try {
+            // intentionally empty (your original)
+          } catch (_) {}
+        }
+
         try {
-          // intentionally empty (your original)
+          await FirebaseMessaging.instance.deleteToken();
         } catch (_) {}
-      }
 
-      try {
-        await FirebaseMessaging.instance.deleteToken();
-      } catch (_) {}
+        if (uid != null && uid.isNotEmpty) {
+          try {
+            await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+          } catch (_) {}
+        }
 
-      if (uid != null && uid.isNotEmpty) {
         try {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+          await appThemeController.resetToDefault();
         } catch (_) {}
-      }
 
-      try {
-        await appThemeController.resetToDefault();
-      } catch (_) {}
-
-      await FirebaseAuth.instance.signOut();
-    }, message: 'Logging out...');
+        await FirebaseAuth.instance.signOut();
+      },
+      message: 'Logging out...',
+      isLogout: true,
+    );
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);

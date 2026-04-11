@@ -107,23 +107,28 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    await AppLoading.run(context, () async {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
+    await AppLoading.run(
+      context,
+      () async {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
 
-      await SessionManager.stopListening();
+        await SessionManager.stopListening();
 
-      try {
-        if (userId != null && userId.isNotEmpty) {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-        }
-      } catch (_) {}
+        try {
+          if (userId != null && userId.isNotEmpty) {
+            await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+          }
+        } catch (_) {}
 
-      try {
-        await appThemeController.resetToDefault();
-      } catch (_) {}
+        try {
+          await appThemeController.resetToDefault();
+        } catch (_) {}
 
-      await FirebaseAuth.instance.signOut();
-    }, message: 'Logging out...');
+        await FirebaseAuth.instance.signOut();
+      },
+      message: 'Logging out...',
+      isLogout: true,
+    );
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);

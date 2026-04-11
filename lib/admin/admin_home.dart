@@ -81,12 +81,20 @@ class _AdminHomeState extends State<AdminHome> {
   bool _loadingRole = true;
   bool _showSearch = false;
   String _homeSearch = '';
+  final TextEditingController _homeSearchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _homeSearchController.text = _homeSearch;
     _loadSavedRoleMode();
     unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
+  }
+
+  @override
+  void dispose() {
+    _homeSearchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSavedRoleMode() async {
@@ -126,25 +134,30 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    await AppLoading.run(context, () async {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
+    await AppLoading.run(
+      context,
+      () async {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
 
-      // ✅ stop "single device" listener
-      await SessionManager.stopListening();
+        // ✅ stop "single device" listener
+        await SessionManager.stopListening();
 
-      // ✅ remove FCM token record
-      try {
-        if (userId != null && userId.isNotEmpty) {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-        }
-      } catch (_) {}
+        // ✅ remove FCM token record
+        try {
+          if (userId != null && userId.isNotEmpty) {
+            await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+          }
+        } catch (_) {}
 
-      try {
-        await appThemeController.resetToDefault();
-      } catch (_) {}
+        try {
+          await appThemeController.resetToDefault();
+        } catch (_) {}
 
-      await FirebaseAuth.instance.signOut();
-    }, message: 'Logging out...');
+        await FirebaseAuth.instance.signOut();
+      },
+      message: 'Logging out...',
+      isLogout: true,
+    );
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
@@ -553,10 +566,24 @@ class _AdminHomeState extends State<AdminHome> {
                   ? Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: TextField(
+                        controller: _homeSearchController,
                         onChanged: (v) => setState(() => _homeSearch = v),
                         decoration: InputDecoration(
                           hintText: 'Search dashboard tools...',
                           prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: _homeSearch.trim().isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    _homeSearchController.clear();
+                                    setState(() => _homeSearch = '');
+                                  },
+                                ),
                           filled: true,
                           fillColor: Colors.white,
                           border: OutlineInputBorder(
@@ -766,6 +793,7 @@ class _AdminHomeState extends State<AdminHome> {
                 setState(() {
                   if (_showSearch) {
                     _homeSearch = '';
+                    _homeSearchController.clear();
                   }
                   _showSearch = !_showSearch;
                 });

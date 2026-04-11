@@ -1285,6 +1285,8 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     required int adminUnread,
   }) {
     final scheme = Theme.of(context).colorScheme;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final useScrollableTabs = screenWidth < 760;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -1294,6 +1296,8 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         borderRadius: BorderRadius.circular(18),
       ),
       child: TabBar(
+        isScrollable: useScrollableTabs,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 10),
         dividerColor: Colors.transparent,
         indicator: BoxDecoration(
           color: scheme.surface,
@@ -1315,9 +1319,14 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         tabs: [
           Tab(
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Learners ($learnersCount)'),
+                Text(
+                  'Learners ($learnersCount)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (learnersUnread > 0) ...[
                   const SizedBox(width: 6),
                   _UnreadPill(value: learnersUnread),
@@ -1327,9 +1336,14 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           ),
           Tab(
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Teachers ($teachersCount)'),
+                Text(
+                  'Teachers ($teachersCount)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (teachersUnread > 0) ...[
                   const SizedBox(width: 6),
                   _UnreadPill(value: teachersUnread),
@@ -1339,9 +1353,14 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           ),
           Tab(
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Admin ($adminCount)'),
+                Text(
+                  'Admin ($adminCount)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (adminUnread > 0) ...[
                   const SizedBox(width: 6),
                   _UnreadPill(value: adminUnread),
@@ -1357,7 +1376,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-
 
     return DefaultTabController(
       length: 3,

@@ -98,6 +98,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   final TextEditingController _flexSearchCtrl = TextEditingController();
   String _flexSearch = "";
   String _flexStatusFilter = 'all';
+  final Set<String> _expandedFlexKeys = <String>{};
+  final Map<String, Future<_FlexCourseDetails>> _flexDetailsFutureByKey =
+      <String, Future<_FlexCourseDetails>>{};
+  final Map<String, List<Map<String, dynamic>>> _paymentsByUidCache =
+      <String, List<Map<String, dynamic>>>{};
 
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
@@ -2865,6 +2870,361 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
   }
 
+  String _flexSummaryKey(_FlexCourseSummary item) {
+    return '${item.uid}|${item.courseKey}|${item.courseId}';
+  }
+
+  Future<List<Map<String, dynamic>>> _loadPaymentsForUidCached(
+    String uid,
+  ) async {
+    final cached = _paymentsByUidCache[uid];
+    if (cached != null) return cached;
+
+    final list = <Map<String, dynamic>>[];
+    try {
+      final snap = await _db
+          .child('payments')
+          .orderByChild('uid')
+          .equalTo(uid)
+          .get();
+      if (snap.exists && snap.value is Map) {
+        final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+        for (final entry in raw.entries) {
+          if (entry.value is! Map) continue;
+          final m = Map<String, dynamic>.from(entry.value as Map);
+          m['paymentId'] = entry.key.toString();
+          list.add(m);
+        }
+      }
+    } catch (_) {}
+
+    if (list.isEmpty) {
+      try {
+        final allSnap = await _db.child('payments').get();
+        if (allSnap.exists && allSnap.value is Map) {
+          final raw = Map<dynamic, dynamic>.from(allSnap.value as Map);
+          for (final entry in raw.entries) {
+            final v = entry.value;
+            if (v is! Map) continue;
+            final m = Map<String, dynamic>.from(v);
+            final payUid = (m['uid'] ?? '').toString().trim();
+            if (payUid == uid) {
+              m['paymentId'] = entry.key.toString();
+              list.add(m);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    _paymentsByUidCache[uid] = list;
+    return list;
+  }
+
+  int _latestFlexibleExpiryFromPayments({
+    required List<Map<String, dynamic>> payments,
+    required String courseKey,
+    required String courseId,
+    required String courseTitle,
+    required String courseCode,
+  }) {
+    String norm(String s) => s.trim().toLowerCase();
+    final wantedKey = norm(courseKey);
+    final wantedId = norm(courseId);
+    final wantedTitle = norm(courseTitle);
+    final wantedCode = norm(courseCode);
+
+    int ymdToMs(String ymd) {
+      final t = ymd.trim();
+      if (t.isEmpty) return 0;
+      final parts = t.split('-');
+      if (parts.length != 3) return 0;
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final d = int.tryParse(parts[2]);
+      if (y == null || m == null || d == null) return 0;
+      return DateTime(y, m, d).millisecondsSinceEpoch;
+    }
+
+    int addMonthsToMs(int baseMs, int months) {
+      if (baseMs <= 0 || months <= 0) return 0;
+      final d = DateTime.fromMillisecondsSinceEpoch(baseMs);
+      return DateTime(d.year, d.month + months, d.day).millisecondsSinceEpoch;
+    }
+
+    var latestStamp = 0;
+    var latestExpiresAt = 0;
+    for (final p in payments) {
+      final payVariant = _normalizeVariantKey(
+        (p['variantKey'] ?? p['variant'] ?? '').toString(),
+      );
+      if (payVariant != 'flexible') continue;
+
+      final payCourseKey = (p['courseKey'] ?? '').toString().trim();
+      final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
+          .toString()
+          .trim();
+      final payCourseTitle = (p['course_title'] ?? p['courseTitle'] ?? '')
+          .toString()
+          .trim();
+      final payCourseCode = (p['course_code'] ?? p['courseCode'] ?? '')
+          .toString()
+          .trim();
+
+      final keyMatch = wantedKey.isNotEmpty && norm(payCourseKey) == wantedKey;
+      final idMatch = wantedId.isNotEmpty && norm(payCourseId) == wantedId;
+      final titleMatch =
+          wantedTitle.isNotEmpty && norm(payCourseTitle) == wantedTitle;
+      final codeMatch =
+          wantedCode.isNotEmpty && norm(payCourseCode) == wantedCode;
+
+      if (!(keyMatch || idMatch || titleMatch || codeMatch)) continue;
+
+      final paidAt = _asInt(p['paidAt']);
+      final startDate = (p['startDate'] ?? '').toString();
+      final expiryMonths = _asInt(p['expiryMonths']);
+
+      var expiresAt = _asInt(p['expiresAt']);
+      if (expiresAt <= 0 && startDate.trim().isNotEmpty && expiryMonths > 0) {
+        final baseMs = ymdToMs(startDate);
+        expiresAt = addMonthsToMs(baseMs, expiryMonths);
+      }
+      if (expiresAt <= 0) continue;
+
+      final stamp = paidAt > 0 ? paidAt : _asInt(p['createdAt']);
+      if (stamp >= latestStamp) {
+        latestStamp = stamp;
+        latestExpiresAt = expiresAt;
+      }
+    }
+
+    return latestExpiresAt;
+  }
+
+  bool _paymentMatchesFlexible({
+    required Map<String, dynamic> payment,
+    required _FlexCourseSummary item,
+  }) {
+    final payVariant = _normalizeVariantKey(
+      (payment['variantKey'] ?? payment['variant'] ?? '').toString(),
+    );
+    if (payVariant != 'flexible') return false;
+
+    final payCourseKey = (payment['courseKey'] ?? '').toString().trim();
+    final payCourseId = (payment['course_id'] ?? payment['courseId'] ?? '')
+        .toString()
+        .trim();
+    final payCourseTitle =
+        (payment['course_title'] ?? payment['courseTitle'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final payCourseCode =
+        (payment['course_code'] ?? payment['courseCode'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+    return (payCourseKey.isNotEmpty && payCourseKey == item.courseKey) ||
+        (payCourseId.isNotEmpty && payCourseId == item.courseId) ||
+        (payCourseTitle.isNotEmpty &&
+            payCourseTitle == item.courseTitle.toLowerCase()) ||
+        (payCourseCode.isNotEmpty &&
+            payCourseCode == item.courseCode.toLowerCase());
+  }
+
+  Future<_FlexCourseDetails> _loadFlexCourseDetails(
+    _FlexCourseSummary item,
+  ) async {
+    final syllabusBySession = await _loadFlexibleSyllabusSessions(
+      item.courseId,
+    );
+    final syllabusTitleBySession = <int, String>{};
+    for (final e in syllabusBySession.entries) {
+      final title = (e.value['sessionTitle'] ?? e.value['title'] ?? '')
+          .toString();
+      if (title.trim().isNotEmpty) {
+        syllabusTitleBySession[e.key] = title.trim();
+      }
+    }
+
+    final reviewBySessionNo = <int, int>{};
+    try {
+      final reviewSnap = await _db
+          .child(
+            'booking_progress/${item.uid}/${item.courseId}/session_reviews',
+          )
+          .get();
+      if (reviewSnap.exists && reviewSnap.value is Map) {
+        final reviews = Map<dynamic, dynamic>.from(reviewSnap.value as Map);
+        for (final entry in reviews.entries) {
+          if (entry.value is! Map) continue;
+          final rm = Map<String, dynamic>.from(entry.value as Map);
+          final sessionNo = _asInt(rm['sessionNo']);
+          if (sessionNo <= 0) continue;
+          final rating = _asInt(rm['rating']);
+          if (rating >= 1 && rating <= 5) {
+            reviewBySessionNo[sessionNo] = rating;
+          }
+        }
+      }
+    } catch (_) {}
+
+    final presentRows = <_FlexAttendanceRow>[];
+    try {
+      final progressSnap = await _db
+          .child(
+            'booking_progress/${item.uid}/${item.courseId}/online_attendance',
+          )
+          .get();
+      if (progressSnap.exists && progressSnap.value is Map) {
+        final att = Map<dynamic, dynamic>.from(progressSnap.value as Map);
+        att.forEach((key, value) {
+          if (value is! Map) return;
+          final m = Map<String, dynamic>.from(value);
+          if (m['present'] != true) return;
+
+          final tsRaw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
+          int ts = 0;
+          if (tsRaw is int) {
+            ts = tsRaw;
+          } else if (tsRaw is num) {
+            ts = tsRaw.toInt();
+          } else {
+            ts = int.tryParse(tsRaw?.toString() ?? '') ?? 0;
+          }
+
+          final sessionNo = _asInt(m['sessionNo']);
+          String taughtTitle = '';
+          final taughtItems = m['taughtItems'];
+          if (taughtItems is List) {
+            for (final itemRaw in taughtItems) {
+              if (itemRaw is! Map) continue;
+              final tm = Map<String, dynamic>.from(itemRaw);
+              final taughtNo = _asInt(tm['sessionNumber']);
+              if (sessionNo > 0 && taughtNo > 0 && taughtNo != sessionNo) {
+                continue;
+              }
+              final title = (tm['title'] ?? '').toString().trim();
+              if (title.isNotEmpty) {
+                taughtTitle = title;
+                break;
+              }
+            }
+          }
+
+          presentRows.add(
+            _FlexAttendanceRow(
+              bookingKey: key.toString(),
+              sessionNo: sessionNo,
+              dayKey: (m['dayKey'] ?? '').toString().trim(),
+              time: (m['time'] ?? '').toString().trim(),
+              startAt: ts,
+              teacherName:
+                  (m['teacherName'] ?? m['teacherNameFromBooking'] ?? 'Teacher')
+                      .toString()
+                      .trim(),
+              lessonTitle: syllabusTitleBySession[sessionNo] ?? taughtTitle,
+              taughtTitle: taughtTitle,
+              reviewRating: reviewBySessionNo[sessionNo] ?? 0,
+            ),
+          );
+        });
+      }
+    } catch (_) {}
+
+    presentRows.sort((a, b) => b.sortTs.compareTo(a.sortTs));
+
+    final paymentsForUser = await _loadPaymentsForUidCached(item.uid);
+    final matchedPayments =
+        paymentsForUser
+            .where((p) => _paymentMatchesFlexible(payment: p, item: item))
+            .toList()
+          ..sort((a, b) {
+            final ta = _asInt(a['paidAt']) > 0
+                ? _asInt(a['paidAt'])
+                : _asInt(a['createdAt']);
+            final tb = _asInt(b['paidAt']) > 0
+                ? _asInt(b['paidAt'])
+                : _asInt(b['createdAt']);
+            return ta.compareTo(tb);
+          });
+
+    final attendanceAsc = [...presentRows]
+      ..sort((a, b) => a.sortTs.compareTo(b.sortTs));
+    int ptr = 0;
+    final paymentBlocks = <_FlexPaymentBlock>[];
+    for (final p in matchedPayments) {
+      final sessionsPaid = _asInt(p['sessionsPaid']);
+      final amount = _asInt(p['amount']);
+      final paidAt = _asInt(p['paidAt']) > 0
+          ? _asInt(p['paidAt'])
+          : _asInt(p['createdAt']);
+      final expiresAtPay = _asInt(p['expiresAt']);
+      final expiryMonthsPay = _asInt(p['expiryMonths']);
+
+      final allocated = <_FlexAttendanceRow>[];
+      var quota = sessionsPaid > 0 ? sessionsPaid : 0;
+      while (ptr < attendanceAsc.length && quota > 0) {
+        allocated.add(attendanceAsc[ptr]);
+        ptr += 1;
+        quota -= 1;
+      }
+
+      paymentBlocks.add(
+        _FlexPaymentBlock(
+          paymentId: (p['paymentId'] ?? '').toString(),
+          paidAt: paidAt,
+          amount: amount,
+          sessionsPaid: sessionsPaid,
+          expiresAt: expiresAtPay,
+          expiryMonths: expiryMonthsPay,
+          rows: allocated,
+        ),
+      );
+    }
+
+    if (ptr < attendanceAsc.length) {
+      final unallocated = attendanceAsc.sublist(ptr);
+      if (paymentBlocks.isNotEmpty) {
+        final last = paymentBlocks.removeLast();
+        paymentBlocks.add(
+          _FlexPaymentBlock(
+            paymentId: last.paymentId,
+            paidAt: last.paidAt,
+            amount: last.amount,
+            sessionsPaid: last.sessionsPaid,
+            expiresAt: last.expiresAt,
+            expiryMonths: last.expiryMonths,
+            rows: [...last.rows, ...unallocated],
+          ),
+        );
+      } else {
+        paymentBlocks.add(
+          _FlexPaymentBlock(
+            paymentId: '',
+            paidAt: 0,
+            amount: 0,
+            sessionsPaid: 0,
+            expiresAt: item.expiresAt,
+            expiryMonths: 0,
+            rows: unallocated,
+          ),
+        );
+      }
+    }
+
+    return _FlexCourseDetails(rows: presentRows, paymentBlocks: paymentBlocks);
+  }
+
+  Future<_FlexCourseDetails> _flexDetailsFor(_FlexCourseSummary item) {
+    final key = _flexSummaryKey(item);
+    return _flexDetailsFutureByKey.putIfAbsent(
+      key,
+      () => _loadFlexCourseDetails(item),
+    );
+  }
+
   Future<List<_FlexCourseSummary>> _loadFlexibleAttendanceSummaries() async {
     final usersSnap = await _usersRef.get();
     if (!usersSnap.exists || usersSnap.value is! Map) return const [];
@@ -2878,131 +3238,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     final allUsers = Map<dynamic, dynamic>.from(usersSnap.value as Map);
     final out = <_FlexCourseSummary>[];
-    final paymentsByUid = <String, List<Map<String, dynamic>>>{};
-
-    Future<List<Map<String, dynamic>>> loadPaymentsForUid(String uid) async {
-      final cached = paymentsByUid[uid];
-      if (cached != null) return cached;
-      final list = <Map<String, dynamic>>[];
-      try {
-        final snap = await _db
-            .child('payments')
-            .orderByChild('uid')
-            .equalTo(uid)
-            .get();
-        if (snap.exists && snap.value is Map) {
-          final raw = Map<dynamic, dynamic>.from(snap.value as Map);
-          for (final entry in raw.entries) {
-            if (entry.value is! Map) continue;
-            final m = Map<String, dynamic>.from(entry.value as Map);
-            m['paymentId'] = entry.key.toString();
-            list.add(m);
-          }
-        }
-      } catch (_) {}
-
-      if (list.isEmpty) {
-        try {
-          final allSnap = await _db.child('payments').get();
-          if (allSnap.exists && allSnap.value is Map) {
-            final raw = Map<dynamic, dynamic>.from(allSnap.value as Map);
-            for (final entry in raw.entries) {
-              final v = entry.value;
-              if (v is! Map) continue;
-              final m = Map<String, dynamic>.from(v);
-              final payUid = (m['uid'] ?? '').toString().trim();
-              if (payUid == uid) {
-                m['paymentId'] = entry.key.toString();
-                list.add(m);
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      paymentsByUid[uid] = list;
-      return list;
-    }
-
-    int latestFlexibleExpiryFromPayments({
-      required List<Map<String, dynamic>> payments,
-      required String courseKey,
-      required String courseId,
-      required String courseTitle,
-      required String courseCode,
-    }) {
-      String norm(String s) => s.trim().toLowerCase();
-      final wantedKey = norm(courseKey);
-      final wantedId = norm(courseId);
-      final wantedTitle = norm(courseTitle);
-      final wantedCode = norm(courseCode);
-
-      int ymdToMs(String ymd) {
-        final t = ymd.trim();
-        if (t.isEmpty) return 0;
-        final parts = t.split('-');
-        if (parts.length != 3) return 0;
-        final y = int.tryParse(parts[0]);
-        final m = int.tryParse(parts[1]);
-        final d = int.tryParse(parts[2]);
-        if (y == null || m == null || d == null) return 0;
-        return DateTime(y, m, d).millisecondsSinceEpoch;
-      }
-
-      int addMonthsToMs(int baseMs, int months) {
-        if (baseMs <= 0 || months <= 0) return 0;
-        final d = DateTime.fromMillisecondsSinceEpoch(baseMs);
-        return DateTime(d.year, d.month + months, d.day).millisecondsSinceEpoch;
-      }
-
-      var latestStamp = 0;
-      var latestExpiresAt = 0;
-      for (final p in payments) {
-        final payVariant = _normalizeVariantKey(
-          (p['variantKey'] ?? p['variant'] ?? '').toString(),
-        );
-        if (payVariant != 'flexible') continue;
-        final payCourseKey = (p['courseKey'] ?? '').toString().trim();
-        final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
-            .toString()
-            .trim();
-        final payCourseTitle = (p['course_title'] ?? p['courseTitle'] ?? '')
-            .toString()
-            .trim();
-        final payCourseCode = (p['course_code'] ?? p['courseCode'] ?? '')
-            .toString()
-            .trim();
-
-        final keyMatch =
-            wantedKey.isNotEmpty && norm(payCourseKey) == wantedKey;
-        final idMatch = wantedId.isNotEmpty && norm(payCourseId) == wantedId;
-        final titleMatch =
-            wantedTitle.isNotEmpty && norm(payCourseTitle) == wantedTitle;
-        final codeMatch =
-            wantedCode.isNotEmpty && norm(payCourseCode) == wantedCode;
-
-        if (!(keyMatch || idMatch || titleMatch || codeMatch)) {
-          continue;
-        }
-        final paidAt = _asInt(p['paidAt']);
-        final startDate = (p['startDate'] ?? '').toString();
-        final expiryMonths = _asInt(p['expiryMonths']);
-
-        var expiresAt = _asInt(p['expiresAt']);
-        if (expiresAt <= 0 && startDate.trim().isNotEmpty && expiryMonths > 0) {
-          final baseMs = ymdToMs(startDate);
-          expiresAt = addMonthsToMs(baseMs, expiryMonths);
-        }
-        if (expiresAt <= 0) continue;
-
-        final stamp = paidAt > 0 ? paidAt : _asInt(p['createdAt']);
-        if (stamp >= latestStamp) {
-          latestStamp = stamp;
-          latestExpiresAt = expiresAt;
-        }
-      }
-      return latestExpiresAt;
-    }
 
     for (final userEntry in allUsers.entries) {
       final uid = userEntry.key.toString();
@@ -3045,14 +3280,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             : (mappedTitle.isNotEmpty ? mappedTitle : 'Unknown course');
 
         final syllabusBySession = await _loadFlexibleSyllabusSessions(courseId);
-        final syllabusTitleBySession = <int, String>{};
-        for (final e in syllabusBySession.entries) {
-          final title = (e.value['sessionTitle'] ?? e.value['title'] ?? '')
-              .toString();
-          if (title.trim().isNotEmpty) {
-            syllabusTitleBySession[e.key] = title.trim();
-          }
-        }
         int syllabusSessionsTotal = await _loadSyllabusSessionCount(
           courseId: courseId,
           syllabusVariant: 'flexible',
@@ -3061,95 +3288,31 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           syllabusSessionsTotal = syllabusBySession.length;
         }
 
-        DataSnapshot? progressSnap;
+        var consumed = 0;
+        var latestTs = 0;
+        final coveredNos = <int>{};
         try {
-          progressSnap = await _db
+          final progressSnap = await _db
               .child('booking_progress/$uid/$courseId/online_attendance')
               .get();
-        } catch (_) {
-          progressSnap = null;
-        }
-
-        final reviewBySessionNo = <int, int>{};
-        try {
-          final reviewSnap = await _db
-              .child('booking_progress/$uid/$courseId/session_reviews')
-              .get();
-          if (reviewSnap.exists && reviewSnap.value is Map) {
-            final reviews = Map<dynamic, dynamic>.from(reviewSnap.value as Map);
-            for (final entry in reviews.entries) {
-              if (entry.value is! Map) continue;
-              final rm = Map<String, dynamic>.from(entry.value as Map);
-              final sessionNo = _asInt(rm['sessionNo']);
-              if (sessionNo <= 0) continue;
-              final rating = _asInt(rm['rating']);
-              if (rating >= 1 && rating <= 5) {
-                reviewBySessionNo[sessionNo] = rating;
-              }
+          if (progressSnap.exists && progressSnap.value is Map) {
+            final att = Map<dynamic, dynamic>.from(progressSnap.value as Map);
+            for (final value in att.values) {
+              if (value is! Map) continue;
+              final m = Map<String, dynamic>.from(value);
+              if (m['present'] != true) continue;
+              consumed += 1;
+              final sessionNo = _asInt(m['sessionNo']);
+              if (sessionNo > 0) coveredNos.add(sessionNo);
+              final ts = _asInt(m['startAt']) > 0
+                  ? _asInt(m['startAt'])
+                  : (_asInt(m['updatedAt']) > 0
+                        ? _asInt(m['updatedAt'])
+                        : _asInt(m['createdAt']));
+              if (ts > latestTs) latestTs = ts;
             }
           }
         } catch (_) {}
-
-        final presentRows = <_FlexAttendanceRow>[];
-        if (progressSnap != null &&
-            progressSnap.exists &&
-            progressSnap.value is Map) {
-          final att = Map<dynamic, dynamic>.from(progressSnap.value as Map);
-          att.forEach((key, value) {
-            if (value is! Map) return;
-            final m = Map<String, dynamic>.from(value);
-            if (m['present'] != true) return;
-            final tsRaw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
-            int ts = 0;
-            if (tsRaw is int) {
-              ts = tsRaw;
-            } else if (tsRaw is num) {
-              ts = tsRaw.toInt();
-            } else {
-              ts = int.tryParse(tsRaw?.toString() ?? '') ?? 0;
-            }
-
-            final sessionNo = _asInt(m['sessionNo']);
-            String taughtTitle = '';
-            final taughtItems = m['taughtItems'];
-            if (taughtItems is List) {
-              for (final item in taughtItems) {
-                if (item is! Map) continue;
-                final tm = Map<String, dynamic>.from(item);
-                final taughtNo = _asInt(tm['sessionNumber']);
-                if (sessionNo > 0 && taughtNo > 0 && taughtNo != sessionNo) {
-                  continue;
-                }
-                final title = (tm['title'] ?? '').toString().trim();
-                if (title.isNotEmpty) {
-                  taughtTitle = title;
-                  break;
-                }
-              }
-            }
-
-            presentRows.add(
-              _FlexAttendanceRow(
-                bookingKey: key.toString(),
-                sessionNo: sessionNo,
-                dayKey: (m['dayKey'] ?? '').toString().trim(),
-                time: (m['time'] ?? '').toString().trim(),
-                startAt: ts,
-                teacherName:
-                    (m['teacherName'] ??
-                            m['teacherNameFromBooking'] ??
-                            'Teacher')
-                        .toString()
-                        .trim(),
-                lessonTitle: syllabusTitleBySession[sessionNo] ?? taughtTitle,
-                taughtTitle: taughtTitle,
-                reviewRating: reviewBySessionNo[sessionNo] ?? 0,
-              ),
-            );
-          });
-        }
-
-        presentRows.sort((a, b) => b.sortTs.compareTo(a.sortTs));
 
         final summaryMap = (cm['payment_summary'] is Map)
             ? Map<String, dynamic>.from(cm['payment_summary'])
@@ -3168,8 +3331,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           expiresAt = _asInt(sumMap['expiresAt']);
         }
         if (expiresAt <= 0) {
-          final payments = await loadPaymentsForUid(uid);
-          expiresAt = latestFlexibleExpiryFromPayments(
+          final payments = await _loadPaymentsForUidCached(uid);
+          expiresAt = _latestFlexibleExpiryFromPayments(
             payments: payments,
             courseKey: courseKey,
             courseId: courseId,
@@ -3178,115 +3341,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           );
         }
 
-        final consumed = presentRows.length;
-        final coveredSessionNumbers = presentRows
-            .map((r) => r.sessionNo)
-            .where((s) => s > 0)
-            .toSet()
-            .length;
-
-        final paymentsForUser = await loadPaymentsForUid(uid);
-        bool paymentMatches(Map<String, dynamic> p) {
-          final payVariant = _normalizeVariantKey(
-            (p['variantKey'] ?? p['variant'] ?? '').toString(),
-          );
-          if (payVariant != 'flexible') return false;
-
-          final payCourseKey = (p['courseKey'] ?? '').toString().trim();
-          final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
-              .toString()
-              .trim();
-          final payCourseTitle = (p['course_title'] ?? p['courseTitle'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-          final payCourseCode = (p['course_code'] ?? p['courseCode'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-
-          return (payCourseKey.isNotEmpty && payCourseKey == courseKey) ||
-              (payCourseId.isNotEmpty && payCourseId == courseId) ||
-              (payCourseTitle.isNotEmpty &&
-                  payCourseTitle == courseTitle.toLowerCase()) ||
-              (payCourseCode.isNotEmpty &&
-                  payCourseCode == courseCodeRaw.toLowerCase());
-        }
-
-        final matchedPayments = paymentsForUser.where(paymentMatches).toList()
-          ..sort((a, b) {
-            final ta = _asInt(a['paidAt']) > 0
-                ? _asInt(a['paidAt'])
-                : _asInt(a['createdAt']);
-            final tb = _asInt(b['paidAt']) > 0
-                ? _asInt(b['paidAt'])
-                : _asInt(b['createdAt']);
-            return ta.compareTo(tb);
-          });
-
-        final attendanceAsc = [...presentRows]
-          ..sort((a, b) => a.sortTs.compareTo(b.sortTs));
-        int ptr = 0;
-        final paymentBlocks = <_FlexPaymentBlock>[];
-        for (final p in matchedPayments) {
-          final sessionsPaid = _asInt(p['sessionsPaid']);
-          final amount = _asInt(p['amount']);
-          final paidAt = _asInt(p['paidAt']) > 0
-              ? _asInt(p['paidAt'])
-              : _asInt(p['createdAt']);
-          final expiresAtPay = _asInt(p['expiresAt']);
-          final expiryMonthsPay = _asInt(p['expiryMonths']);
-
-          final allocated = <_FlexAttendanceRow>[];
-          var quota = sessionsPaid > 0 ? sessionsPaid : 0;
-          while (ptr < attendanceAsc.length && quota > 0) {
-            allocated.add(attendanceAsc[ptr]);
-            ptr += 1;
-            quota -= 1;
-          }
-
-          paymentBlocks.add(
-            _FlexPaymentBlock(
-              paymentId: (p['paymentId'] ?? '').toString(),
-              paidAt: paidAt,
-              amount: amount,
-              sessionsPaid: sessionsPaid,
-              expiresAt: expiresAtPay,
-              expiryMonths: expiryMonthsPay,
-              rows: allocated,
-            ),
-          );
-        }
-
-        if (ptr < attendanceAsc.length) {
-          final unallocated = attendanceAsc.sublist(ptr);
-          if (paymentBlocks.isNotEmpty) {
-            final last = paymentBlocks.removeLast();
-            paymentBlocks.add(
-              _FlexPaymentBlock(
-                paymentId: last.paymentId,
-                paidAt: last.paidAt,
-                amount: last.amount,
-                sessionsPaid: last.sessionsPaid,
-                expiresAt: last.expiresAt,
-                expiryMonths: last.expiryMonths,
-                rows: [...last.rows, ...unallocated],
-              ),
-            );
-          } else {
-            paymentBlocks.add(
-              _FlexPaymentBlock(
-                paymentId: '',
-                paidAt: 0,
-                amount: 0,
-                sessionsPaid: 0,
-                expiresAt: expiresAt,
-                expiryMonths: 0,
-                rows: unallocated,
-              ),
-            );
-          }
-        }
+        final coveredSessionNumbers = coveredNos.length;
 
         final statusLabel = _flexPaymentStatusLabel(
           sessionsPaidTotal: sessionsPaidTotal,
@@ -3304,14 +3359,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             courseKey: courseKey,
             courseId: courseId,
             courseTitle: courseTitle,
+            courseCode: courseCodeRaw,
             sessionsPaidTotal: sessionsPaidTotal,
             consumed: consumed,
             coveredSessionNumbers: coveredSessionNumbers,
             syllabusSessionsTotal: syllabusSessionsTotal,
             expiresAt: expiresAt,
             statusLabel: statusLabel,
-            rows: presentRows,
-            paymentBlocks: paymentBlocks,
+            rows: const <_FlexAttendanceRow>[],
+            paymentBlocks: const <_FlexPaymentBlock>[],
+            latestTs: latestTs,
           ),
         );
       }
@@ -3456,6 +3513,20 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final courseTitle = titleRaw.isNotEmpty
             ? titleRaw
             : (courseTitleById[courseId] ?? 'Unknown course');
+        final summaryMap = (courseNode['payment_summary'] is Map)
+            ? Map<String, dynamic>.from(courseNode['payment_summary'])
+            : <String, dynamic>{};
+        final accessMap = (courseNode['recorded_access'] is Map)
+            ? Map<String, dynamic>.from(courseNode['recorded_access'])
+            : <String, dynamic>{};
+
+        final expiresAt = _asInt(accessMap['expiresAt']) > 0
+            ? _asInt(accessMap['expiresAt'])
+            : _asInt(summaryMap['expiresAt']);
+        final durationMonths = _asInt(accessMap['durationMonths']) > 0
+            ? _asInt(accessMap['durationMonths'])
+            : _asInt(summaryMap['durationMonths']);
+        final lastPaymentAt = _asInt(summaryMap['lastPaymentAt']);
 
         final progressRaw = courseNode['recorded_progress'];
         final recordedProgress = progressRaw is Map
@@ -3515,6 +3586,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             completedSessions: completedSessions,
             totalSessions: totalSessions,
             progressPct: progressPct,
+            expiresAt: expiresAt,
+            durationMonths: durationMonths,
+            lastPaymentAt: lastPaymentAt,
           ),
         );
       }
@@ -3528,6 +3602,54 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       return a.courseTitle.toLowerCase().compareTo(b.courseTitle.toLowerCase());
     });
     return out;
+  }
+
+  _FlexCourseSummary _summaryWithDetails({
+    required _FlexCourseSummary item,
+    required _FlexCourseDetails details,
+  }) {
+    return _FlexCourseSummary(
+      uid: item.uid,
+      learnerName: item.learnerName,
+      learnerSerial: item.learnerSerial,
+      assignedCourses: item.assignedCourses,
+      courseKey: item.courseKey,
+      courseId: item.courseId,
+      courseTitle: item.courseTitle,
+      courseCode: item.courseCode,
+      sessionsPaidTotal: item.sessionsPaidTotal,
+      consumed: item.consumed,
+      coveredSessionNumbers: item.coveredSessionNumbers,
+      syllabusSessionsTotal: item.syllabusSessionsTotal,
+      expiresAt: item.expiresAt,
+      statusLabel: item.statusLabel,
+      rows: details.rows,
+      paymentBlocks: details.paymentBlocks,
+      latestTs: item.latestTs,
+    );
+  }
+
+  double _recordedPaymentProgress(_RecordedCourseSummary item) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final end = item.expiresAt;
+    if (end <= 0) return 0;
+
+    var start = item.lastPaymentAt;
+    if (start <= 0 && item.durationMonths > 0) {
+      final e = DateTime.fromMillisecondsSinceEpoch(end);
+      start = DateTime(
+        e.year,
+        e.month - item.durationMonths,
+        e.day,
+      ).millisecondsSinceEpoch;
+    }
+
+    if (start <= 0) return now >= end ? 1 : 0;
+    final span = end - start;
+    if (span <= 0) return now >= end ? 1 : 0;
+
+    final progress = (now - start) / span;
+    return progress.clamp(0.0, 1.0);
   }
 
   Widget _buildFlexibleAttendanceTab() {
@@ -3562,10 +3684,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               item.courseTitle.toLowerCase().contains(q);
         }).toList();
 
-        int rowCount = 0;
-        for (final s in shown) {
-          rowCount += s.rows.length;
-        }
+        final consumedCount = shown.fold<int>(
+          0,
+          (sum, item) => sum + item.consumed,
+        );
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3613,7 +3735,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    'Showing ${shown.length} learner-course items • $rowCount consumed sessions',
+                    'Showing ${shown.length} learner-course items • $consumedCount consumed sessions',
                     style: TextStyle(
                       color: Colors.grey.shade700,
                       fontWeight: FontWeight.w700,
@@ -3621,8 +3743,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Refresh flexible attendance',
-                  onPressed: () => setState(() {}),
+                  tooltip: 'Refresh flexible',
+                  onPressed: () {
+                    setState(() {
+                      _paymentsByUidCache.clear();
+                      _flexDetailsFutureByKey.clear();
+                    });
+                  },
                   icon: const Icon(Icons.refresh_rounded),
                 ),
               ],
@@ -3636,6 +3763,28 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, i) {
                         final item = shown[i];
+                        final progressValue = item.syllabusSessionsTotal > 0
+                            ? (item.coveredSessionNumbers /
+                                      item.syllabusSessionsTotal)
+                                  .clamp(0.0, 1.0)
+                            : 0.0;
+                        final paymentValue = item.sessionsPaidTotal > 0
+                            ? (item.consumed / item.sessionsPaidTotal).clamp(
+                                0.0,
+                                1.0,
+                              )
+                            : 0.0;
+                        final isExpired =
+                            item.expiresAt > 0 &&
+                            DateTime.now().millisecondsSinceEpoch >=
+                                item.expiresAt;
+                        final nearExpiry =
+                            !isExpired &&
+                            _isNearExpiryMs(item.expiresAt, days: 7);
+                        final nearFinish = progressValue >= 0.85;
+                        final key = _flexSummaryKey(item);
+                        final expanded = _expandedFlexKeys.contains(key);
+
                         return Card(
                           elevation: 0,
                           shape: RoundedRectangleBorder(
@@ -3644,9 +3793,29 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                               color: Colors.grey.withValues(alpha: 0.25),
                             ),
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
+                          child: ExpansionTile(
+                            key: ValueKey(key),
+                            tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            childrenPadding: const EdgeInsets.fromLTRB(
+                              12,
+                              0,
+                              12,
+                              12,
+                            ),
+                            initiallyExpanded: expanded,
+                            onExpansionChanged: (value) {
+                              setState(() {
+                                if (value) {
+                                  _expandedFlexKeys.add(key);
+                                } else {
+                                  _expandedFlexKeys.remove(key);
+                                }
+                              });
+                            },
+                            title: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
@@ -3659,22 +3828,62 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 const SizedBox(height: 6),
                                 Text(
                                   'Course: ${item.courseTitle}',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade800,
-                                    fontWeight: FontWeight.w700,
-                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Consumed: ${item.consumed}${item.sessionsPaidTotal > 0 ? ' / ${item.sessionsPaidTotal}' : ''}',
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _flexStatusColor(
+                                          item.statusLabel,
+                                        ).withValues(alpha: 0.14),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        border: Border.all(
+                                          color: _flexStatusColor(
+                                            item.statusLabel,
+                                          ).withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        item.statusLabel,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: _flexStatusColor(
+                                            item.statusLabel,
+                                          ),
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    if (nearExpiry)
+                                      _smallCue(
+                                        'Expiry soon',
+                                        Colors.orange.shade700,
+                                      ),
+                                    if (isExpired)
+                                      _smallCue('Expired', Colors.red.shade700),
+                                    if (nearFinish)
+                                      _smallCue(
+                                        'Near finish',
+                                        const Color(0xFFD97706),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
                                 Text(
                                   item.syllabusSessionsTotal > 0
                                       ? 'Course progress: ${item.coveredSessionNumbers} / ${item.syllabusSessionsTotal}'
@@ -3682,18 +3891,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
                                     fontWeight: FontWeight.w700,
+                                    fontSize: 12,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
-                                    value: item.syllabusSessionsTotal > 0
-                                        ? (item.coveredSessionNumbers /
-                                                  item.syllabusSessionsTotal)
-                                              .clamp(0.0, 1.0)
-                                        : 0,
-                                    minHeight: 10,
+                                    value: progressValue,
+                                    minHeight: 9,
                                     backgroundColor: const Color(0xFFE5E7EB),
                                     valueColor:
                                         const AlwaysStoppedAnimation<Color>(
@@ -3701,7 +3907,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                         ),
                                   ),
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
                                 Text(
                                   item.sessionsPaidTotal > 0
                                       ? 'Payment progress: ${item.consumed} / ${item.sessionsPaidTotal}'
@@ -3709,45 +3915,72 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
                                     fontWeight: FontWeight.w700,
+                                    fontSize: 12,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 4),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
-                                    value: item.sessionsPaidTotal > 0
-                                        ? (item.consumed /
-                                                  item.sessionsPaidTotal)
-                                              .clamp(0.0, 1.0)
-                                        : 0,
-                                    minHeight: 10,
+                                    value: paymentValue,
+                                    minHeight: 9,
                                     backgroundColor: const Color(0xFFE5E7EB),
                                     valueColor: AlwaysStoppedAnimation<Color>(
                                       _flexStatusColor(item.statusLabel),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Deadline: ${_fmtDateOnlyMs(item.expiresAt)}',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade800,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                _FlexLearnerDetailsTabs(
-                                  item: item,
-                                  fmtDateOnlyMs: _fmtDateOnlyMs,
-                                  onOpenSessionDetails: (row) {
-                                    return _openFlexibleSessionDetailsSheet(
-                                      courseId: item.courseId,
-                                      row: row,
+                              ],
+                            ),
+                            children: [
+                              if (expanded)
+                                FutureBuilder<_FlexCourseDetails>(
+                                  future: _flexDetailsFor(item),
+                                  builder: (context, detailSnap) {
+                                    if (!detailSnap.hasData) {
+                                      return const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        child: LinearProgressIndicator(
+                                          minHeight: 2,
+                                        ),
+                                      );
+                                    }
+
+                                    final detailed = _summaryWithDetails(
+                                      item: item,
+                                      details: detailSnap.data!,
+                                    );
+
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Deadline: ${_fmtDateOnlyMs(item.expiresAt)}',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade800,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        _FlexLearnerDetailsTabs(
+                                          item: detailed,
+                                          fmtDateOnlyMs: _fmtDateOnlyMs,
+                                          onOpenSessionDetails: (row) {
+                                            return _openFlexibleSessionDetailsSheet(
+                                              courseId: item.courseId,
+                                              row: row,
+                                            );
+                                          },
+                                        ),
+                                      ],
                                     );
                                   },
                                 ),
-                              ],
-                            ),
+                            ],
                           ),
                         );
                       },
@@ -3756,6 +3989,25 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _smallCue(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: color,
+        ),
+      ),
     );
   }
 
@@ -3822,6 +4074,26 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             ? (item.completedSessions / item.totalSessions)
                                   .clamp(0.0, 1.0)
                             : 0.0;
+                        final paymentValue = _recordedPaymentProgress(item);
+                        final expired =
+                            item.expiresAt > 0 &&
+                            DateTime.now().millisecondsSinceEpoch >=
+                                item.expiresAt;
+                        final nearExpiry =
+                            !expired &&
+                            _isNearExpiryMs(item.expiresAt, days: 7);
+                        final nearFinish = progressValue >= 0.85;
+                        final almostFinish = progressValue >= 0.95;
+                        final courseColor = almostFinish
+                            ? const Color(0xFF16A34A)
+                            : (nearFinish
+                                  ? const Color(0xFFD97706)
+                                  : const Color(0xFF2563EB));
+                        final paymentColor = expired
+                            ? Colors.red.shade700
+                            : (nearExpiry
+                                  ? Colors.orange.shade700
+                                  : const Color(0xFF0EA5E9));
 
                         return Card(
                           elevation: 0,
@@ -3863,6 +4135,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
+                                  item.expiresAt > 0
+                                      ? 'Access expires: ${_fmtDateOnlyMs(item.expiresAt)}'
+                                      : 'Access expires: -',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
                                   'Progress: ${item.progressPct}%',
                                   style: TextStyle(
                                     color: Colors.grey.shade800,
@@ -3870,12 +4152,60 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    if (nearExpiry)
+                                      _smallCue(
+                                        'Expiry soon',
+                                        Colors.orange.shade700,
+                                      ),
+                                    if (expired)
+                                      _smallCue('Expired', Colors.red.shade700),
+                                    if (nearFinish && !almostFinish)
+                                      _smallCue(
+                                        'Near finish',
+                                        const Color(0xFFD97706),
+                                      ),
+                                    if (almostFinish)
+                                      _smallCue(
+                                        'Almost finished',
+                                        const Color(0xFF16A34A),
+                                      ),
+                                  ],
+                                ),
+                                if (nearExpiry || expired || nearFinish)
+                                  const SizedBox(height: 8),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
                                     value: progressValue,
                                     minHeight: 10,
                                     backgroundColor: const Color(0xFFE5E7EB),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      courseColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Payment duration progress',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: paymentValue,
+                                    minHeight: 10,
+                                    backgroundColor: const Color(0xFFE5E7EB),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      paymentColor,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -3895,7 +4225,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -3905,8 +4234,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Classes'),
-              Tab(text: 'Flexible Attendance'),
-              Tab(text: 'Recorded Progress'),
+              Tab(text: 'Flexible'),
+              Tab(text: 'Recorded'),
             ],
           ),
         ),
@@ -4299,6 +4628,7 @@ class _FlexCourseSummary {
   final String courseKey;
   final String courseId;
   final String courseTitle;
+  final String courseCode;
   final int sessionsPaidTotal;
   final int consumed;
   final int coveredSessionNumbers;
@@ -4307,6 +4637,7 @@ class _FlexCourseSummary {
   final String statusLabel;
   final List<_FlexAttendanceRow> rows;
   final List<_FlexPaymentBlock> paymentBlocks;
+  final int latestTs;
 
   const _FlexCourseSummary({
     required this.uid,
@@ -4316,6 +4647,7 @@ class _FlexCourseSummary {
     required this.courseKey,
     required this.courseId,
     required this.courseTitle,
+    required this.courseCode,
     required this.sessionsPaidTotal,
     required this.consumed,
     required this.coveredSessionNumbers,
@@ -4324,12 +4656,15 @@ class _FlexCourseSummary {
     required this.statusLabel,
     required this.rows,
     required this.paymentBlocks,
+    required this.latestTs,
   });
+}
 
-  int get latestTs {
-    if (rows.isEmpty) return 0;
-    return rows.first.sortTs;
-  }
+class _FlexCourseDetails {
+  final List<_FlexAttendanceRow> rows;
+  final List<_FlexPaymentBlock> paymentBlocks;
+
+  const _FlexCourseDetails({required this.rows, required this.paymentBlocks});
 }
 
 class _FlexPaymentBlock {
@@ -4371,6 +4706,9 @@ class _RecordedCourseSummary {
   final int completedSessions;
   final int totalSessions;
   final int progressPct;
+  final int expiresAt;
+  final int durationMonths;
+  final int lastPaymentAt;
 
   const _RecordedCourseSummary({
     required this.uid,
@@ -4381,5 +4719,8 @@ class _RecordedCourseSummary {
     required this.completedSessions,
     required this.totalSessions,
     required this.progressPct,
+    required this.expiresAt,
+    required this.durationMonths,
+    required this.lastPaymentAt,
   });
 }
