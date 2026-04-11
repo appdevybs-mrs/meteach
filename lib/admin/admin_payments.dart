@@ -747,6 +747,32 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     return mk;
   }
 
+  int _effectivePaidAtMs(Map<String, dynamic> p) {
+    final paidAt = _asInt(p['paidAt']);
+    if (paidAt > 0) return paidAt;
+
+    final dayKey = (p['dayKey'] ?? '').toString().trim();
+    if (dayKey.length >= 10) {
+      final parsed = _ymdToMs(dayKey.substring(0, 10));
+      if (parsed > 0) return parsed;
+    }
+
+    return 0;
+  }
+
+  String _monthKeyForSorting(Map<String, dynamic> p) {
+    final byMonth = _monthOfPayment(p);
+    if (byMonth.isNotEmpty) return byMonth;
+
+    final fromDayKey = (p['dayKey'] ?? '').toString().trim();
+    if (fromDayKey.length >= 7) return fromDayKey.substring(0, 7);
+
+    final paidAt = _effectivePaidAtMs(p);
+    if (paidAt > 0) return _fmtMonthFromMs(paidAt);
+
+    return '0000-00';
+  }
+
   List<Map<String, dynamic>> _applyExportFilters({
     required List<Map<String, dynamic>> all,
     required String? month,
@@ -1191,7 +1217,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return StreamBuilder<DatabaseEvent>(
       stream: _paymentsRef
           .orderByChild('paidAt')
@@ -1221,9 +1246,26 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           });
         }
 
-        all.sort(
-          (a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])),
-        );
+        all.sort((a, b) {
+          final byMonth = _monthKeyForSorting(
+            a,
+          ).compareTo(_monthKeyForSorting(b));
+          if (byMonth != 0) return byMonth;
+
+          final byPaidAt = _effectivePaidAtMs(
+            a,
+          ).compareTo(_effectivePaidAtMs(b));
+          if (byPaidAt != 0) return byPaidAt;
+
+          final byCreated = _asInt(
+            a['createdAt'],
+          ).compareTo(_asInt(b['createdAt']));
+          if (byCreated != 0) return byCreated;
+
+          return (a['paymentId'] ?? '').toString().compareTo(
+            (b['paymentId'] ?? '').toString(),
+          );
+        });
 
         if (all.isEmpty) {
           return Scaffold(
@@ -1296,6 +1338,17 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     (p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm,
                   )
                   .toList();
+
+        final monthCounters = <String, int>{};
+        final visibleDisplayNoByPaymentId = <String, int>{};
+        for (final p in visible) {
+          final paymentId = (p['paymentId'] ?? '').toString().trim();
+          if (paymentId.isEmpty) continue;
+          final monthKey = _monthKeyForSorting(p);
+          final next = (monthCounters[monthKey] ?? 0) + 1;
+          monthCounters[monthKey] = next;
+          visibleDisplayNoByPaymentId[paymentId] = next;
+        }
 
         final today = _todayYmd();
         final todayTotal = _sumAmount(
@@ -1571,7 +1624,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       }
 
                       if (webDesktop) {
-                        return _buildWebFrozenPaymentsTable(visible: visible);
+                        return _buildWebFrozenPaymentsTable(
+                          visible: visible,
+                          visibleDisplayNoByPaymentId:
+                              visibleDisplayNoByPaymentId,
+                        );
                       }
 
                       return SingleChildScrollView(
@@ -1616,10 +1673,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                   ),
                                   itemBuilder: (context, i) {
                                     final p = visible[i];
-                                    final idx = i + 1;
 
                                     final paymentId = (p['paymentId'] ?? '')
                                         .toString();
+                                    final idx =
+                                        visibleDisplayNoByPaymentId[paymentId] ??
+                                        (i + 1);
                                     final isSelected = _selectedPaymentIds
                                         .contains(paymentId);
 
@@ -1830,6 +1889,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   Widget _buildWebFrozenPaymentsTable({
     required List<Map<String, dynamic>> visible,
+    required Map<String, int> visibleDisplayNoByPaymentId,
   }) {
     const frozenWidth = 420.0;
     const rightMinWidth = 980.0;
@@ -1875,8 +1935,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     }
 
     Widget frozenRow(Map<String, dynamic> p, int i) {
-      final idx = i + 1;
       final paymentId = (p['paymentId'] ?? '').toString();
+      final idx = visibleDisplayNoByPaymentId[paymentId] ?? (i + 1);
       final isSelected = _selectedPaymentIds.contains(paymentId);
       final paidDate = _fmtDateFromMs(p['paidAt']);
       final learnerName = (p['learner_name'] ?? '').toString();

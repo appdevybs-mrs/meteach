@@ -1215,7 +1215,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -2857,7 +2856,6 @@ class _OnlineTakeAttendanceScreenState
         '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
 
-
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -3097,6 +3095,7 @@ class OnlineAttendanceHistoryScreen extends StatefulWidget {
 class _OnlineAttendanceHistoryScreenState
     extends State<OnlineAttendanceHistoryScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final Map<String, Future<_LearnerHistoryInsight>> _learnerInsightCache = {};
 
   @override
   void initState() {
@@ -3201,117 +3200,673 @@ class _OnlineAttendanceHistoryScreenState
     return null;
   }
 
-  Future<void> _openSessionDetails(String courseId, int sessionNo) async {
-    if (sessionNo <= 0) {
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        'Session details are not available for this record.',
-        type: AppToastType.info,
-      );
-      return;
+  int _sessionNoFromAnyRecord(Map<String, dynamic> rec) {
+    final direct = _toInt(rec['sessionNo']);
+    if (direct > 0) return direct;
+    final taught = rec['taughtItems'];
+    if (taught is List) {
+      for (final it in taught) {
+        if (it is! Map) continue;
+        final m = it.map((k, v) => MapEntry(k.toString(), v));
+        final sn = _toInt(m['sessionNumber']);
+        if (sn > 0) return sn;
+      }
+    }
+    final legacy = rec['taught'];
+    if (legacy is Map) {
+      final m = legacy.map((k, v) => MapEntry(k.toString(), v));
+      final sn = _toInt(m['sessionNumber']);
+      if (sn > 0) return sn;
+    }
+    return 0;
+  }
+
+  int _millisFromAnyDate(Map<String, dynamic> rec) {
+    final direct = _toInt(rec['startAt']);
+    if (direct > 0) return direct;
+    final day = _safeStr(rec['dayKey']);
+    final time = _safeStr(rec['time']);
+    if (day.isNotEmpty) {
+      final base = DateTime.tryParse(day);
+      if (base != null) {
+        var hour = 0;
+        var minute = 0;
+        if (time.contains(':')) {
+          final parts = time.split(':');
+          hour = int.tryParse(parts.first) ?? 0;
+          minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+        }
+        return DateTime(
+          base.year,
+          base.month,
+          base.day,
+          hour,
+          minute,
+        ).millisecondsSinceEpoch;
+      }
     }
 
-    final info = await _loadSyllabusSessionByNo(courseId, sessionNo);
-    if (info == null) {
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        'Session details are not available for this record.',
-        type: AppToastType.info,
-      );
-      return;
+    final rawDate = _safeStr(rec['date']);
+    if (rawDate.isNotEmpty) {
+      final parsed = DateTime.tryParse(rawDate);
+      if (parsed != null) return parsed.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  String _formatShortWhen(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_TeacherClassesScreenState._two(d.month)}-${_TeacherClassesScreenState._two(d.day)} ${_TeacherClassesScreenState._two(d.hour)}:${_TeacherClassesScreenState._two(d.minute)}';
+  }
+
+  List<String> _learnerUidsFromRecord(Map<String, dynamic> rec) {
+    final out = <String>[];
+    final learners = rec['learners'];
+    if (learners is! Map) return out;
+    final lm = learners.map((k, v) => MapEntry(k.toString(), v));
+    for (final uid in lm.keys) {
+      final clean = uid.trim();
+      if (clean.isNotEmpty) out.add(clean);
+    }
+    return out;
+  }
+
+  Future<Map<int, String>> _loadSessionIdByNumber({
+    required String courseId,
+    required String variantKey,
+  }) async {
+    final out = <int, String>{};
+    if (courseId.trim().isEmpty) return out;
+
+    final variants = <String>[];
+    if (variantKey.trim().isNotEmpty) variants.add(variantKey.trim());
+    for (final v in const ['flexible', 'private', 'inclass']) {
+      if (!variants.contains(v)) variants.add(v);
     }
 
-    final title = _safeStr(info['sessionTitle']).isNotEmpty
-        ? _safeStr(info['sessionTitle'])
-        : _safeStr(info['title']);
-    final objective = _safeStr(info['objective']);
-    final content = _safeStr(info['content']);
-    final homework = _safeStr(info['homework']);
+    for (final v in variants) {
+      try {
+        final snap = await _db.child('syllabi/$courseId/$v').get();
+        if (!snap.exists || snap.value is! Map) continue;
+        final root = Map<String, dynamic>.from(snap.value as Map);
+        final units = root['units'];
+        if (units is! List) continue;
+
+        for (final u in units) {
+          if (u is! Map) continue;
+          final um = Map<String, dynamic>.from(u);
+          final sessions = um['sessions'];
+          if (sessions is! List) continue;
+          for (final s in sessions) {
+            if (s is! Map) continue;
+            final sm = Map<String, dynamic>.from(s);
+            final sn = _toInt(sm['sessionNumber']);
+            final sid = _safeStr(sm['id']);
+            if (sn > 0 && sid.isNotEmpty) out[sn] = sid;
+          }
+        }
+        if (out.isNotEmpty) return out;
+      } catch (_) {}
+    }
+
+    return out;
+  }
+
+  Future<_LearnerHistoryInsight> _loadLearnerHistoryInsight(String uid) async {
+    var displayName = 'Learner';
+    var bio = '';
+
+    final allSessions = <_LearnerSessionItem>[];
+    final courseCards = <_LearnerCourseStudy>[];
+    final coveredLessonKeys = <String>{};
+
+    try {
+      final userSnap = await _db
+          .child('${_TeacherClassesScreenState.usersNode}/$uid')
+          .get();
+      if (userSnap.exists && userSnap.value is Map) {
+        final user = Map<String, dynamic>.from(userSnap.value as Map);
+        final fn = _safeStr(user['first_name']);
+        final ln = _safeStr(user['last_name']);
+        final full = ('$fn $ln').trim();
+        if (full.isNotEmpty) displayName = full;
+        bio = _safeStr(user['about_me']);
+
+        final coursesRaw = user['courses'];
+        if (coursesRaw is Map) {
+          final courses = Map<dynamic, dynamic>.from(coursesRaw);
+          for (final e in courses.entries) {
+            if (e.value is! Map) continue;
+            final c = Map<String, dynamic>.from(e.value as Map);
+            final cls = c['class'] is Map
+                ? Map<String, dynamic>.from(c['class'] as Map)
+                : <String, dynamic>{};
+
+            final courseId = _safeStr(cls['course_id'] ?? c['id']);
+            final courseTitle = _safeStr(c['title'] ?? c['course_title']);
+            final variantKey = _safeStr(
+              c['variantKey'] ?? c['variant'] ?? c['deliveryKey'],
+            ).toLowerCase();
+
+            final sessionIdByNumber = await _loadSessionIdByNumber(
+              courseId: courseId,
+              variantKey: variantKey,
+            );
+
+            var inClassCount = 0;
+            var onlineCount = 0;
+            var presentCount = 0;
+            final localCovered = <String>{};
+
+            final attendance = c['attendance'];
+            if (attendance is Map) {
+              final attMap = Map<dynamic, dynamic>.from(attendance);
+              for (final v in attMap.values) {
+                if (v is! Map) continue;
+                final rec = Map<String, dynamic>.from(v);
+                inClassCount += 1;
+                final present =
+                    _safeStr(rec['status']).toLowerCase() == 'present';
+                if (present) presentCount += 1;
+
+                final sn = _sessionNoFromAnyRecord(rec);
+                final ms = _millisFromAnyDate(rec);
+                allSessions.add(
+                  _LearnerSessionItem(
+                    source: 'In-class',
+                    courseLabel: courseTitle.isEmpty
+                        ? (courseId.isEmpty ? e.key.toString() : courseId)
+                        : courseTitle,
+                    sessionNo: sn,
+                    present: present,
+                    whenLabel: _formatShortWhen(ms),
+                    sortMs: ms,
+                  ),
+                );
+
+                final taughtItems = rec['taughtItems'];
+                var usedNew = false;
+                if (taughtItems is List) {
+                  usedNew = true;
+                  for (final it in taughtItems) {
+                    if (it is! Map) continue;
+                    final item = Map<String, dynamic>.from(it);
+                    if (_safeStr(item['type']).toLowerCase() != 'syllabus') {
+                      continue;
+                    }
+                    final sid = _safeStr(item['sessionId']);
+                    final n = _toInt(item['sessionNumber']);
+                    if (sid.isNotEmpty) {
+                      localCovered.add(sid);
+                    } else if (n > 0) {
+                      localCovered.add(sessionIdByNumber[n] ?? 'sn:$n');
+                    }
+                  }
+                }
+
+                if (!usedNew) {
+                  final taught = rec['taught'];
+                  if (taught is Map) {
+                    final tm = Map<String, dynamic>.from(taught);
+                    final sid = _safeStr(tm['sessionId']);
+                    final n = _toInt(tm['sessionNumber']);
+                    if (sid.isNotEmpty) {
+                      localCovered.add(sid);
+                    } else if (n > 0) {
+                      localCovered.add(sessionIdByNumber[n] ?? 'sn:$n');
+                    }
+                  }
+                }
+              }
+            }
+
+            if (uid.isNotEmpty && courseId.isNotEmpty) {
+              try {
+                final onlineSnap = await _db
+                    .child(
+                      '${_TeacherClassesScreenState.bookingProgressNode}/$uid/$courseId/online_attendance',
+                    )
+                    .get();
+                if (onlineSnap.exists && onlineSnap.value is Map) {
+                  final online = Map<dynamic, dynamic>.from(
+                    onlineSnap.value as Map,
+                  );
+                  for (final raw in online.values) {
+                    if (raw is! Map) continue;
+                    final rec = Map<String, dynamic>.from(raw);
+                    onlineCount += 1;
+                    final present = rec['present'] == true;
+                    if (present) presentCount += 1;
+
+                    final sn = _sessionNoFromAnyRecord(rec);
+                    final ms = _millisFromAnyDate(rec);
+                    allSessions.add(
+                      _LearnerSessionItem(
+                        source: 'Online',
+                        courseLabel: courseTitle.isEmpty
+                            ? courseId
+                            : courseTitle,
+                        sessionNo: sn,
+                        present: present,
+                        whenLabel: _formatShortWhen(ms),
+                        sortMs: ms,
+                      ),
+                    );
+
+                    final taughtItems = rec['taughtItems'];
+                    if (taughtItems is List) {
+                      for (final it in taughtItems) {
+                        if (it is! Map) continue;
+                        final item = Map<String, dynamic>.from(it);
+                        if (_safeStr(item['type']).toLowerCase() !=
+                            'syllabus') {
+                          continue;
+                        }
+                        final sid = _safeStr(item['sessionId']);
+                        final n = _toInt(item['sessionNumber']);
+                        if (sid.isNotEmpty) {
+                          localCovered.add(sid);
+                        } else if (n > 0) {
+                          localCovered.add(sessionIdByNumber[n] ?? 'sn:$n');
+                        }
+                      }
+                    } else if (sn > 0) {
+                      localCovered.add(sessionIdByNumber[sn] ?? 'sn:$sn');
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            coveredLessonKeys.addAll(localCovered);
+            courseCards.add(
+              _LearnerCourseStudy(
+                courseLabel: courseTitle.isEmpty
+                    ? (courseId.isEmpty ? e.key.toString() : courseId)
+                    : courseTitle,
+                sessionsCount: inClassCount + onlineCount,
+                presentCount: presentCount,
+                lessonsCovered: localCovered.length,
+              ),
+            );
+          }
+        }
+      }
+    } catch (_) {}
+
+    allSessions.sort((a, b) => b.sortMs.compareTo(a.sortMs));
+    courseCards.sort((a, b) => b.sessionsCount.compareTo(a.sessionsCount));
+
+    return _LearnerHistoryInsight(
+      uid: uid,
+      displayName: displayName,
+      bio: bio,
+      courses: courseCards,
+      sessions: allSessions,
+      totalLessonsCovered: coveredLessonKeys.length,
+    );
+  }
+
+  Future<_LearnerHistoryInsight> _insightFor(String uid) {
+    return _learnerInsightCache.putIfAbsent(
+      uid,
+      () => _loadLearnerHistoryInsight(uid),
+    );
+  }
+
+  Widget _metricTile(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: p.text.withValues(alpha: 0.7),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseDetailsTab(int sessionNo, Map<String, dynamic>? info) {
+    final title = _safeStr(info?['sessionTitle']).isNotEmpty
+        ? _safeStr(info?['sessionTitle'])
+        : _safeStr(info?['title']);
+    final objective = _safeStr(info?['objective']);
+    final content = _safeStr(info?['content']);
+    final homework = _safeStr(info?['homework']);
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title.isEmpty
+                ? 'Session ${sessionNo <= 0 ? '-' : sessionNo}'
+                : 'Session $sessionNo — $title',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: p.primary,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Objective',
+            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            objective.isEmpty ? '-' : objective,
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.82),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Lesson content',
+            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            content.isEmpty ? '-' : content,
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.82),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Homework',
+            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            homework.isEmpty ? '-' : homework,
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.82),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLearnersTab(List<String> learnerUids) {
+    if (learnerUids.isEmpty) {
+      return Center(
+        child: Text(
+          'No learners found in this attendance record.',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: p.text.withValues(alpha: 0.78),
+          ),
+        ),
+      );
+    }
+
+    var selectedUid = learnerUids.first;
+    return StatefulBuilder(
+      builder: (context, setLocal) {
+        return Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: learnerUids.map((uid) {
+                  return FutureBuilder<_LearnerHistoryInsight>(
+                    future: _insightFor(uid),
+                    builder: (context, snap) {
+                      final name = (snap.data?.displayName ?? 'Learner').trim();
+                      return ChoiceChip(
+                        selected: selectedUid == uid,
+                        onSelected: (_) => setLocal(() => selectedUid = uid),
+                        label: Text(name.isEmpty ? 'Learner' : name),
+                        labelStyle: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: selectedUid == uid ? Colors.white : p.primary,
+                        ),
+                        backgroundColor: p.cardBg,
+                        selectedColor: p.accent,
+                        shape: StadiumBorder(
+                          side: BorderSide(
+                            color: p.border.withValues(alpha: 0.8),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: FutureBuilder<_LearnerHistoryInsight>(
+                future: _insightFor(selectedUid),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return Center(
+                      child: CircularProgressIndicator(color: p.accent),
+                    );
+                  }
+
+                  final data = snap.data;
+                  if (data == null) {
+                    return Center(
+                      child: Text(
+                        'Could not load learner details.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: p.text.withValues(alpha: 0.78),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final totalSessions = data.sessions.length;
+                  return ListView(
+                    children: [
+                      Text(
+                        data.displayName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        data.bio.isEmpty ? 'No profile bio yet.' : data.bio,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: p.text.withValues(alpha: 0.82),
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _metricTile('Courses', '${data.courses.length}'),
+                          _metricTile('Sessions', '$totalSessions'),
+                          _metricTile(
+                            'Lessons covered',
+                            '${data.totalLessonsCovered}',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Courses Studied',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (data.courses.isEmpty)
+                        Text(
+                          'No courses found.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withValues(alpha: 0.75),
+                          ),
+                        )
+                      else
+                        ...data.courses.map((c) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: p.soft.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.84),
+                              ),
+                            ),
+                            child: Text(
+                              '${c.courseLabel} • Sessions ${c.sessionsCount} • Present ${c.presentCount} • Lessons ${c.lessonsCovered}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: p.text.withValues(alpha: 0.84),
+                              ),
+                            ),
+                          );
+                        }),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Session Timeline',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (data.sessions.isEmpty)
+                        Text(
+                          'No sessions recorded yet.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withValues(alpha: 0.75),
+                          ),
+                        )
+                      else
+                        ...data.sessions.map((s) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: p.cardBg,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.84),
+                              ),
+                            ),
+                            child: Text(
+                              '${s.whenLabel} • ${s.source} • ${s.courseLabel} • Session ${s.sessionNo <= 0 ? '-' : s.sessionNo} • ${s.present ? 'Present' : 'Absent'}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: p.text.withValues(alpha: 0.82),
+                              ),
+                            ),
+                          );
+                        }),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openSessionDetails(
+    Map<String, dynamic> rec,
+    int sessionNo,
+  ) async {
+    final courseId = _safeStr(rec['courseId']);
+    final info = sessionNo > 0
+        ? await _loadSyllabusSessionByNo(courseId, sessionNo)
+        : null;
+    final learnerUids = _learnerUidsFromRecord(rec);
 
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title.isEmpty
-                        ? 'Session $sessionNo'
-                        : 'Session $sessionNo — $title',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
+      builder: (context) {
+        final h = MediaQuery.of(context).size.height;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Container(
+              height: h * 0.84,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: p.cardBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              ),
+              child: DefaultTabController(
+                length: 2,
+                child: Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: p.soft.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: TabBar(
+                        labelColor: p.primary,
+                        unselectedLabelColor: p.text.withValues(alpha: 0.62),
+                        indicatorColor: p.accent,
+                        tabs: const [
+                          Tab(text: 'Course Details'),
+                          Tab(text: 'Learners'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Objective',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _buildCourseDetailsTab(sessionNo, info),
+                          _buildLearnersTab(learnerUids),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    objective.isEmpty ? '-' : objective,
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Lesson content',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    content.isEmpty ? '-' : content,
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Homework',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    homework.isEmpty ? '-' : homework,
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -3433,7 +3988,6 @@ class _OnlineAttendanceHistoryScreenState
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -3499,10 +4053,8 @@ class _OnlineAttendanceHistoryScreenState
                               ),
                               InkWell(
                                 borderRadius: BorderRadius.circular(999),
-                                onTap: () => _openSessionDetails(
-                                  _safeStr(rec['courseId']),
-                                  sessionNo,
-                                ),
+                                onTap: () =>
+                                    _openSessionDetails(rec, sessionNo),
                                 child: Container(
                                   width: 24,
                                   height: 24,
@@ -3603,6 +4155,56 @@ class _OnlineAttendanceHistoryScreenState
       child: child,
     );
   }
+}
+
+class _LearnerHistoryInsight {
+  final String uid;
+  final String displayName;
+  final String bio;
+  final List<_LearnerCourseStudy> courses;
+  final List<_LearnerSessionItem> sessions;
+  final int totalLessonsCovered;
+
+  const _LearnerHistoryInsight({
+    required this.uid,
+    required this.displayName,
+    required this.bio,
+    required this.courses,
+    required this.sessions,
+    required this.totalLessonsCovered,
+  });
+}
+
+class _LearnerCourseStudy {
+  final String courseLabel;
+  final int sessionsCount;
+  final int presentCount;
+  final int lessonsCovered;
+
+  const _LearnerCourseStudy({
+    required this.courseLabel,
+    required this.sessionsCount,
+    required this.presentCount,
+    required this.lessonsCovered,
+  });
+}
+
+class _LearnerSessionItem {
+  final String source;
+  final String courseLabel;
+  final int sessionNo;
+  final bool present;
+  final String whenLabel;
+  final int sortMs;
+
+  const _LearnerSessionItem({
+    required this.source,
+    required this.courseLabel,
+    required this.sessionNo,
+    required this.present,
+    required this.whenLabel,
+    required this.sortMs,
+  });
 }
 
 class OnlineAttendanceStatsScreen extends StatefulWidget {
@@ -3779,7 +4381,6 @@ class _OnlineAttendanceStatsScreenState
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
