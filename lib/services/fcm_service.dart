@@ -16,6 +16,7 @@ import '../admin/admin_priority_alerts_screen.dart';
 import '../admin/admin_teacher_reminders_screen.dart';
 import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
 import '../admin/admin_admin_todos_screen.dart';
+import '../admin/admin_job_applications_screen.dart';
 import '../learner/learner_booking_screen.dart';
 import '../learner/learner_courses_screen.dart';
 import '../learner/learner_mail_screen.dart';
@@ -281,7 +282,9 @@ class FCMService {
       channelName = 'Messages';
     } else if (type == 'reminder' ||
         type == 'admin_todo' ||
-        type == 'flash_message') {
+        type == 'flash_message' ||
+        type == 'recorded_comment' ||
+        type == 'job_application') {
       channelId = chReminders;
       channelName = 'Reminders';
     } else if (type == 'mail') {
@@ -627,6 +630,41 @@ class FCMService {
     );
   }
 
+  Future<void> _openRecordedCommentByRole(Map<String, dynamic> data) async {
+    final role = await _fetchCurrentUserRole();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (role == 'admin') {
+      nav.push(MaterialPageRoute(builder: (_) => const AdminClassesScreen()));
+      return;
+    }
+
+    if (role == 'teacher') {
+      nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
+      return;
+    }
+
+    final courseId = (data['courseId'] ?? '').toString().trim();
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => LearnerCoursesScreen(
+          initialCourseKey: courseId.isEmpty ? null : courseId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openJobApplicationsByRole() async {
+    final role = await _fetchCurrentUserRole();
+    if (role != 'admin') return;
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+    nav.push(
+      MaterialPageRoute(builder: (_) => const AdminJobApplicationsScreen()),
+    );
+  }
+
   String _payloadAction(Map<String, dynamic> data) {
     final route = (data['route'] ?? '').toString().trim().toLowerCase();
     final type = _canonicalType(data['type']);
@@ -645,6 +683,12 @@ class FCMService {
     }
     if (type == 'payment') {
       return 'payment';
+    }
+    if (route == 'recorded_comment' || type == 'recorded_comment') {
+      return 'recorded_comment';
+    }
+    if (route == 'job_applications' || type == 'job_application') {
+      return 'job_application';
     }
     if (route == 'flash_messages' || type == 'flash_message') {
       return 'flash_message';
@@ -760,6 +804,14 @@ class FCMService {
       }
       if (action == 'payment') {
         await _openPaymentByRole(data);
+        return;
+      }
+      if (action == 'recorded_comment') {
+        await _openRecordedCommentByRole(data);
+        return;
+      }
+      if (action == 'job_application') {
+        await _openJobApplicationsByRole();
         return;
       }
       if (action == 'flash_message') {

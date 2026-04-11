@@ -35,6 +35,7 @@ import 'admin_certificates.dart';
 import 'admin_admin_todos_screen.dart';
 import 'admin_course_reviews_screen.dart';
 import 'admin_priority_alerts_screen.dart';
+import 'admin_notification_audit_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -301,6 +302,23 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => const AdminPriorityAlertsScreen(),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Notification Audit',
+        'Push delivery monitoring',
+        _DashCard(
+          title: 'Notification Audit',
+          subtitle: 'Push delivery monitoring',
+          tags: const ['Push Events', 'Failures'],
+          icon: Icons.notifications_active_rounded,
+          color: AdminHome.accentSky,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminNotificationAuditScreen(),
             ),
           ),
         ),
@@ -3121,7 +3139,7 @@ class _StaffMailDashCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meUid = FirebaseAuth.instance.currentUser?.uid?.trim() ?? '';
+    final meUid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
     if (meUid.isEmpty) {
       return _DashCard(
         title: 'Staff',
@@ -3224,6 +3242,8 @@ class _DashCard extends StatelessWidget {
         return 'Booking';
       case 'Job Applications':
         return 'Applications';
+      case 'Notification Audit':
+        return 'Notif Audit';
       case 'Shared Files':
         return 'Shared';
       default:

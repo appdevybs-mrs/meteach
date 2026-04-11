@@ -364,7 +364,39 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         _sortBy != 'updated_desc';
   }
 
+  String _storyIdFrom(Map<String, dynamic> story) {
+    return (story['storyId'] ?? story['storyUid'] ?? story['id'] ?? '')
+        .toString()
+        .trim();
+  }
+
+  int _storyStat(Map<String, dynamic> story, String key) {
+    final stats = story['stats'];
+    if (stats is Map) {
+      final m = Map<dynamic, dynamic>.from(stats);
+      return _toInt(m[key]);
+    }
+    return _toInt(story[key]);
+  }
+
+  Future<void> _incrementStoryStat(
+    Map<String, dynamic> story,
+    String key,
+  ) async {
+    final storyId = _storyIdFrom(story);
+    if (storyId.isEmpty) return;
+    try {
+      await _storiesRef.child(storyId).child('stats').child(key).runTransaction(
+        (v) {
+          final cur = _toInt(v);
+          return Transaction.success(cur + 1);
+        },
+      );
+    } catch (_) {}
+  }
+
   Future<void> _openStory(Map<String, dynamic> story) async {
+    _incrementStoryStat(story, 'plays');
     final link = (story['link'] ?? '').toString().trim();
     if (link.isEmpty) {
       if (!mounted) return;
@@ -395,6 +427,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   }
 
   Future<void> _openAudio(Map<String, dynamic> story) async {
+    _incrementStoryStat(story, 'listens');
     final audioUrl = (story['audioUrl'] ?? '').toString().trim();
     final name = (story['name'] ?? 'Story Audio').toString().trim();
     final imageUrl = (story['thumbnail'] ?? '').toString().trim();
@@ -420,6 +453,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   }
 
   Future<void> _openPdf(Map<String, dynamic> story) async {
+    _incrementStoryStat(story, 'views');
     final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
     final name = (story['name'] ?? 'Story PDF').toString().trim();
 
@@ -2578,6 +2612,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final status = (story['status'] ?? 'ready').toString().trim();
     final teacherNotes = (story['teacherNotes'] ?? '').toString().trim();
     final authorSource = (story['authorSource'] ?? '').toString().trim();
+    final opens = _storyStat(story, 'opens');
+    final listens = _storyStat(story, 'listens');
+    final views = _storyStat(story, 'views');
+    final plays = _storyStat(story, 'plays');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -2598,6 +2636,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         child: Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
+            onExpansionChanged: (expanded) {
+              if (expanded) {
+                _incrementStoryStat(story, 'opens');
+              }
+            },
             tilePadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 10,
@@ -2686,6 +2729,26 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           icon: Icons.article_rounded,
                           text: scriptType,
                         ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.open_in_new_rounded,
+                        text: 'Opens $opens',
+                      ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.headphones_rounded,
+                        text: 'Listens $listens',
+                      ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.visibility_rounded,
+                        text: 'Views $views',
+                      ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.play_arrow_rounded,
+                        text: 'Plays $plays',
+                      ),
                       ...tags
                           .take(2)
                           .map(
@@ -3166,7 +3229,6 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stories'),
@@ -3254,6 +3316,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final story = storyValue is Map
                   ? Map<String, dynamic>.from(storyValue)
                   : <String, dynamic>{};
+              story['storyId'] = storyId;
 
               return MapEntry(storyId, story);
             }).toList();

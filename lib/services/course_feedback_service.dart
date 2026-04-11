@@ -1,5 +1,8 @@
 import 'package:firebase_database/firebase_database.dart';
 
+import 'push_client.dart';
+import 'push_error_logger.dart';
+
 class CourseReviewItem {
   CourseReviewItem({
     required this.id,
@@ -120,6 +123,228 @@ class CourseFeedbackService {
   }
 
   static String _safe(dynamic v) => (v ?? '').toString().trim();
+
+  static String _normalizeRole(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+    if (s == 'learner' || s == 'student' || s == 'pupil' || s == 'lerner') {
+      return 'learner';
+    }
+    if (s == 'teacher' || s == 'instructor' || s == 'prof') {
+      return 'teacher';
+    }
+    if (s == 'admin' || s == 'administrator' || s == 'administration') {
+      return 'admin';
+    }
+    return '';
+  }
+
+  static String _sanitizeEventPart(String raw) {
+    return raw
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+  }
+
+  static Future<String?> _userToken(String uid) async {
+    final safeUid = uid.trim();
+    if (safeUid.isEmpty) return null;
+    try {
+      final snap = await _db.child('fcm_tokens/$safeUid/token').get();
+      if (!snap.exists || snap.value == null) return null;
+      final token = snap.value.toString().trim();
+      if (token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> _isLearnerActor(String uid) async {
+    final safeUid = uid.trim();
+    if (safeUid.isEmpty) return false;
+    try {
+      final roleSnap = await _db.child('users/$safeUid/role').get();
+      return _normalizeRole(roleSnap.value) == 'learner';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<Set<String>> _assignedTeacherUidsForCourse(
+    String courseId,
+  ) async {
+    final safeCourseId = courseId.trim();
+    if (safeCourseId.isEmpty) return <String>{};
+
+    final out = <String>{};
+    try {
+      final classesSnap = await _db.child('classes').get();
+      if (!classesSnap.exists || classesSnap.value is! Map) return out;
+
+      final raw = Map<dynamic, dynamic>.from(classesSnap.value as Map);
+      for (final entry in raw.entries) {
+        final val = entry.value;
+        if (val is! Map) continue;
+
+        final cls = val.map((k, v) => MapEntry(k.toString(), v));
+        final classCourseId = _safe(cls['course_id']);
+        if (classCourseId != safeCourseId) continue;
+
+        final directTeacher = _safe(
+          cls['teacherUid'] ??
+              cls['teacher_uid'] ??
+              cls['teacherId'] ??
+              cls['teacher_id'] ??
+              cls['instructorUid'],
+        );
+        if (directTeacher.isNotEmpty) out.add(directTeacher);
+
+        final currentInstructor = cls['instructor_current'];
+        if (currentInstructor is Map) {
+          final m = currentInstructor.map((k, v) => MapEntry(k.toString(), v));
+          final uid = _safe(m['uid']);
+          if (uid.isNotEmpty) out.add(uid);
+        }
+      }
+    } catch (_) {}
+
+    return out;
+  }
+
+  static Future<void> _sendRecordedCommentToTeacher({
+    required String teacherUid,
+    required String title,
+    required String body,
+    required String eventId,
+    required Map<String, dynamic> data,
+  }) async {
+    final safeTeacherUid = teacherUid.trim();
+    if (safeTeacherUid.isEmpty) return;
+
+    final token = await _userToken(safeTeacherUid);
+    if (token != null && token.isNotEmpty) {
+      try {
+        await PushClient.sendToToken(
+          token: token,
+          targetUid: safeTeacherUid,
+          eventId: eventId,
+          title: title,
+          message: body,
+          data: data,
+        );
+        return;
+      } catch (e, st) {
+        await PushErrorLogger.logFailure(
+          screen: 'services/course_feedback_service',
+          action: 'recorded_comment_teacher_token_fallback_topic',
+          error: e,
+          stackTrace: st,
+          targetUid: safeTeacherUid,
+          token: token,
+          eventId: eventId,
+          extra: {'topic': 'user_$safeTeacherUid'},
+        );
+      }
+    }
+
+    await PushClient.sendToTopic(
+      topic: 'user_$safeTeacherUid',
+      eventId: eventId,
+      title: title,
+      message: body,
+      data: data,
+    );
+  }
+
+  static Future<void> _notifyRecordedCommentImmediately({
+    required String courseId,
+    required String lessonId,
+    required String commentId,
+    required String actorUid,
+    required String actorName,
+    required String text,
+  }) async {
+    final safeCourseId = _sanitizeEventPart(courseId);
+    final safeLessonId = _sanitizeEventPart(lessonId);
+    final safeCommentId = _sanitizeEventPart(commentId);
+    if (safeCourseId.isEmpty || safeLessonId.isEmpty || safeCommentId.isEmpty) {
+      return;
+    }
+
+    final safeActorName = actorName.trim().isEmpty
+        ? 'Learner'
+        : actorName.trim();
+    final textPreview = text.trim();
+    final shortText = textPreview.length <= 120
+        ? textPreview
+        : '${textPreview.substring(0, 117)}...';
+
+    final title = 'Recorded class comment';
+    final body = '$safeActorName commented: $shortText';
+
+    final baseData = <String, dynamic>{
+      'type': 'recorded_comment',
+      'route': 'recorded_comment',
+      'priority': 'high',
+      'courseId': courseId,
+      'lessonId': lessonId,
+      'commentId': commentId,
+      'actorUid': actorUid,
+      'actorName': safeActorName,
+      'targetRole': 'teacher_admin',
+    };
+
+    final teachers = await _assignedTeacherUidsForCourse(courseId);
+
+    final adminEventId =
+        'recorded_comment_${safeCourseId}_${safeLessonId}_${safeCommentId}_admins';
+    try {
+      await PushClient.sendToTopic(
+        topic: 'admins',
+        eventId: adminEventId,
+        title: title,
+        message: body,
+        data: baseData,
+      );
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'services/course_feedback_service',
+        action: 'recorded_comment_admin_topic',
+        error: e,
+        stackTrace: st,
+        topic: 'admins',
+        eventId: adminEventId,
+      );
+    }
+
+    for (final teacherUid in teachers) {
+      if (teacherUid.trim().isEmpty || teacherUid.trim() == actorUid.trim()) {
+        continue;
+      }
+
+      final teacherEventId =
+          'recorded_comment_${safeCourseId}_${safeLessonId}_${safeCommentId}_${_sanitizeEventPart(teacherUid)}';
+      try {
+        await _sendRecordedCommentToTeacher(
+          teacherUid: teacherUid,
+          title: title,
+          body: body,
+          eventId: teacherEventId,
+          data: <String, dynamic>{...baseData, 'teacherUid': teacherUid},
+        );
+      } catch (e, st) {
+        await PushErrorLogger.logFailure(
+          screen: 'services/course_feedback_service',
+          action: 'recorded_comment_teacher_final_failure',
+          error: e,
+          stackTrace: st,
+          targetUid: teacherUid,
+          eventId: teacherEventId,
+        );
+      }
+    }
+  }
 
   static String firstNameFromDisplayName(String fullName) {
     final trimmed = fullName.trim();
@@ -331,6 +556,32 @@ class CourseFeedbackService {
       'createdAt': now,
       'updatedAt': now,
     });
+
+    final commentId = (ref.key ?? '').trim();
+    if (commentId.isEmpty) return;
+
+    final isLearner = await _isLearnerActor(uid);
+    if (!isLearner) return;
+
+    try {
+      await _notifyRecordedCommentImmediately(
+        courseId: courseId,
+        lessonId: lessonId,
+        commentId: commentId,
+        actorUid: uid,
+        actorName: identity['displayName'] ?? 'Learner',
+        text: text,
+      );
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'services/course_feedback_service',
+        action: 'recorded_comment_notify_unhandled',
+        error: e,
+        stackTrace: st,
+        eventId:
+            'recorded_comment_${_sanitizeEventPart(courseId)}_${_sanitizeEventPart(lessonId)}_${_sanitizeEventPart(commentId)}',
+      );
+    }
   }
 
   static Future<void> addLessonReply({

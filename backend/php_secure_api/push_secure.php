@@ -30,6 +30,8 @@ function is_allowed_push_type(string $type): bool
         'payment' => true,
         'session' => true,
         'coach' => true,
+        'recorded_comment' => true,
+        'job_application' => true,
     ];
     return isset($allowed[$type]);
 }
@@ -43,7 +45,7 @@ function is_allowed_push_type_for_role(string $type, string $role): bool
     }
 
     if ($safeRole === 'learner') {
-        return ($type === 'mail' || $type === 'booking');
+        return ($type === 'mail' || $type === 'booking' || $type === 'recorded_comment' || $type === 'job_application');
     }
 
     return false;
@@ -138,6 +140,10 @@ function push_channel_for_type(string $type): string
     }
 
     if ($type === 'reminder' || $type === 'admin_todo' || $type === 'flash_message') {
+        return 'ch_reminders_v2';
+    }
+
+    if ($type === 'recorded_comment' || $type === 'job_application') {
         return 'ch_reminders_v2';
     }
 

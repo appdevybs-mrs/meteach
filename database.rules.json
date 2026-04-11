@@ -409,6 +409,21 @@
       }
     },
 
+    "push_events": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      ".write": false
+    },
+
+    "push_client_errors": {
+      "$actorUid": {
+        ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        "$errorId": {
+          ".write": "auth != null && (auth.uid == $actorUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".validate": "newData.isMap()"
+        }
+      }
+    },
+
     "notifications_inbox": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
@@ -416,7 +431,7 @@
           ".write": "auth != null && auth.uid == $uid",
 
           "eventId": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 120" },
-          "type": { ".validate": "newData.isString() && (newData.val() == 'message' || newData.val() == 'reminder' || newData.val() == 'admin_todo' || newData.val() == 'mail' || newData.val() == 'booking' || newData.val() == 'payment' || newData.val() == 'session' || newData.val() == 'coach')" },
+          "type": { ".validate": "newData.isString() && (newData.val() == 'message' || newData.val() == 'reminder' || newData.val() == 'admin_todo' || newData.val() == 'mail' || newData.val() == 'booking' || newData.val() == 'payment' || newData.val() == 'session' || newData.val() == 'coach' || newData.val() == 'recorded_comment' || newData.val() == 'job_application')" },
           "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
           "body": { ".validate": "newData.isString() && newData.val().length <= 500" },
           "status": { ".validate": "newData.isString() && (newData.val() == 'sent' || newData.val() == 'opened' || newData.val() == 'failed')" },

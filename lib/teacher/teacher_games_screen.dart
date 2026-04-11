@@ -360,7 +360,37 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     return _myUid != null && _myUid == ownerUid;
   }
 
+  String _gameIdFrom(Map<String, dynamic> game) {
+    return (game['gameId'] ?? game['gameUid'] ?? game['id'] ?? '')
+        .toString()
+        .trim();
+  }
+
+  int _gameStat(Map<String, dynamic> game, String key) {
+    final stats = game['stats'];
+    if (stats is Map) {
+      final m = Map<dynamic, dynamic>.from(stats);
+      return _toInt(m[key]);
+    }
+    return _toInt(game[key]);
+  }
+
+  Future<void> _incrementGameStat(Map<String, dynamic> game, String key) async {
+    final gameId = _gameIdFrom(game);
+    if (gameId.isEmpty) return;
+    try {
+      await _gamesRef.child(gameId).child('stats').child(key).runTransaction((
+        v,
+      ) {
+        final cur = _toInt(v);
+        return Transaction.success(cur + 1);
+      });
+    } catch (_) {}
+  }
+
   Future<void> _openGame(Map<String, dynamic> game) async {
+    _incrementGameStat(game, 'views');
+    _incrementGameStat(game, 'plays');
     final link = (game['link'] ?? '').toString().trim();
     final name = (game['name'] ?? 'Game').toString().trim();
 
@@ -1570,6 +1600,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final status = (game['status'] ?? 'ready').toString().trim();
     final teacherNotes = (game['teacherNotes'] ?? '').toString().trim();
     final durationMinutes = _toInt(game['durationMinutes']);
+    final opens = _gameStat(game, 'opens');
+    final listens = _gameStat(game, 'listens');
+    final views = _gameStat(game, 'views');
+    final plays = _gameStat(game, 'plays');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1590,6 +1624,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         child: Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
+            onExpansionChanged: (expanded) {
+              if (expanded) {
+                _incrementGameStat(game, 'opens');
+              }
+            },
             tilePadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 10,
@@ -1672,6 +1711,26 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                           icon: Icons.bar_chart_rounded,
                           text: level,
                         ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.open_in_new_rounded,
+                        text: 'Opens $opens',
+                      ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.headphones_rounded,
+                        text: 'Listens $listens',
+                      ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.visibility_rounded,
+                        text: 'Views $views',
+                      ),
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.play_arrow_rounded,
+                        text: 'Plays $plays',
+                      ),
                       ...tags
                           .take(2)
                           .map(
@@ -2190,7 +2249,6 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Games'),
@@ -2278,6 +2336,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final game = gameValue is Map
                   ? Map<String, dynamic>.from(gameValue)
                   : <String, dynamic>{};
+              game['gameId'] = gameId;
 
               return MapEntry(gameId, game);
             }).toList();

@@ -450,6 +450,58 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
   }
 
+  String _sanitizeEventPart(String raw) {
+    return raw
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+  }
+
+  Future<void> _notifyAdminsJobApplication({
+    required String appId,
+    required bool isGuest,
+  }) async {
+    final actorUid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+    if (actorUid.isEmpty) {
+      return;
+    }
+
+    final safeAppId = _sanitizeEventPart(appId);
+    if (safeAppId.isEmpty) return;
+
+    final eventId = 'job_application_$safeAppId';
+    final title = isGuest ? 'New guest job application' : 'New job application';
+    final body = isGuest
+        ? 'A new guest candidate submitted a job application.'
+        : 'A new platform user submitted a job application.';
+
+    try {
+      await PushClient.sendToTopic(
+        topic: 'admins',
+        eventId: eventId,
+        title: title,
+        message: body,
+        data: {
+          'type': 'job_application',
+          'route': 'job_applications',
+          'priority': 'high',
+          'appId': appId,
+          'isGuest': isGuest ? '1' : '0',
+        },
+      );
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'home/job_application_screen',
+        action: 'notify_admins_job_application',
+        error: e,
+        stackTrace: st,
+        topic: 'admins',
+        eventId: eventId,
+      );
+    }
+  }
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     if (_submitting) return;
@@ -509,6 +561,8 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
         'isGuest': isGuest,
         'createdAt': ServerValue.timestamp,
       });
+
+      await _notifyAdminsJobApplication(appId: ref.key ?? '', isGuest: isGuest);
 
       if (isGuest) {
         await _GuestJobApplyLimiter.markNow();

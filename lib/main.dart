@@ -19,6 +19,8 @@ import 'course_reviews_screen.dart';
 import 'services/fcm_service.dart';
 import 'services/backend_api.dart';
 import 'services/course_feedback_service.dart';
+import 'services/push_client.dart';
+import 'services/push_error_logger.dart';
 import 'firebase_options.dart';
 import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';

@@ -22,6 +22,32 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   static const Color _funOrange = Color(0xFFF98D28);
   static const Color _funOrangeDark = Color(0xFFE67612);
 
+  String _gameId(Map<String, dynamic> game) {
+    return (game['gameId'] ?? game['gameUid'] ?? game['id'] ?? '')
+        .toString()
+        .trim();
+  }
+
+  int _gameStat(Map<String, dynamic> game, String key) {
+    final stats = game['stats'];
+    if (stats is Map) {
+      final m = Map<dynamic, dynamic>.from(stats);
+      return _toInt(m[key]);
+    }
+    return _toInt(game[key]);
+  }
+
+  Future<void> _incrementGameStat(Map<String, dynamic> game, String key) async {
+    final id = _gameId(game);
+    if (id.isEmpty) return;
+    try {
+      await _gamesRef.child(id).child('stats').child(key).runTransaction((v) {
+        final cur = _toInt(v);
+        return Transaction.success(cur + 1);
+      });
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -29,6 +55,8 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   }
 
   Future<void> _openGame(Map<String, dynamic> game) async {
+    _incrementGameStat(game, 'views');
+    _incrementGameStat(game, 'plays');
     final link = (game['link'] ?? '').toString().trim();
     final name = (game['name'] ?? 'Game').toString().trim();
 
@@ -52,6 +80,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   }
 
   void _showGameDetails(BuildContext context, Map<String, dynamic> game) {
+    _incrementGameStat(game, 'opens');
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
@@ -64,6 +93,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final category = (game['category'] ?? '').toString().trim();
     final level = (game['level'] ?? '').toString().trim();
     final durationMinutes = _toInt(game['durationMinutes']);
+    final opens = _gameStat(game, 'opens');
+    final listens = _gameStat(game, 'listens');
+    final views = _gameStat(game, 'views');
+    final plays = _gameStat(game, 'plays');
 
     showModalBottomSheet(
       context: context,
@@ -153,6 +186,33 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       ],
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildDetailChip(
+                        context: context,
+                        icon: Icons.open_in_new_rounded,
+                        label: 'Opens $opens',
+                      ),
+                      _buildDetailChip(
+                        context: context,
+                        icon: Icons.headphones_rounded,
+                        label: 'Listens $listens',
+                      ),
+                      _buildDetailChip(
+                        context: context,
+                        icon: Icons.visibility_rounded,
+                        label: 'Views $views',
+                      ),
+                      _buildDetailChip(
+                        context: context,
+                        icon: Icons.play_arrow_rounded,
+                        label: 'Plays $plays',
+                      ),
+                    ],
+                  ),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: 18),
                     Text(
@@ -578,6 +638,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     final name = (game['name'] ?? '').toString().trim();
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+    final opens = _gameStat(game, 'opens');
+    final listens = _gameStat(game, 'listens');
+    final views = _gameStat(game, 'views');
+    final plays = _gameStat(game, 'plays');
 
     return Container(
       width: 220,
@@ -644,6 +708,19 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     fontWeight: FontWeight.w900,
                     fontSize: 15,
                     color: cs.primary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Opens $opens  Listens $listens  Views $views  Plays $plays',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: theme.textTheme.bodySmall?.color?.withValues(
+                      alpha: 0.72,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -764,7 +841,6 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       body: learnerWebBodyFrame(
         context: context,
@@ -791,6 +867,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               final game = gameValue is Map
                   ? Map<String, dynamic>.from(gameValue)
                   : <String, dynamic>{};
+              game['gameId'] = entry.key.toString();
 
               return MapEntry(entry.key.toString(), game);
             }).toList();

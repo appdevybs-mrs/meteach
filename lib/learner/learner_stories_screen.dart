@@ -118,6 +118,61 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  String _storyId(Map<String, dynamic> story) {
+    return (story['storyId'] ?? story['storyUid'] ?? story['id'] ?? '')
+        .toString()
+        .trim();
+  }
+
+  int _storyStat(Map<String, dynamic> story, String key) {
+    final stats = story['stats'];
+    if (stats is Map) {
+      final m = Map<dynamic, dynamic>.from(stats);
+      return _toInt(m[key]);
+    }
+    return _toInt(story[key]);
+  }
+
+  Future<void> _incrementStoryStat(
+    Map<String, dynamic> story,
+    String key,
+  ) async {
+    final id = _storyId(story);
+    if (id.isEmpty) return;
+    try {
+      await _storiesRef.child(id).child('stats').child(key).runTransaction((v) {
+        final cur = _toInt(v);
+        return Transaction.success(cur + 1);
+      });
+    } catch (_) {}
+  }
+
+  Widget _storyStatChip(_StoriesPalette p, IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: p.soft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: p.primary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.82),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _teacherName(Map<String, dynamic> story) {
     final first = (story['teacherFirstName'] ?? '').toString().trim();
     final last = (story['teacherLastName'] ?? '').toString().trim();
@@ -253,6 +308,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   Future<void> _openWatch(Map<String, dynamic> story) async {
+    await _incrementStoryStat(story, 'plays');
     final url = (story['link'] ?? '').toString().trim();
 
     if (url.isEmpty) return;
@@ -278,6 +334,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   void _openListen(Map<String, dynamic> story) {
+    _incrementStoryStat(story, 'listens');
     final audioUrl = (story['audioUrl'] ?? '').toString().trim();
     final title = (story['name'] ?? 'Story Audio').toString().trim();
     final imageUrl = (story['thumbnail'] ?? '').toString().trim();
@@ -296,6 +353,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   void _openRead(Map<String, dynamic> story) {
+    _incrementStoryStat(story, 'views');
     final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
     final title = (story['name'] ?? 'Story PDF').toString().trim();
 
@@ -312,6 +370,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   void _showStoryDetails(Map<String, dynamic> story) {
+    _incrementStoryStat(story, 'opens');
     final p = palette;
     final hasRead = _hasRead(story);
     final hasListen = _hasListen(story);
@@ -326,6 +385,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final teacher = _teacherName(story);
     final tags = _tagsFromStory(story);
+    final opens = _storyStat(story, 'opens');
+    final listens = _storyStat(story, 'listens');
+    final views = _storyStat(story, 'views');
+    final plays = _storyStat(story, 'plays');
 
     showModalBottomSheet(
       context: context,
@@ -426,6 +489,25 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       _detailChip(p, Icons.headphones_rounded, 'Listen'),
                     if (hasWatch)
                       _detailChip(p, Icons.ondemand_video_rounded, 'Watch'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _storyStatChip(
+                      p,
+                      Icons.open_in_new_rounded,
+                      'Opens $opens',
+                    ),
+                    _storyStatChip(
+                      p,
+                      Icons.headphones_rounded,
+                      'Listens $listens',
+                    ),
+                    _storyStatChip(p, Icons.visibility_rounded, 'Views $views'),
+                    _storyStatChip(p, Icons.play_arrow_rounded, 'Plays $plays'),
                   ],
                 ),
                 if (authorSource.isNotEmpty) ...[
@@ -861,6 +943,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final level = (story['level'] ?? '').toString().trim();
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final teacher = _teacherName(story);
+    final opens = _storyStat(story, 'opens');
+    final listens = _storyStat(story, 'listens');
+    final views = _storyStat(story, 'views');
+    final plays = _storyStat(story, 'plays');
 
     return SizedBox(
       width: 210,
@@ -990,6 +1076,17 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                             if (hasWatch) _smallTag(p, 'Watch', isAccent: true),
                           ],
                         ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _smallTag(p, 'Opens $opens'),
+                            _smallTag(p, 'Listens $listens'),
+                            _smallTag(p, 'Views $views'),
+                            _smallTag(p, 'Plays $plays'),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -1108,7 +1205,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
-
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1229,6 +1325,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
               final story = storyValue is Map
                   ? Map<String, dynamic>.from(storyValue)
                   : <String, dynamic>{};
+              story['storyId'] = storyId;
               return MapEntry(storyId, story);
             }).toList();
 
