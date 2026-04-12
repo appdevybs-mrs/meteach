@@ -37,6 +37,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   DatabaseReference get _coursesRef => _db.ref('courses');
 
   String _search = '';
+  final TextEditingController _searchCtrl = TextEditingController();
   String? _selectedMonthYyyyMm;
   final Set<String> _selectedPaymentIds = {};
   Timer? _searchDebounce;
@@ -77,6 +78,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _searchCtrl.dispose();
     _rowsScrollMain.dispose();
     _rowsScrollFrozen.dispose();
     super.dispose();
@@ -1461,11 +1463,26 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                   color: Colors.white,
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                   child: TextField(
-                    onChanged: _onSearchChanged,
+                    controller: _searchCtrl,
+                    onChanged: (value) {
+                      setState(() {});
+                      _onSearchChanged(value);
+                    },
                     decoration: InputDecoration(
                       hintText:
                           'Search: learner, serial, variant, teacher, course, notes, dates…',
                       prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchCtrl.text.trim().isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() {});
+                                _onSearchChanged('');
+                              },
+                            ),
                       filled: true,
                       fillColor: AdminPaymentsScreen.appBg,
                       border: OutlineInputBorder(

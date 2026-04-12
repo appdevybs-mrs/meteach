@@ -107,6 +107,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
   bool? _openFilter; // null = all, true=open only, false=closed only
+  String _teacherFilterUid = 'all';
+  bool _emptyClassesOnly = false;
+  bool _showClassesSearch = false;
 
   static const List<String> _weekDays = <String>[
     "Sat",
@@ -804,6 +807,46 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (_openFilter == null) return true;
     final isOpen = (cls["is_open"] ?? true) == true;
     return _openFilter == isOpen;
+  }
+
+  String _classInstructorUid(Map<String, dynamic> cls) {
+    final current = cls['instructor_current'];
+    if (current is Map) {
+      final m = current.map((k, v) => MapEntry(k.toString(), v));
+      final uid = (m['uid'] ?? m['teacher_uid'] ?? m['id'] ?? '')
+          .toString()
+          .trim();
+      if (uid.isNotEmpty) return uid;
+    }
+    final asString = (current ?? '').toString().trim();
+    return asString;
+  }
+
+  bool _matchesTeacherFilter(Map<String, dynamic> cls) {
+    if (_teacherFilterUid == 'all') return true;
+
+    final uid = _classInstructorUid(cls);
+    if (uid.isNotEmpty) return uid == _teacherFilterUid;
+
+    final expectedName = (_teachersByUid[_teacherFilterUid]?['name'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (expectedName.isEmpty) return true;
+
+    final instructor = (cls['instructor'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return instructor == expectedName;
+  }
+
+  bool _matchesEmptyClassesFilter(Map<String, dynamic> cls) {
+    if (!_emptyClassesOnly) return true;
+    final learners = cls['learners'];
+    if (learners is Map) return learners.isEmpty;
+    if (learners is List) return learners.isEmpty;
+    return true;
   }
 
   bool _matchesSearch(Map<String, dynamic> cls) {
@@ -2366,85 +2409,219 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   // -------------------- Classes List UI --------------------
 
-  Widget _buildTopFilters() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 900;
-        final twoColWidth = (constraints.maxWidth - 10) / 2;
+  Future<void> _openClassesFiltersSheet() async {
+    final teacherIds = _teachers.map((t) => (t['uid'] ?? '').trim()).toSet();
+    var dayValue = _dayFilter;
+    var statusValue = _openFilter == null
+        ? 'all'
+        : (_openFilter! ? 'open' : 'closed');
+    var teacherValue = teacherIds.contains(_teacherFilterUid)
+        ? _teacherFilterUid
+        : 'all';
+    var emptyOnlyValue = _emptyClassesOnly;
 
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: narrow
-                  ? constraints.maxWidth
-                  : constraints.maxWidth * 0.52,
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  prefixIcon: Icon(Icons.search),
-                  labelText: "Search (ID / course / instructor / learner)",
-                  border: OutlineInputBorder(),
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Class filters',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A2B48),
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: dayValue,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Day',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'All',
+                          child: Text('All days'),
+                        ),
+                        ..._weekDays.map(
+                          (d) => DropdownMenuItem(value: d, child: Text(d)),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setSheetState(() => dayValue = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: statusValue,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Status',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'all', child: Text('All')),
+                        DropdownMenuItem(
+                          value: 'open',
+                          child: Text('Open only'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'closed',
+                          child: Text('Closed only'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setSheetState(() => statusValue = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: teacherValue,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Teacher',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All teachers'),
+                        ),
+                        ..._teachers.map(
+                          (t) => DropdownMenuItem(
+                            value: (t['uid'] ?? '').trim(),
+                            child: Text((t['name'] ?? '-').trim()),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null || v.trim().isEmpty) return;
+                        setSheetState(() => teacherValue = v);
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Empty classes only'),
+                      value: emptyOnlyValue,
+                      onChanged: (v) => setSheetState(() => emptyOnlyValue = v),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setSheetState(() {
+                              dayValue = 'All';
+                              statusValue = 'all';
+                              teacherValue = 'all';
+                              emptyOnlyValue = false;
+                            });
+                          },
+                          child: const Text('Reset'),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 6),
+                        FilledButton(
+                          onPressed: () {
+                            setState(() {
+                              _dayFilter = dayValue;
+                              _teacherFilterUid = teacherValue;
+                              _emptyClassesOnly = emptyOnlyValue;
+                              if (statusValue == 'all') {
+                                _openFilter = null;
+                              } else if (statusValue == 'open') {
+                                _openFilter = true;
+                              } else {
+                                _openFilter = false;
+                              }
+                            });
+                            Navigator.of(context).pop();
+                          },
+                          child: const Text('Apply'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ),
-            SizedBox(
-              width: narrow ? twoColWidth : 170,
-              child: DropdownButtonFormField<String>(
-                initialValue: _dayFilter,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: 'Day',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  const DropdownMenuItem(value: "All", child: Text("All days")),
-                  ..._weekDays.map(
-                    (d) => DropdownMenuItem(value: d, child: Text(d)),
-                  ),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  setState(() => _dayFilter = v);
-                },
-              ),
-            ),
-            SizedBox(
-              width: narrow ? twoColWidth : 170,
-              child: DropdownButtonFormField<String>(
-                initialValue: _openFilter == null
-                    ? 'all'
-                    : (_openFilter! ? 'open' : 'closed'),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: 'Status',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('All')),
-                  DropdownMenuItem(value: 'open', child: Text('Open only')),
-                  DropdownMenuItem(value: 'closed', child: Text('Closed only')),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  setState(() {
-                    if (v == 'all') {
-                      _openFilter = null;
-                    } else if (v == 'open') {
-                      _openFilter = true;
-                    } else {
-                      _openFilter = false;
-                    }
-                  });
-                },
-              ),
-            ),
-          ],
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildTopFilters() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: _showClassesSearch ? 'Hide search' : 'Search classes',
+          onPressed: () {
+            setState(() {
+              if (_showClassesSearch) {
+                _searchCtrl.clear();
+                _searchQuery = '';
+              }
+              _showClassesSearch = !_showClassesSearch;
+            });
+          },
+          icon: const Icon(Icons.search_rounded),
+        ),
+        if (_showClassesSearch) ...[
+          const SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search (ID / course / instructor / learner)',
+                border: const OutlineInputBorder(),
+                suffixIcon: _searchCtrl.text.trim().isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(width: 4),
+        IconButton(
+          tooltip: 'Filters',
+          onPressed: _openClassesFiltersSheet,
+          icon: const Icon(Icons.filter_alt_rounded),
+        ),
+      ],
     );
   }
 
@@ -2489,6 +2666,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   .where(_matchesSearch)
                   .where(_matchesDayFilter)
                   .where(_matchesOpenFilter)
+                  .where(_matchesTeacherFilter)
+                  .where(_matchesEmptyClassesFilter)
                   .toList();
 
               filtered.sort((a, b) {

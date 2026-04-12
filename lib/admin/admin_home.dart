@@ -785,10 +785,8 @@ class _AdminHomeState extends State<AdminHome> {
           ),
           actions: [
             IconButton(
-              tooltip: _showSearch ? 'Close search' : 'Search tools',
-              icon: Icon(
-                _showSearch ? Icons.close_rounded : Icons.search_rounded,
-              ),
+              tooltip: _showSearch ? 'Hide search' : 'Search tools',
+              icon: const Icon(Icons.search_rounded),
               onPressed: () {
                 setState(() {
                   if (_showSearch) {
