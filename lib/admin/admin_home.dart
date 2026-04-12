@@ -1853,22 +1853,55 @@ class _SettingsDashCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool isReceptionistStyle;
 
+  String _normalizeKey(String raw) {
+    return raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  dynamic _valueByAliases(Map source, List<String> aliases) {
+    final normalized = <String, dynamic>{};
+    source.forEach((k, v) {
+      normalized[_normalizeKey(k.toString())] = v;
+    });
+
+    for (final alias in aliases) {
+      final key = _normalizeKey(alias);
+      if (normalized.containsKey(key)) {
+        return normalized[key];
+      }
+    }
+    return null;
+  }
+
+  String? _cleanVersion(dynamic raw) {
+    final s = (raw ?? '').toString().trim();
+    if (s.isEmpty) return null;
+    if (RegExp(r'^0+(?:[.]0+)*$').hasMatch(s)) return null;
+    return s;
+  }
+
   String _v(dynamic root, String platform) {
     if (root is! Map) return 'n/a';
-    final m = root.map((k, v) => MapEntry(k.toString().toLowerCase(), v));
-    final p = m[platform.toLowerCase()];
+
+    final p = _valueByAliases(root, [platform]);
     if (p is Map) {
-      final pm = p.map((k, v) => MapEntry(k.toString(), v));
-      final raw =
-          pm['minVersion'] ?? pm['min_version'] ?? pm['version'] ?? pm['min'];
-      final s = (raw ?? '').toString().trim();
-      if (s.isNotEmpty) return s;
+      final raw = _valueByAliases(p, [
+        'minVersion',
+        'min_version',
+        'minversion',
+        'version',
+        'min',
+      ]);
+      final cleaned = _cleanVersion(raw);
+      if (cleaned != null) return cleaned;
     }
-    final flat =
-        m['${platform.toLowerCase()}minversion'] ??
-        m['${platform.toLowerCase()}_min_version'];
-    final fs = (flat ?? '').toString().trim();
-    return fs.isEmpty ? 'n/a' : fs;
+
+    final flat = _valueByAliases(root, [
+      '${platform}MinVersion',
+      '${platform}_min_version',
+      '${platform}_version',
+      '${platform}version',
+    ]);
+    return _cleanVersion(flat) ?? 'n/a';
   }
 
   @override
@@ -3575,6 +3608,25 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   DatabaseReference get _companyAltRoot =>
       FirebaseDatabase.instance.ref('appConfig/companyInfo');
 
+  String _normalizeKey(String raw) {
+    return raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  dynamic _valueByAliases(Map<String, dynamic> m, List<String> aliases) {
+    final normalized = <String, dynamic>{};
+    m.forEach((k, v) {
+      normalized[_normalizeKey(k)] = v;
+    });
+
+    for (final alias in aliases) {
+      final key = _normalizeKey(alias);
+      if (normalized.containsKey(key)) {
+        return normalized[key];
+      }
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -3622,11 +3674,33 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     required TextEditingController storeUrlC,
     required TextEditingController storeWebUrlC,
   }) {
-    minVersionC.text = (m['minVersion'] ?? '').toString();
-    minBuildC.text = (m['minBuild'] ?? '').toString();
-    messageC.text = (m['message'] ?? '').toString();
-    storeUrlC.text = (m['storeUrl'] ?? '').toString();
-    storeWebUrlC.text = (m['storeWebUrl'] ?? '').toString();
+    minVersionC.text =
+        (_valueByAliases(m, [
+                  'minVersion',
+                  'min_version',
+                  'minversion',
+                  'version',
+                  'min',
+                ]) ??
+                '')
+            .toString();
+    minBuildC.text =
+        (_valueByAliases(m, ['minBuild', 'min_build', 'minbuild', 'build']) ??
+                '')
+            .toString();
+    messageC.text = (_valueByAliases(m, ['message', 'msg']) ?? '').toString();
+    storeUrlC.text =
+        (_valueByAliases(m, ['storeUrl', 'store_url', 'store']) ?? '')
+            .toString();
+    storeWebUrlC.text =
+        (_valueByAliases(m, [
+                  'storeWebUrl',
+                  'store_web_url',
+                  'webUrl',
+                  'web_url',
+                ]) ??
+                '')
+            .toString();
   }
 
   Map<String, dynamic> _controllersToMap({
