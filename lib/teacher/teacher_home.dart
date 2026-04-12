@@ -189,12 +189,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
         String curUid = '';
         String curName = '';
+        String curSerial = '';
 
         final cur = c['instructor_current'];
         if (cur is Map) {
           final curMap = Map<String, dynamic>.from(cur);
           curUid = (curMap['uid'] ?? '').toString().trim();
           curName = (curMap['name'] ?? '').toString().trim();
+          curSerial = (curMap['serial'] ?? '').toString().trim();
         }
 
         final legacyInstructorName = (c['instructor'] ?? '').toString().trim();
@@ -210,7 +212,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 ) ==
                 _norm(teacherName);
 
-        final legacySerial = (c['instructorserial'] ?? c['serial'] ?? '')
+        final legacySerial = (c['instructorserial'] ?? c['serial'] ?? curSerial)
             .toString()
             .trim();
         final matchesSerial =
@@ -347,6 +349,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       final raw = Map<dynamic, dynamic>.from(snap.value as Map);
       final now = DateTime.now();
       final candidates = <_HomeUpcomingClass>[];
+      final courseMeta =
+          <String, ({String classId, String code, String title})>{};
 
       for (final entry in raw.entries) {
         final value = entry.value;
@@ -362,12 +366,30 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           continue;
         }
 
+        final courseId = (c['course_id'] ?? '').toString().trim();
+        if (courseId.isNotEmpty && !courseMeta.containsKey(courseId)) {
+          courseMeta[courseId] = (
+            classId: (c['class_id'] ?? c['id'] ?? '').toString().trim(),
+            code: (c['course_code'] ?? '').toString().trim(),
+            title: (c['course_title'] ?? '').toString().trim(),
+          );
+        }
+
         final occurrences = _generateOccurrencesForHome(c);
 
         for (final occ in occurrences) {
           if (!occ.end.isAfter(now)) continue;
           candidates.add(occ);
         }
+      }
+
+      final onlineCandidates = await _loadUpcomingOnlineClassesForHome(
+        teacherUid,
+        courseMeta,
+      );
+      for (final occ in onlineCandidates) {
+        if (!occ.end.isAfter(now)) continue;
+        candidates.add(occ);
       }
 
       if (candidates.isEmpty) return const [];
@@ -382,14 +404,133 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ? liveNow.first.start
           : candidates.first.start;
 
-      final sameDay = candidates.where((occ) {
+      final fromAnchor = <_HomeUpcomingClass>[];
+      final anchorIndex = liveNow.isNotEmpty
+          ? candidates.indexOf(liveNow.first)
+          : 0;
+      for (int i = anchorIndex; i < candidates.length; i++) {
+        final occ = candidates[i];
+        if (!occ.end.isAfter(now)) continue;
+        fromAnchor.add(occ);
+      }
+
+      if (fromAnchor.isEmpty) return const [];
+
+      final selected = fromAnchor.where((occ) {
         return occ.start.year == anchor.year &&
             occ.start.month == anchor.month &&
             occ.start.day == anchor.day;
       }).toList();
 
-      sameDay.sort((a, b) => a.start.compareTo(b.start));
-      return sameDay;
+      if (selected.length < 2) {
+        for (final occ in fromAnchor) {
+          if (selected.contains(occ)) continue;
+          selected.add(occ);
+          if (selected.length >= 2) break;
+        }
+      }
+
+      selected.sort((a, b) => a.start.compareTo(b.start));
+      return selected;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<_HomeUpcomingClass>> _loadUpcomingOnlineClassesForHome(
+    String teacherUid,
+    Map<String, ({String classId, String code, String title})> courseMeta,
+  ) async {
+    try {
+      final snap = await _db.child('booking_reservations').get();
+      if (!snap.exists || snap.value == null || snap.value is! Map) {
+        return const [];
+      }
+
+      final now = DateTime.now();
+      final out = <_HomeUpcomingClass>[];
+      final byCourse = Map<dynamic, dynamic>.from(snap.value as Map);
+
+      for (final courseEntry in byCourse.entries) {
+        final courseId = courseEntry.key.toString().trim();
+        final courseNode = courseEntry.value;
+        if (courseNode is! Map) continue;
+
+        final byDate = Map<dynamic, dynamic>.from(courseNode);
+
+        for (final dateEntry in byDate.entries) {
+          final dayKey = dateEntry.key.toString();
+          final dateNode = dateEntry.value;
+          if (dateNode is! Map) continue;
+
+          final byTime = Map<dynamic, dynamic>.from(dateNode);
+
+          for (final timeEntry in byTime.entries) {
+            final hhmm = timeEntry.key.toString();
+            final slotNode = timeEntry.value;
+            if (slotNode is! Map) continue;
+
+            final start = _parseBookingSlotStart(dayKey, hhmm);
+            if (start == null || !start.isAfter(now)) continue;
+
+            final slot = Map<dynamic, dynamic>.from(slotNode);
+
+            void addFromSlot(Map<dynamic, dynamic> rawSlot) {
+              final teacherId =
+                  (rawSlot['teacherId'] ??
+                          rawSlot['teacherUid'] ??
+                          rawSlot['teacher_id'])
+                      .toString()
+                      .trim();
+              if (teacherId != teacherUid) return;
+
+              final learnersRaw = rawSlot['learners'];
+              if (learnersRaw is! Map || learnersRaw.isEmpty) return;
+
+              final durationRaw =
+                  (rawSlot['durationMinutes'] ?? rawSlot['duration_min'] ?? 60)
+                      .toString();
+              final duration = int.tryParse(durationRaw);
+              final durationMin = (duration != null && duration > 0)
+                  ? duration
+                  : 60;
+
+              final meta = courseMeta[courseId];
+              out.add(
+                _HomeUpcomingClass(
+                  classId: meta?.classId ?? courseId,
+                  courseCode: meta?.code ?? '',
+                  courseTitle: meta?.title ?? 'Online Class',
+                  start: start,
+                  end: start.add(Duration(minutes: durationMin)),
+                  isOnline: true,
+                ),
+              );
+            }
+
+            final looksLikeDirectSlot =
+                slot.containsKey('teacherId') ||
+                slot.containsKey('teacherUid') ||
+                slot.containsKey('teacher_id') ||
+                slot.containsKey('learners') ||
+                slot.containsKey('sessionNo');
+
+            if (looksLikeDirectSlot) {
+              addFromSlot(slot);
+              continue;
+            }
+
+            for (final teacherEntry in slot.entries) {
+              final nested = teacherEntry.value;
+              if (nested is! Map) continue;
+              addFromSlot(Map<dynamic, dynamic>.from(nested));
+            }
+          }
+        }
+      }
+
+      out.sort((a, b) => a.start.compareTo(b.start));
+      return out;
     } catch (_) {
       return const [];
     }
@@ -422,12 +563,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }) {
     String curUid = '';
     String curName = '';
+    String curSerial = '';
 
     final cur = classData['instructor_current'];
     if (cur is Map) {
       final curMap = Map<String, dynamic>.from(cur);
       curUid = (curMap['uid'] ?? '').toString().trim();
       curName = (curMap['name'] ?? '').toString().trim();
+      curSerial = (curMap['serial'] ?? '').toString().trim();
     }
 
     final legacyInstructorName = (classData['instructor'] ?? '')
@@ -444,7 +587,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             _norm(teacherName);
 
     final legacySerial =
-        (classData['instructorserial'] ?? classData['serial'] ?? '')
+        (classData['instructorserial'] ?? classData['serial'] ?? curSerial)
             .toString()
             .trim();
     final matchesSerial =
@@ -1052,7 +1195,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       onOpenOnline: () => _pushScreen(
                                         const TeacherClassesScreen(
                                           initialMainTab: 1,
-                                          initialOnlineTab: 0,
+                                          initialOnlineTab: 1,
                                         ),
                                       ),
                                     ),
@@ -1070,7 +1213,19 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 child: _NextComingClassCard(
                                   palette: p,
                                   upcomingClasses: snap.data ?? const [],
-                                  onTap: () =>
+                                  onTapClass: (occ) {
+                                    if (occ.isOnline) {
+                                      _pushScreen(
+                                        const TeacherClassesScreen(
+                                          initialMainTab: 1,
+                                          initialOnlineTab: 1,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    _pushScreen(const TeacherSchedule());
+                                  },
+                                  onTapEmpty: () =>
                                       _pushScreen(const TeacherSchedule()),
                                 ),
                               );
@@ -1199,6 +1354,7 @@ class _HomeUpcomingClass {
     required this.courseTitle,
     required this.start,
     required this.end,
+    this.isOnline = false,
   });
 
   final String classId;
@@ -1206,6 +1362,7 @@ class _HomeUpcomingClass {
   final String courseTitle;
   final DateTime start;
   final DateTime end;
+  final bool isOnline;
 }
 
 class _HomeTeacherIdentity {
@@ -2085,12 +2242,14 @@ class _NextComingClassCard extends StatelessWidget {
   const _NextComingClassCard({
     required this.palette,
     required this.upcomingClasses,
-    required this.onTap,
+    required this.onTapClass,
+    required this.onTapEmpty,
   });
 
   final _HomePalette palette;
   final List<_HomeUpcomingClass> upcomingClasses;
-  final VoidCallback onTap;
+  final ValueChanged<_HomeUpcomingClass> onTapClass;
+  final VoidCallback onTapEmpty;
 
   String _fmtCountdown(Duration d) {
     if (d.inSeconds <= 0) return 'Starting now';
@@ -2119,7 +2278,7 @@ class _NextComingClassCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
+          onTap: onTapEmpty,
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -2171,11 +2330,11 @@ class _NextComingClassCard extends StatelessWidget {
             bottom: index == classes.length - 1 ? 0 : 10,
           ),
           child: Material(
-            color: palette.cardBg,
+            color: c.isOnline ? const Color(0xFFF7FCFF) : palette.cardBg,
             borderRadius: BorderRadius.circular(20),
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              onTap: onTap,
+              onTap: () => onTapClass(c),
               child: StreamBuilder<DateTime>(
                 stream: Stream<DateTime>.periodic(
                   const Duration(seconds: 1),
@@ -2184,12 +2343,26 @@ class _NextComingClassCard extends StatelessWidget {
                 initialData: DateTime.now(),
                 builder: (context, snapshot) {
                   final now = snapshot.data ?? DateTime.now();
+                  final isOnline = c.isOnline;
                   final isLive = !now.isBefore(c.start) && now.isBefore(c.end);
                   final untilStart = c.start.difference(now);
                   final isSoon =
                       !isLive &&
                       untilStart.inSeconds > 0 &&
                       untilStart.inSeconds <= 300;
+
+                  final itemPrimary = isOnline
+                      ? const Color(0xFF0B5E8A)
+                      : palette.primary;
+                  final itemSoft = isOnline
+                      ? const Color(0xFFEAF6FF)
+                      : palette.soft;
+                  final itemCardBg = isOnline
+                      ? const Color(0xFFF7FCFF)
+                      : palette.cardBg;
+                  final itemBorder = isOnline
+                      ? const Color(0xFFB5DDF2)
+                      : palette.border.withValues(alpha: 0.8);
 
                   final countdownText = isLive
                       ? 'LIVE'
@@ -2213,11 +2386,10 @@ class _NextComingClassCard extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
+                      color: itemCardBg,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isSoon
-                            ? const Color(0xFFE57373)
-                            : palette.border.withValues(alpha: 0.8),
+                        color: isSoon ? const Color(0xFFE57373) : itemBorder,
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -2235,15 +2407,42 @@ class _NextComingClassCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 index == 0
-                                    ? 'Next Coming Class'
-                                    : 'Same Day Class',
+                                    ? (isOnline
+                                          ? 'Next Online Class'
+                                          : 'Next Coming Class')
+                                    : (isOnline
+                                          ? 'Upcoming Online Class'
+                                          : 'Upcoming Class'),
                                 style: TextStyle(
-                                  color: palette.primary,
+                                  color: itemPrimary,
                                   fontWeight: FontWeight.w900,
                                   fontSize: 15,
                                 ),
                               ),
                             ),
+                            if (isOnline)
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD8EEFD),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(0xFFA7D4F1),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'ONLINE',
+                                  style: TextStyle(
+                                    color: Color(0xFF0B5E8A),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -2287,12 +2486,14 @@ class _NextComingClassCard extends StatelessWidget {
                               width: 50,
                               height: 50,
                               decoration: BoxDecoration(
-                                color: palette.soft,
+                                color: itemSoft,
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Icon(
-                                Icons.access_time_rounded,
-                                color: palette.primary,
+                                isOnline
+                                    ? Icons.video_call_rounded
+                                    : Icons.access_time_rounded,
+                                color: itemPrimary,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -2307,7 +2508,7 @@ class _NextComingClassCard extends StatelessWidget {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: palette.primary,
+                                      color: itemPrimary,
                                       fontWeight: FontWeight.w900,
                                       fontSize: 14,
                                     ),
@@ -2351,7 +2552,9 @@ class _NextComingClassCard extends StatelessWidget {
                             _InfoChip(
                               palette: palette,
                               icon: Icons.badge_rounded,
-                              text: 'ID: ${c.classId}',
+                              text: c.isOnline
+                                  ? 'Online booking'
+                                  : 'ID: ${c.classId}',
                             ),
                           ],
                         ),

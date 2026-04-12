@@ -22,6 +22,7 @@ import '../services/notification_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/teacher_web_layout.dart';
 import 'attendance_history_screen.dart';
+import 'teacher_classes.dart';
 import 'take_attendance_screen.dart';
 
 class TeacherSchedule extends StatefulWidget {
@@ -32,9 +33,11 @@ class TeacherSchedule extends StatefulWidget {
 }
 
 class _TeacherScheduleState extends State<TeacherSchedule> {
-  final DatabaseReference _classesRef = FirebaseDatabase.instance.ref().child(
-    'classes',
-  );
+  static const String _sessionReminderKeysPref =
+      'teacher_schedule_session_reminder_keys_v1';
+
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  late final DatabaseReference _classesRef = _db.child('classes');
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -155,12 +158,14 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   bool _matchesTeacherClass(Map<String, dynamic> classData) {
     String curUid = '';
     String curName = '';
+    String curSerial = '';
 
     final cur = classData['instructor_current'];
     if (cur is Map) {
       final curMap = Map<String, dynamic>.from(cur);
       curUid = (curMap['uid'] ?? '').toString().trim();
       curName = (curMap['name'] ?? '').toString().trim();
+      curSerial = (curMap['serial'] ?? '').toString().trim();
     }
 
     final legacyInstructorName = (classData['instructor'] ?? '')
@@ -177,7 +182,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             _norm(_viewerName);
 
     final legacySerial =
-        (classData['instructorserial'] ?? classData['serial'] ?? '')
+        (classData['instructorserial'] ?? classData['serial'] ?? curSerial)
             .toString()
             .trim();
     final matchesSerial =
@@ -233,7 +238,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final now = DateTime.now();
     final maxToSchedule = _lastAllOcc.length < 30 ? _lastAllOcc.length : 30;
     return upcoming
-        .where((e) => _isClassEnabled(e.classId))
+        .where((e) => _isClassEnabled(e.notificationClassId))
         .where((e) => _isDayEnabled(e.start))
         .where((e) => e.start.isAfter(now))
         .take(maxToSchedule)
@@ -249,7 +254,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       ..write(';');
     for (final o in candidates) {
       sb
-        ..write(o.classId)
+        ..write(o.notificationClassId)
         ..write('@')
         ..write(o.start.millisecondsSinceEpoch)
         ..write('|');
@@ -395,9 +400,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         return;
       }
 
-      await NotificationService.I.cancelAll();
+      final prevKeys =
+          _prefs.getStringList(_sessionReminderKeysPref) ?? const [];
+      final nextKeys = <String>{
+        for (final o in reminderCandidates) _sessionReminderKey(o),
+      };
 
-      if (_dailyEnabled) {
+      if (!_dailyEnabled) {
+        await NotificationService.I.cancelDailyReminder();
+      } else {
         await NotificationService.I.scheduleDailyReminder(
           hour: 8,
           minute: 0,
@@ -407,18 +418,44 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       }
 
       if (_sessionEnabled) {
+        for (final key in prevKeys) {
+          if (nextKeys.contains(key)) continue;
+          final parsed = _parseSessionReminderKey(key);
+          if (parsed == null) continue;
+          await NotificationService.I.cancelSessionReminder(
+            classId: parsed.classId,
+            sessionStart: parsed.start,
+          );
+        }
+
         for (final o in reminderCandidates) {
           await NotificationService.I.scheduleSessionReminder(
-            classId: o.classId,
-            title: 'Class Starting',
-            body: '${o.courseCode} at ${DateFormat('hh:mm a').format(o.start)}',
+            classId: o.notificationClassId,
+            title: o.isOnline ? 'Online Class Starting' : 'Class Starting',
+            body:
+                '${o.courseCode.isEmpty ? 'Class' : o.courseCode} at ${DateFormat('hh:mm a').format(o.start)}',
             sessionStart: o.start,
             minutesBefore: 15,
           );
         }
+        await _prefs.setStringList(_sessionReminderKeysPref, nextKeys.toList());
+      } else {
+        for (final key in prevKeys) {
+          final parsed = _parseSessionReminderKey(key);
+          if (parsed == null) continue;
+          await NotificationService.I.cancelSessionReminder(
+            classId: parsed.classId,
+            sessionStart: parsed.start,
+          );
+        }
+        await _prefs.setStringList(_sessionReminderKeysPref, const []);
       }
       _lastAppliedReminderPlanKey = planKey;
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Reminder sync failed: $e')));
     } finally {
       _applyInProgress = false;
       if (_applyPending) {
@@ -428,9 +465,22 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     }
   }
 
+  String _sessionReminderKey(_Occ o) {
+    return '${o.notificationClassId}@@${o.start.toIso8601String()}';
+  }
+
+  ({String classId, DateTime start})? _parseSessionReminderKey(String raw) {
+    final i = raw.lastIndexOf('@@');
+    if (i <= 0) return null;
+    final classId = raw.substring(0, i);
+    final dtRaw = raw.substring(i + 2);
+    final dt = DateTime.tryParse(dtRaw);
+    if (classId.isEmpty || dt == null) return null;
+    return (classId: classId, start: dt);
+  }
+
   @override
   Widget build(BuildContext context) {
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -541,67 +591,82 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
               _pruneOccCache(visibleClasses);
 
-              if (!isAdmin && visibleClasses.isEmpty) {
-                return _EmptyState(
-                  palette: p,
-                  icon: Icons.groups_rounded,
-                  title: 'No classes assigned',
-                  subtitle: 'No classes are assigned to this teacher yet.',
-                );
-              }
+              return StreamBuilder<DatabaseEvent>(
+                stream: _db.child('booking_reservations').onValue,
+                builder: (context, bookingSnap) {
+                  final allOcc = <_Occ>[];
+                  for (final cls in visibleClasses) {
+                    allOcc.addAll(_occurrencesForClassCached(cls));
+                  }
 
-              final allOcc = <_Occ>[];
-              for (final cls in visibleClasses) {
-                allOcc.addAll(_occurrencesForClassCached(cls));
-              }
-              allOcc.sort((a, b) => a.start.compareTo(b.start));
-
-              final now = DateTime.now();
-              final twoDaysAgo = now.subtract(const Duration(days: 2));
-              final recentAndUpcoming = allOcc
-                  .where((o) => o.end.isAfter(twoDaysAgo))
-                  .toList();
-
-              _latestAllOcc = allOcc;
-              _latestUpcoming = recentAndUpcoming;
-
-              if (_prefsReady && !_didAutoApply) {
-                _didAutoApply = true;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _queueApplyAllReminders(
-                    upcoming: recentAndUpcoming,
-                    allOcc: allOcc,
+                  final onlineOcc = _extractOnlineOccurrences(
+                    bookingSnap.data?.snapshot.value,
+                    rawClasses,
                   );
-                });
-              }
+                  allOcc.addAll(onlineOcc);
+                  allOcc.sort((a, b) => a.start.compareTo(b.start));
 
-              return Column(
-                children: [
-                  _ScheduleTopSummary(
-                    palette: p,
-                    totalClasses: visibleClasses.length,
-                    totalSessions: recentAndUpcoming.length,
-                    remindersOn: _sessionEnabled || _dailyEnabled,
-                    isAdmin: isAdmin,
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        _buildGroupedSchedule(
-                          recentAndUpcoming,
-                          allOcc,
-                          visibleClasses,
+                  final now = DateTime.now();
+                  final twoDaysAgo = now.subtract(const Duration(days: 2));
+                  final recentAndUpcoming = allOcc
+                      .where((o) => o.end.isAfter(twoDaysAgo))
+                      .toList();
+
+                  _latestAllOcc = allOcc;
+                  _latestUpcoming = recentAndUpcoming;
+
+                  if (_prefsReady && !_didAutoApply) {
+                    _didAutoApply = true;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      _queueApplyAllReminders(
+                        upcoming: recentAndUpcoming,
+                        allOcc: allOcc,
+                      );
+                    });
+                  }
+
+                  if (recentAndUpcoming.isEmpty) {
+                    return _EmptyState(
+                      palette: p,
+                      icon: Icons.schedule_rounded,
+                      title: isAdmin
+                          ? 'No recent or upcoming sessions'
+                          : 'No recent or upcoming sessions',
+                      subtitle: visibleClasses.isEmpty
+                          ? 'No in-class schedules or online bookings found yet.'
+                          : 'Your schedule is clear for now.',
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      _ScheduleTopSummary(
+                        palette: p,
+                        totalClasses: visibleClasses.length,
+                        totalSessions: recentAndUpcoming.length,
+                        remindersOn: _sessionEnabled || _dailyEnabled,
+                        isAdmin: isAdmin,
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _buildGroupedSchedule(
+                              recentAndUpcoming,
+                              allOcc,
+                              visibleClasses,
+                            ),
+                            _buildCalendarView(
+                              allOcc,
+                              recentAndUpcoming,
+                              visibleClasses,
+                            ),
+                          ],
                         ),
-                        _buildCalendarView(
-                          allOcc,
-                          recentAndUpcoming,
-                          visibleClasses,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -684,11 +749,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 palette: p,
                 o: o,
                 isConflict: isConflict,
-                enabled: _isClassEnabled(o.classId),
-                onToggle: () =>
-                    _toggleClassNotif(o.classId, displayList, allOcc),
+                enabled: _isClassEnabled(o.notificationClassId),
+                onToggle: () => _toggleClassNotif(
+                  o.notificationClassId,
+                  displayList,
+                  allOcc,
+                ),
                 onAttendance: () => _openAttendance(o, visibleClasses),
                 onHistory: () => _openHistory(o, visibleClasses),
+                onOpenOnline: _openOnlineUpcomingTab,
               );
             }),
           ],
@@ -703,9 +772,16 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     List<Map<String, dynamic>> visibleClasses,
   ) {
     final Map<String, List<_Occ>> byDay = {};
+    final Set<String> onlineDays = <String>{};
+    final Set<String> regularDays = <String>{};
     for (final o in allOcc) {
       final k = _fmtKey(o.start);
       byDay.putIfAbsent(k, () => []).add(o);
+      if (o.isOnline) {
+        onlineDays.add(k);
+      } else {
+        regularDays.add(k);
+      }
     }
 
     final selected = _selectedDay ?? _focusedDay;
@@ -841,14 +917,30 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
                 ),
-                markerDecoration: BoxDecoration(
-                  color: p.accent,
-                  shape: BoxShape.circle,
-                ),
-                markersMaxCount: 3,
                 outsideTextStyle: TextStyle(
                   color: p.text.withValues(alpha: 0.35),
                 ),
+              ),
+              calendarBuilders: CalendarBuilders(
+                markerBuilder: (context, day, events) {
+                  final key = _fmtKey(day);
+                  final isOnlineDay = onlineDays.contains(key);
+                  final isRegularDay = regularDays.contains(key);
+                  if (!isOnlineDay && !isRegularDay) return null;
+
+                  return Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.only(bottom: 5),
+                      decoration: BoxDecoration(
+                        color: isOnlineDay ? const Color(0xFFD32F2F) : p.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  );
+                },
               ),
               onDaySelected: (s, f) => setState(() {
                 _selectedDay = s;
@@ -858,6 +950,30 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             ),
           ),
           secondChild: const SizedBox.shrink(),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFD32F2F),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Red dot = Online booking',
+                style: TextStyle(
+                  color: p.text.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
         ),
         Expanded(
           child: events.isEmpty
@@ -876,20 +992,31 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                       palette: p,
                       o: events[i],
                       isConflict: isConflict,
-                      enabled: _isClassEnabled(events[i].classId),
+                      enabled: _isClassEnabled(events[i].notificationClassId),
                       onToggle: () => _toggleClassNotif(
-                        events[i].classId,
+                        events[i].notificationClassId,
                         upcoming,
                         allOcc,
                       ),
                       onAttendance: () =>
                           _openAttendance(events[i], visibleClasses),
                       onHistory: () => _openHistory(events[i], visibleClasses),
+                      onOpenOnline: _openOnlineUpcomingTab,
                     );
                   },
                 ),
         ),
       ],
+    );
+  }
+
+  void _openOnlineUpcomingTab() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 1),
+      ),
     );
   }
 
@@ -1039,18 +1166,27 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final firstDateRaw = schedule['first_session_date']?.toString() ?? '';
     final firstDate = DateTime.tryParse(firstDateRaw);
     if (firstDate == null) return [];
+    final firstDateDay = DateTime(
+      firstDate.year,
+      firstDate.month,
+      firstDate.day,
+    );
 
     final sessionsRaw = schedule['sessions'];
     final pattern = <Map<String, dynamic>>[];
     if (sessionsRaw is List) {
       for (final it in sessionsRaw) {
         if (it is! Map) continue;
-        pattern.add(Map<String, dynamic>.from(it));
+        final row = Map<String, dynamic>.from(it);
+        if (!row.containsKey('day') || !row.containsKey('start_time')) continue;
+        pattern.add(row);
       }
     } else if (sessionsRaw is Map) {
       for (final it in sessionsRaw.values) {
         if (it is! Map) continue;
-        pattern.add(Map<String, dynamic>.from(it));
+        final row = Map<String, dynamic>.from(it);
+        if (!row.containsKey('day') || !row.containsKey('start_time')) continue;
+        pattern.add(row);
       }
     }
     if (pattern.isEmpty) return [];
@@ -1094,7 +1230,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           startMin,
         );
 
-        if (start.isBefore(firstDate)) continue;
+        if (start.isBefore(firstDateDay)) continue;
 
         final durRaw = (s['duration_min'] ?? '60').toString();
         final dur = int.tryParse(durRaw);
@@ -1107,6 +1243,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             courseTitle: courseTitle,
             start: start,
             end: start.add(Duration(minutes: durationMin)),
+            isOnline: false,
+            onlineBookingKey: '',
           ),
         );
       }
@@ -1117,6 +1255,142 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     occ.sort((a, b) => a.start.compareTo(b.start));
     return occ;
+  }
+
+  DateTime? _parseBookingSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<_Occ> _extractOnlineOccurrences(
+    Object? bookingData,
+    List<Map<String, dynamic>> rawClasses,
+  ) {
+    if (bookingData is! Map) return const [];
+
+    final byCourseMeta =
+        <String, ({String classId, String code, String title})>{};
+    for (final c in rawClasses) {
+      final cid = (c['course_id'] ?? '').toString().trim();
+      if (cid.isEmpty || byCourseMeta.containsKey(cid)) continue;
+      byCourseMeta[cid] = (
+        classId: (c['class_id'] ?? c['id'] ?? cid).toString().trim(),
+        code: (c['course_code'] ?? '').toString().trim(),
+        title: (c['course_title'] ?? 'Online Class').toString().trim(),
+      );
+    }
+
+    final now = DateTime.now();
+    final out = <_Occ>[];
+    final byCourse = Map<dynamic, dynamic>.from(bookingData);
+
+    for (final courseEntry in byCourse.entries) {
+      final courseId = courseEntry.key.toString().trim();
+      final courseNode = courseEntry.value;
+      if (courseNode is! Map) continue;
+
+      final byDate = Map<dynamic, dynamic>.from(courseNode);
+      for (final dateEntry in byDate.entries) {
+        final dayKey = dateEntry.key.toString();
+        final dateNode = dateEntry.value;
+        if (dateNode is! Map) continue;
+
+        final byTime = Map<dynamic, dynamic>.from(dateNode);
+        for (final timeEntry in byTime.entries) {
+          final hhmm = timeEntry.key.toString();
+          final slotNode = timeEntry.value;
+          if (slotNode is! Map) continue;
+
+          final start = _parseBookingSlotStart(dayKey, hhmm);
+          if (start == null ||
+              !start.isAfter(now.subtract(const Duration(days: 2)))) {
+            continue;
+          }
+
+          final slotMap = Map<dynamic, dynamic>.from(slotNode);
+
+          void maybeAdd(
+            Map<dynamic, dynamic> rawSlot, {
+            String fallbackTeacher = '',
+          }) {
+            final teacherId =
+                (rawSlot['teacherId'] ??
+                        rawSlot['teacherUid'] ??
+                        rawSlot['teacher_id'] ??
+                        fallbackTeacher)
+                    .toString()
+                    .trim();
+
+            if (!_isAdminViewer && teacherId != _viewerUid) return;
+
+            final learnersRaw = rawSlot['learners'];
+            if (learnersRaw is! Map || learnersRaw.isEmpty) return;
+
+            final durationRaw =
+                (rawSlot['durationMinutes'] ?? rawSlot['duration_min'] ?? 60)
+                    .toString();
+            final parsed = int.tryParse(durationRaw);
+            final duration = (parsed != null && parsed > 0) ? parsed : 60;
+
+            final meta = byCourseMeta[courseId];
+            final classId = meta?.classId ?? courseId;
+            final code = meta?.code ?? '';
+            final title = meta?.title ?? 'Online Class';
+            final bookingKey = '$courseId|$dayKey|$hhmm|$teacherId';
+
+            out.add(
+              _Occ(
+                classId: classId,
+                courseCode: code,
+                courseTitle: title,
+                start: start,
+                end: start.add(Duration(minutes: duration)),
+                isOnline: true,
+                onlineBookingKey: bookingKey,
+              ),
+            );
+          }
+
+          final looksDirect =
+              slotMap.containsKey('learners') ||
+              slotMap.containsKey('teacherId') ||
+              slotMap.containsKey('teacherUid') ||
+              slotMap.containsKey('teacher_id');
+
+          if (looksDirect) {
+            maybeAdd(slotMap);
+          } else {
+            for (final teacherEntry in slotMap.entries) {
+              final nested = teacherEntry.value;
+              if (nested is! Map) continue;
+              maybeAdd(
+                Map<dynamic, dynamic>.from(nested),
+                fallbackTeacher: teacherEntry.key.toString(),
+              );
+            }
+          }
+        }
+      }
+    }
+
+    out.sort((a, b) => a.start.compareTo(b.start));
+    return out;
   }
 
   int _weekdayFromShort(String day) {
@@ -1212,6 +1486,8 @@ class _Occ {
   final String courseTitle;
   final DateTime start;
   final DateTime end;
+  final bool isOnline;
+  final String onlineBookingKey;
 
   _Occ({
     required this.classId,
@@ -1219,7 +1495,14 @@ class _Occ {
     required this.courseTitle,
     required this.start,
     required this.end,
+    required this.isOnline,
+    required this.onlineBookingKey,
   });
+
+  String get notificationClassId {
+    if (!isOnline) return classId;
+    return 'online:$onlineBookingKey';
+  }
 }
 
 class _ScheduleTopSummary extends StatelessWidget {
@@ -1352,6 +1635,7 @@ class _SessionCard extends StatelessWidget {
     required this.onToggle,
     required this.onAttendance,
     required this.onHistory,
+    required this.onOpenOnline,
   });
 
   final AppPalette palette;
@@ -1361,6 +1645,7 @@ class _SessionCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onAttendance;
   final VoidCallback onHistory;
+  final VoidCallback onOpenOnline;
 
   @override
   Widget build(BuildContext context) {
@@ -1374,14 +1659,19 @@ class _SessionCard extends StatelessWidget {
     if (isConflict) statusColor = const Color(0xFFD32F2F);
     if (isLive) statusColor = palette.primary;
     if (isPast) statusColor = palette.text.withValues(alpha: 0.30);
+    if (o.isOnline && !isPast) statusColor = const Color(0xFFD32F2F);
 
     final Color bgColor = isPast
         ? palette.soft.withValues(alpha: 0.35)
-        : (isConflict ? const Color(0xFFFFEBEE) : palette.cardBg);
+        : (o.isOnline
+              ? const Color(0xFFFFF5F5)
+              : (isConflict ? const Color(0xFFFFEBEE) : palette.cardBg));
 
     final Color borderColor = isConflict
         ? const Color(0xFFD32F2F).withValues(alpha: 0.28)
-        : palette.border;
+        : (o.isOnline
+              ? const Color(0xFFD32F2F).withValues(alpha: 0.25)
+              : palette.border);
 
     final Color titleColor = isPast
         ? palette.text.withValues(alpha: 0.45)
@@ -1438,6 +1728,29 @@ class _SessionCard extends StatelessWidget {
                             ),
                             const Spacer(),
                             if (isLive) _LiveBadge(palette: palette),
+                            if (o.isOnline && !isLive)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFDE8E8),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(0xFFE8B7B7),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'ONLINE',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFFB71C1C),
+                                  ),
+                                ),
+                              ),
                             if (isPast)
                               Text(
                                 'FINISHED',
@@ -1500,7 +1813,9 @@ class _SessionCard extends StatelessWidget {
                           children: [
                             _InfoPill(
                               palette: palette,
-                              icon: Icons.schedule_rounded,
+                              icon: o.isOnline
+                                  ? Icons.wifi_tethering_rounded
+                                  : Icons.schedule_rounded,
                               text:
                                   '${DateFormat('hh:mm a').format(o.start)} - ${DateFormat('hh:mm a').format(o.end)}',
                             ),
@@ -1515,25 +1830,35 @@ class _SessionCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _ActionButton(
-                                label: isPast
-                                    ? 'Update Attendance'
-                                    : 'Take Attendance',
-                                icon: isPast
-                                    ? Icons.edit_note_rounded
-                                    : Icons.how_to_reg_rounded,
-                                color: isPast
-                                    ? palette.text.withValues(alpha: 0.55)
-                                    : palette.primary,
-                                onTap: onAttendance,
+                                label: o.isOnline
+                                    ? 'Open Online Tab'
+                                    : (isPast
+                                          ? 'Update Attendance'
+                                          : 'Take Attendance'),
+                                icon: o.isOnline
+                                    ? Icons.open_in_new_rounded
+                                    : (isPast
+                                          ? Icons.edit_note_rounded
+                                          : Icons.how_to_reg_rounded),
+                                color: o.isOnline
+                                    ? const Color(0xFFB71C1C)
+                                    : (isPast
+                                          ? palette.text.withValues(alpha: 0.55)
+                                          : palette.primary),
+                                onTap: o.isOnline ? onOpenOnline : onAttendance,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: _ActionButton(
-                                label: 'History',
-                                icon: Icons.history_rounded,
-                                color: palette.text.withValues(alpha: 0.72),
-                                onTap: onHistory,
+                                label: o.isOnline ? 'View Online' : 'History',
+                                icon: o.isOnline
+                                    ? Icons.wifi_tethering_rounded
+                                    : Icons.history_rounded,
+                                color: o.isOnline
+                                    ? const Color(0xFFD32F2F)
+                                    : palette.text.withValues(alpha: 0.72),
+                                onTap: o.isOnline ? onOpenOnline : onHistory,
                               ),
                             ),
                           ],
