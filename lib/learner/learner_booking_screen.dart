@@ -1419,13 +1419,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           return;
         }
 
-        final okCancel = await _cancelBookingByKey(
+        final cancelStatus = await _cancelBookingByKey(
           cid,
           existing.dayKey,
           existing.time,
           existing.teacherId,
         );
-        if (!okCancel) {
+        if (cancelStatus == _CancelBookingStatus.locked) {
+          _toast(
+            'You already booked a class and it’s within 24 hours, so you can’t change it.',
+          );
+          return;
+        }
+        if (cancelStatus == _CancelBookingStatus.failed) {
           _toast('Could not change booking (cancel failed).');
           return;
         }
@@ -1546,7 +1552,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
-  Future<bool> _cancelBookingByKey(
+  Future<_CancelBookingStatus> _cancelBookingByKey(
     String cid,
     String dayKey,
     String hhmm,
@@ -1554,48 +1560,124 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   ) async {
     try {
       final start = _parseSlotStart(dayKey, hhmm);
-      if (start == null) return false;
+      if (start == null) return _CancelBookingStatus.failed;
 
       final locked = !start.isAfter(
         DateTime.now().add(const Duration(hours: 24)),
       );
-      if (locked) return false;
+      if (locked) return _CancelBookingStatus.locked;
 
-      Future<bool> cancelAtRef(DatabaseReference ref) async {
-        final result = await ref.runTransaction((Object? currentData) {
-          if (currentData is! Map) return Transaction.abort();
+      Future<_CancelBookingStatus> cancelAtRef(DatabaseReference ref) async {
+        const maxAttempts = 2;
 
-          final node = currentData.map((k, v) => MapEntry(k.toString(), v));
-          final learnersRaw = node['learners'];
-          if (learnersRaw is! Map) return Transaction.abort();
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            final result = await ref.runTransaction((Object? currentData) {
+              if (currentData is! Map) return Transaction.abort();
 
-          final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
-          if (!learners.containsKey(myUid)) return Transaction.abort();
+              final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+              final learnersRaw = node['learners'];
+              if (learnersRaw is! Map) return Transaction.abort();
 
-          learners.remove(myUid);
+              final learners = learnersRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (!learners.containsKey(myUid)) return Transaction.abort();
 
-          if (learners.isEmpty) {
-            return Transaction.success(null);
+              learners.remove(myUid);
+
+              if (learners.isEmpty) {
+                return Transaction.success(null);
+              }
+
+              node['learners'] = learners;
+              return Transaction.success(node);
+            });
+
+            if (result.committed) {
+              return _CancelBookingStatus.cancelled;
+            }
+
+            final snap = await ref.get();
+            if (!snap.exists || snap.value == null) {
+              return _CancelBookingStatus.notFound;
+            }
+
+            if (snap.value is! Map) {
+              if (attempt < maxAttempts - 1) {
+                await Future.delayed(const Duration(milliseconds: 250));
+                continue;
+              }
+              return _CancelBookingStatus.failed;
+            }
+
+            final node = (snap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v),
+            );
+            final learnersRaw = node['learners'];
+
+            if (learnersRaw is Map) {
+              final learners = learnersRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (!learners.containsKey(myUid)) {
+                return _CancelBookingStatus.notFound;
+              }
+            } else {
+              final hasNestedLearners = node.values.any((v) {
+                if (v is! Map) return false;
+                final vm = v.map((k, vv) => MapEntry(k.toString(), vv));
+                return vm['learners'] is Map;
+              });
+              if (hasNestedLearners) {
+                return _CancelBookingStatus.notFound;
+              }
+            }
+
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(const Duration(milliseconds: 250));
+              continue;
+            }
+
+            return _CancelBookingStatus.failed;
+          } catch (_) {
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(const Duration(milliseconds: 250));
+              continue;
+            }
+            return _CancelBookingStatus.failed;
           }
+        }
 
-          node['learners'] = learners;
-          return Transaction.success(node);
-        });
-
-        return result.committed;
+        return _CancelBookingStatus.failed;
       }
 
       final newRef = _reservationsRef(cid, dayKey, hhmm, teacherId);
-      final newCancelled = await cancelAtRef(newRef);
-      if (newCancelled) return true;
+      final newStatus = await cancelAtRef(newRef);
+      if (newStatus == _CancelBookingStatus.cancelled) {
+        return _CancelBookingStatus.cancelled;
+      }
+      if (newStatus == _CancelBookingStatus.locked) {
+        return _CancelBookingStatus.locked;
+      }
 
       final legacyRef = _legacyReservationsRef(cid, dayKey, hhmm);
-      final legacyCancelled = await cancelAtRef(legacyRef);
-      if (legacyCancelled) return true;
+      final legacyStatus = await cancelAtRef(legacyRef);
+      if (legacyStatus == _CancelBookingStatus.cancelled) {
+        return _CancelBookingStatus.cancelled;
+      }
+      if (legacyStatus == _CancelBookingStatus.locked) {
+        return _CancelBookingStatus.locked;
+      }
 
-      return false;
+      if (newStatus == _CancelBookingStatus.notFound ||
+          legacyStatus == _CancelBookingStatus.notFound) {
+        return _CancelBookingStatus.notFound;
+      }
+
+      return _CancelBookingStatus.failed;
     } catch (_) {
-      return false;
+      return _CancelBookingStatus.failed;
     }
   }
 
@@ -1614,20 +1696,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     setState(() => booking = true);
 
     try {
-      final ok = await _cancelBookingByKey(
+      final status = await _cancelBookingByKey(
         cid,
         slot.dayKey,
         slot.time,
         slot.teacherId,
       );
-      if (!ok) {
-        _toast('Cancel failed.');
+      if (status == _CancelBookingStatus.locked) {
+        _toast('You can’t cancel within 24 hours of the session.');
+        return;
+      }
+      if (status == _CancelBookingStatus.failed) {
+        _toast('Cancel failed. Please try again.');
         return;
       }
 
       await _cancelLearnerLocalReminder(slot);
 
-      _toast('Booking canceled ✅');
+      if (status == _CancelBookingStatus.notFound) {
+        _toast('This booking was already canceled. ✅');
+      } else {
+        _toast('Booking canceled ✅');
+      }
 
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
@@ -4371,6 +4461,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 }
 
 // ================== Models ==================
+
+enum _CancelBookingStatus { cancelled, notFound, locked, failed }
 
 class _BookingGate {
   final bool enabled;
