@@ -396,42 +396,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
       candidates.sort((a, b) => a.start.compareTo(b.start));
 
-      final liveNow = candidates.where((occ) {
-        return !occ.start.isAfter(now) && occ.end.isAfter(now);
-      }).toList();
-
-      final anchor = liveNow.isNotEmpty
-          ? liveNow.first.start
-          : candidates.first.start;
-
-      final fromAnchor = <_HomeUpcomingClass>[];
-      final anchorIndex = liveNow.isNotEmpty
-          ? candidates.indexOf(liveNow.first)
-          : 0;
-      for (int i = anchorIndex; i < candidates.length; i++) {
-        final occ = candidates[i];
+      final upcoming = <_HomeUpcomingClass>[];
+      for (final occ in candidates) {
         if (!occ.end.isAfter(now)) continue;
-        fromAnchor.add(occ);
+        upcoming.add(occ);
+        if (upcoming.length >= 2) break;
       }
-
-      if (fromAnchor.isEmpty) return const [];
-
-      final selected = fromAnchor.where((occ) {
-        return occ.start.year == anchor.year &&
-            occ.start.month == anchor.month &&
-            occ.start.day == anchor.day;
-      }).toList();
-
-      if (selected.length < 2) {
-        for (final occ in fromAnchor) {
-          if (selected.contains(occ)) continue;
-          selected.add(occ);
-          if (selected.length >= 2) break;
-        }
-      }
-
-      selected.sort((a, b) => a.start.compareTo(b.start));
-      return selected;
+      return upcoming;
     } catch (_) {
       return const [];
     }
@@ -609,25 +580,30 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     final firstDateRaw = schedule['first_session_date']?.toString() ?? '';
     final firstDate = DateTime.tryParse(firstDateRaw);
     if (firstDate == null) return [];
+    final firstDateDay = DateTime(
+      firstDate.year,
+      firstDate.month,
+      firstDate.day,
+    );
 
     final sessionsRaw = schedule['sessions'];
     final pattern = <Map<String, dynamic>>[];
     if (sessionsRaw is List) {
       for (final it in sessionsRaw) {
         if (it is! Map) continue;
-        pattern.add(Map<String, dynamic>.from(it));
+        final row = Map<String, dynamic>.from(it);
+        if (!row.containsKey('day') || !row.containsKey('start_time')) continue;
+        pattern.add(row);
       }
     } else if (sessionsRaw is Map) {
       for (final it in sessionsRaw.values) {
         if (it is! Map) continue;
-        pattern.add(Map<String, dynamic>.from(it));
+        final row = Map<String, dynamic>.from(it);
+        if (!row.containsKey('day') || !row.containsKey('start_time')) continue;
+        pattern.add(row);
       }
     }
     if (pattern.isEmpty) return [];
-
-    final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
-    int countLimit = int.tryParse(countLimitRaw) ?? 0;
-    if (countLimit <= 0) countLimit = 200;
 
     final classId = (cls['class_id'] ?? cls['id'] ?? '').toString().trim();
     final courseCode = (cls['course_code'] ?? '').toString().trim();
@@ -635,12 +611,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     final List<_HomeUpcomingClass> occ = [];
 
-    DateTime cursor = DateTime(firstDate.year, firstDate.month, firstDate.day);
+    final now = DateTime.now();
+    final windowStart = now.subtract(const Duration(days: 14));
+    DateTime cursor = firstDateDay.isAfter(windowStart)
+        ? firstDateDay
+        : windowStart;
+    final horizon = now.add(const Duration(days: 365));
 
-    for (int week = 0; week < 52; week++) {
+    while (!cursor.isAfter(horizon)) {
       for (final s in pattern) {
-        if (occ.length >= countLimit) break;
-
         final dayShort = (s['day'] ?? 'Mon').toString();
         final targetWeekday = _weekdayFromShortForHome(dayShort);
 
@@ -665,7 +644,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           startMin,
         );
 
-        if (start.isBefore(firstDate)) continue;
+        if (start.isBefore(firstDateDay)) continue;
 
         final durRaw = (s['duration_min'] ?? '60').toString();
         final dur = int.tryParse(durRaw);
@@ -683,7 +662,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       }
 
       cursor = cursor.add(const Duration(days: 7));
-      if (occ.length >= countLimit) break;
     }
 
     occ.sort((a, b) => a.start.compareTo(b.start));

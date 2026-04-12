@@ -238,7 +238,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final now = DateTime.now();
     final maxToSchedule = _lastAllOcc.length < 30 ? _lastAllOcc.length : 30;
     return upcoming
-        .where((e) => _isClassEnabled(e.notificationClassId))
+        .where((e) => e.isOnline || _isClassEnabled(e.notificationClassId))
         .where((e) => _isDayEnabled(e.start))
         .where((e) => e.start.isAfter(now))
         .take(maxToSchedule)
@@ -641,13 +641,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
                   return Column(
                     children: [
-                      _ScheduleTopSummary(
-                        palette: p,
-                        totalClasses: visibleClasses.length,
-                        totalSessions: recentAndUpcoming.length,
-                        remindersOn: _sessionEnabled || _dailyEnabled,
-                        isAdmin: isAdmin,
-                      ),
                       Expanded(
                         child: TabBarView(
                           children: [
@@ -749,12 +742,13 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 palette: p,
                 o: o,
                 isConflict: isConflict,
-                enabled: _isClassEnabled(o.notificationClassId),
-                onToggle: () => _toggleClassNotif(
-                  o.notificationClassId,
-                  displayList,
-                  allOcc,
-                ),
+                enabled: o.isOnline
+                    ? true
+                    : _isClassEnabled(o.notificationClassId),
+                onToggle: () {
+                  if (o.isOnline) return;
+                  _toggleClassNotif(o.notificationClassId, displayList, allOcc);
+                },
                 onAttendance: () => _openAttendance(o, visibleClasses),
                 onHistory: () => _openHistory(o, visibleClasses),
                 onOpenOnline: _openOnlineUpcomingTab,
@@ -772,16 +766,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     List<Map<String, dynamic>> visibleClasses,
   ) {
     final Map<String, List<_Occ>> byDay = {};
-    final Set<String> onlineDays = <String>{};
-    final Set<String> regularDays = <String>{};
     for (final o in allOcc) {
       final k = _fmtKey(o.start);
       byDay.putIfAbsent(k, () => []).add(o);
-      if (o.isOnline) {
-        onlineDays.add(k);
-      } else {
-        regularDays.add(k);
-      }
     }
 
     final selected = _selectedDay ?? _focusedDay;
@@ -846,16 +833,16 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               ? CrossFadeState.showFirst
               : CrossFadeState.showSecond,
           firstChild: Container(
-            margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             decoration: BoxDecoration(
               color: p.cardBg,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(color: p.border.withValues(alpha: 0.85)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 14,
-                  offset: const Offset(0, 8),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
                 ),
               ],
             ),
@@ -865,13 +852,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               focusedDay: _focusedDay,
               selectedDayPredicate: (day) => isSameDay(selected, day),
               calendarFormat: CalendarFormat.month,
+              rowHeight: 39,
+              daysOfWeekHeight: 22,
               headerStyle: HeaderStyle(
                 formatButtonVisible: false,
                 titleCentered: true,
                 titleTextStyle: TextStyle(
                   color: p.primary,
                   fontWeight: FontWeight.w900,
-                  fontSize: 16,
+                  fontSize: 14,
                 ),
                 leftChevronIcon: Icon(
                   Icons.chevron_left_rounded,
@@ -923,20 +912,32 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               ),
               calendarBuilders: CalendarBuilders(
                 markerBuilder: (context, day, events) {
-                  final key = _fmtKey(day);
-                  final isOnlineDay = onlineDays.contains(key);
-                  final isRegularDay = regularDays.contains(key);
-                  if (!isOnlineDay && !isRegularDay) return null;
+                  final list = events.whereType<_Occ>().toList();
+                  if (list.isEmpty) return null;
+
+                  list.sort((a, b) => a.start.compareTo(b.start));
+                  final dots = list.take(4).toList();
 
                   return Align(
                     alignment: Alignment.bottomCenter,
-                    child: Container(
-                      width: 7,
-                      height: 7,
-                      margin: const EdgeInsets.only(bottom: 5),
-                      decoration: BoxDecoration(
-                        color: isOnlineDay ? const Color(0xFFD32F2F) : p.accent,
-                        shape: BoxShape.circle,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final e in dots)
+                            Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 1),
+                              decoration: BoxDecoration(
+                                color: e.isOnline
+                                    ? const Color(0xFFD32F2F)
+                                    : p.accent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   );
@@ -992,12 +993,17 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                       palette: p,
                       o: events[i],
                       isConflict: isConflict,
-                      enabled: _isClassEnabled(events[i].notificationClassId),
-                      onToggle: () => _toggleClassNotif(
-                        events[i].notificationClassId,
-                        upcoming,
-                        allOcc,
-                      ),
+                      enabled: events[i].isOnline
+                          ? true
+                          : _isClassEnabled(events[i].notificationClassId),
+                      onToggle: () {
+                        if (events[i].isOnline) return;
+                        _toggleClassNotif(
+                          events[i].notificationClassId,
+                          upcoming,
+                          allOcc,
+                        );
+                      },
                       onAttendance: () =>
                           _openAttendance(events[i], visibleClasses),
                       onHistory: () => _openHistory(events[i], visibleClasses),
@@ -1191,22 +1197,21 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     }
     if (pattern.isEmpty) return [];
 
-    final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
-    int countLimit = int.tryParse(countLimitRaw) ?? 0;
-    if (countLimit <= 0) countLimit = 200;
-
     final classId = (cls['class_id'] ?? cls['id'] ?? '').toString();
     final courseCode = (cls['course_code'] ?? '').toString();
     final courseTitle = (cls['course_title'] ?? '').toString();
 
     final List<_Occ> occ = [];
 
-    DateTime cursor = DateTime(firstDate.year, firstDate.month, firstDate.day);
+    final now = DateTime.now();
+    final windowStart = now.subtract(const Duration(days: 30));
+    DateTime cursor = firstDateDay.isAfter(windowStart)
+        ? firstDateDay
+        : windowStart;
+    final horizon = now.add(const Duration(days: 365));
 
-    for (int week = 0; week < 52; week++) {
+    while (!cursor.isAfter(horizon)) {
       for (final s in pattern) {
-        if (occ.length >= countLimit) break;
-
         final dayShort = (s['day'] ?? 'Mon').toString();
         final targetWeekday = _weekdayFromShort(dayShort);
 
@@ -1250,7 +1255,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       }
 
       cursor = cursor.add(const Duration(days: 7));
-      if (occ.length >= countLimit) break;
     }
 
     occ.sort((a, b) => a.start.compareTo(b.start));
@@ -1430,6 +1434,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     List<_Occ> all,
   ) async {
     if (!_prefsReady) return;
+    if (classId.startsWith('online:')) return;
 
     final current = _isClassEnabled(classId);
     await _prefs.setBool('remind_class_$classId', !current);
@@ -1453,9 +1458,72 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     if (v == true) {
       await _showBatteryPopupOnce();
+      await _maybeHandleExactAlarmPermission();
     }
 
     _queueApplyAllReminders(upcoming: up, allOcc: all);
+  }
+
+  Future<void> _maybeHandleExactAlarmPermission() async {
+    try {
+      final canExactNow = await NotificationService.I.canScheduleExactAlarms();
+      if (canExactNow) return;
+
+      if (!mounted) return;
+      final choice = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: const Text('Allow exact alarms?'),
+            content: const Text(
+              'Exact alarms are off on this phone. Reminders can still work, but may be a few minutes late.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Use Anyway'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Enable Exact'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (choice != true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Using inexact reminders. Alerts may be slightly delayed.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final granted = await NotificationService.I
+          .requestExactAlarmsPermissionIfNeeded();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            granted
+                ? 'Exact alarms enabled.'
+                : 'Exact alarms still off. Using inexact reminders.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not check exact alarm permission.'),
+        ),
+      );
+    }
   }
 }
 
@@ -1502,127 +1570,6 @@ class _Occ {
   String get notificationClassId {
     if (!isOnline) return classId;
     return 'online:$onlineBookingKey';
-  }
-}
-
-class _ScheduleTopSummary extends StatelessWidget {
-  const _ScheduleTopSummary({
-    required this.palette,
-    required this.totalClasses,
-    required this.totalSessions,
-    required this.remindersOn,
-    required this.isAdmin,
-  });
-
-  final AppPalette palette;
-  final int totalClasses;
-  final int totalSessions;
-  final bool remindersOn;
-  final bool isAdmin;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isAdmin ? 'Admin view' : 'Teacher view',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.80),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Your Schedule Overview',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 20,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _HeroStat(label: 'Classes', value: '$totalClasses'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HeroStat(label: 'Sessions', value: '$totalSessions'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HeroStat(
-                  label: 'Alerts',
-                  value: remindersOn ? 'On' : 'Off',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroStat extends StatelessWidget {
-  const _HeroStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.80),
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -1683,10 +1630,10 @@ class _SessionCard extends StatelessWidget {
     return Opacity(
       opacity: isPast ? 0.78 : 1,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
+        margin: const EdgeInsets.only(bottom: 9),
         decoration: BoxDecoration(
           color: bgColor,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: borderColor),
           boxShadow: isLive
               ? [
@@ -1705,24 +1652,24 @@ class _SessionCard extends StatelessWidget {
                 ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           child: IntrinsicHeight(
             child: Row(
               children: [
                 Container(width: 6, color: statusColor),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Text(
-                              DateFormat('hh:mm a').format(o.start),
+                              '${DateFormat('hh:mm a').format(o.start)} - ${DateFormat('hh:mm a').format(o.end)}',
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
-                                fontSize: 17,
+                                fontSize: 14,
                                 color: timeColor,
                               ),
                             ),
@@ -1769,7 +1716,7 @@ class _SessionCard extends StatelessWidget {
                                   size: 20,
                                 ),
                               ),
-                            if (!isPast)
+                            if (!isPast && !o.isOnline)
                               IconButton(
                                 constraints: const BoxConstraints(),
                                 padding: const EdgeInsets.only(left: 8),
@@ -1786,44 +1733,34 @@ class _SessionCard extends StatelessWidget {
                               ),
                           ],
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           o.courseTitle.isEmpty
                               ? 'Untitled Class'
                               : o.courseTitle,
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            fontSize: 15,
+                            fontSize: 14,
                             color: titleColor,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
                           '${o.courseCode} • ID: ${o.classId}',
                           style: TextStyle(
                             color: palette.text.withValues(alpha: 0.62),
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 7),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: [
-                            _InfoPill(
-                              palette: palette,
-                              icon: o.isOnline
-                                  ? Icons.wifi_tethering_rounded
-                                  : Icons.schedule_rounded,
-                              text:
-                                  '${DateFormat('hh:mm a').format(o.start)} - ${DateFormat('hh:mm a').format(o.end)}',
-                            ),
-                            if (isConflict) const _ConflictPill(),
-                          ],
+                          children: [if (isConflict) const _ConflictPill()],
                         ),
                         Divider(
-                          height: 20,
+                          height: 14,
                           color: palette.border.withValues(alpha: 0.9),
                         ),
                         Row(
@@ -1871,44 +1808,6 @@ class _SessionCard extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _InfoPill extends StatelessWidget {
-  const _InfoPill({
-    required this.palette,
-    required this.icon,
-    required this.text,
-  });
-
-  final AppPalette palette;
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: palette.soft.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: palette.primary),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: palette.primary,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-            ),
-          ),
-        ],
       ),
     );
   }

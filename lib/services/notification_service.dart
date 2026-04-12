@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -125,6 +126,31 @@ class NotificationService {
     return granted ?? true;
   }
 
+  Future<bool> canScheduleExactAlarms() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return true;
+    final canExact = await android.canScheduleExactNotifications();
+    return canExact ?? false;
+  }
+
+  Future<bool> requestExactAlarmsPermissionIfNeeded() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return true;
+
+    final canExactNow = await android.canScheduleExactNotifications();
+    if (canExactNow == true) return true;
+
+    await android.requestExactAlarmsPermission();
+    final canAfter = await android.canScheduleExactNotifications();
+    return canAfter ?? false;
+  }
+
   /// Daily reminder notification details (separate channel).
   NotificationDetails _detailsDaily() {
     return const NotificationDetails(
@@ -207,6 +233,60 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
+  bool _isExactAlarmNotPermitted(Object error) {
+    if (error is! PlatformException) return false;
+    final message = (error.message ?? '').toLowerCase();
+    return error.code == 'exact_alarms_not_permitted' ||
+        message.contains('exact alarms are not permitted');
+  }
+
+  Future<AndroidScheduleMode> _preferredAndroidScheduleMode() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return AndroidScheduleMode.exactAllowWhileIdle;
+
+    final canExact = await android.canScheduleExactNotifications();
+    return canExact == true
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+  }
+
+  Future<void> _zonedScheduleWithExactFallback({
+    required int id,
+    required String? title,
+    required String? body,
+    required tz.TZDateTime scheduledDate,
+    required NotificationDetails notificationDetails,
+    DateTimeComponents? matchDateTimeComponents,
+    String? payload,
+  }) async {
+    Future<void> scheduleWith(AndroidScheduleMode mode) {
+      return _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: scheduledDate,
+        notificationDetails: notificationDetails,
+        androidScheduleMode: mode,
+        matchDateTimeComponents: matchDateTimeComponents,
+        payload: payload,
+      );
+    }
+
+    final preferredMode = await _preferredAndroidScheduleMode();
+    try {
+      await scheduleWith(preferredMode);
+    } catch (e) {
+      if (!(_isExactAlarmNotPermitted(e) &&
+          preferredMode == AndroidScheduleMode.exactAllowWhileIdle)) {
+        rethrow;
+      }
+      await scheduleWith(AndroidScheduleMode.inexactAllowWhileIdle);
+    }
+  }
+
   /// Optional helper: cancel just the daily reminder.
   Future<void> cancelDailyReminder() async {
     await _plugin.cancel(id: dailyReminderId);
@@ -236,13 +316,12 @@ class NotificationService {
       next = next.add(const Duration(days: 1));
     }
 
-    await _plugin.zonedSchedule(
+    await _zonedScheduleWithExactFallback(
       id: _makeCoachNotifId(goalId),
       title: title,
       body: body,
       scheduledDate: next,
       notificationDetails: _detailsDaily(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
       payload: jsonEncode({
         'type': 'coach',
@@ -273,14 +352,13 @@ class NotificationService {
     );
     if (next.isBefore(now)) next = next.add(const Duration(days: 1));
 
-    await _plugin.zonedSchedule(
+    await _zonedScheduleWithExactFallback(
       id: dailyReminderId,
       title: title,
       body: body,
       scheduledDate: next,
       notificationDetails: _detailsDaily(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time, // repeats daily
+      matchDateTimeComponents: DateTimeComponents.time,
     );
   }
 
@@ -342,7 +420,7 @@ class NotificationService {
       'kind': 'main',
     });
 
-    await _plugin.zonedSchedule(
+    await _zonedScheduleWithExactFallback(
       id: id,
       title: title,
       body: enhancedBody,
@@ -351,7 +429,6 @@ class NotificationService {
         sessionStart: sessionStart,
         scheduledAt: scheduledAt,
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payloadJson,
     );
   }
@@ -480,13 +557,12 @@ class NotificationService {
       'mins': snoozeMinutes,
     });
 
-    await _plugin.zonedSchedule(
+    await _zonedScheduleWithExactFallback(
       id: id,
       title: title,
       body: body,
       scheduledDate: tzTime,
       notificationDetails: _detailsSimpleSession(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payloadJson,
     );
   }
