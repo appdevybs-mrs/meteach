@@ -28,6 +28,8 @@ import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
+import '../shared/window_access_dialogs.dart';
+import '../services/window_access_service.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -225,10 +227,85 @@ class _LearnerHomeState extends State<LearnerHome> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  void _openLearnerWindow(String windowKey, VoidCallback onAllowed) {
+    unawaited(
+      WindowAccessService.instance.guardOpen(
+        context: context,
+        role: AppWindowRole.learner,
+        windowKey: windowKey,
+        onAllowed: onAllowed,
+      ),
+    );
+  }
+
+  void _openProfileScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerProfile,
+      () => _pushScreen(const LearnerProfileScreen()),
+    );
+  }
+
+  void _openMailScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerMail,
+      () => _pushScreen(LearnerMailScreen()),
+    );
+  }
+
+  void _openCoursesWindow({String? courseKey}) {
+    _openLearnerWindow(
+      AppWindowKeys.learnerCourses,
+      () => _pushScreen(LearnerCoursesScreen(initialCourseKey: courseKey)),
+    );
+  }
+
+  void _openGalleryScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerGallery,
+      () => _pushScreen(const LearnerGalleryScreen()),
+    );
+  }
+
+  void _openGamesScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerGames,
+      () => _pushScreen(const LearnerGamesScreen()),
+    );
+  }
+
+  void _openStudyCoachScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerStudyCoach,
+      () => _pushScreen(const LearnerStudyCoachScreen()),
+    );
+  }
+
+  void _openBookingScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerBooking,
+      () => _pushScreen(const LearnerBookingScreen()),
+    );
+  }
+
+  void _openRemindersScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerReminders,
+      () => _pushScreen(const LearnerRemindersListScreen()),
+    );
+  }
+
+  void _openRegulationsScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerRegulations,
+      () => _pushScreen(const LearnerRegulationsScreen()),
+    );
+  }
+
   void _openStoriesScreen() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LearnerStoriesScreen()));
+    _openLearnerWindow(
+      AppWindowKeys.learnerStories,
+      () => _pushScreen(const LearnerStoriesScreen()),
+    );
   }
 
   Future<void> _refreshShell() async {
@@ -372,6 +449,10 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
+  void _openThemeSettings() {
+    _openLearnerWindow(AppWindowKeys.learnerThemeSettings, _openThemeSheet);
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = palette;
@@ -407,16 +488,15 @@ class _LearnerHomeState extends State<LearnerHome> {
           regulationsTileKey: _drawerRegulationsKey,
           themeTileKey: _drawerThemeKey,
           logoutButtonKey: _drawerLogoutKey,
-          onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
-          onOpenMail: () => _pushScreen(LearnerMailScreen()),
-          onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
-          onOpenGallery: () => _pushScreen(const LearnerGalleryScreen()),
+          onOpenProfile: _openProfileScreen,
+          onOpenMail: _openMailScreen,
+          onOpenCourses: _openCoursesWindow,
+          onOpenGallery: _openGalleryScreen,
           onOpenStories: _openStoriesScreen,
-          onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
-          onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
-          onOpenRegulations: () =>
-              _pushScreen(const LearnerRegulationsScreen()),
-          onOpenThemeSettings: _openThemeSheet,
+          onOpenGames: _openGamesScreen,
+          onOpenStudyCoach: _openStudyCoachScreen,
+          onOpenRegulations: _openRegulationsScreen,
+          onOpenThemeSettings: _openThemeSettings,
           onLogout: () => _logout(context),
         ),
 
@@ -483,23 +563,16 @@ class _LearnerHomeState extends State<LearnerHome> {
               if (webDesktop)
                 _LearnerHomeWebRail(
                   palette: p,
-                  onOpenCourses: () =>
-                      _pushScreen(const LearnerCoursesScreen()),
-                  onOpenBooking: () =>
-                      _pushScreen(const LearnerBookingScreen()),
-                  onOpenMail: () => _pushScreen(LearnerMailScreen()),
-                  onOpenReminders: () =>
-                      _pushScreen(const LearnerRemindersListScreen()),
-                  onOpenHomework: () =>
-                      _pushScreen(const LearnerCoursesScreen()),
-                  onOpenGallery: () =>
-                      _pushScreen(const LearnerGalleryScreen()),
+                  onOpenCourses: _openCoursesWindow,
+                  onOpenBooking: _openBookingScreen,
+                  onOpenMail: _openMailScreen,
+                  onOpenReminders: _openRemindersScreen,
+                  onOpenHomework: _openCoursesWindow,
+                  onOpenGallery: _openGalleryScreen,
                   onOpenStories: _openStoriesScreen,
-                  onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
-                  onOpenCoach: () =>
-                      _pushScreen(const LearnerStudyCoachScreen()),
-                  onOpenProfile: () =>
-                      _pushScreen(const LearnerProfileScreen()),
+                  onOpenGames: _openGamesScreen,
+                  onOpenCoach: _openStudyCoachScreen,
+                  onOpenProfile: _openProfileScreen,
                   onLogout: () => _logout(context),
                 ),
               if (webDesktop) const SizedBox(width: 14),
@@ -520,13 +593,10 @@ class _LearnerHomeState extends State<LearnerHome> {
               if (webDesktop)
                 _LearnerHomeWebAside(
                   palette: p,
-                  onOpenCourses: () =>
-                      _pushScreen(const LearnerCoursesScreen()),
-                  onOpenBooking: () =>
-                      _pushScreen(const LearnerBookingScreen()),
-                  onOpenMail: () => _pushScreen(LearnerMailScreen()),
-                  onOpenReminders: () =>
-                      _pushScreen(const LearnerRemindersListScreen()),
+                  onOpenCourses: _openCoursesWindow,
+                  onOpenBooking: _openBookingScreen,
+                  onOpenMail: _openMailScreen,
+                  onOpenReminders: _openRemindersScreen,
                 ),
             ],
           ),
@@ -2007,9 +2077,18 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   }
 
   void _openCoursesScreen({String? courseKey}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LearnerCoursesScreen(initialCourseKey: courseKey),
+    unawaited(
+      WindowAccessService.instance.guardOpen(
+        context: context,
+        role: AppWindowRole.learner,
+        windowKey: AppWindowKeys.learnerCourses,
+        onAllowed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => LearnerCoursesScreen(initialCourseKey: courseKey),
+            ),
+          );
+        },
       ),
     );
   }
@@ -4279,6 +4358,17 @@ class _JoinFabPayload {
 }
 
 Future<void> _openBookingCoursePicker(BuildContext context) async {
+  final bookingEnabled = await WindowAccessService.instance.isWindowEnabled(
+    role: AppWindowRole.learner,
+    windowKey: AppWindowKeys.learnerBooking,
+  );
+  if (!bookingEnabled) {
+    if (context.mounted) {
+      await showWindowMaintenanceDialog(context);
+    }
+    return;
+  }
+
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
@@ -4487,6 +4577,17 @@ Future<void> _openHomeworkCoursePicker(
   BuildContext context, {
   Set<String> courseKeysWithUndone = const {},
 }) async {
+  final homeworkEnabled = await WindowAccessService.instance.isWindowEnabled(
+    role: AppWindowRole.learner,
+    windowKey: AppWindowKeys.learnerHomework,
+  );
+  if (!homeworkEnabled) {
+    if (context.mounted) {
+      await showWindowMaintenanceDialog(context);
+    }
+    return;
+  }
+
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
@@ -4925,9 +5026,18 @@ class _RemindersHomeCard extends StatelessWidget {
         return InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const LearnerRemindersListScreen(),
+            unawaited(
+              WindowAccessService.instance.guardOpen(
+                context: context,
+                role: AppWindowRole.learner,
+                windowKey: AppWindowKeys.learnerReminders,
+                onAllowed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LearnerRemindersListScreen(),
+                    ),
+                  );
+                },
               ),
             );
           },
@@ -5067,8 +5177,19 @@ class _LearnerMailHomeCard extends StatelessWidget {
         return InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
+            unawaited(
+              WindowAccessService.instance.guardOpen(
+                context: context,
+                role: AppWindowRole.learner,
+                windowKey: AppWindowKeys.learnerMail,
+                onAllowed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LearnerMailScreen(),
+                    ),
+                  );
+                },
+              ),
             );
           },
           child: LayoutBuilder(
@@ -5185,9 +5306,18 @@ class _GalleryHomeCard extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()));
+        unawaited(
+          WindowAccessService.instance.guardOpen(
+            context: context,
+            role: AppWindowRole.learner,
+            windowKey: AppWindowKeys.learnerGallery,
+            onAllowed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()),
+              );
+            },
+          ),
+        );
       },
       child: Container(
         width: double.infinity,
@@ -5266,8 +5396,19 @@ class _StudyCoachHomeCard extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const LearnerStudyCoachScreen()),
+        unawaited(
+          WindowAccessService.instance.guardOpen(
+            context: context,
+            role: AppWindowRole.learner,
+            windowKey: AppWindowKeys.learnerStudyCoach,
+            onAllowed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const LearnerStudyCoachScreen(),
+                ),
+              );
+            },
+          ),
         );
       },
       child: Container(
