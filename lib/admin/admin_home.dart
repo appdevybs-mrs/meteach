@@ -36,6 +36,7 @@ import 'admin_admin_todos_screen.dart';
 import 'admin_course_reviews_screen.dart';
 import 'admin_priority_alerts_screen.dart';
 import 'admin_notification_audit_screen.dart';
+import 'admin_vocab_words_lists_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -278,6 +279,23 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const AdminCoursesScreen())),
+        ),
+      ),
+      card(
+        'Vocabulary Lists',
+        'Course-linked word banks',
+        _DashCard(
+          title: 'Vocabulary Lists',
+          subtitle: 'Course-linked word banks',
+          tags: const ['Study Coach', 'CSV'],
+          icon: Icons.spellcheck_rounded,
+          color: AdminHome.accentCyan,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminVocabWordsListsScreen(),
+            ),
+          ),
         ),
       ),
       card(

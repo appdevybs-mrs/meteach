@@ -30,6 +30,7 @@
 
 import 'dart:async';
 import 'dart:math';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
@@ -38,7 +39,12 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
+import '../services/push_client.dart';
+import '../services/push_error_logger.dart';
+import 'admin_learner_mail_topics_screen.dart';
 import 'admin_learners.dart';
+
+enum _QuickLearnerReminder { payment, absence, empty }
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
@@ -164,6 +170,230 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       context,
       error ? humanizeUiMessage(msg) : msg,
       type: error ? AppToastType.error : AppToastType.info,
+    );
+  }
+
+  Future<String?> _getLearnerFcmToken(String learnerUid) async {
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('fcm_tokens/$learnerUid/token')
+          .get();
+      final token = snap.value?.toString().trim();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _sendLearnerQuickReminder({
+    required String uid,
+    required _QuickLearnerReminder type,
+  }) async {
+    String title = '';
+    String message = '';
+
+    switch (type) {
+      case _QuickLearnerReminder.payment:
+        title = 'Payment Reminder';
+        message = 'Your payment is due. Please contact the academy.';
+        break;
+      case _QuickLearnerReminder.absence:
+        title = 'Absence Reminder';
+        message = 'We noticed an absence. Please confirm with the academy.';
+        break;
+      case _QuickLearnerReminder.empty:
+        return;
+    }
+
+    final admin = FirebaseAuth.instance.currentUser;
+    final reminderRef = FirebaseDatabase.instance.ref('reminders/$uid').push();
+
+    try {
+      await reminderRef.set({
+        'kind': type.name,
+        'title': title,
+        'description': message,
+        'attachment_name': '',
+        'attachment_url': '',
+        'createdAt': ServerValue.timestamp,
+        'createdByUid': admin?.uid ?? '',
+        'teacher': {'name': 'Admin', 'email': admin?.email ?? ''},
+        'status': 'queued',
+        'readAt': null,
+        'doneAt': null,
+        'push': {'attemptedAt': null, 'sentAt': null, 'error': null},
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _notify('RTDB write failed: $e', error: true);
+      return;
+    }
+
+    final token = await _getLearnerFcmToken(uid);
+
+    await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
+
+    try {
+      final payload = {
+        'type': 'reminder',
+        'route': 'learner',
+        'learnerUid': uid,
+        'kind': type.name,
+        'reminderId': reminderRef.key,
+      };
+      if (token != null && token.isNotEmpty) {
+        try {
+          await PushClient.sendToToken(
+            token: token,
+            targetUid: uid,
+            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+            title: title,
+            message: message,
+            data: payload,
+          );
+        } catch (e, st) {
+          await PushErrorLogger.logFailure(
+            screen: 'admin/admin_classes',
+            action: 'learner_reminder_push_token_fallback_topic',
+            error: e,
+            stackTrace: st,
+            targetUid: uid,
+            token: token,
+            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+          );
+          await PushClient.sendToTopic(
+            topic: 'user_$uid',
+            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+            title: title,
+            message: message,
+            data: payload,
+          );
+        }
+      } else {
+        await PushClient.sendToTopic(
+          topic: 'user_$uid',
+          eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+          title: title,
+          message: message,
+          data: payload,
+        );
+      }
+
+      await reminderRef.update({
+        'status': 'push_sent',
+        'push/sentAt': ServerValue.timestamp,
+        'push/error': null,
+      });
+
+      if (!mounted) return;
+      _notify('Reminder saved & push sent ✅');
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'admin/admin_classes',
+        action: 'learner_reminder_push_final_failure',
+        error: e,
+        stackTrace: st,
+        targetUid: uid,
+        eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
+      );
+      await reminderRef.update({
+        'status': 'push_error',
+        'push/error': e.toString(),
+      });
+
+      if (!mounted) return;
+      _notify('Reminder saved but push failed', error: true);
+    }
+  }
+
+  Future<void> _showQuickReminderSheet({
+    required String uid,
+    required String learnerName,
+  }) async {
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<_QuickLearnerReminder>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.payments_rounded),
+              title: const Text('Payment'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.payment),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_busy_rounded),
+              title: const Text('Absence'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
+            ),
+            ListTile(
+              leading: const Icon(Icons.mail_rounded),
+              title: const Text('Mail'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null) return;
+
+    try {
+      if (picked == _QuickLearnerReminder.empty) {
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AdminLearnerMailTopicsScreen(
+              learnerUid: uid,
+              learnerName: learnerName.trim().isEmpty ? 'Learner' : learnerName,
+            ),
+          ),
+        );
+      } else {
+        await _sendLearnerQuickReminder(uid: uid, type: picked);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _notify('Could not send reminder. Please try again.', error: true);
+    }
+  }
+
+  Widget _learnerQuickActionsBadge({
+    required String uid,
+    required String learnerName,
+  }) {
+    return Tooltip(
+      message: 'Mail / Reminder',
+      child: InkWell(
+        onTap: () =>
+            _showQuickReminderSheet(uid: uid, learnerName: learnerName),
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFFFEE2E2),
+            border: Border.all(color: const Color(0xFFFCA5A5)),
+          ),
+          child: const Text(
+            '!',
+            style: TextStyle(
+              color: Color(0xFFB91C1C),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3997,12 +4227,25 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             title: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  item.learnerName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFF1A2B48),
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item.learnerName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFF1A2B48),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _learnerQuickActionsBadge(
+                                      uid: item.uid,
+                                      learnerName: item.learnerName,
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
@@ -4287,12 +4530,25 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  item.learnerName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFF1A2B48),
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item.learnerName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFF1A2B48),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _learnerQuickActionsBadge(
+                                      uid: item.uid,
+                                      learnerName: item.learnerName,
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
