@@ -36,6 +36,9 @@ import 'admin_admin_todos_screen.dart';
 import 'admin_course_reviews_screen.dart';
 import 'admin_priority_alerts_screen.dart';
 import 'admin_notification_audit_screen.dart';
+import 'admin_vocab_words_lists_screen.dart';
+import 'admin_window_access_screen.dart';
+import '../services/window_access_service.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -133,6 +136,17 @@ class _AdminHomeState extends State<AdminHome> {
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
+  void _openAdminWindow(String windowKey, VoidCallback onAllowed) {
+    unawaited(
+      WindowAccessService.instance.guardOpen(
+        context: context,
+        role: AppWindowRole.admin,
+        windowKey: windowKey,
+        onAllowed: onAllowed,
+      ),
+    );
+  }
+
   Future<void> _logout(BuildContext context) async {
     await AppLoading.run(
       context,
@@ -204,8 +218,11 @@ class _AdminHomeState extends State<AdminHome> {
           key: _learnersCardKey,
           child: _LearnersDashCard(
             isReceptionistStyle: !_isAdminMode,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminLearners,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+              ),
             ),
           ),
         ),
@@ -215,9 +232,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Manage classes',
         _ClassesDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminClasses,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+            ),
+          ),
         ),
       ),
       card(
@@ -227,8 +247,11 @@ class _AdminHomeState extends State<AdminHome> {
           key: _paymentsCardKey,
           child: _PaymentsAttentionDashCard(
             isReceptionistStyle: !_isAdminMode,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminPayments,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+              ),
             ),
           ),
         ),
@@ -243,8 +266,11 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.calendar_view_week_rounded,
           color: AdminHome.accentTeal,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminSchedule,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+            ),
           ),
         ),
       ),
@@ -258,9 +284,12 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.fact_check_rounded,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminAttendanceOverviewScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminAttendance,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminAttendanceOverviewScreen(),
+              ),
             ),
           ),
         ),
@@ -275,9 +304,32 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.menu_book_rounded,
           color: AdminHome.primaryBlue,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminCoursesScreen())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminCourses,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Vocabulary Lists',
+        'Course-linked word banks',
+        _DashCard(
+          title: 'Vocabulary Lists',
+          subtitle: 'Course-linked word banks',
+          tags: const ['Study Coach', 'CSV'],
+          icon: Icons.spellcheck_rounded,
+          color: AdminHome.accentCyan,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminVocabLists,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminVocabWordsListsScreen(),
+              ),
+            ),
+          ),
         ),
       ),
       card(
@@ -285,8 +337,13 @@ class _AdminHomeState extends State<AdminHome> {
         'Moderate learner reviews',
         _CourseFeedbackDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminCourseReviewsScreen()),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminCourseReviews,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminCourseReviewsScreen(),
+              ),
+            ),
           ),
         ),
       ),
@@ -300,9 +357,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Send & manage reminders',
         _RemindersDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminTeacherRemindersScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminReminders,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminTeacherRemindersScreen(),
+              ),
             ),
           ),
         ),
@@ -312,9 +372,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Send one-time popup alerts',
         _PriorityAlertsDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminPriorityAlertsScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminPriorityAlerts,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminPriorityAlertsScreen(),
+              ),
             ),
           ),
         ),
@@ -329,9 +392,12 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.notifications_active_rounded,
           color: AdminHome.accentSky,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminNotificationAuditScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminNotificationAudit,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminNotificationAuditScreen(),
+              ),
             ),
           ),
         ),
@@ -341,9 +407,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Teachers & staff',
         _StaffMailDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminStaff,
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          ),
         ),
       ),
       card(
@@ -351,9 +420,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Teacher payments',
         _WagesDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminWagesScreen())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminWages,
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminWagesScreen())),
+          ),
         ),
       ),
       card(
@@ -361,9 +433,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Coverage & staffing overview',
         _TeacherAvailabilityDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AdminTeacherAvailabilityOverviewScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminTeacherAvailability,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AdminTeacherAvailabilityOverviewScreen(),
+              ),
             ),
           ),
         ),
@@ -388,9 +463,12 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.folder_open,
           color: AdminHome.accentGreen,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminFileManager())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminFileManager,
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminFileManager())),
+          ),
         ),
       ),
       card(
@@ -406,8 +484,13 @@ class _AdminHomeState extends State<AdminHome> {
         'Teaser media',
         _PublicGalleryDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminPublicGallery,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminPublicGalleryScreen(),
+              ),
+            ),
           ),
         ),
       ),
@@ -416,8 +499,11 @@ class _AdminHomeState extends State<AdminHome> {
         'Contracts & documents',
         _ContractDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminContractScreen()),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminContract,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminContractScreen()),
+            ),
           ),
         ),
       ),
@@ -426,10 +512,28 @@ class _AdminHomeState extends State<AdminHome> {
         'Force update config',
         _SettingsDashCard(
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminForceUpdateAllScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminSettings,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminForceUpdateAllScreen(),
+              ),
             ),
+          ),
+        ),
+      ),
+      card(
+        'Window Access',
+        'Open or close windows',
+        _DashCard(
+          title: 'Window Access',
+          subtitle: 'Open or close windows',
+          tags: const ['Learner', 'Teacher', 'Admin'],
+          icon: Icons.toggle_on_rounded,
+          color: AdminHome.accentSlate,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminWindowAccessScreen()),
           ),
         ),
       ),
@@ -448,8 +552,11 @@ class _AdminHomeState extends State<AdminHome> {
           key: _learnersCardKey,
           child: _LearnersDashCard(
             isReceptionistStyle: true,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminLearners,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+              ),
             ),
           ),
         ),
@@ -459,9 +566,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Manage classes',
         _ClassesDashCard(
           isReceptionistStyle: true,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminClasses,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+            ),
+          ),
         ),
       ),
       card(
@@ -471,8 +581,11 @@ class _AdminHomeState extends State<AdminHome> {
           key: _paymentsCardKey,
           child: _PaymentsAttentionDashCard(
             isReceptionistStyle: true,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminPayments,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+              ),
             ),
           ),
         ),
@@ -487,8 +600,11 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.calendar_view_week_rounded,
           color: AdminHome.accentTeal,
           isReceptionistStyle: true,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminSchedule,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+            ),
           ),
         ),
       ),
@@ -497,9 +613,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Send reminders',
         _RemindersDashCard(
           isReceptionistStyle: true,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminTeacherRemindersScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminReminders,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminTeacherRemindersScreen(),
+              ),
             ),
           ),
         ),
@@ -509,9 +628,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Popup messages',
         _PriorityAlertsDashCard(
           isReceptionistStyle: true,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminPriorityAlertsScreen(),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminPriorityAlerts,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminPriorityAlertsScreen(),
+              ),
             ),
           ),
         ),
@@ -521,9 +643,12 @@ class _AdminHomeState extends State<AdminHome> {
         'Teachers & staff',
         _StaffMailDashCard(
           isReceptionistStyle: true,
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminStaff,
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          ),
         ),
       ),
       card(
@@ -531,8 +656,13 @@ class _AdminHomeState extends State<AdminHome> {
         'Teaser media',
         _PublicGalleryDashCard(
           isReceptionistStyle: true,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminPublicGallery,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminPublicGalleryScreen(),
+              ),
+            ),
           ),
         ),
       ),
@@ -679,8 +809,11 @@ class _AdminHomeState extends State<AdminHome> {
             title: 'Learners',
             subtitle: 'Open learner management',
             color: AdminHome.primaryBlue,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminLearners,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+              ),
             ),
           ),
           _DrawerTile(
@@ -688,8 +821,11 @@ class _AdminHomeState extends State<AdminHome> {
             title: 'Payments',
             subtitle: 'Financial records',
             color: AdminHome.actionOrange,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminPayments,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+              ),
             ),
           ),
           _DrawerTile(
@@ -697,8 +833,11 @@ class _AdminHomeState extends State<AdminHome> {
             title: 'Classes',
             subtitle: 'Classes and attendance',
             color: AdminHome.accentIndigo,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+            onTap: () => _openAdminWindow(
+              AppWindowKeys.adminClasses,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+              ),
             ),
           ),
           const Spacer(),
@@ -1872,36 +2011,39 @@ class _SettingsDashCard extends StatelessWidget {
     return null;
   }
 
-  String? _cleanVersion(dynamic raw) {
-    final s = (raw ?? '').toString().trim();
+  String? _cleanBuild(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is int) return raw.toString();
+    if (raw is num) return raw.toInt().toString();
+    final s = raw.toString().trim();
     if (s.isEmpty) return null;
-    if (RegExp(r'^0+(?:[.]0+)*$').hasMatch(s)) return null;
+    final parsed = int.tryParse(s);
+    if (parsed != null) return parsed.toString();
     return s;
   }
 
-  String _v(dynamic root, String platform) {
+  String _b(dynamic root, String platform) {
     if (root is! Map) return 'n/a';
 
     final p = _valueByAliases(root, [platform]);
     if (p is Map) {
       final raw = _valueByAliases(p, [
-        'minVersion',
-        'min_version',
-        'minversion',
-        'version',
-        'min',
+        'minBuild',
+        'min_build',
+        'minbuild',
+        'build',
       ]);
-      final cleaned = _cleanVersion(raw);
+      final cleaned = _cleanBuild(raw);
       if (cleaned != null) return cleaned;
     }
 
     final flat = _valueByAliases(root, [
-      '${platform}MinVersion',
-      '${platform}_min_version',
-      '${platform}_version',
-      '${platform}version',
+      '${platform}MinBuild',
+      '${platform}_min_build',
+      '${platform}_build',
+      '${platform}build',
     ]);
-    return _cleanVersion(flat) ?? 'n/a';
+    return _cleanBuild(flat) ?? 'n/a';
   }
 
   @override
@@ -1912,13 +2054,13 @@ class _SettingsDashCard extends StatelessWidget {
       stream: ref.onValue,
       builder: (context, snap) {
         final root = snap.data?.snapshot.value;
-        final a = _v(root, 'android');
-        final i = _v(root, 'ios');
+        final a = _b(root, 'android');
+        final i = _b(root, 'ios');
 
         return _DashCard(
           title: 'Settings',
           subtitle: 'Force update config',
-          tags: ['Android $a', 'iOS $i'],
+          tags: ['Android minBuild $a', 'iOS minBuild $i'],
           icon: Icons.settings_rounded,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: isReceptionistStyle,

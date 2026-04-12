@@ -1,13 +1,13 @@
-import 'dart:async';
+import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
-import '../shared/app_feedback.dart';
 
 class LearnerStudyCoachScreen extends StatefulWidget {
   const LearnerStudyCoachScreen({super.key});
@@ -17,1712 +17,1503 @@ class LearnerStudyCoachScreen extends StatefulWidget {
       _LearnerStudyCoachScreenState();
 }
 
+enum _CoachMode { spelling, usage }
+
+enum _CoachSpeed { slow, standard, fast }
+
 class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final TextEditingController _typedAnswerController = TextEditingController();
+  final PageController _deckController = PageController(viewportFraction: 0.9);
 
-  bool _normalizing = false;
-  bool _updatingTask = false;
+  bool _loading = true;
+  String? _error;
 
-  _CoachLang _lang = _CoachLang.en;
-  String? _expandedDayKey;
+  final List<_CourseBundle> _courseBundles = <_CourseBundle>[];
+  _CourseBundle? _selectedCourse;
 
-  _CoachPalette get palette =>
-      _CoachPalette.fromApp(appThemeController.palette);
+  _CoachMode _mode = _CoachMode.spelling;
+  _CoachSpeed _speed = _CoachSpeed.standard;
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  bool _sessionStarted = false;
+  bool _isTestSession = false;
+  bool _learningDeckOpen = false;
+  bool _learningCompleted = false;
+  int _deckPage = 0;
+  int _index = 0;
+  int _correct = 0;
+  int? _pickedOption;
+  bool _answered = false;
+  bool _answerCorrect = false;
+  _Question? _question;
 
-  DatabaseReference get _planRef =>
-      _db.child('users/$_uid/study_plan/current_week');
-
-  bool get _isArabic => _lang == _CoachLang.ar;
+  AppPalette get palette => appThemeController.palette;
 
   @override
   void initState() {
     super.initState();
-    appThemeController.addListener(_themeRefresh);
-    _expandedDayKey = _todayDay.key;
-    unawaited(_normalizeCurrentWeekPlan());
+    appThemeController.addListener(_onThemeChanged);
+    _loadVocabByAssignedCourses();
   }
 
   @override
   void dispose() {
-    appThemeController.removeListener(_themeRefresh);
+    appThemeController.removeListener(_onThemeChanged);
+    _typedAnswerController.dispose();
+    _deckController.dispose();
     super.dispose();
   }
 
-  void _themeRefresh() {
+  void _onThemeChanged() {
     if (!mounted) return;
     setState(() {});
   }
 
-  String _tr(String en, String ar) => _isArabic ? ar : en;
-
-  String _two(int n) => n.toString().padLeft(2, '0');
-
-  String _dateKey(DateTime d) {
-    return '${d.year}-${_two(d.month)}-${_two(d.day)}';
-  }
-
-  String _weekStartKey(DateTime now) {
-    final day = DateTime(now.year, now.month, now.day);
-    final mondayStart = day.subtract(Duration(days: day.weekday - 1));
-    return _dateKey(mondayStart);
-  }
-
-  String _currentWeekKey() {
-    return _weekStartKey(DateTime.now());
-  }
-
-  Map<String, bool> _emptyCheckedMap() {
-    return {for (final task in _allTasks) task.id: false};
-  }
-
-  int _quoteIndexForWeek(String weekKey) {
-    final hash = weekKey.codeUnits.fold<int>(0, (a, b) => a + b);
-    return hash % _quotes.length;
-  }
-
-  Future<void> _normalizeCurrentWeekPlan() async {
-    if (_uid.isEmpty || _normalizing) return;
-
-    _normalizing = true;
-    try {
-      final snap = await _planRef.get();
-      final raw = snap.value;
-      final currentWeekKey = _currentWeekKey();
-
-      if (raw == null || raw is! Map) {
-        await _planRef.set({
-          'weekStartKey': currentWeekKey,
-          'quoteIndex': _quoteIndexForWeek(currentWeekKey),
-          'checked': _emptyCheckedMap(),
-          'updatedAt': ServerValue.timestamp,
-        });
-        return;
-      }
-
-      final map = Map<dynamic, dynamic>.from(raw);
-      final storedWeekKey = (map['weekStartKey'] ?? '').toString().trim();
-
-      if (storedWeekKey != currentWeekKey) {
-        await _planRef.set({
-          'weekStartKey': currentWeekKey,
-          'quoteIndex': _quoteIndexForWeek(currentWeekKey),
-          'checked': _emptyCheckedMap(),
-          'updatedAt': ServerValue.timestamp,
-        });
-        return;
-      }
-
-      final rawChecked = map['checked'];
-      final checked = <String, bool>{};
-
-      if (rawChecked is Map) {
-        final checkedMap = Map<dynamic, dynamic>.from(rawChecked);
-        for (final task in _allTasks) {
-          checked[task.id] = checkedMap[task.id] == true;
-        }
-      } else {
-        for (final task in _allTasks) {
-          checked[task.id] = false;
-        }
-      }
-
-      await _planRef.update({
-        'weekStartKey': currentWeekKey,
-        'quoteIndex': _quoteIndexForWeek(currentWeekKey),
-        'checked': checked,
-        'updatedAt': ServerValue.timestamp,
-      });
-    } catch (_) {
-      //
-    } finally {
-      _normalizing = false;
+  int _wordsPerDay(_CoachSpeed speed) {
+    switch (speed) {
+      case _CoachSpeed.slow:
+        return 5;
+      case _CoachSpeed.standard:
+        return 10;
+      case _CoachSpeed.fast:
+        return 15;
     }
   }
 
-  Future<void> _toggleTask(String taskId, bool currentValue) async {
-    if (_uid.isEmpty || _updatingTask) return;
-
-    setState(() => _updatingTask = true);
-    try {
-      await _planRef.child('checked/$taskId').set(!currentValue);
-      await _planRef.update({
-        'weekStartKey': _currentWeekKey(),
-        'quoteIndex': _quoteIndexForWeek(_currentWeekKey()),
-        'updatedAt': ServerValue.timestamp,
-      });
-    } catch (e) {
-      _showSnack(_tr('Could not update task: $e', 'تعذر تحديث المهمة: $e'));
-    } finally {
-      if (mounted) {
-        setState(() => _updatingTask = false);
-      }
+  String _speedLabel(_CoachSpeed speed) {
+    switch (speed) {
+      case _CoachSpeed.slow:
+        return 'Easy • 5/day';
+      case _CoachSpeed.standard:
+        return 'Normal • 10/day';
+      case _CoachSpeed.fast:
+        return 'Fast • 15/day';
     }
   }
 
-  Future<void> _resetWeek() async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return Directionality(
-          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: AlertDialog(
-            title: Text(_tr('Reset this week?', 'إعادة تعيين هذا الأسبوع؟')),
-            content: Text(
-              _tr(
-                'This will clear all completed tasks for the current week.',
-                'سيؤدي هذا إلى مسح كل المهام المكتملة لهذا الأسبوع الحالي.',
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(_tr('Cancel', 'إلغاء')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text(_tr('Reset', 'إعادة تعيين')),
-              ),
-            ],
+  Future<void> _loadVocabByAssignedCourses() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _courseBundles.clear();
+      _selectedCourse = null;
+      _sessionStarted = false;
+      _learningCompleted = false;
+      _learningDeckOpen = false;
+    });
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isEmpty) {
+        throw Exception('Not logged in.');
+      }
+
+      final userCoursesSnap = await _db.child('users/$uid/courses').get();
+      if (!userCoursesSnap.exists || userCoursesSnap.value is! Map) {
+        throw Exception('No assigned courses found.');
+      }
+
+      final raw = Map<dynamic, dynamic>.from(userCoursesSnap.value as Map);
+      final assigned = <Map<String, dynamic>>[];
+
+      int asInt(dynamic v) {
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+        return int.tryParse(v?.toString() ?? '') ?? 0;
+      }
+
+      for (final entry in raw.entries) {
+        if (entry.value is! Map) continue;
+        final m = Map<dynamic, dynamic>.from(entry.value as Map);
+        final cls = m['class'] is Map
+            ? Map<dynamic, dynamic>.from(m['class'] as Map)
+            : <dynamic, dynamic>{};
+        final courseId = (cls['course_id'] ?? m['id'] ?? '').toString().trim();
+        if (courseId.isEmpty) continue;
+        final title = (m['title'] ?? cls['course_title'] ?? courseId)
+            .toString()
+            .trim();
+
+        assigned.add({
+          'courseId': courseId,
+          'courseTitle': title.isEmpty ? courseId : title,
+          'assignedAt': asInt(m['assignedAt']),
+        });
+      }
+
+      assigned.sort(
+        (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
+      );
+
+      final bundles = <_CourseBundle>[];
+      for (final c in assigned) {
+        final courseId = (c['courseId'] ?? '').toString();
+        final courseTitle = (c['courseTitle'] ?? '').toString();
+        final wordsSnap = await _db.child('vocab_words/$courseId').get();
+        if (!wordsSnap.exists || wordsSnap.value is! Map) continue;
+
+        final wordsRaw = Map<dynamic, dynamic>.from(wordsSnap.value as Map);
+        final words = <_Word>[];
+        for (final entry in wordsRaw.entries) {
+          if (entry.value is! Map) continue;
+          final map = Map<dynamic, dynamic>.from(entry.value as Map);
+          final parsed = _Word.fromMap(entry.key.toString(), map);
+          if (parsed.word.isEmpty) continue;
+          words.add(parsed);
+        }
+
+        if (words.isEmpty) continue;
+
+        bundles.add(
+          _CourseBundle(
+            courseId: courseId,
+            courseTitle: courseTitle,
+            words: words,
           ),
         );
-      },
-    );
+      }
 
-    if (yes != true) return;
+      if (bundles.isEmpty) {
+        throw Exception(
+          'No vocabulary list is linked to your assigned courses yet.',
+        );
+      }
 
-    try {
-      await _planRef.set({
-        'weekStartKey': _currentWeekKey(),
-        'quoteIndex': _quoteIndexForWeek(_currentWeekKey()),
-        'checked': _emptyCheckedMap(),
-        'updatedAt': ServerValue.timestamp,
+      if (!mounted) return;
+      setState(() {
+        _courseBundles
+          ..clear()
+          ..addAll(bundles);
+        _selectedCourse = _courseBundles.first;
       });
-
-      _showSnack(_tr('This week was reset.', 'تمت إعادة تعيين هذا الأسبوع.'));
     } catch (e) {
-      _showSnack(
-        _tr('Could not reset week: $e', 'تعذر إعادة تعيين الأسبوع: $e'),
-      );
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
-  void _showHowToUse() {
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return Directionality(
-          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: AlertDialog(
-            title: Row(
+  List<_Word> _todayWords() {
+    final selected = _selectedCourse;
+    if (selected == null) return const <_Word>[];
+
+    final count = _wordsPerDay(_speed);
+    final all = List<_Word>.from(selected.words);
+    all.shuffle();
+    return all.take(min(count, all.length)).toList();
+  }
+
+  void _startSession() {
+    final selected = _selectedCourse;
+    if (selected == null || selected.words.isEmpty) return;
+
+    selected.sessionWords
+      ..clear()
+      ..addAll(_todayWords());
+
+    if (selected.sessionWords.isEmpty) {
+      AppToast.show(
+        context,
+        'No words available for today.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    if (_deckController.hasClients) {
+      _deckController.jumpToPage(0);
+    }
+
+    setState(() {
+      _sessionStarted = false;
+      _isTestSession = false;
+      _learningDeckOpen = true;
+      _learningCompleted = false;
+      _deckPage = 0;
+      _index = 0;
+      _correct = 0;
+      _pickedOption = null;
+      _answered = false;
+      _answerCorrect = false;
+      _question = null;
+      _typedAnswerController.clear();
+    });
+  }
+
+  void _startTestSession() {
+    final selected = _selectedCourse;
+    if (selected == null) return;
+    if (!_learningCompleted || selected.sessionWords.isEmpty) {
+      AppToast.show(
+        context,
+        'Finish the learning set first.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final firstWord = selected.sessionWords.first;
+
+    setState(() {
+      _sessionStarted = true;
+      _isTestSession = true;
+      _learningDeckOpen = false;
+      _index = 0;
+      _correct = 0;
+      _pickedOption = null;
+      _answered = false;
+      _answerCorrect = false;
+      _typedAnswerController.clear();
+      _question = _buildQuestion(
+        mode: _mode,
+        word: firstWord,
+        allWords: selected.words,
+      );
+    });
+  }
+
+  void _finishLearningDeck() {
+    if (!mounted) return;
+    setState(() {
+      _learningDeckOpen = false;
+      _learningCompleted = true;
+      _sessionStarted = false;
+      _isTestSession = false;
+    });
+  }
+
+  void _cancelLearningDeck() {
+    if (!mounted) return;
+    setState(() {
+      _learningDeckOpen = false;
+      _learningCompleted = false;
+      _sessionStarted = false;
+      _isTestSession = false;
+    });
+  }
+
+  _Word? get _currentWord {
+    final selected = _selectedCourse;
+    if (selected == null || !_sessionStarted) return null;
+    if (_index < 0 || _index >= selected.sessionWords.length) return null;
+    return selected.sessionWords[_index];
+  }
+
+  bool get _sessionDone {
+    final selected = _selectedCourse;
+    if (selected == null) return true;
+    return _sessionStarted && _index >= selected.sessionWords.length;
+  }
+
+  _Question _buildQuestion({
+    required _CoachMode mode,
+    required _Word word,
+    required List<_Word> allWords,
+  }) {
+    final random = Random();
+
+    if (mode == _CoachMode.spelling) {
+      final type = random.nextInt(3);
+      if (type == 0) {
+        final masked = _maskWord(word.word);
+        return _Question(
+          promptTitle: 'Complete the spelling',
+          promptBody: masked,
+          answer: word.word,
+          options: const <String>[],
+          questionType: 'spelling_masked',
+        );
+      }
+
+      if (type == 1 && word.definition.trim().isNotEmpty) {
+        return _Question(
+          promptTitle: 'Type the word for this definition',
+          promptBody: word.definition,
+          answer: word.word,
+          options: const <String>[],
+          questionType: 'spelling_definition',
+        );
+      }
+
+      final example = _blankExample(word.example, word.word);
+      return _Question(
+        promptTitle: 'Fill the missing word',
+        promptBody: example,
+        answer: word.word,
+        options: const <String>[],
+        questionType: 'spelling_example',
+      );
+    }
+
+    final type = random.nextInt(3);
+    if (type == 0) {
+      final options = _mcqWordOptions(answer: word.word, allWords: allWords);
+      return _Question(
+        promptTitle: 'Choose the correct word',
+        promptBody: word.definition.isEmpty
+            ? 'Pick the word that matches the picture/context.'
+            : word.definition,
+        answer: word.word,
+        options: options,
+        questionType: 'usage_definition_to_word',
+      );
+    }
+
+    if (type == 1) {
+      final options = _mcqDefinitionOptions(
+        answer: word.definition,
+        allWords: allWords,
+      );
+      return _Question(
+        promptTitle: 'Choose the correct definition',
+        promptBody: word.word,
+        answer: word.definition,
+        options: options,
+        questionType: 'usage_word_to_definition',
+      );
+    }
+
+    final options = _mcqWordOptions(answer: word.word, allWords: allWords);
+    return _Question(
+      promptTitle: 'Pick the word that fits the sentence',
+      promptBody: _blankExample(word.example, word.word),
+      answer: word.word,
+      options: options,
+      questionType: 'usage_example_to_word',
+    );
+  }
+
+  String _maskWord(String word) {
+    final chars = word.split('');
+    if (chars.length <= 3) {
+      return '${chars.first}${'_' * max(chars.length - 1, 1)}';
+    }
+
+    final random = Random();
+    final out = <String>[];
+    for (int i = 0; i < chars.length; i++) {
+      if (i == 0 || i == chars.length - 1) {
+        out.add(chars[i]);
+      } else {
+        out.add(random.nextBool() ? '_' : chars[i]);
+      }
+    }
+    return out.join();
+  }
+
+  String _blankExample(String example, String word) {
+    final trimmed = example.trim();
+    if (trimmed.isEmpty) {
+      return 'Use "$word" in a sentence.';
+    }
+
+    final escaped = RegExp.escape(word);
+    final reg = RegExp(escaped, caseSensitive: false);
+    if (reg.hasMatch(trimmed)) {
+      return trimmed.replaceFirst(reg, '_____');
+    }
+    return '$trimmed\n\n(Choose/type: $word)';
+  }
+
+  List<String> _mcqWordOptions({
+    required String answer,
+    required List<_Word> allWords,
+  }) {
+    final random = Random();
+    final pool = allWords
+        .map((e) => e.word)
+        .where((w) => w.trim().isNotEmpty)
+        .toSet()
+        .toList();
+    pool.removeWhere((w) => w.toLowerCase() == answer.toLowerCase());
+    pool.shuffle(random);
+
+    final options = <String>[answer, ...pool.take(3)];
+    options.shuffle(random);
+    return options;
+  }
+
+  List<String> _mcqDefinitionOptions({
+    required String answer,
+    required List<_Word> allWords,
+  }) {
+    final random = Random();
+    final fallback = answer.trim().isEmpty
+        ? 'Definition not available'
+        : answer;
+    final pool = allWords
+        .map((e) => e.definition.trim())
+        .where((d) => d.isNotEmpty)
+        .toSet()
+        .toList();
+
+    pool.removeWhere((d) => d.toLowerCase() == fallback.toLowerCase());
+    pool.shuffle(random);
+    final options = <String>[fallback, ...pool.take(3)];
+    options.shuffle(random);
+    return options;
+  }
+
+  void _submitSpelling() {
+    final question = _question;
+    if (question == null) return;
+
+    final typed = _typedAnswerController.text.trim();
+    if (typed.isEmpty) {
+      AppToast.show(
+        context,
+        'Type your answer first.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final correct = typed.toLowerCase() == question.answer.trim().toLowerCase();
+
+    setState(() {
+      _answered = true;
+      _answerCorrect = correct;
+      if (correct) _correct++;
+    });
+  }
+
+  void _submitUsage() {
+    final question = _question;
+    if (question == null) return;
+    if (_pickedOption == null ||
+        _pickedOption! < 0 ||
+        _pickedOption! >= question.options.length) {
+      AppToast.show(context, 'Pick one option first.', type: AppToastType.info);
+      return;
+    }
+
+    final selected = question.options[_pickedOption!].trim().toLowerCase();
+    final answer = question.answer.trim().toLowerCase();
+    final correct = selected == answer;
+
+    setState(() {
+      _answered = true;
+      _answerCorrect = correct;
+      if (correct) _correct++;
+    });
+  }
+
+  void _nextWord() {
+    final selected = _selectedCourse;
+    if (selected == null) return;
+
+    final nextIndex = _index + 1;
+    setState(() {
+      _index = nextIndex;
+      _pickedOption = null;
+      _typedAnswerController.clear();
+      _answered = false;
+      _answerCorrect = false;
+      if (_index >= selected.sessionWords.length) {
+        _question = null;
+      } else if (_isTestSession) {
+        final w = selected.sessionWords[_index];
+        _question = _buildQuestion(
+          mode: _mode,
+          word: w,
+          allWords: selected.words,
+        );
+      } else {
+        _question = null;
+      }
+      if (_index >= selected.sessionWords.length) {
+        _sessionStarted = true;
+      }
+    });
+  }
+
+  void _restartSession() {
+    if (_isTestSession) {
+      _startTestSession();
+      return;
+    }
+    _startSession();
+  }
+
+  Widget _buildSetupCard() {
+    final selected = _selectedCourse;
+    if (selected == null) {
+      return const SizedBox.shrink();
+    }
+    final compact = MediaQuery.sizeOf(context).width < 380;
+
+    return _CoachPanel(
+      palette: palette,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
+                    color: palette.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    '!',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF6C63FF),
-                    ),
+                  child: Icon(
+                    Icons.auto_stories_rounded,
+                    color: palette.primary,
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _tr('How to use Study Coach', 'طريقة استخدام مدرب الدراسة'),
+                    'Vocabulary Coach',
+                    style: TextStyle(
+                      fontSize: compact ? 18 : 20,
+                      fontWeight: FontWeight.w900,
+                      color: palette.primary,
+                    ),
                   ),
                 ),
               ],
             ),
-            content: SingleChildScrollView(
-              child: Text(
-                _tr(
-                  '1) This screen is a weekly guided study plan.\n\n'
-                      '2) Each day has one small English task set.\n\n'
-                      '3) Tap any day card to open its tasks.\n\n'
-                      '4) Tap a task to mark it complete.\n\n'
-                      '5) Your weekly progress bar updates automatically.\n\n'
-                      '6) The plan resets automatically when a new week starts.\n\n'
-                      '7) Use the language switch at the top to change between English and Arabic.\n\n'
-                      '8) You do not need to do everything at once. Only open one day, follow the steps, and finish that day.\n\n'
-                      'Best way to use it:\n'
-                      '• Open today’s card\n'
-                      '• Read the task steps\n'
-                      '• Do them in order\n'
-                      '• Mark each task complete\n'
-                      '• Come back tomorrow for the next day\n\n'
-                      'This screen is designed to be clear, guided, and simple — not a goal tracker and not a complex dashboard.',
-                  '1) هذه الشاشة هي خطة دراسة أسبوعية موجهة.\n\n'
-                      '2) كل يوم يحتوي على مجموعة صغيرة وواضحة من مهام تعلم الإنجليزية.\n\n'
-                      '3) اضغط على بطاقة أي يوم لفتح مهامه.\n\n'
-                      '4) اضغط على المهمة عند الانتهاء منها لوضع علامة الإكمال.\n\n'
-                      '5) شريط التقدم الأسبوعي يتحدث تلقائياً.\n\n'
-                      '6) يتم إعادة تعيين الخطة تلقائياً عند بداية أسبوع جديد.\n\n'
-                      '7) استخدم زر اللغة في الأعلى للتبديل بين العربية والإنجليزية.\n\n'
-                      '8) لا تحتاج إلى تنفيذ كل شيء دفعة واحدة. افتح يوماً واحداً فقط، اتبع الخطوات، وأنهِ ذلك اليوم.\n\n'
-                      'أفضل طريقة للاستخدام:\n'
-                      '• افتح بطاقة اليوم الحالي\n'
-                      '• اقرأ خطوات المهام\n'
-                      '• نفذها بالترتيب\n'
-                      '• علّم كل مهمة بعد إكمالها\n'
-                      '• ارجع غداً لليوم التالي\n\n'
-                      'هذه الشاشة مصممة لتكون واضحة وموجهة وبسيطة — وليست متتبّع أهداف معقداً ولا لوحة مزدحمة.',
-                ),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  height: 1.55,
-                ),
+            const SizedBox(height: 8),
+            Text(
+              'Course: ${selected.courseTitle}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            Text(
+              'Total words: ${selected.words.length}',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: palette.text.withValues(alpha: 0.78),
               ),
             ),
-            actions: [
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(_tr('Got it', 'فهمت')),
+            if (_courseBundles.length > 1) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<_CourseBundle>(
+                initialValue: _selectedCourse,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Course'),
+                items: _courseBundles
+                    .map(
+                      (c) => DropdownMenuItem<_CourseBundle>(
+                        value: c,
+                        child: Text(c.courseTitle),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() {
+                    _selectedCourse = v;
+                    _sessionStarted = false;
+                    _learningCompleted = false;
+                  });
+                },
               ),
             ],
-          ),
-        );
-      },
+            const SizedBox(height: 14),
+            Text(
+              'Mode',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: palette.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  selected: _mode == _CoachMode.spelling,
+                  label: const Text('Spelling'),
+                  avatar: const Icon(Icons.keyboard_alt_rounded, size: 18),
+                  onSelected: (_) =>
+                      setState(() => _mode = _CoachMode.spelling),
+                ),
+                ChoiceChip(
+                  selected: _mode == _CoachMode.usage,
+                  label: const Text('Usage'),
+                  avatar: const Icon(Icons.checklist_rtl_rounded, size: 18),
+                  onSelected: (_) => setState(() => _mode = _CoachMode.usage),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Daily speed',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: palette.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _CoachSpeed.values
+                  .map(
+                    (s) => ChoiceChip(
+                      selected: _speed == s,
+                      label: Text(_speedLabel(s)),
+                      onSelected: (_) => setState(() => _speed = s),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: Flex(
+                direction: compact ? Axis.vertical : Axis.horizontal,
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _startSession,
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text('Learn now'),
+                    ),
+                  ),
+                  SizedBox(width: compact ? 0 : 8, height: compact ? 8 : 0),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _learningCompleted ? _startTestSession : null,
+                      icon: const Icon(Icons.quiz_rounded),
+                      label: Text(
+                        _learningCompleted ? 'Test now' : 'Test locked',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!_learningCompleted) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Finish the learning deck to unlock test.',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: palette.text.withValues(alpha: 0.72),
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'Learning set completed. You can start the test now.',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F766E),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
-  void _showSnack(String text) {
-    if (!mounted) return;
-    AppToast.fromSnackBar(context, SnackBar(content: Text(text)));
+  Widget _buildResultCard() {
+    final total = _selectedCourse?.sessionWords.length ?? 0;
+    final ratio = total == 0 ? 0.0 : (_correct / total);
+    final percent = (ratio * 100).round();
+
+    return _CoachPanel(
+      palette: palette,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _isTestSession ? 'Test complete' : 'Session complete',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                color: palette.primary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Score: $_correct / $total ($percent%)',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 320),
+                tween: Tween<double>(begin: 0, end: ratio.clamp(0.0, 1.0)),
+                builder: (context, value, _) {
+                  return LinearProgressIndicator(value: value, minHeight: 10);
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: _restartSession,
+                  icon: const Icon(Icons.replay_rounded),
+                  label: Text(_isTestSession ? 'Retake test' : 'New set'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _sessionStarted = false;
+                      _isTestSession = false;
+                    });
+                  },
+                  icon: const Icon(Icons.settings_rounded),
+                  label: const Text('Back to setup'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  Map<String, bool> _extractCheckedMap(dynamic raw) {
-    final checked = _emptyCheckedMap();
+  Widget _buildTestCard(_Word word) {
+    final question = _question;
+    if (question == null) return const SizedBox.shrink();
+    final compact = MediaQuery.sizeOf(context).width < 380;
+    final total = _selectedCourse?.sessionWords.length ?? 0;
+    final progress = total <= 0 ? 0.0 : (_index + 1) / total;
 
-    if (raw is! Map) return checked;
-
-    final map = Map<dynamic, dynamic>.from(raw);
-    final rawChecked = map['checked'];
-
-    if (rawChecked is! Map) return checked;
-
-    final checkedMap = Map<dynamic, dynamic>.from(rawChecked);
-    for (final task in _allTasks) {
-      checked[task.id] = checkedMap[task.id] == true;
-    }
-
-    return checked;
-  }
-
-  int _extractQuoteIndex(dynamic raw) {
-    if (raw is Map) {
-      final map = Map<dynamic, dynamic>.from(raw);
-      final v = map['quoteIndex'];
-      final parsed = int.tryParse(v?.toString() ?? '');
-      if (parsed != null && parsed >= 0 && parsed < _quotes.length) {
-        return parsed;
-      }
-    }
-    return _quoteIndexForWeek(_currentWeekKey());
-  }
-
-  _PlanDay get _todayDay {
-    final weekday = DateTime.now().weekday;
-    return _weekPlanDays[weekday - 1];
-  }
-
-  int _doneCountForDay(_PlanDay day, Map<String, bool> checked) {
-    return day.tasks.where((t) => checked[t.id] == true).length;
-  }
-
-  int _daysStartedCount(Map<String, bool> checked) {
-    return _weekPlanDays.where((day) {
-      return day.tasks.any((t) => checked[t.id] == true);
-    }).length;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-
-    final p = palette;
-
-    return Directionality(
-      textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: p.appBg,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          surfaceTintColor: Colors.white,
-          title: Text(
-            _tr('Study Coach', 'مدرب الدراسة'),
-            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-          ),
-          iconTheme: IconThemeData(color: p.primary),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: IconButton(
-                onPressed: _showHowToUse,
-                tooltip: _tr('How to use', 'طريقة الاستخدام'),
-                icon: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
+    return _CoachPanel(
+      palette: palette,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, compact ? 12 : 16, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Test ${_index + 1} of $total',
+                  style: TextStyle(
+                    color: palette.text.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w700,
                   ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    '!',
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: palette.accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _mode == _CoachMode.spelling
+                        ? 'Spelling Test'
+                        : 'Usage Test',
                     style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF6C63FF),
-                      fontSize: 16,
+                      fontSize: 11,
+                      color: palette.accent,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 260),
+                tween: Tween<double>(begin: 0, end: progress.clamp(0.0, 1.0)),
+                builder: (context, value, _) {
+                  return LinearProgressIndicator(value: value, minHeight: 7);
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (word.imageUrl.trim().isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  word.imageUrl,
+                  width: double.infinity,
+                  height: 160,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            if (word.imageUrl.trim().isNotEmpty) const SizedBox(height: 12),
+            Text(
+              question.promptTitle,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 17,
+                color: palette.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              question.promptBody,
+              style: const TextStyle(fontWeight: FontWeight.w700, height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            if (_mode == _CoachMode.spelling)
+              TextField(
+                controller: _typedAnswerController,
+                enabled: !_answered,
+                decoration: const InputDecoration(labelText: 'Type exact word'),
+              )
+            else
+              Column(
+                children: List.generate(question.options.length, (i) {
+                  final text = question.options[i];
+                  final selected = _pickedOption == i;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _answered
+                        ? null
+                        : () {
+                            setState(() => _pickedOption = i);
+                          },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 170),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? palette.primary.withValues(alpha: 0.11)
+                            : palette.cardBg.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected
+                              ? palette.primary.withValues(alpha: 0.6)
+                              : palette.border,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.radio_button_checked_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            size: 20,
+                            color: selected
+                                ? palette.primary
+                                : palette.text.withValues(alpha: 0.7),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              text,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            const SizedBox(height: 10),
+            if (_answered)
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: _answered ? 1 : 0,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _answerCorrect
+                        ? const Color(0xFF047857).withValues(alpha: 0.12)
+                        : const Color(0xFFB91C1C).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _answerCorrect
+                          ? const Color(0xFF047857).withValues(alpha: 0.3)
+                          : const Color(0xFFB91C1C).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    _answerCorrect
+                        ? 'Correct!'
+                        : 'Incorrect. Correct answer: ${question.answer}',
+                    style: TextStyle(
+                      color: _answerCorrect
+                          ? const Color(0xFF065F46)
+                          : const Color(0xFF7F1D1D),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _answered
+                    ? _nextWord
+                    : (_mode == _CoachMode.spelling
+                          ? _submitSpelling
+                          : _submitUsage),
+                icon: Icon(
+                  _answered ? Icons.arrow_forward_rounded : Icons.check_rounded,
+                ),
+                label: Text(_answered ? 'Next' : 'Check'),
               ),
             ),
           ],
         ),
-        body: learnerWebBodyFrame(
-          context: context,
-          maxWidth: 1260,
-          child: WatermarkBackground(
-            child: RefreshIndicator(
-              onRefresh: _normalizeCurrentWeekPlan,
-              child: StreamBuilder<DatabaseEvent>(
-                stream: _planRef.onValue,
-                builder: (context, snap) {
-                  final raw = snap.data?.snapshot.value;
-                  final checked = _extractCheckedMap(raw);
-
-                  final total = _allTasks.length;
-                  final done = checked.values.where((v) => v).length;
-                  final progress = total == 0 ? 0.0 : done / total;
-                  final percent = (progress * 100).round();
-                  final daysStarted = _daysStartedCount(checked);
-
-                  final quote = _quotes[_extractQuoteIndex(raw)].text(_lang);
-                  final today = _todayDay;
-                  final todayDone = _doneCountForDay(today, checked);
-
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                    children: [
-                      _HeroCard(
-                        lang: _lang,
-                        onChangeLang: (lang) {
-                          setState(() {
-                            _lang = lang;
-                          });
-                        },
-                        progress: progress,
-                        done: done,
-                        total: total,
-                        title: _tr(
-                          'My English Learning Plan',
-                          'خطة تعلم الإنجليزية',
-                        ),
-                        subtitle: _tr(
-                          'One clear weekly plan · one tracking method · simple daily steps',
-                          'خطة أسبوعية واضحة · طريقة تتبع واحدة · خطوات يومية بسيطة',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _QuoteBanner(quote: quote),
-                      const SizedBox(height: 16),
-                      _TodayFocusCard(
-                        day: today,
-                        lang: _lang,
-                        doneCount: todayDone,
-                        totalCount: today.tasks.length,
-                        onOpen: () {
-                          setState(() {
-                            _expandedDayKey = today.key;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _StatsRow(
-                        lang: _lang,
-                        done: done,
-                        daysStarted: daysStarted,
-                        percent: percent,
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        _tr('Weekly study days', 'أيام الدراسة الأسبوعية'),
-                        style: TextStyle(
-                          color: p.primary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _tr(
-                          'Tap one day only, follow its steps, then mark tasks done.',
-                          'افتح يوماً واحداً فقط، اتبع خطواته، ثم علّم المهام كمكتملة.',
-                        ),
-                        style: TextStyle(
-                          color: p.text.withValues(alpha: 0.70),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      ..._weekPlanDays.map((day) {
-                        final doneCount = _doneCountForDay(day, checked);
-                        final expanded = _expandedDayKey == day.key;
-
-                        return _DayCard(
-                          day: day,
-                          lang: _lang,
-                          checked: checked,
-                          doneCount: doneCount,
-                          expanded: expanded,
-                          isToday: day.key == today.key,
-                          onHeaderTap: () {
-                            setState(() {
-                              _expandedDayKey = expanded ? null : day.key;
-                            });
-                          },
-                          onToggleTask: (taskId, currentValue) {
-                            _toggleTask(taskId, currentValue);
-                          },
-                        );
-                      }),
-                      const SizedBox(height: 16),
-                      _ResetCard(
-                        lang: _lang,
-                        done: done,
-                        total: total,
-                        onReset: _resetWeek,
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
-}
 
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({
-    required this.lang,
-    required this.onChangeLang,
-    required this.progress,
-    required this.done,
-    required this.total,
-    required this.title,
-    required this.subtitle,
-  });
+  Widget _buildLearningDeckOverlay() {
+    final selected = _selectedCourse;
+    if (!_learningDeckOpen ||
+        selected == null ||
+        selected.sessionWords.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-  final _CoachLang lang;
-  final ValueChanged<_CoachLang> onChangeLang;
-  final double progress;
-  final int done;
-  final int total;
-  final String title;
-  final String subtitle;
+    final compact = MediaQuery.sizeOf(context).width < 380;
+    final total = selected.sessionWords.length;
+    final progress = total <= 0 ? 0.0 : (_deckPage + 1) / total;
 
-  bool get _isArabic => lang == _CoachLang.ar;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF6C63FF), Color(0xFF5B8DEF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6C63FF).withValues(alpha: 0.28),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
+    return Positioned.fill(
       child: Stack(
         children: [
-          Positioned(
-            top: -28,
-            right: _isArabic ? null : -20,
-            left: _isArabic ? -20 : null,
-            child: Container(
-              width: 130,
-              height: 130,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -34,
-            left: _isArabic ? null : -16,
-            right: _isArabic ? -16 : null,
-            child: Container(
-              width: 110,
-              height: 110,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text('🎓', style: TextStyle(fontSize: 34)),
-                  const Spacer(),
-                  _LangSwitch(selected: lang, onChanged: onChangeLang),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 26,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.20),
-                  borderRadius: BorderRadius.circular(999),
-                ),
+          const ModalBarrier(dismissible: false, color: Color(0x80000000)),
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
                 child: Container(
-                  height: 18,
+                  margin: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: FractionallySizedBox(
-                      widthFactor: progress.clamp(0, 1),
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFFFFD700), Color(0xFFFF9F43)],
-                          ),
-                        ),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: palette.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.14),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
                       ),
-                    ),
+                    ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _isArabic
-                    ? '$done من $total مهام مكتملة — ${((progress * 100).round())}%'
-                    : '$done / $total tasks completed — ${((progress * 100).round())}%',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.96),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LangSwitch extends StatelessWidget {
-  const _LangSwitch({required this.selected, required this.onChanged});
-
-  final _CoachLang selected;
-  final ValueChanged<_CoachLang> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget chip({
-      required String label,
-      required bool active,
-      required VoidCallback onTap,
-    }) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: active ? Colors.white : Colors.white.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: active ? 0 : 0.25),
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? const Color(0xFF5B57F4) : Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        chip(
-          label: 'EN',
-          active: selected == _CoachLang.en,
-          onTap: () => onChanged(_CoachLang.en),
-        ),
-        const SizedBox(width: 8),
-        chip(
-          label: 'AR',
-          active: selected == _CoachLang.ar,
-          onTap: () => onChanged(_CoachLang.ar),
-        ),
-      ],
-    );
-  }
-}
-
-class _QuoteBanner extends StatelessWidget {
-  const _QuoteBanner({required this.quote});
-
-  final String quote;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: const Border(
-          left: BorderSide(color: Color(0xFF6C63FF), width: 5),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Text(
-        quote,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Color(0xFF6C63FF),
-          fontWeight: FontWeight.w800,
-          fontSize: 14,
-          height: 1.4,
-        ),
-      ),
-    );
-  }
-}
-
-class _TodayFocusCard extends StatelessWidget {
-  const _TodayFocusCard({
-    required this.day,
-    required this.lang,
-    required this.doneCount,
-    required this.totalCount,
-    required this.onOpen,
-  });
-
-  final _PlanDay day;
-  final _CoachLang lang;
-  final int doneCount;
-  final int totalCount;
-  final VoidCallback onOpen;
-
-  bool get _isArabic => lang == _CoachLang.ar;
-
-  String _tr(String en, String ar) => _isArabic ? ar : en;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: day.lightColor,
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: Text(day.emoji, style: const TextStyle(fontSize: 28)),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _tr('Today focus', 'تركيز اليوم'),
-                  style: const TextStyle(
-                    color: Color(0xFF6C63FF),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${day.dayName(lang)} · ${day.title(lang)}',
-                  style: const TextStyle(
-                    color: Color(0xFF2F3152),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _isArabic
-                      ? '$doneCount من $totalCount مهام مكتملة'
-                      : '$doneCount / $totalCount tasks completed',
-                  style: TextStyle(
-                    color: const Color(0xFF2F3152).withValues(alpha: 0.70),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: onOpen,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF6C63FF),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: Text(_tr('Open', 'افتح')),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({
-    required this.lang,
-    required this.done,
-    required this.daysStarted,
-    required this.percent,
-  });
-
-  final _CoachLang lang;
-  final int done;
-  final int daysStarted;
-  final int percent;
-
-  bool get _isArabic => lang == _CoachLang.ar;
-
-  String _tr(String en, String ar) => _isArabic ? ar : en;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget card({
-      required String number,
-      required String label,
-      required Color color,
-    }) {
-      return Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Text(
-                number,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 26,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF888AAA),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        card(
-          number: '$done',
-          label: _tr('Tasks Done', 'المهام المكتملة'),
-          color: const Color(0xFF6C63FF),
-        ),
-        const SizedBox(width: 10),
-        card(
-          number: '$daysStarted',
-          label: _tr('Days Started', 'الأيام التي بدأت'),
-          color: const Color(0xFFFF9F43),
-        ),
-        const SizedBox(width: 10),
-        card(
-          number: '$percent%',
-          label: _tr('This Week', 'هذا الأسبوع'),
-          color: const Color(0xFF43B89C),
-        ),
-      ],
-    );
-  }
-}
-
-class _DayCard extends StatelessWidget {
-  const _DayCard({
-    required this.day,
-    required this.lang,
-    required this.checked,
-    required this.doneCount,
-    required this.expanded,
-    required this.isToday,
-    required this.onHeaderTap,
-    required this.onToggleTask,
-  });
-
-  final _PlanDay day;
-  final _CoachLang lang;
-  final Map<String, bool> checked;
-  final int doneCount;
-  final bool expanded;
-  final bool isToday;
-  final VoidCallback onHeaderTap;
-  final void Function(String taskId, bool currentValue) onToggleTask;
-
-  bool get _isArabic => lang == _CoachLang.ar;
-
-  String _tr(String en, String ar) => _isArabic ? ar : en;
-
-  @override
-  Widget build(BuildContext context) {
-    final allDone = doneCount == day.tasks.length;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: isToday
-              ? day.color.withValues(alpha: 0.28)
-              : const Color(0xFFF0F1F8),
-          width: isToday ? 1.4 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: onHeaderTap,
-            borderRadius: BorderRadius.circular(22),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              decoration: BoxDecoration(
-                color: day.lightColor,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: day.color.withValues(alpha: 0.13),
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      day.emoji,
-                      style: const TextStyle(fontSize: 27),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        Row(
                           children: [
-                            Text(
-                              day.dayName(lang),
-                              style: TextStyle(
-                                color: day.color,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 18,
+                            const Icon(Icons.style_rounded),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Learning Deck',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: compact ? 16 : 18,
+                                  color: palette.primary,
+                                ),
                               ),
                             ),
-                            if (isToday)
-                              _MiniTag(
-                                text: _tr('Today', 'اليوم'),
-                                background: day.color.withValues(alpha: 0.16),
-                                color: day.color,
-                              ),
-                            if (allDone)
-                              _MiniTag(
-                                text: _tr('Done', 'مكتمل'),
-                                background: const Color(
-                                  0xFF43B89C,
-                                ).withValues(alpha: 0.16),
-                                color: const Color(0xFF43B89C),
-                              ),
+                            IconButton(
+                              tooltip: 'Close deck',
+                              onPressed: _cancelLearningDeck,
+                              icon: const Icon(Icons.close_rounded),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          day.title(lang),
-                          style: TextStyle(
-                            color: const Color(
-                              0xFF555777,
-                            ).withValues(alpha: 0.80),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Card ${_deckPage + 1} of $total',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: palette.text.withValues(alpha: 0.74),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: progress.clamp(0.0, 1.0),
+                                    minHeight: 7,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: PageView.builder(
+                            controller: _deckController,
+                            padEnds: true,
+                            itemCount: total,
+                            onPageChanged: (v) => setState(() => _deckPage = v),
+                            itemBuilder: (context, i) {
+                              final word = selected.sessionWords[i];
+                              return AnimatedBuilder(
+                                animation: _deckController,
+                                builder: (context, child) {
+                                  double page = _deckPage.toDouble();
+                                  if (_deckController.hasClients &&
+                                      _deckController
+                                          .position
+                                          .hasContentDimensions) {
+                                    page = _deckController.page ?? page;
+                                  }
+                                  final distance = (page - i).abs().clamp(
+                                    0.0,
+                                    1.0,
+                                  );
+                                  final scale = 1 - (distance * 0.06);
+                                  final opacity = 1 - (distance * 0.2);
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: Opacity(
+                                      opacity: opacity,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  child: Card(
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      side: BorderSide(color: palette.border),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        14,
+                                        14,
+                                        14,
+                                        14,
+                                      ),
+                                      child: SingleChildScrollView(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            if (word.imageUrl.trim().isNotEmpty)
+                                              ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                child: Image.network(
+                                                  word.imageUrl,
+                                                  width: double.infinity,
+                                                  height: compact ? 160 : 200,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, _, _) =>
+                                                      const SizedBox.shrink(),
+                                                ),
+                                              )
+                                            else
+                                              Container(
+                                                height: compact ? 130 : 160,
+                                                width: double.infinity,
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  gradient: LinearGradient(
+                                                    colors: [
+                                                      palette.primary
+                                                          .withValues(
+                                                            alpha: 0.08,
+                                                          ),
+                                                      palette.accent.withValues(
+                                                        alpha: 0.08,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                child: Center(
+                                                  child: Opacity(
+                                                    opacity: 0.22,
+                                                    child: Image.asset(
+                                                      'assets/images/ybs_logo.png',
+                                                      width: 84,
+                                                      height: 84,
+                                                      fit: BoxFit.contain,
+                                                      errorBuilder: (_, _, _) =>
+                                                          Icon(
+                                                            Icons
+                                                                .text_fields_rounded,
+                                                            color:
+                                                                palette.primary,
+                                                            size: 36,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              word.word,
+                                              style: TextStyle(
+                                                fontSize: compact ? 24 : 29,
+                                                fontWeight: FontWeight.w900,
+                                                color: palette.primary,
+                                              ),
+                                            ),
+                                            if (word.definition
+                                                .trim()
+                                                .isNotEmpty) ...[
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                word.definition,
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w700,
+                                                  height: 1.35,
+                                                ),
+                                              ),
+                                            ],
+                                            if (word.example
+                                                .trim()
+                                                .isNotEmpty) ...[
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                word.example,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: palette.text
+                                                      .withValues(alpha: 0.8),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
                           children: [
-                            _MiniTag(
-                              text: day.skill(lang),
-                              background: day.color.withValues(alpha: 0.14),
-                              color: day.color,
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _deckPage <= 0
+                                    ? null
+                                    : () {
+                                        _deckController.previousPage(
+                                          duration: const Duration(
+                                            milliseconds: 240,
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                        );
+                                      },
+                                icon: const Icon(Icons.arrow_back_rounded),
+                                label: const Text('Previous'),
+                              ),
                             ),
-                            _MiniTag(
-                              text: day.duration(lang),
-                              background: const Color(0xFFF1F2FA),
-                              color: const Color(0xFF888AAA),
-                            ),
-                            _MiniTag(
-                              text: '$doneCount/${day.tasks.length}',
-                              background: const Color(0xFFF1F2FA),
-                              color: const Color(0xFF888AAA),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: _deckPage >= total - 1
+                                    ? _finishLearningDeck
+                                    : () {
+                                        _deckController.nextPage(
+                                          duration: const Duration(
+                                            milliseconds: 240,
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                        );
+                                      },
+                                icon: Icon(
+                                  _deckPage >= total - 1
+                                      ? Icons.check_circle_rounded
+                                      : Icons.arrow_forward_rounded,
+                                ),
+                                label: Text(
+                                  _deckPage >= total - 1
+                                      ? 'Finish learning set'
+                                      : 'Next card',
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: day.color,
-                    size: 28,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                children: [
-                  ...day.tasks.map((task) {
-                    final done = checked[task.id] == true;
-
-                    return InkWell(
-                      onTap: () => onToggleTask(task.id, done),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 7),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 24,
-                              height: 24,
-                              margin: const EdgeInsets.only(top: 1),
-                              decoration: BoxDecoration(
-                                color: done ? day.color : Colors.white,
-                                borderRadius: BorderRadius.circular(7),
-                                border: Border.all(
-                                  color: done
-                                      ? day.color
-                                      : const Color(0xFFD2D5E8),
-                                  width: 2.3,
-                                ),
-                              ),
-                              child: done
-                                  ? const Center(
-                                      child: Icon(
-                                        Icons.check,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: Color(0xFFF0F0F8),
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  task.text(lang),
-                                  style: TextStyle(
-                                    color: const Color(
-                                      0xFF35375A,
-                                    ).withValues(alpha: done ? 0.45 : 1),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14,
-                                    height: 1.45,
-                                    decoration: done
-                                        ? TextDecoration.lineThrough
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: day.lightColor,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      day.tip(lang),
-                      style: TextStyle(
-                        color: day.color,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                        height: 1.45,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      const Text('🔗', style: TextStyle(fontSize: 14)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          day.resource(lang),
-                          style: const TextStyle(
-                            color: Color(0xFF888AAA),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniTag extends StatelessWidget {
-  const _MiniTag({
-    required this.text,
-    required this.background,
-    required this.color,
-  });
-
-  final String text;
-  final Color background;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 11,
-        ),
-      ),
-    );
-  }
-}
-
-class _ResetCard extends StatelessWidget {
-  const _ResetCard({
-    required this.lang,
-    required this.done,
-    required this.total,
-    required this.onReset,
-  });
-
-  final _CoachLang lang;
-  final int done;
-  final int total;
-  final VoidCallback onReset;
-
-  bool get _isArabic => lang == _CoachLang.ar;
-
-  String _tr(String en, String ar) => _isArabic ? ar : en;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Text(
-            _isArabic
-                ? 'التقدم الأسبوعي: $done من $total'
-                : 'Weekly progress: $done / $total',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF6C63FF),
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: onReset,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF6C63FF),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              child: Text(
-                _tr('Reset This Week', 'إعادة تعيين هذا الأسبوع'),
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _CoachPalette {
-  const _CoachPalette({
-    required this.primary,
-    required this.accent,
-    required this.text,
-    required this.appBg,
-    required this.cardBg,
-    required this.border,
-    required this.soft,
-  });
+  @override
+  Widget build(BuildContext context) {
+    final selected = _selectedCourse;
 
-  final Color primary;
-  final Color accent;
-  final Color text;
-  final Color appBg;
-  final Color cardBg;
-  final Color border;
-  final Color soft;
-
-  factory _CoachPalette.fromApp(AppPalette p) {
-    return _CoachPalette(
-      primary: p.primary,
-      accent: p.accent,
-      text: p.text,
-      appBg: p.appBg,
-      cardBg: p.cardBg,
-      border: p.border,
-      soft: p.soft,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Study Coach'),
+        actions: [
+          IconButton(
+            tooltip: 'Reload',
+            onPressed: _loading ? null : _loadVocabByAssignedCourses,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: WatermarkBackground(
+        child: Stack(
+          children: [
+            learnerWebBodyFrame(
+              context: context,
+              child: SafeArea(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? _ErrorView(message: _error!)
+                    : selected == null
+                    ? const _ErrorView(
+                        message: 'No course vocabulary is available.',
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        children: [
+                          if (!_sessionStarted || !_isTestSession)
+                            _buildSetupCard(),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 240),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              final offset = Tween<Offset>(
+                                begin: const Offset(0, 0.03),
+                                end: Offset.zero,
+                              ).animate(animation);
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: offset,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: !_sessionStarted
+                                ? const SizedBox.shrink(
+                                    key: ValueKey('setup_idle'),
+                                  )
+                                : _sessionDone
+                                ? KeyedSubtree(
+                                    key: const ValueKey('result_panel'),
+                                    child: _buildResultCard(),
+                                  )
+                                : _isTestSession
+                                ? KeyedSubtree(
+                                    key: ValueKey('test_panel_$_index'),
+                                    child: _buildTestCard(_currentWord!),
+                                  )
+                                : const SizedBox.shrink(
+                                    key: ValueKey('idle_non_test'),
+                                  ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+            _buildLearningDeckOverlay(),
+          ],
+        ),
+      ),
     );
   }
 }
 
-enum _CoachLang { en, ar }
+class _ErrorView extends StatelessWidget {
+  const _ErrorView({required this.message});
 
-class _LocalizedText {
-  const _LocalizedText({required this.en, required this.ar});
+  final String message;
 
-  final String en;
-  final String ar;
-
-  String text(_CoachLang lang) {
-    return lang == _CoachLang.ar ? ar : en;
+  @override
+  Widget build(BuildContext context) {
+    final p = appThemeController.palette;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _CoachPanel(
+          palette: p,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 32),
+                const SizedBox(height: 10),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-class _PlanTask {
-  const _PlanTask({required this.id, required this.textData});
+class _CoachPanel extends StatelessWidget {
+  const _CoachPanel({required this.child, required this.palette});
 
-  final String id;
-  final _LocalizedText textData;
+  final Widget child;
+  final AppPalette palette;
 
-  String text(_CoachLang lang) => textData.text(lang);
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: palette.border),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            top: -10,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.055,
+                child: Image.asset(
+                  'assets/images/ybs_logo.png',
+                  width: 132,
+                  height: 132,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -24,
+            bottom: -30,
+            child: IgnorePointer(
+              child: Container(
+                width: 110,
+                height: 110,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: palette.primary.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
 }
 
-class _PlanDay {
-  const _PlanDay({
-    required this.key,
-    required this.nameData,
-    required this.titleData,
-    required this.skillData,
-    required this.durationData,
-    required this.tipData,
-    required this.resourceData,
-    required this.emoji,
-    required this.color,
-    required this.lightColor,
-    required this.tasks,
+class _CourseBundle {
+  _CourseBundle({
+    required this.courseId,
+    required this.courseTitle,
+    required this.words,
   });
 
-  final String key;
-  final _LocalizedText nameData;
-  final _LocalizedText titleData;
-  final _LocalizedText skillData;
-  final _LocalizedText durationData;
-  final _LocalizedText tipData;
-  final _LocalizedText resourceData;
-  final String emoji;
-  final Color color;
-  final Color lightColor;
-  final List<_PlanTask> tasks;
-
-  String dayName(_CoachLang lang) => nameData.text(lang);
-  String title(_CoachLang lang) => titleData.text(lang);
-  String skill(_CoachLang lang) => skillData.text(lang);
-  String duration(_CoachLang lang) => durationData.text(lang);
-  String tip(_CoachLang lang) => tipData.text(lang);
-  String resource(_CoachLang lang) => resourceData.text(lang);
+  final String courseId;
+  final String courseTitle;
+  final List<_Word> words;
+  final List<_Word> sessionWords = <_Word>[];
 }
 
-const List<_LocalizedText> _quotes = [
-  _LocalizedText(
-    en: 'Every expert was once a beginner. Keep going! 🌟',
-    ar: 'كل خبير كان في يوم من الأيام مبتدئاً. استمر! 🌟',
-  ),
-  _LocalizedText(
-    en: 'Small steps every day create big progress. 🚀',
-    ar: 'الخطوات الصغيرة كل يوم تصنع تقدماً كبيراً. 🚀',
-  ),
-  _LocalizedText(
-    en: 'Consistency is stronger than motivation. ✨',
-    ar: 'الاستمرارية أقوى من الحماس المؤقت. ✨',
-  ),
-  _LocalizedText(
-    en: 'Learning English opens real-life opportunities. 🚪',
-    ar: 'تعلم الإنجليزية يفتح فرصاً حقيقية في الحياة. 🚪',
-  ),
-  _LocalizedText(
-    en: 'You do not need perfection. You only need progress. 💪',
-    ar: 'أنت لا تحتاج إلى الكمال، أنت تحتاج فقط إلى التقدم. 💪',
-  ),
-];
+class _Word {
+  const _Word({
+    required this.id,
+    required this.word,
+    required this.definition,
+    required this.example,
+    required this.trainingExamples,
+    required this.imageUrl,
+  });
 
-const List<_PlanDay> _weekPlanDays = [
-  _PlanDay(
-    key: 'monday',
-    nameData: _LocalizedText(en: 'Monday', ar: 'الاثنين'),
-    titleData: _LocalizedText(en: 'Grammar Focus', ar: 'تركيز القواعد'),
-    skillData: _LocalizedText(en: 'Grammar', ar: 'القواعد'),
-    durationData: _LocalizedText(en: '25 min', ar: '25 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 Keep it simple. Learn one rule well before moving to another one.',
-      ar: '💡 اجعل الأمر بسيطاً. تعلّم قاعدة واحدة جيداً قبل الانتقال إلى قاعدة أخرى.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use a grammar book, teacher notes, or a trusted grammar app.',
-      ar: 'استخدم كتاب قواعد أو ملاحظات المعلم أو تطبيق قواعد موثوق.',
-    ),
-    emoji: '📘',
-    color: Color(0xFF6C63FF),
-    lightColor: Color(0xFFEEF0FF),
-    tasks: [
-      _PlanTask(
-        id: 'mon1',
-        textData: _LocalizedText(
-          en: 'Study one grammar rule only.',
-          ar: 'ادرس قاعدة نحوية واحدة فقط.',
-        ),
-      ),
-      _PlanTask(
-        id: 'mon2',
-        textData: _LocalizedText(
-          en: 'Read 3 example sentences carefully.',
-          ar: 'اقرأ 3 جمل مثال بعناية.',
-        ),
-      ),
-      _PlanTask(
-        id: 'mon3',
-        textData: _LocalizedText(
-          en: 'Write 5 simple sentences using that rule.',
-          ar: 'اكتب 5 جمل بسيطة باستخدام هذه القاعدة.',
-        ),
-      ),
-    ],
-  ),
-  _PlanDay(
-    key: 'tuesday',
-    nameData: _LocalizedText(en: 'Tuesday', ar: 'الثلاثاء'),
-    titleData: _LocalizedText(en: 'Speaking Practice', ar: 'تدريب التحدث'),
-    skillData: _LocalizedText(en: 'Speaking', ar: 'التحدث'),
-    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 Speak slowly. Clear speech is better than fast speech.',
-      ar: '💡 تحدث ببطء. الكلام الواضح أفضل من الكلام السريع.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use your phone voice recorder.',
-      ar: 'استخدم مسجل الصوت في هاتفك.',
-    ),
-    emoji: '🗣️',
-    color: Color(0xFF43B89C),
-    lightColor: Color(0xFFEDFAF5),
-    tasks: [
-      _PlanTask(
-        id: 'tue1',
-        textData: _LocalizedText(
-          en: 'Choose one topic: My day, my work, or my family.',
-          ar: 'اختر موضوعاً واحداً: يومي أو عملي أو عائلتي.',
-        ),
-      ),
-      _PlanTask(
-        id: 'tue2',
-        textData: _LocalizedText(
-          en: 'Speak for 1 to 2 minutes and record yourself.',
-          ar: 'تحدث لمدة دقيقة إلى دقيقتين وسجل صوتك.',
-        ),
-      ),
-      _PlanTask(
-        id: 'tue3',
-        textData: _LocalizedText(
-          en: 'Listen once and repeat better one more time.',
-          ar: 'استمع مرة واحدة ثم أعد التحدث بشكل أفضل مرة أخرى.',
-        ),
-      ),
-    ],
-  ),
-  _PlanDay(
-    key: 'wednesday',
-    nameData: _LocalizedText(en: 'Wednesday', ar: 'الأربعاء'),
-    titleData: _LocalizedText(en: 'Listening Day', ar: 'يوم الاستماع'),
-    skillData: _LocalizedText(en: 'Listening', ar: 'الاستماع'),
-    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 If you miss words, listen again. Repetition is part of learning.',
-      ar: '💡 إذا فاتتك كلمات، استمع مرة أخرى. التكرار جزء من التعلم.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use BBC Learning English or any short clear English audio.',
-      ar: 'استخدم BBC Learning English أو أي مقطع إنجليزي قصير وواضح.',
-    ),
-    emoji: '🎧',
-    color: Color(0xFFFF9F43),
-    lightColor: Color(0xFFFFF4E9),
-    tasks: [
-      _PlanTask(
-        id: 'wed1',
-        textData: _LocalizedText(
-          en: 'Listen to one short English audio or video.',
-          ar: 'استمع إلى مقطع صوتي أو فيديو إنجليزي قصير.',
-        ),
-      ),
-      _PlanTask(
-        id: 'wed2',
-        textData: _LocalizedText(
-          en: 'Write 3 words or phrases you heard.',
-          ar: 'اكتب 3 كلمات أو عبارات سمعتها.',
-        ),
-      ),
-      _PlanTask(
-        id: 'wed3',
-        textData: _LocalizedText(
-          en: 'Listen one more time to confirm them.',
-          ar: 'استمع مرة أخرى للتأكد منها.',
-        ),
-      ),
-    ],
-  ),
-  _PlanDay(
-    key: 'thursday',
-    nameData: _LocalizedText(en: 'Thursday', ar: 'الخميس'),
-    titleData: _LocalizedText(en: 'Writing Day', ar: 'يوم الكتابة'),
-    skillData: _LocalizedText(en: 'Writing', ar: 'الكتابة'),
-    durationData: _LocalizedText(en: '25 min', ar: '25 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 Simple correct sentences are excellent practice.',
-      ar: '💡 الجمل البسيطة والصحيحة تعتبر تدريباً ممتازاً.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use a notebook, notes app, or document file.',
-      ar: 'استخدم دفتراً أو تطبيق ملاحظات أو ملفاً كتابياً.',
-    ),
-    emoji: '✍️',
-    color: Color(0xFF5B8DEF),
-    lightColor: Color(0xFFEEF4FF),
-    tasks: [
-      _PlanTask(
-        id: 'thu1',
-        textData: _LocalizedText(
-          en: 'Write 5 to 6 sentences about your day.',
-          ar: 'اكتب من 5 إلى 6 جمل عن يومك.',
-        ),
-      ),
-      _PlanTask(
-        id: 'thu2',
-        textData: _LocalizedText(
-          en: 'Use 2 new words from this week.',
-          ar: 'استخدم كلمتين جديدتين من هذا الأسبوع.',
-        ),
-      ),
-      _PlanTask(
-        id: 'thu3',
-        textData: _LocalizedText(
-          en: 'Read your writing again and fix obvious mistakes.',
-          ar: 'اقرأ كتابتك مرة أخرى وصحح الأخطاء الواضحة.',
-        ),
-      ),
-    ],
-  ),
-  _PlanDay(
-    key: 'friday',
-    nameData: _LocalizedText(en: 'Friday', ar: 'الجمعة'),
-    titleData: _LocalizedText(en: 'Vocabulary Day', ar: 'يوم المفردات'),
-    skillData: _LocalizedText(en: 'Vocabulary', ar: 'المفردات'),
-    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 Learn useful words from your real life, not random words.',
-      ar: '💡 تعلّم كلمات مفيدة من حياتك الحقيقية وليس كلمات عشوائية.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use Quizlet, a dictionary, or your own vocabulary notebook.',
-      ar: 'استخدم Quizlet أو قاموساً أو دفتر مفرداتك الخاص.',
-    ),
-    emoji: '📚',
-    color: Color(0xFFC753D0),
-    lightColor: Color(0xFFFAF0FB),
-    tasks: [
-      _PlanTask(
-        id: 'fri1',
-        textData: _LocalizedText(
-          en: 'Learn 5 new useful English words.',
-          ar: 'تعلّم 5 كلمات إنجليزية جديدة ومفيدة.',
-        ),
-      ),
-      _PlanTask(
-        id: 'fri2',
-        textData: _LocalizedText(
-          en: 'Write one short sentence for each word.',
-          ar: 'اكتب جملة قصيرة واحدة لكل كلمة.',
-        ),
-      ),
-      _PlanTask(
-        id: 'fri3',
-        textData: _LocalizedText(
-          en: 'Say the 5 words out loud.',
-          ar: 'انطق الكلمات الخمس بصوت عالٍ.',
-        ),
-      ),
-    ],
-  ),
-  _PlanDay(
-    key: 'saturday',
-    nameData: _LocalizedText(en: 'Saturday', ar: 'السبت'),
-    titleData: _LocalizedText(en: 'Weekly Review', ar: 'مراجعة أسبوعية'),
-    skillData: _LocalizedText(en: 'Review', ar: 'مراجعة'),
-    durationData: _LocalizedText(en: '15 min', ar: '15 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 Review makes learning stay longer in your memory.',
-      ar: '💡 المراجعة تجعل التعلم يبقى لفترة أطول في الذاكرة.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use your notes from the whole week.',
-      ar: 'استخدم ملاحظاتك من كامل الأسبوع.',
-    ),
-    emoji: '🏆',
-    color: Color(0xFFF7A440),
-    lightColor: Color(0xFFFFF7EE),
-    tasks: [
-      _PlanTask(
-        id: 'sat1',
-        textData: _LocalizedText(
-          en: 'Review this week’s new words.',
-          ar: 'راجع كلمات هذا الأسبوع الجديدة.',
-        ),
-      ),
-      _PlanTask(
-        id: 'sat2',
-        textData: _LocalizedText(
-          en: 'Read your best writing or speaking notes again.',
-          ar: 'اقرأ أفضل ملاحظاتك في الكتابة أو التحدث مرة أخرى.',
-        ),
-      ),
-      _PlanTask(
-        id: 'sat3',
-        textData: _LocalizedText(
-          en: 'Write one small goal for next week.',
-          ar: 'اكتب هدفاً صغيراً واحداً للأسبوع القادم.',
-        ),
-      ),
-    ],
-  ),
-  _PlanDay(
-    key: 'sunday',
-    nameData: _LocalizedText(en: 'Sunday', ar: 'الأحد'),
-    titleData: _LocalizedText(en: 'Reading Day', ar: 'يوم القراءة'),
-    skillData: _LocalizedText(en: 'Reading', ar: 'القراءة'),
-    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
-    tipData: _LocalizedText(
-      en: '💡 Read for meaning first. Do not stop at every unknown word.',
-      ar: '💡 اقرأ للفهم أولاً. لا تتوقف عند كل كلمة غير معروفة.',
-    ),
-    resourceData: _LocalizedText(
-      en: 'Use a short article, simple story, or learning website.',
-      ar: 'استخدم مقالاً قصيراً أو قصة بسيطة أو موقع تعلم.',
-    ),
-    emoji: '📖',
-    color: Color(0xFFFF6584),
-    lightColor: Color(0xFFFFF0F3),
-    tasks: [
-      _PlanTask(
-        id: 'sun1',
-        textData: _LocalizedText(
-          en: 'Read one short English text.',
-          ar: 'اقرأ نصاً إنجليزياً قصيراً واحداً.',
-        ),
-      ),
-      _PlanTask(
-        id: 'sun2',
-        textData: _LocalizedText(
-          en: 'Underline 3 new words or phrases.',
-          ar: 'حدد 3 كلمات أو عبارات جديدة.',
-        ),
-      ),
-      _PlanTask(
-        id: 'sun3',
-        textData: _LocalizedText(
-          en: 'Write one or two sentences about what you understood.',
-          ar: 'اكتب جملة أو جملتين عما فهمته.',
-        ),
-      ),
-    ],
-  ),
-];
+  final String id;
+  final String word;
+  final String definition;
+  final String example;
+  final List<String> trainingExamples;
+  final String imageUrl;
 
-final List<_PlanTask> _allTasks = _weekPlanDays
-    .expand((day) => day.tasks)
-    .toList(growable: false);
+  factory _Word.fromMap(String id, Map<dynamic, dynamic> map) {
+    List<String> parseExamples(dynamic raw) {
+      if (raw is List) {
+        return raw
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      if (raw is Map) {
+        return raw.values
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      return const <String>[];
+    }
+
+    return _Word(
+      id: id,
+      word: (map['word'] ?? '').toString().trim(),
+      definition: (map['definition'] ?? '').toString().trim(),
+      example: (map['example'] ?? '').toString().trim(),
+      trainingExamples: parseExamples(map['trainingExamples']),
+      imageUrl: (map['imageUrl'] ?? '').toString().trim(),
+    );
+  }
+}
+
+class _Question {
+  const _Question({
+    required this.promptTitle,
+    required this.promptBody,
+    required this.answer,
+    required this.options,
+    required this.questionType,
+  });
+
+  final String promptTitle;
+  final String promptBody;
+  final String answer;
+  final List<String> options;
+  final String questionType;
+}

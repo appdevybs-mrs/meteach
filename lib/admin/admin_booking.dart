@@ -754,28 +754,89 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     setState(() => busyAction = true);
 
     try {
-      Future<bool> cancelAtRef(DatabaseReference ref) async {
-        final result = await ref.runTransaction((Object? currentData) {
-          if (currentData is! Map) return Transaction.abort();
+      Future<_AdminCancelStatus> cancelAtRef(DatabaseReference ref) async {
+        const maxAttempts = 2;
 
-          final node = currentData.map((k, v) => MapEntry(k.toString(), v));
-          final learnersRaw = node['learners'];
-          if (learnersRaw is! Map) return Transaction.abort();
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            final result = await ref.runTransaction((Object? currentData) {
+              if (currentData is! Map) return Transaction.abort();
 
-          final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
-          if (!learners.containsKey(learnerUid)) return Transaction.abort();
+              final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+              final learnersRaw = node['learners'];
+              if (learnersRaw is! Map) return Transaction.abort();
 
-          learners.remove(learnerUid);
+              final learners = learnersRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (!learners.containsKey(learnerUid)) return Transaction.abort();
 
-          if (learners.isEmpty) {
-            return Transaction.success(null);
+              learners.remove(learnerUid);
+
+              if (learners.isEmpty) {
+                return Transaction.success(null);
+              }
+
+              node['learners'] = learners;
+              return Transaction.success(node);
+            });
+
+            if (result.committed) {
+              return _AdminCancelStatus.cancelled;
+            }
+
+            final snap = await ref.get();
+            if (!snap.exists || snap.value == null) {
+              return _AdminCancelStatus.notFound;
+            }
+
+            if (snap.value is! Map) {
+              if (attempt < maxAttempts - 1) {
+                await Future.delayed(const Duration(milliseconds: 250));
+                continue;
+              }
+              return _AdminCancelStatus.failed;
+            }
+
+            final node = (snap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v),
+            );
+            final learnersRaw = node['learners'];
+
+            if (learnersRaw is Map) {
+              final learners = learnersRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (!learners.containsKey(learnerUid)) {
+                return _AdminCancelStatus.notFound;
+              }
+            } else {
+              final hasNestedLearners = node.values.any((v) {
+                if (v is! Map) return false;
+                final vm = v.map((k, vv) => MapEntry(k.toString(), vv));
+                return vm['learners'] is Map;
+              });
+              if (hasNestedLearners) {
+                return _AdminCancelStatus.notFound;
+              }
+            }
+
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(const Duration(milliseconds: 250));
+              continue;
+            }
+
+            return _AdminCancelStatus.failed;
+          } catch (_) {
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(const Duration(milliseconds: 250));
+              continue;
+            }
+            return _AdminCancelStatus.failed;
           }
+        }
 
-          node['learners'] = learners;
-          return Transaction.success(node);
-        });
-
-        return result.committed;
+        return _AdminCancelStatus.failed;
       }
 
       final nestedRef = _reservationByTeacherRef(
@@ -784,19 +845,27 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         slot.time,
         slot.teacherId,
       );
-      final nestedCancelled = await cancelAtRef(nestedRef);
-      final cancelled = nestedCancelled
-          ? true
+      final nestedStatus = await cancelAtRef(nestedRef);
+      final legacyStatus = nestedStatus == _AdminCancelStatus.cancelled
+          ? _AdminCancelStatus.cancelled
           : await cancelAtRef(
               _reservationsRef(slot.courseId, slot.dayKey, slot.time),
             );
 
-      if (!cancelled) {
-        _toast('Cancel failed.');
+      final finalStatus = nestedStatus == _AdminCancelStatus.cancelled
+          ? nestedStatus
+          : legacyStatus;
+
+      if (finalStatus == _AdminCancelStatus.failed) {
+        _toast('Cancel failed. Please try again.');
         return;
       }
 
-      _toast('Booking canceled ✅');
+      if (finalStatus == _AdminCancelStatus.notFound) {
+        _toast('This booking was already canceled. ✅');
+      } else {
+        _toast('Booking canceled ✅');
+      }
       await _loadAllBookedSlots();
 
       if (!mounted) return;
@@ -2446,6 +2515,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 }
 
 // ========================= Models =========================
+
+enum _AdminCancelStatus { cancelled, notFound, failed }
 
 class _CourseItem {
   final String id;

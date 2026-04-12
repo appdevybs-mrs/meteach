@@ -27,6 +27,7 @@ import 'teacher_shared_files_screen.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
 import 'teacher_my_platform_screen.dart';
+import '../services/window_access_service.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -884,6 +885,133 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  void _openTeacherWindow(String windowKey, VoidCallback onAllowed) {
+    unawaited(
+      WindowAccessService.instance.guardOpen(
+        context: context,
+        role: AppWindowRole.teacher,
+        windowKey: windowKey,
+        onAllowed: onAllowed,
+      ),
+    );
+  }
+
+  void _openProfileScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherProfile,
+      () => _pushScreen(const TeacherProfileScreen()),
+    );
+  }
+
+  void _openScheduleScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherSchedule,
+      () => _pushScreen(const TeacherSchedule()),
+    );
+  }
+
+  void _openClassesScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherClasses,
+      () => _pushScreen(const TeacherClassesScreen()),
+    );
+  }
+
+  void _openGamesScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherGames,
+      () => _pushScreen(const TeacherGamesScreen()),
+    );
+  }
+
+  void _openStoriesScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherStories,
+      () => _pushScreen(TeacherStoriesScreen()),
+    );
+  }
+
+  void _openOnlineAvailabilityScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherOnlineAvailability,
+      () => _pushScreen(const TeacherOnlineBookingScreen()),
+    );
+  }
+
+  void _openOnlineCircleScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherOnlineCircle,
+      () => _pushScreen(TeacherOnlineCircleScreen()),
+    );
+  }
+
+  void _openMailScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherMail,
+      () => _pushScreen(const TeacherMailScreen()),
+    );
+  }
+
+  void _openRemindersScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherReminders,
+      () => _pushScreen(const TeacherReminderScreen()),
+    );
+  }
+
+  void _openGalleryScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherGallery,
+      () => _pushScreen(const TeacherPublicGalleryScreen()),
+    );
+  }
+
+  void _openWagesScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherWages,
+      () => _pushScreen(const TeacherWagesScreen()),
+    );
+  }
+
+  void _openRegulationsScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherRegulations,
+      () => _pushScreen(const TeacherRegulationsScreen()),
+    );
+  }
+
+  void _openSyllabiScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherSyllabi,
+      () => _pushScreen(TeacherSyllabiScreen()),
+    );
+  }
+
+  void _openSharedScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherShared,
+      () => _pushScreen(const TeacherSharedFilesScreen()),
+    );
+  }
+
+  void _openMyPlatformScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherMyPlatform,
+      () => _pushScreen(const TeacherMyPlatformScreen()),
+    );
+  }
+
+  void _openHomeworkInboxScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherHomeworkInbox,
+      () => _pushScreen(const TeacherHomeworkInboxScreen()),
+    );
+  }
+
+  void _openThemeSettings() {
+    _openTeacherWindow(AppWindowKeys.teacherThemeSettings, _openThemeSheet);
+  }
+
   void _onThemeChanged() {
     if (!mounted) return;
     setState(() {});
@@ -918,26 +1046,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         backgroundColor: p.appBg,
         drawer: _TeacherDrawer(
           palette: p,
-          onOpenProfile: () => _pushScreen(const TeacherProfileScreen()),
-          onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
-          onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
-          onOpenGames: () => _pushScreen(const TeacherGamesScreen()),
-          onOpenStories: () => _pushScreen(TeacherStoriesScreen()),
-          onOpenOnlineBooking: () =>
-              _pushScreen(const TeacherOnlineBookingScreen()),
-
-          onOpenOnlineCircle: () => _pushScreen(TeacherOnlineCircleScreen()),
-          onOpenMail: () => _pushScreen(const TeacherMailScreen()),
-          onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
-          onOpenGallery: () => _pushScreen(const TeacherPublicGalleryScreen()),
-          onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
-          onOpenRegulations: () =>
-              _pushScreen(const TeacherRegulationsScreen()),
-          onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
-          onOpenShared: () => _pushScreen(const TeacherSharedFilesScreen()),
-          onOpenMyPlatform: () => _pushScreen(const TeacherMyPlatformScreen()),
-
-          onOpenThemeSettings: _openThemeSheet,
+          onOpenProfile: _openProfileScreen,
+          onOpenSchedule: _openScheduleScreen,
+          onOpenClasses: _openClassesScreen,
+          onOpenGames: _openGamesScreen,
+          onOpenStories: _openStoriesScreen,
+          onOpenOnlineBooking: _openOnlineAvailabilityScreen,
+          onOpenOnlineCircle: _openOnlineCircleScreen,
+          onOpenMail: _openMailScreen,
+          onOpenReminders: _openRemindersScreen,
+          onOpenGallery: _openGalleryScreen,
+          onOpenWages: _openWagesScreen,
+          onOpenRegulations: _openRegulationsScreen,
+          onOpenSyllabi: _openSyllabiScreen,
+          onOpenShared: _openSharedScreen,
+          onOpenMyPlatform: _openMyPlatformScreen,
+          onOpenThemeSettings: _openThemeSettings,
           onLogout: () => _logout(context),
         ),
         appBar: AppBar(
@@ -999,18 +1123,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               if (webDesktop)
                 _TeacherHomeWebRail(
                   palette: p,
-                  onOpenClasses: () =>
-                      _pushScreen(const TeacherClassesScreen()),
-                  onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
-                  onOpenMail: () => _pushScreen(const TeacherMailScreen()),
-                  onOpenReminders: () =>
-                      _pushScreen(const TeacherReminderScreen()),
-                  onOpenBooking: () =>
-                      _pushScreen(const TeacherOnlineBookingScreen()),
-                  onOpenGallery: () =>
-                      _pushScreen(const TeacherPublicGalleryScreen()),
-                  onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
-                  onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
+                  onOpenClasses: _openClassesScreen,
+                  onOpenSchedule: _openScheduleScreen,
+                  onOpenMail: _openMailScreen,
+                  onOpenReminders: _openRemindersScreen,
+                  onOpenBooking: _openOnlineAvailabilityScreen,
+                  onOpenGallery: _openGalleryScreen,
+                  onOpenSyllabi: _openSyllabiScreen,
+                  onOpenWages: _openWagesScreen,
                   onLogout: () => _logout(context),
                 ),
               if (webDesktop) const SizedBox(width: 14),
@@ -1047,10 +1167,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 child: _HeroSummaryCard(
                                   palette: p,
                                   teacherName: name.isEmpty ? 'Teacher' : name,
-                                  onOpenProfile: () =>
-                                      _pushScreen(const TeacherProfileScreen()),
-                                  onOpenSchedule: () =>
-                                      _pushScreen(const TeacherSchedule()),
+                                  onOpenProfile: _openProfileScreen,
+                                  onOpenSchedule: _openScheduleScreen,
                                 ),
                               );
                             },
@@ -1074,9 +1192,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         icon: Icons.email_rounded,
                                         badgeCount: unread,
                                         badgeColor: Colors.red,
-                                        onTap: () => _pushScreen(
-                                          const TeacherMailScreen(),
-                                        ),
+                                        onTap: _openMailScreen,
                                       ),
                                     );
                                   },
@@ -1105,9 +1221,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                             icon: Icons.assignment_rounded,
                                             badgeCount: unreviewed,
                                             badgeColor: const Color(0xFFD97706),
-                                            onTap: () => _pushScreen(
-                                              const TeacherHomeworkInboxScreen(),
-                                            ),
+                                            onTap: _openHomeworkInboxScreen,
                                           ),
                                         );
                                       },
@@ -1132,9 +1246,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         icon: Icons.alarm_rounded,
                                         badgeCount: pending,
                                         badgeColor: p.accent,
-                                        onTap: () => _pushScreen(
-                                          const TeacherReminderScreen(),
-                                        ),
+                                        onTap: _openRemindersScreen,
                                       ),
                                     );
                                   },
@@ -1165,15 +1277,21 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       classesCount: s.classesCount,
                                       learnersCount: s.learnersCount,
                                       upcomingOnlineCount: upcoming,
-                                      onOpenClasses: () => _pushScreen(
-                                        const TeacherClassesScreen(
-                                          initialMainTab: 0,
+                                      onOpenClasses: () => _openTeacherWindow(
+                                        AppWindowKeys.teacherClasses,
+                                        () => _pushScreen(
+                                          const TeacherClassesScreen(
+                                            initialMainTab: 0,
+                                          ),
                                         ),
                                       ),
-                                      onOpenOnline: () => _pushScreen(
-                                        const TeacherClassesScreen(
-                                          initialMainTab: 1,
-                                          initialOnlineTab: 1,
+                                      onOpenOnline: () => _openTeacherWindow(
+                                        AppWindowKeys.teacherOnlineAvailability,
+                                        () => _pushScreen(
+                                          const TeacherClassesScreen(
+                                            initialMainTab: 1,
+                                            initialOnlineTab: 1,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1193,18 +1311,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                   upcomingClasses: snap.data ?? const [],
                                   onTapClass: (occ) {
                                     if (occ.isOnline) {
-                                      _pushScreen(
-                                        const TeacherClassesScreen(
-                                          initialMainTab: 1,
-                                          initialOnlineTab: 1,
+                                      _openTeacherWindow(
+                                        AppWindowKeys.teacherOnlineAvailability,
+                                        () => _pushScreen(
+                                          const TeacherClassesScreen(
+                                            initialMainTab: 1,
+                                            initialOnlineTab: 1,
+                                          ),
                                         ),
                                       );
                                       return;
                                     }
-                                    _pushScreen(const TeacherSchedule());
+                                    _openScheduleScreen();
                                   },
-                                  onTapEmpty: () =>
-                                      _pushScreen(const TeacherSchedule()),
+                                  onTapEmpty: _openScheduleScreen,
                                 ),
                               );
                             },
@@ -1228,31 +1348,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                   palette: p,
                                   icon: Icons.event_available_rounded,
                                   title: 'Online Booking',
-                                  onTap: () => _pushScreen(
-                                    const TeacherOnlineBookingScreen(),
-                                  ),
+                                  onTap: _openOnlineAvailabilityScreen,
                                 ),
                                 _WebQuickActionTile(
                                   palette: p,
                                   icon: Icons.public_rounded,
                                   title: 'Gallery',
-                                  onTap: () => _pushScreen(
-                                    const TeacherPublicGalleryScreen(),
-                                  ),
+                                  onTap: _openGalleryScreen,
                                 ),
                                 _WebQuickActionTile(
                                   palette: p,
                                   icon: Icons.menu_book_rounded,
                                   title: 'Syllabi',
-                                  onTap: () =>
-                                      _pushScreen(TeacherSyllabiScreen()),
+                                  onTap: _openSyllabiScreen,
                                 ),
                                 _WebQuickActionTile(
                                   palette: p,
                                   icon: Icons.account_balance_wallet_rounded,
                                   title: 'Wages',
-                                  onTap: () =>
-                                      _pushScreen(const TeacherWagesScreen()),
+                                  onTap: _openWagesScreen,
                                 ),
                               ],
                             ),
@@ -1267,13 +1381,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               if (webDesktop)
                 _TeacherHomeWebAside(
                   palette: p,
-                  onOpenMail: () => _pushScreen(const TeacherMailScreen()),
-                  onOpenHomework: () =>
-                      _pushScreen(const TeacherHomeworkInboxScreen()),
-                  onOpenReminders: () =>
-                      _pushScreen(const TeacherReminderScreen()),
-                  onOpenClasses: () =>
-                      _pushScreen(const TeacherClassesScreen()),
+                  onOpenMail: _openMailScreen,
+                  onOpenHomework: _openHomeworkInboxScreen,
+                  onOpenReminders: _openRemindersScreen,
+                  onOpenClasses: _openClassesScreen,
                 ),
             ],
           ),

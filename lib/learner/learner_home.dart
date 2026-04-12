@@ -28,6 +28,8 @@ import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
+import '../shared/window_access_dialogs.dart';
+import '../services/window_access_service.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -225,10 +227,85 @@ class _LearnerHomeState extends State<LearnerHome> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  void _openLearnerWindow(String windowKey, VoidCallback onAllowed) {
+    unawaited(
+      WindowAccessService.instance.guardOpen(
+        context: context,
+        role: AppWindowRole.learner,
+        windowKey: windowKey,
+        onAllowed: onAllowed,
+      ),
+    );
+  }
+
+  void _openProfileScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerProfile,
+      () => _pushScreen(const LearnerProfileScreen()),
+    );
+  }
+
+  void _openMailScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerMail,
+      () => _pushScreen(LearnerMailScreen()),
+    );
+  }
+
+  void _openCoursesWindow({String? courseKey}) {
+    _openLearnerWindow(
+      AppWindowKeys.learnerCourses,
+      () => _pushScreen(LearnerCoursesScreen(initialCourseKey: courseKey)),
+    );
+  }
+
+  void _openGalleryScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerGallery,
+      () => _pushScreen(const LearnerGalleryScreen()),
+    );
+  }
+
+  void _openGamesScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerGames,
+      () => _pushScreen(const LearnerGamesScreen()),
+    );
+  }
+
+  void _openStudyCoachScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerStudyCoach,
+      () => _pushScreen(const LearnerStudyCoachScreen()),
+    );
+  }
+
+  void _openBookingScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerBooking,
+      () => _pushScreen(const LearnerBookingScreen()),
+    );
+  }
+
+  void _openRemindersScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerReminders,
+      () => _pushScreen(const LearnerRemindersListScreen()),
+    );
+  }
+
+  void _openRegulationsScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerRegulations,
+      () => _pushScreen(const LearnerRegulationsScreen()),
+    );
+  }
+
   void _openStoriesScreen() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LearnerStoriesScreen()));
+    _openLearnerWindow(
+      AppWindowKeys.learnerStories,
+      () => _pushScreen(const LearnerStoriesScreen()),
+    );
   }
 
   Future<void> _refreshShell() async {
@@ -372,6 +449,10 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
+  void _openThemeSettings() {
+    _openLearnerWindow(AppWindowKeys.learnerThemeSettings, _openThemeSheet);
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = palette;
@@ -407,16 +488,15 @@ class _LearnerHomeState extends State<LearnerHome> {
           regulationsTileKey: _drawerRegulationsKey,
           themeTileKey: _drawerThemeKey,
           logoutButtonKey: _drawerLogoutKey,
-          onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
-          onOpenMail: () => _pushScreen(LearnerMailScreen()),
-          onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
-          onOpenGallery: () => _pushScreen(const LearnerGalleryScreen()),
+          onOpenProfile: _openProfileScreen,
+          onOpenMail: _openMailScreen,
+          onOpenCourses: _openCoursesWindow,
+          onOpenGallery: _openGalleryScreen,
           onOpenStories: _openStoriesScreen,
-          onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
-          onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
-          onOpenRegulations: () =>
-              _pushScreen(const LearnerRegulationsScreen()),
-          onOpenThemeSettings: _openThemeSheet,
+          onOpenGames: _openGamesScreen,
+          onOpenStudyCoach: _openStudyCoachScreen,
+          onOpenRegulations: _openRegulationsScreen,
+          onOpenThemeSettings: _openThemeSettings,
           onLogout: () => _logout(context),
         ),
 
@@ -483,23 +563,16 @@ class _LearnerHomeState extends State<LearnerHome> {
               if (webDesktop)
                 _LearnerHomeWebRail(
                   palette: p,
-                  onOpenCourses: () =>
-                      _pushScreen(const LearnerCoursesScreen()),
-                  onOpenBooking: () =>
-                      _pushScreen(const LearnerBookingScreen()),
-                  onOpenMail: () => _pushScreen(LearnerMailScreen()),
-                  onOpenReminders: () =>
-                      _pushScreen(const LearnerRemindersListScreen()),
-                  onOpenHomework: () =>
-                      _pushScreen(const LearnerCoursesScreen()),
-                  onOpenGallery: () =>
-                      _pushScreen(const LearnerGalleryScreen()),
+                  onOpenCourses: _openCoursesWindow,
+                  onOpenBooking: _openBookingScreen,
+                  onOpenMail: _openMailScreen,
+                  onOpenReminders: _openRemindersScreen,
+                  onOpenHomework: _openCoursesWindow,
+                  onOpenGallery: _openGalleryScreen,
                   onOpenStories: _openStoriesScreen,
-                  onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
-                  onOpenCoach: () =>
-                      _pushScreen(const LearnerStudyCoachScreen()),
-                  onOpenProfile: () =>
-                      _pushScreen(const LearnerProfileScreen()),
+                  onOpenGames: _openGamesScreen,
+                  onOpenCoach: _openStudyCoachScreen,
+                  onOpenProfile: _openProfileScreen,
                   onLogout: () => _logout(context),
                 ),
               if (webDesktop) const SizedBox(width: 14),
@@ -520,13 +593,10 @@ class _LearnerHomeState extends State<LearnerHome> {
               if (webDesktop)
                 _LearnerHomeWebAside(
                   palette: p,
-                  onOpenCourses: () =>
-                      _pushScreen(const LearnerCoursesScreen()),
-                  onOpenBooking: () =>
-                      _pushScreen(const LearnerBookingScreen()),
-                  onOpenMail: () => _pushScreen(LearnerMailScreen()),
-                  onOpenReminders: () =>
-                      _pushScreen(const LearnerRemindersListScreen()),
+                  onOpenCourses: _openCoursesWindow,
+                  onOpenBooking: _openBookingScreen,
+                  onOpenMail: _openMailScreen,
+                  onOpenReminders: _openRemindersScreen,
                 ),
             ],
           ),
@@ -2007,9 +2077,18 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   }
 
   void _openCoursesScreen({String? courseKey}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LearnerCoursesScreen(initialCourseKey: courseKey),
+    unawaited(
+      WindowAccessService.instance.guardOpen(
+        context: context,
+        role: AppWindowRole.learner,
+        windowKey: AppWindowKeys.learnerCourses,
+        onAllowed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => LearnerCoursesScreen(initialCourseKey: courseKey),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2987,9 +3066,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
     with SingleTickerProviderStateMixin {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  Future<_NextBooking?>? _nextBookingFuture;
-  Future<_MeetInfo?>? _meetInfoFuture;
-  String? _meetInfoKey;
+  Future<List<_NextBooking>>? _nextBookingFuture;
+  final Map<String, Future<_MeetInfo?>> _meetInfoFutureByKey = {};
 
   Timer? _ticker;
   Timer? _nextBookingRefreshTimer;
@@ -2999,7 +3077,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
   @override
   void initState() {
     super.initState();
-    _nextBookingFuture = _findMyNextBookingAcrossCourses();
+    _nextBookingFuture = _findMyUpcomingBookingsAcrossCourses();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {});
@@ -3007,9 +3085,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
     _nextBookingRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!mounted) return;
       setState(() {
-        _nextBookingFuture = _findMyNextBookingAcrossCourses();
-        _meetInfoFuture = null;
-        _meetInfoKey = null;
+        _nextBookingFuture = _findMyUpcomingBookingsAcrossCourses();
+        _meetInfoFutureByKey.clear();
       });
     });
 
@@ -3261,15 +3338,16 @@ class _BookingTopCardState extends State<_BookingTopCard>
     return best;
   }
 
-  Future<_NextBooking?> _findMyNextBookingAcrossCourses() async {
+  Future<List<_NextBooking>> _findMyUpcomingBookingsAcrossCourses() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return null;
+    if (uid.isEmpty) return const <_NextBooking>[];
 
     final courses = await _loadJoinableCourses();
-    if (courses.isEmpty) return null;
+    if (courses.isEmpty) return const <_NextBooking>[];
 
     final now = DateTime.now();
-    _NextBooking? best;
+    final all = <_NextBooking>[];
+    final dedupeKeys = <String>{};
 
     final Map<String, Set<String>> attendedBookingKeysByCourse = {};
 
@@ -3399,9 +3477,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
           teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
         );
 
-        final bestNow = best;
-        if (bestNow == null || candidate.start.isBefore(bestNow.start)) {
-          best = candidate;
+        final key =
+            '${candidate.source}|${candidate.courseId}|${candidate.dayKey}|${candidate.time}|${candidate.teacherId}';
+        if (dedupeKeys.add(key)) {
+          all.add(candidate);
         }
         continue;
       }
@@ -3467,9 +3546,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
               return;
             }
 
-            final bestNow = best;
-            if (bestNow == null || candidate.start.isBefore(bestNow.start)) {
-              best = candidate;
+            final key =
+                '${candidate.source}|${candidate.courseId}|${candidate.dayKey}|${candidate.time}|${candidate.teacherId}';
+            if (dedupeKeys.add(key)) {
+              all.add(candidate);
             }
           }
 
@@ -3493,7 +3573,29 @@ class _BookingTopCardState extends State<_BookingTopCard>
       }
     }
 
-    return best;
+    all.sort((a, b) {
+      final byStart = a.start.compareTo(b.start);
+      if (byStart != 0) return byStart;
+      final bySource = a.source.compareTo(b.source);
+      if (bySource != 0) return bySource;
+      final byCourse = a.courseId.compareTo(b.courseId);
+      if (byCourse != 0) return byCourse;
+      final byTime = a.time.compareTo(b.time);
+      if (byTime != 0) return byTime;
+      return a.teacherId.compareTo(b.teacherId);
+    });
+
+    if (all.length <= 3) return all;
+    return all.take(3).toList();
+  }
+
+  Future<_MeetInfo?> _meetInfoFutureFor(_NextBooking next) {
+    final key =
+        '${next.source}|${next.teacherId}|${next.courseId}|${next.classId}';
+    return _meetInfoFutureByKey.putIfAbsent(
+      key,
+      () => _loadMeetInfo(next: next),
+    );
   }
 
   int _toInt(dynamic v, {int fallback = 0}) {
@@ -3872,10 +3974,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
           ),
         ),
         const SizedBox(height: 12),
-        FutureBuilder<_NextBooking?>(
+        FutureBuilder<List<_NextBooking>>(
           future: _nextBookingFuture,
           builder: (context, snap) {
-            final next = snap.data;
+            final bookings = snap.data ?? const <_NextBooking>[];
 
             if (snap.connectionState == ConnectionState.waiting) {
               return _LoadingCard(
@@ -3884,343 +3986,330 @@ class _BookingTopCardState extends State<_BookingTopCard>
               );
             }
 
-            if (next == null) {
+            if (bookings.isEmpty) {
               return _EmptyCard(
                 palette: p,
                 text: 'No upcoming reserved class found right now.',
               );
             }
 
-            final currentMeetInfoKey =
-                '${next.source}|${next.teacherId}|${next.courseId}|${next.classId}';
-            if (_meetInfoKey != currentMeetInfoKey || _meetInfoFuture == null) {
-              _meetInfoKey = currentMeetInfoKey;
-              _meetInfoFuture = _loadMeetInfo(next: next);
-            }
-
-            return FutureBuilder<_MeetInfo?>(
-              future: _meetInfoFuture,
-              builder: (context, ms) {
-                final meet = ms.data;
-                final timeStr = '${_friendlyDate(next.start)} • ${next.time}';
-                final teacherStr = next.teacherName;
-
-                final now = DateTime.now();
-                final openFrom = next.start;
-                final safeDuration =
-                    meet?.durationMinutes ?? next.durationMinutes;
-                final openUntil = next.start.add(
-                  Duration(minutes: safeDuration > 0 ? safeDuration : 60),
-                );
-
-                final beforeOpen = now.isBefore(openFrom);
-                final afterClose = now.isAfter(openUntil);
-
-                final opensIn = _untilJoinOpens(next.start);
-                final closesIn = _untilJoinCloses(
-                  next.start,
-                  meet?.durationMinutes ?? next.durationMinutes,
-                );
-
-                final opensInText = _formatCountdown(opensIn);
-                final closesInText = _formatCountdown(closesIn);
-
-                final canJoin = _canJoinNow(
-                  next.start,
-                  meet?.durationMinutes ?? 60,
-                );
-
-                final statusColor = _statusColor(
-                  canJoin: canJoin,
-                  beforeOpen: beforeOpen,
-                  closesIn: closesIn,
-                  p: p,
-                );
-
-                final urgency = _sessionUrgencyProgress(next.start);
-                final urgentRed = _deepRedByUrgency(urgency);
-                final upcomingColor = _upcomingCountdownColor(
-                  urgency: urgency,
-                  p: p,
-                );
-                final idleColor = beforeOpen ? upcomingColor : urgentRed;
-
-                if (meet == null) {
-                  _pulseController.stop();
-
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: idleColor.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: idleColor.withValues(alpha: 0.95),
-                        width: 2.2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: idleColor.withValues(alpha: 0.18),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.upcoming_rounded,
-                              size: 18,
-                              color: p.accent,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Upcoming reserved class',
-                              style: TextStyle(
-                                color: p.text,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          timeStr,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: p.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Teacher: $teacherStr',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: p.text.withValues(alpha: 0.70),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: p.soft.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
-                            ),
-                          ),
-                          child: Text(
-                            'Meet link not set for this course yet.',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: p.text,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                if (canJoin) {
-                  if (!_pulseController.isAnimating) {
-                    _pulseController.repeat(reverse: true);
-                  }
-                } else {
-                  if (_pulseController.isAnimating) {
-                    _pulseController.stop();
-                    _pulseController.value = 0;
-                  }
-                }
-
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: canJoin
-                        ? statusColor.withValues(alpha: 0.16)
-                        : idleColor.withValues(alpha: 0.08 + (urgency * 0.14)),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: canJoin ? statusColor : idleColor,
-                      width: canJoin ? 2.8 : (1.8 + (urgency * 1.8)),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (canJoin ? statusColor : idleColor).withValues(
-                          alpha: 0.18 + (urgency * 0.20),
-                        ),
-                        blurRadius: 14 + (urgency * 10),
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            canJoin
-                                ? Icons.video_call_rounded
-                                : Icons.upcoming_rounded,
-                            size: 18,
-                            color: canJoin ? statusColor : idleColor,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            canJoin
-                                ? 'Join available now'
-                                : beforeOpen
-                                ? 'Upcoming reserved class'
-                                : 'Join window closed',
-                            style: TextStyle(
-                              color: canJoin ? statusColor : idleColor,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        timeStr,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: p.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Teacher: $teacherStr',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: p.text.withValues(alpha: 0.70),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: canJoin
-                              ? statusColor.withValues(alpha: 0.12)
-                              : idleColor.withValues(
-                                  alpha: 0.06 + (urgency * 0.10),
-                                ),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: canJoin
-                                ? statusColor.withValues(alpha: 0.45)
-                                : idleColor.withValues(alpha: 0.60),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              canJoin
-                                  ? 'Join closes in $closesInText'
-                                  : beforeOpen
-                                  ? 'Join opens in $opensInText'
-                                  : 'This join window has ended',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: canJoin ? statusColor : idleColor,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(999),
-                              child: LinearProgressIndicator(
-                                minHeight: 8,
-                                value: canJoin
-                                    ? _joinWindowProgress(
-                                        next.start,
-                                        meet.durationMinutes,
-                                      )
-                                    : beforeOpen
-                                    ? _preJoinProgress(next.start)
-                                    : 1,
-                                backgroundColor: p.soft.withValues(alpha: 0.85),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  canJoin ? statusColor : idleColor,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              canJoin
-                                  ? 'Join is open now. It stays available until 10 minutes after start.'
-                                  : beforeOpen
-                                  ? 'Your session is booked. Join becomes available 5 minutes before start.'
-                                  : 'Wait for your next reserved class to appear here.',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: p.text.withValues(alpha: 0.64),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ScaleTransition(
-                        scale: canJoin
-                            ? _pulseScale
-                            : const AlwaysStoppedAnimation<double>(1.0),
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: canJoin
-                                ? statusColor
-                                : p.accent.withValues(alpha: 0.55),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            minimumSize: const Size(double.infinity, 48),
-                          ),
-                          onPressed: canJoin
-                              ? () async {
-                                  final uid =
-                                      FirebaseAuth.instance.currentUser?.uid ??
-                                      '';
-
-                                  await _openExternalUrl(context, meet.meetUrl);
-
-                                  if (uid.isNotEmpty &&
-                                      next.source == 'flexible') {
-                                    unawaited(
-                                      _autoMarkPresentAndTaught(
-                                        learnerUid: uid,
-                                        next: next,
-                                      ),
-                                    );
-                                  }
-                                }
-                              : null,
-                          child: Text(
-                            canJoin
-                                ? 'Join Google Meet ($closesInText left)'
-                                : beforeOpen
-                                ? 'Join in $opensInText'
-                                : afterClose
-                                ? 'Join window closed'
-                                : 'Join unavailable',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+            return Column(
+              children: [
+                for (int i = 0; i < bookings.length; i++) ...[
+                  _buildUpcomingBookingCard(next: bookings[i], p: p),
+                  if (i < bookings.length - 1) const SizedBox(height: 10),
+                ],
+              ],
             );
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildUpcomingBookingCard({
+    required _NextBooking next,
+    required _HomePalette p,
+  }) {
+    return FutureBuilder<_MeetInfo?>(
+      future: _meetInfoFutureFor(next),
+      builder: (context, ms) {
+        final meet = ms.data;
+        final timeStr = '${_friendlyDate(next.start)} • ${next.time}';
+        final teacherStr = next.teacherName;
+
+        final now = DateTime.now();
+        final openFrom = next.start;
+        final safeDuration = meet?.durationMinutes ?? next.durationMinutes;
+        final openUntil = next.start.add(
+          Duration(minutes: safeDuration > 0 ? safeDuration : 60),
+        );
+
+        final beforeOpen = now.isBefore(openFrom);
+        final afterClose = now.isAfter(openUntil);
+
+        final opensIn = _untilJoinOpens(next.start);
+        final closesIn = _untilJoinCloses(
+          next.start,
+          meet?.durationMinutes ?? next.durationMinutes,
+        );
+
+        final opensInText = _formatCountdown(opensIn);
+        final closesInText = _formatCountdown(closesIn);
+
+        final canJoin = _canJoinNow(next.start, meet?.durationMinutes ?? 60);
+
+        final statusColor = _statusColor(
+          canJoin: canJoin,
+          beforeOpen: beforeOpen,
+          closesIn: closesIn,
+          p: p,
+        );
+
+        final urgency = _sessionUrgencyProgress(next.start);
+        final urgentRed = _deepRedByUrgency(urgency);
+        final upcomingColor = _upcomingCountdownColor(urgency: urgency, p: p);
+        final idleColor = beforeOpen ? upcomingColor : urgentRed;
+
+        if (meet == null) {
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+          }
+
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: idleColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: idleColor.withValues(alpha: 0.95),
+                width: 2.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: idleColor.withValues(alpha: 0.18),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.upcoming_rounded, size: 18, color: p.accent),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Upcoming reserved class',
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: p.primary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Teacher: $teacherStr',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: p.text.withValues(alpha: 0.70),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: p.soft.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  ),
+                  child: Text(
+                    'Meet link not set for this course yet.',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: p.text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (canJoin) {
+          if (!_pulseController.isAnimating) {
+            _pulseController.repeat(reverse: true);
+          }
+        } else {
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+            _pulseController.value = 0;
+          }
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: canJoin
+                ? statusColor.withValues(alpha: 0.16)
+                : idleColor.withValues(alpha: 0.08 + (urgency * 0.14)),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: canJoin ? statusColor : idleColor,
+              width: canJoin ? 2.8 : (1.8 + (urgency * 1.8)),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (canJoin ? statusColor : idleColor).withValues(
+                  alpha: 0.18 + (urgency * 0.20),
+                ),
+                blurRadius: 14 + (urgency * 10),
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    canJoin ? Icons.video_call_rounded : Icons.upcoming_rounded,
+                    size: 18,
+                    color: canJoin ? statusColor : idleColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    canJoin
+                        ? 'Join available now'
+                        : beforeOpen
+                        ? 'Upcoming reserved class'
+                        : 'Join window closed',
+                    style: TextStyle(
+                      color: canJoin ? statusColor : idleColor,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                timeStr,
+                style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Teacher: $teacherStr',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: p.text.withValues(alpha: 0.70),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: canJoin
+                      ? statusColor.withValues(alpha: 0.12)
+                      : idleColor.withValues(alpha: 0.06 + (urgency * 0.10)),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: canJoin
+                        ? statusColor.withValues(alpha: 0.45)
+                        : idleColor.withValues(alpha: 0.60),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      canJoin
+                          ? 'Join closes in $closesInText'
+                          : beforeOpen
+                          ? 'Join opens in $opensInText'
+                          : 'This join window has ended',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: canJoin ? statusColor : idleColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 8,
+                        value: canJoin
+                            ? _joinWindowProgress(
+                                next.start,
+                                meet.durationMinutes,
+                              )
+                            : beforeOpen
+                            ? _preJoinProgress(next.start)
+                            : 1,
+                        backgroundColor: p.soft.withValues(alpha: 0.85),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          canJoin ? statusColor : idleColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      canJoin
+                          ? 'Join is open now. It stays available until 10 minutes after start.'
+                          : beforeOpen
+                          ? 'Your session is booked. Join becomes available 5 minutes before start.'
+                          : 'Wait for your next reserved class to appear here.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withValues(alpha: 0.64),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              ScaleTransition(
+                scale: canJoin
+                    ? _pulseScale
+                    : const AlwaysStoppedAnimation<double>(1.0),
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: canJoin
+                        ? statusColor
+                        : p.accent.withValues(alpha: 0.55),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    minimumSize: const Size(double.infinity, 48),
+                  ),
+                  onPressed: canJoin
+                      ? () async {
+                          final uid =
+                              FirebaseAuth.instance.currentUser?.uid ?? '';
+
+                          await _openExternalUrl(context, meet.meetUrl);
+
+                          if (uid.isNotEmpty && next.source == 'flexible') {
+                            unawaited(
+                              _autoMarkPresentAndTaught(
+                                learnerUid: uid,
+                                next: next,
+                              ),
+                            );
+                          }
+                        }
+                      : null,
+                  child: Text(
+                    canJoin
+                        ? 'Join Google Meet ($closesInText left)'
+                        : beforeOpen
+                        ? 'Join in $opensInText'
+                        : afterClose
+                        ? 'Join window closed'
+                        : 'Join unavailable',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -4269,6 +4358,17 @@ class _JoinFabPayload {
 }
 
 Future<void> _openBookingCoursePicker(BuildContext context) async {
+  final bookingEnabled = await WindowAccessService.instance.isWindowEnabled(
+    role: AppWindowRole.learner,
+    windowKey: AppWindowKeys.learnerBooking,
+  );
+  if (!bookingEnabled) {
+    if (context.mounted) {
+      await showWindowMaintenanceDialog(context);
+    }
+    return;
+  }
+
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
@@ -4477,6 +4577,17 @@ Future<void> _openHomeworkCoursePicker(
   BuildContext context, {
   Set<String> courseKeysWithUndone = const {},
 }) async {
+  final homeworkEnabled = await WindowAccessService.instance.isWindowEnabled(
+    role: AppWindowRole.learner,
+    windowKey: AppWindowKeys.learnerHomework,
+  );
+  if (!homeworkEnabled) {
+    if (context.mounted) {
+      await showWindowMaintenanceDialog(context);
+    }
+    return;
+  }
+
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
@@ -4915,9 +5026,18 @@ class _RemindersHomeCard extends StatelessWidget {
         return InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const LearnerRemindersListScreen(),
+            unawaited(
+              WindowAccessService.instance.guardOpen(
+                context: context,
+                role: AppWindowRole.learner,
+                windowKey: AppWindowKeys.learnerReminders,
+                onAllowed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LearnerRemindersListScreen(),
+                    ),
+                  );
+                },
               ),
             );
           },
@@ -5057,8 +5177,19 @@ class _LearnerMailHomeCard extends StatelessWidget {
         return InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
+            unawaited(
+              WindowAccessService.instance.guardOpen(
+                context: context,
+                role: AppWindowRole.learner,
+                windowKey: AppWindowKeys.learnerMail,
+                onAllowed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LearnerMailScreen(),
+                    ),
+                  );
+                },
+              ),
             );
           },
           child: LayoutBuilder(
@@ -5175,9 +5306,18 @@ class _GalleryHomeCard extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()));
+        unawaited(
+          WindowAccessService.instance.guardOpen(
+            context: context,
+            role: AppWindowRole.learner,
+            windowKey: AppWindowKeys.learnerGallery,
+            onAllowed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()),
+              );
+            },
+          ),
+        );
       },
       child: Container(
         width: double.infinity,
@@ -5256,8 +5396,19 @@ class _StudyCoachHomeCard extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const LearnerStudyCoachScreen()),
+        unawaited(
+          WindowAccessService.instance.guardOpen(
+            context: context,
+            role: AppWindowRole.learner,
+            windowKey: AppWindowKeys.learnerStudyCoach,
+            onAllowed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const LearnerStudyCoachScreen(),
+                ),
+              );
+            },
+          ),
         );
       },
       child: Container(

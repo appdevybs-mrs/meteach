@@ -309,6 +309,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _bookingKey(String courseId, String dayKey, String hhmm) =>
       '$courseId|$dayKey|$hhmm';
 
+  String _bilingual(String en, String ar) => '$en\n$ar';
+
   Future<bool> _hasPossibleMissingAttendanceForSession({
     required String cid,
     required int sessionNo,
@@ -1017,9 +1019,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     });
   }
 
-  Future<_MyBooking?> _findMyNextBooking(String cid) async {
+  Future<List<_MyBooking>> _findMyUpcomingBookings(String cid) async {
     final now = DateTime.now();
-    _MyBooking? best;
+    final byKey = <String, _MyBooking>{};
 
     try {
       for (int i = 0; i < daysAhead; i++) {
@@ -1042,27 +1044,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           final timeNode = e.value;
           if (timeNode is! Map) continue;
 
-          final teachersAtTime = timeNode.map(
-            (k, vv) => MapEntry(k.toString(), vv),
-          );
+          final start = _parseSlotStart(dk, hhmm);
+          if (start == null) continue;
+          if (!start.isAfter(now)) continue;
 
-          for (final teacherEntry in teachersAtTime.entries) {
-            final teacherId = teacherEntry.key.toString();
-            final node = teacherEntry.value;
-            if (node is! Map) continue;
-
-            final sm = node.map((k, vv) => MapEntry(k.toString(), vv));
+          void considerNode(Map<dynamic, dynamic> nodeLike, String teacherKey) {
+            final sm = nodeLike.map((k, vv) => MapEntry(k.toString(), vv));
             final learners = sm['learners'];
-            if (learners is! Map) continue;
+            if (learners is! Map) return;
 
             final lm = learners.map((k, vv) => MapEntry(k.toString(), vv));
-            if (!lm.containsKey(myUid)) continue;
+            if (!lm.containsKey(myUid)) return;
 
-            final start = _parseSlotStart(dk, hhmm);
-            if (start == null) continue;
-            if (!start.isAfter(now)) continue;
-
-            final tId = (sm['teacherId'] ?? teacherId).toString().trim();
+            final tIdRaw = (sm['teacherId'] ?? teacherKey).toString().trim();
+            final tId = tIdRaw.isEmpty ? '__legacy__' : tIdRaw;
             final tName = (sm['teacherName'] ?? 'Teacher').toString().trim();
             final sNo = _toInt(sm['sessionNo'], fallback: 0);
 
@@ -1075,15 +1070,36 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               sessionNo: sNo,
             );
 
-            if (best == null || candidate.start.isBefore(best.start)) {
-              best = candidate;
-            }
+            byKey['$dk|$hhmm|$tId'] = candidate;
+          }
+
+          final teachersAtTime = timeNode.map((k, vv) => MapEntry(k, vv));
+          if (teachersAtTime['learners'] is Map) {
+            considerNode(teachersAtTime, '');
+            continue;
+          }
+
+          for (final teacherEntry in teachersAtTime.entries) {
+            final teacherId = teacherEntry.key.toString();
+            final node = teacherEntry.value;
+            if (node is! Map) continue;
+            considerNode(node, teacherId);
           }
         }
       }
     } catch (_) {}
 
-    return best;
+    final out = byKey.values.toList();
+    out.sort((a, b) {
+      final byStart = a.start.compareTo(b.start);
+      if (byStart != 0) return byStart;
+      final byDay = a.dayKey.compareTo(b.dayKey);
+      if (byDay != 0) return byDay;
+      final byTime = a.time.compareTo(b.time);
+      if (byTime != 0) return byTime;
+      return a.teacherId.compareTo(b.teacherId);
+    });
+    return out;
   }
 
   // ================== Availability -> Upcoming Slots ==================
@@ -1329,7 +1345,60 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     setState(() => booking = true);
 
     try {
-      final existing = await _findMyNextBooking(cid);
+      final upcoming = await _findMyUpcomingBookings(cid);
+      final existing = upcoming.isEmpty ? null : upcoming.first;
+      final isCustomMode = studyMode == 'custom';
+
+      final sameExact = upcoming.any(
+        (b) =>
+            b.dayKey == slot.dayKey &&
+            b.time == slot.time &&
+            b.teacherId == slot.teacherId,
+      );
+      if (sameExact) {
+        _toast('You already booked this teacher and slot ✅');
+        return;
+      }
+
+      if (isCustomMode) {
+        final sameTimeDifferentTeacher = upcoming.any(
+          (b) =>
+              b.dayKey == slot.dayKey &&
+              b.time == slot.time &&
+              b.teacherId != slot.teacherId,
+        );
+        if (sameTimeDifferentTeacher) {
+          _toast(
+            _bilingual(
+              'You already booked this date and time with another teacher.',
+              'لقد حجزت هذا التاريخ والوقت بالفعل مع معلم آخر.',
+            ),
+          );
+          return;
+        }
+
+        final count = upcoming.length;
+        if (count >= 3) {
+          _toast(
+            _bilingual(
+              'You already booked 3 sessions. Please cancel one first.',
+              'لقد حجزت 3 جلسات بالفعل. يرجى إلغاء واحدة أولاً.',
+            ),
+          );
+          return;
+        }
+
+        if (count == 1 || count == 2) {
+          final ok = await _confirmWithLogo(
+            title: 'Booking limit | حد الحجز',
+            message:
+                'You already booked $count ${count == 1 ? 'session' : 'sessions'}.\nYou can book up to 3 sessions.\n\nلقد حجزت $count ${count == 1 ? 'جلسة' : 'جلسات'} بالفعل.\nيمكنك حجز حتى 3 جلسات.\n\nContinue booking this slot?\nمتابعة حجز هذه الحصة؟',
+            confirmLabel: 'Continue',
+          );
+          if (!mounted) return;
+          if (ok != true) return;
+        }
+      }
 
       if (existing != null &&
           existing.dayKey == slot.dayKey &&
@@ -1339,7 +1408,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         return;
       }
 
-      if (existing != null) {
+      if (!isCustomMode && existing != null) {
         final locked = !existing.start.isAfter(
           DateTime.now().add(const Duration(hours: 24)),
         );
@@ -1350,13 +1419,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           return;
         }
 
-        final okCancel = await _cancelBookingByKey(
+        final cancelStatus = await _cancelBookingByKey(
           cid,
           existing.dayKey,
           existing.time,
           existing.teacherId,
         );
-        if (!okCancel) {
+        if (cancelStatus == _CancelBookingStatus.locked) {
+          _toast(
+            'You already booked a class and it’s within 24 hours, so you can’t change it.',
+          );
+          return;
+        }
+        if (cancelStatus == _CancelBookingStatus.failed) {
           _toast('Could not change booking (cancel failed).');
           return;
         }
@@ -1477,7 +1552,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
-  Future<bool> _cancelBookingByKey(
+  Future<_CancelBookingStatus> _cancelBookingByKey(
     String cid,
     String dayKey,
     String hhmm,
@@ -1485,48 +1560,124 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   ) async {
     try {
       final start = _parseSlotStart(dayKey, hhmm);
-      if (start == null) return false;
+      if (start == null) return _CancelBookingStatus.failed;
 
       final locked = !start.isAfter(
         DateTime.now().add(const Duration(hours: 24)),
       );
-      if (locked) return false;
+      if (locked) return _CancelBookingStatus.locked;
 
-      Future<bool> cancelAtRef(DatabaseReference ref) async {
-        final result = await ref.runTransaction((Object? currentData) {
-          if (currentData is! Map) return Transaction.abort();
+      Future<_CancelBookingStatus> cancelAtRef(DatabaseReference ref) async {
+        const maxAttempts = 2;
 
-          final node = currentData.map((k, v) => MapEntry(k.toString(), v));
-          final learnersRaw = node['learners'];
-          if (learnersRaw is! Map) return Transaction.abort();
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            final result = await ref.runTransaction((Object? currentData) {
+              if (currentData is! Map) return Transaction.abort();
 
-          final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
-          if (!learners.containsKey(myUid)) return Transaction.abort();
+              final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+              final learnersRaw = node['learners'];
+              if (learnersRaw is! Map) return Transaction.abort();
 
-          learners.remove(myUid);
+              final learners = learnersRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (!learners.containsKey(myUid)) return Transaction.abort();
 
-          if (learners.isEmpty) {
-            return Transaction.success(null);
+              learners.remove(myUid);
+
+              if (learners.isEmpty) {
+                return Transaction.success(null);
+              }
+
+              node['learners'] = learners;
+              return Transaction.success(node);
+            });
+
+            if (result.committed) {
+              return _CancelBookingStatus.cancelled;
+            }
+
+            final snap = await ref.get();
+            if (!snap.exists || snap.value == null) {
+              return _CancelBookingStatus.notFound;
+            }
+
+            if (snap.value is! Map) {
+              if (attempt < maxAttempts - 1) {
+                await Future.delayed(const Duration(milliseconds: 250));
+                continue;
+              }
+              return _CancelBookingStatus.failed;
+            }
+
+            final node = (snap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v),
+            );
+            final learnersRaw = node['learners'];
+
+            if (learnersRaw is Map) {
+              final learners = learnersRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (!learners.containsKey(myUid)) {
+                return _CancelBookingStatus.notFound;
+              }
+            } else {
+              final hasNestedLearners = node.values.any((v) {
+                if (v is! Map) return false;
+                final vm = v.map((k, vv) => MapEntry(k.toString(), vv));
+                return vm['learners'] is Map;
+              });
+              if (hasNestedLearners) {
+                return _CancelBookingStatus.notFound;
+              }
+            }
+
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(const Duration(milliseconds: 250));
+              continue;
+            }
+
+            return _CancelBookingStatus.failed;
+          } catch (_) {
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(const Duration(milliseconds: 250));
+              continue;
+            }
+            return _CancelBookingStatus.failed;
           }
+        }
 
-          node['learners'] = learners;
-          return Transaction.success(node);
-        });
-
-        return result.committed;
+        return _CancelBookingStatus.failed;
       }
 
       final newRef = _reservationsRef(cid, dayKey, hhmm, teacherId);
-      final newCancelled = await cancelAtRef(newRef);
-      if (newCancelled) return true;
+      final newStatus = await cancelAtRef(newRef);
+      if (newStatus == _CancelBookingStatus.cancelled) {
+        return _CancelBookingStatus.cancelled;
+      }
+      if (newStatus == _CancelBookingStatus.locked) {
+        return _CancelBookingStatus.locked;
+      }
 
       final legacyRef = _legacyReservationsRef(cid, dayKey, hhmm);
-      final legacyCancelled = await cancelAtRef(legacyRef);
-      if (legacyCancelled) return true;
+      final legacyStatus = await cancelAtRef(legacyRef);
+      if (legacyStatus == _CancelBookingStatus.cancelled) {
+        return _CancelBookingStatus.cancelled;
+      }
+      if (legacyStatus == _CancelBookingStatus.locked) {
+        return _CancelBookingStatus.locked;
+      }
 
-      return false;
+      if (newStatus == _CancelBookingStatus.notFound ||
+          legacyStatus == _CancelBookingStatus.notFound) {
+        return _CancelBookingStatus.notFound;
+      }
+
+      return _CancelBookingStatus.failed;
     } catch (_) {
-      return false;
+      return _CancelBookingStatus.failed;
     }
   }
 
@@ -1545,20 +1696,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     setState(() => booking = true);
 
     try {
-      final ok = await _cancelBookingByKey(
+      final status = await _cancelBookingByKey(
         cid,
         slot.dayKey,
         slot.time,
         slot.teacherId,
       );
-      if (!ok) {
-        _toast('Cancel failed.');
+      if (status == _CancelBookingStatus.locked) {
+        _toast('You can’t cancel within 24 hours of the session.');
+        return;
+      }
+      if (status == _CancelBookingStatus.failed) {
+        _toast('Cancel failed. Please try again.');
         return;
       }
 
       await _cancelLearnerLocalReminder(slot);
 
-      _toast('Booking canceled ✅');
+      if (status == _CancelBookingStatus.notFound) {
+        _toast('This booking was already canceled. ✅');
+      } else {
+        _toast('Booking canceled ✅');
+      }
 
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
@@ -2721,21 +2880,77 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         : () async {
                             Navigator.pop(context);
 
-                            final existing = await _findMyNextBooking(
+                            final upcoming = await _findMyUpcomingBookings(
                               courseId!,
                             );
+                            final existing = upcoming.isEmpty
+                                ? null
+                                : upcoming.first;
+                            final isCustomMode = studyMode == 'custom';
 
-                            final isSameExactBooking =
-                                existing != null &&
-                                existing.dayKey == slot.dayKey &&
-                                existing.time == slot.time &&
-                                existing.teacherId == slot.teacherId;
+                            final isSameExactBooking = upcoming.any(
+                              (b) =>
+                                  b.dayKey == slot.dayKey &&
+                                  b.time == slot.time &&
+                                  b.teacherId == slot.teacherId,
+                            );
 
-                            final isSameTimeDifferentTeacher =
-                                existing != null &&
-                                existing.dayKey == slot.dayKey &&
-                                existing.time == slot.time &&
-                                existing.teacherId != slot.teacherId;
+                            final isSameTimeDifferentTeacher = upcoming.any(
+                              (b) =>
+                                  b.dayKey == slot.dayKey &&
+                                  b.time == slot.time &&
+                                  b.teacherId != slot.teacherId,
+                            );
+
+                            if (isCustomMode) {
+                              if (isSameExactBooking) {
+                                _toast('You already booked this slot ✅');
+                                return;
+                              }
+
+                              if (isSameTimeDifferentTeacher) {
+                                _toast(
+                                  _bilingual(
+                                    'You already booked this date and time with another teacher.',
+                                    'لقد حجزت هذا التاريخ والوقت بالفعل مع معلم آخر.',
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final count = upcoming.length;
+                              if (count >= 3) {
+                                _toast(
+                                  _bilingual(
+                                    'You already booked 3 sessions. Please cancel one to book another.',
+                                    'لقد حجزت 3 جلسات بالفعل. يرجى إلغاء واحدة لحجز جلسة أخرى.',
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final prefix = count == 1
+                                  ? 'You already booked 1 session. You can book up to 3 sessions.\nلقد حجزت جلسة واحدة بالفعل. يمكنك حجز حتى 3 جلسات.\n\n'
+                                  : (count == 2
+                                        ? 'You already booked 2 sessions. You can book up to 3 sessions.\nلقد حجزت جلستين بالفعل. يمكنك حجز حتى 3 جلسات.\n\n'
+                                        : '');
+
+                              final msg =
+                                  '${prefix}Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? targetSession}\nLearners: ${slot.bookedCount}/$cap';
+
+                              final ok = await _confirmWithLogo(
+                                title: 'Book this slot',
+                                message: msg,
+                                confirmLabel: 'Yes',
+                              );
+
+                              if (ok == true) {
+                                await _runBusy('Saving booking...', () async {
+                                  await _bookSlot(slot);
+                                });
+                              }
+                              return;
+                            }
 
                             final hasOther =
                                 existing != null && !isSameExactBooking;
@@ -4246,6 +4461,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 }
 
 // ================== Models ==================
+
+enum _CancelBookingStatus { cancelled, notFound, locked, failed }
 
 class _BookingGate {
   final bool enabled;
