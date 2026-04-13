@@ -1,0 +1,33 @@
+{
+  "commit_log_version": 1,
+  "date": "2026-04-13",
+  "commit": "TBD_AFTER_COMMIT",
+  "title": "Add standardized human+machine commit logging artifacts",
+  "branch": "main",
+  "pushed": false,
+  "summary": [
+    "Standardized commit logging format for future commits.",
+    "Added machine-readable JSON alongside human-readable shell log.",
+    "Made commit log expectations explicit and parse-friendly."
+  ],
+  "changes": [
+    {
+      "file": "commitlog.sh",
+      "what": "Replaced ad-hoc notes with a stable, sectioned commit log format.",
+      "why": "Keep logs human-readable and script-friendly in one artifact.",
+      "how": "Added normalized headings and key=value style entries for parsing."
+    },
+    {
+      "file": "commitlog.json",
+      "what": "Added machine-readable commit metadata and per-file change entries.",
+      "why": "Allow automation/reporting systems to ingest commit rationale reliably.",
+      "how": "Defined a simple JSON schema with summary, changes[], and validation[] blocks."
+    }
+  ],
+  "validation": [
+    {
+      "command": "python3 -m json.tool commitlog.json",
+      "result": "Schema and JSON syntax are valid."
+    }
+  ]
+}

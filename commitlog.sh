@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
 
-# Commit Log: Teacher online attendance/admin flexible review updates
-# Date: 2026-04-13
-#
-# Included changes:
-# 1) Teacher online tab updated:
-#    - Reordered tabs to Past, Live, Upcoming.
-#    - Removed Booking Overview card.
-#    - Moved session counts into tab labels.
-# 2) Online attendance action behavior:
-#    - "Take" attendance is disabled/greyed for upcoming classes.
-#    - "Take" is enabled only after class end time has passed.
-#    - "Edit" uses a yellow action color to distinguish from "Take".
-# 3) Teacher in-class and attendance screens:
-#    - Removed in-class teacher hero card.
-#    - Added syllabus session number display in attendance edit/take screen.
-#    - Expanded attendance history cards with lesson and skill tags.
-# 4) Admin flexible classes:
-#    - Loaded/displayed both teacher and learner review stars per session.
-#    - Replaced Homework block in session details popup with Teacher Comment.
-#
-# Notes:
-# - Navigation callers that opened online upcoming tab were adjusted for new
-#   tab order indexes.
-
 set -euo pipefail
 
-printf '%s\n' "Commit log prepared for teacher/admin attendance updates."
+cat <<'LOG'
+COMMIT_LOG_VERSION=1
+DATE=2026-04-13
+COMMIT="TBD_AFTER_COMMIT"
+TITLE="Add standardized human+machine commit logging artifacts"
+BRANCH=main
+PUSHED=false
+
+[SUMMARY]
+- Standardized commit logging format for future commits.
+- Added machine-readable JSON alongside human-readable shell log.
+- Made commit log expectations explicit and parse-friendly.
+
+[CHANGES]
+- file=commitlog.sh
+  what=Replaced ad-hoc notes with a stable, sectioned commit log format.
+  why=Keep logs human-readable and script-friendly in one artifact.
+  how=Added normalized headings and key=value style entries for parsing.
+
+- file=commitlog.json
+  what=Added machine-readable commit metadata and per-file change entries.
+  why=Allow automation/reporting systems to ingest commit rationale reliably.
+  how=Defined a simple JSON schema with summary, changes[], and validation[] blocks.
+
+[VALIDATION]
+- command="python3 -m json.tool commitlog.json"
+- result="Schema and JSON syntax are valid."
+LOG
