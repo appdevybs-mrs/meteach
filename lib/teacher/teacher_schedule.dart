@@ -35,6 +35,14 @@ class TeacherSchedule extends StatefulWidget {
 class _TeacherScheduleState extends State<TeacherSchedule> {
   static const String _sessionReminderKeysPref =
       'teacher_schedule_session_reminder_keys_v1';
+  static const List<int> _sessionLeadPresetOptions = <int>[
+    5,
+    10,
+    15,
+    30,
+    45,
+    60,
+  ];
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _classesRef = _db.child('classes');
@@ -45,6 +53,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   bool _dailyEnabled = false;
   bool _sessionEnabled = false;
+  int _dailyReminderHour = 8;
+  int _dailyReminderMinute = 0;
+  int _sessionReminderMinutesBefore = 15;
 
   late SharedPreferences _prefs;
   bool _prefsReady = false;
@@ -90,6 +101,29 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   AppPalette get p => appThemeController.palette;
 
+  int _sanitizeHour(int? raw) {
+    if (raw == null || raw < 0 || raw > 23) return 8;
+    return raw;
+  }
+
+  int _sanitizeMinute(int? raw) {
+    if (raw == null || raw < 0 || raw > 59) return 0;
+    return raw;
+  }
+
+  int _sanitizeSessionLeadMinutes(int? raw) {
+    if (raw == null || !_sessionLeadPresetOptions.contains(raw)) {
+      return 15;
+    }
+    return raw;
+  }
+
+  String _dailyReminderLabel() {
+    return DateFormat(
+      'h:mm a',
+    ).format(DateTime(2000, 1, 1, _dailyReminderHour, _dailyReminderMinute));
+  }
+
   Future<void> _boot() async {
     await NotificationService.I.init();
     await NotificationService.I.requestPermissions();
@@ -101,6 +135,13 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     setState(() {
       _dailyEnabled = _prefs.getBool('reminders_daily_enabled') ?? false;
       _sessionEnabled = _prefs.getBool('reminders_session_enabled') ?? false;
+      _dailyReminderHour = _sanitizeHour(_prefs.getInt('reminders_daily_hour'));
+      _dailyReminderMinute = _sanitizeMinute(
+        _prefs.getInt('reminders_daily_minute'),
+      );
+      _sessionReminderMinutesBefore = _sanitizeSessionLeadMinutes(
+        _prefs.getInt('reminders_session_minutes_before'),
+      );
       _prefsReady = true;
       _viewerUid = viewer.uid;
       _viewerName = viewer.name;
@@ -249,8 +290,14 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final sb = StringBuffer()
       ..write('d:')
       ..write(_dailyEnabled ? '1' : '0')
+      ..write(';dh:')
+      ..write(_dailyReminderHour)
+      ..write(';dm:')
+      ..write(_dailyReminderMinute)
       ..write(';s:')
       ..write(_sessionEnabled ? '1' : '0')
+      ..write(';sm:')
+      ..write(_sessionReminderMinutesBefore)
       ..write(';');
     for (final o in candidates) {
       sb
@@ -410,8 +457,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         await NotificationService.I.cancelDailyReminder();
       } else {
         await NotificationService.I.scheduleDailyReminder(
-          hour: 8,
-          minute: 0,
+          hour: _dailyReminderHour,
+          minute: _dailyReminderMinute,
           title: 'Classes Today',
           body: 'Open app to see today\'s schedule.',
         );
@@ -435,7 +482,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             body:
                 '${o.courseCode.isEmpty ? 'Class' : o.courseCode} at ${DateFormat('hh:mm a').format(o.start)}',
             sessionStart: o.start,
-            minutesBefore: 15,
+            minutesBefore: _sessionReminderMinutesBefore,
           );
         }
         await _prefs.setStringList(_sessionReminderKeysPref, nextKeys.toList());
@@ -1100,59 +1147,143 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           ),
           child: Column(
             children: [
-              SwitchListTile(
-                activeThumbColor: p.accent,
-                secondary: Icon(Icons.wb_sunny_rounded, color: p.accent),
-                title: Text(
-                  'Daily Briefing (8:00 AM)',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                  ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: p.appBg.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: p.border),
+                      ),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            activeThumbColor: p.accent,
+                            secondary: Icon(
+                              Icons.wb_sunny_rounded,
+                              color: p.accent,
+                            ),
+                            title: Text(
+                              'Daily Briefing (${_dailyReminderLabel()})',
+                              style: TextStyle(
+                                color: p.primary,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'A simple morning reminder to check the day schedule.',
+                              style: TextStyle(
+                                color: p.text.withValues(alpha: 0.65),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            value: _dailyEnabled,
+                            onChanged: (v) async {
+                              await _toggleDaily(v, upcoming, allOcc);
+                              onSheetRefresh?.call();
+                            },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(56, 0, 12, 12),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: _dailyEnabled
+                                    ? () async {
+                                        await _pickDailyReminderTime(
+                                          upcoming,
+                                          allOcc,
+                                        );
+                                        onSheetRefresh?.call();
+                                      }
+                                    : null,
+                                icon: const Icon(
+                                  Icons.access_time_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text('Set time'),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: p.appBg.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: p.border),
+                      ),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            activeThumbColor: p.accent,
+                            secondary: Icon(
+                              Icons.notifications_active_rounded,
+                              color: p.primary,
+                            ),
+                            title: Text(
+                              'Session Alerts (${_sessionReminderMinutesBefore}m before)',
+                              style: TextStyle(
+                                color: p.primary,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Get alerted shortly before each class starts.',
+                              style: TextStyle(
+                                color: p.text.withValues(alpha: 0.65),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            value: _sessionEnabled,
+                            onChanged: (v) async {
+                              await _toggleSession(v, upcoming, allOcc);
+                              onSheetRefresh?.call();
+                            },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(56, 0, 12, 12),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _sessionLeadPresetOptions
+                                    .map(
+                                      (minutes) => ChoiceChip(
+                                        label: Text('${minutes}m'),
+                                        selected:
+                                            _sessionReminderMinutesBefore ==
+                                            minutes,
+                                        onSelected: _sessionEnabled
+                                            ? (_) async {
+                                                await _setSessionReminderMinutesBefore(
+                                                  minutes,
+                                                  upcoming,
+                                                  allOcc,
+                                                );
+                                                onSheetRefresh?.call();
+                                              }
+                                            : null,
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                subtitle: Text(
-                  'A simple morning reminder to check the day schedule.',
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-                value: _dailyEnabled,
-                onChanged: (v) async {
-                  await _toggleDaily(v, upcoming, allOcc);
-                  onSheetRefresh?.call();
-                },
-              ),
-              Divider(height: 1, indent: 56, color: p.border),
-              SwitchListTile(
-                activeThumbColor: p.accent,
-                secondary: Icon(
-                  Icons.notifications_active_rounded,
-                  color: p.primary,
-                ),
-                title: Text(
-                  'Session Alerts (15m before)',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                  ),
-                ),
-                subtitle: Text(
-                  'Get alerted shortly before each class starts.',
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-                value: _sessionEnabled,
-                onChanged: (v) async {
-                  await _toggleSession(v, upcoming, allOcc);
-                  onSheetRefresh?.call();
-                },
               ),
             ],
           ),
@@ -1461,6 +1592,42 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       await _maybeHandleExactAlarmPermission();
     }
 
+    _queueApplyAllReminders(upcoming: up, allOcc: all);
+  }
+
+  Future<void> _pickDailyReminderTime(List<_Occ> up, List<_Occ> all) async {
+    if (!_prefsReady) return;
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: _dailyReminderHour,
+        minute: _dailyReminderMinute,
+      ),
+    );
+    if (picked == null) return;
+
+    setState(() {
+      _dailyReminderHour = picked.hour;
+      _dailyReminderMinute = picked.minute;
+    });
+    await _prefs.setInt('reminders_daily_hour', _dailyReminderHour);
+    await _prefs.setInt('reminders_daily_minute', _dailyReminderMinute);
+    _queueApplyAllReminders(upcoming: up, allOcc: all);
+  }
+
+  Future<void> _setSessionReminderMinutesBefore(
+    int rawMinutes,
+    List<_Occ> up,
+    List<_Occ> all,
+  ) async {
+    if (!_prefsReady) return;
+
+    final minutes = _sanitizeSessionLeadMinutes(rawMinutes);
+    if (_sessionReminderMinutesBefore == minutes) return;
+
+    setState(() => _sessionReminderMinutesBefore = minutes);
+    await _prefs.setInt('reminders_session_minutes_before', minutes);
     _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
 
