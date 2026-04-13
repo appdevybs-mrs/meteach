@@ -72,6 +72,7 @@ class Certificate {
   final String? courseKey;
   final String? moduleKey;
   final String? instructorName;
+  final String examCourse;
 
   Certificate({
     this.key,
@@ -99,6 +100,7 @@ class Certificate {
     this.courseKey,
     this.moduleKey,
     this.instructorName,
+    this.examCourse = 'course',
   });
 
   Map<String, dynamic> toMap() {
@@ -127,6 +129,7 @@ class Certificate {
       if (courseKey != null) 'courseKey': courseKey,
       if (moduleKey != null) 'moduleKey': moduleKey,
       if (instructorName != null) 'instructorName': instructorName,
+      'exam_course': examCourse,
     };
   }
 
@@ -163,7 +166,13 @@ class Certificate {
       courseKey: map['courseKey']?.toString(),
       moduleKey: map['moduleKey']?.toString(),
       instructorName: map['instructorName']?.toString(),
+      examCourse: _parseExamCourse(map['exam_course']),
     );
+  }
+
+  static String _parseExamCourse(dynamic v) {
+    final value = (v ?? '').toString().trim().toLowerCase();
+    return value == 'exam' ? 'exam' : 'course';
   }
 
   static int _asInt(dynamic v) {
@@ -199,6 +208,7 @@ class Certificate {
     String? courseKey,
     String? moduleKey,
     String? instructorName,
+    String? examCourse,
   }) {
     return Certificate(
       key: key ?? this.key,
@@ -226,6 +236,7 @@ class Certificate {
       courseKey: courseKey ?? this.courseKey,
       moduleKey: moduleKey ?? this.moduleKey,
       instructorName: instructorName ?? this.instructorName,
+      examCourse: _parseExamCourse(examCourse ?? this.examCourse),
     );
   }
 

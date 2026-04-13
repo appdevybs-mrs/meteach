@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../models/certificate_model.dart';
 
@@ -17,12 +18,36 @@ class CertificatePdfService {
     pw.MemoryImage? template;
     pw.Font? playfairRegular;
     pw.Font? playfairBold;
+    final isExam = cert.examCourse == 'exam';
     try {
-      final bytes = await rootBundle.load(
-        'assets/images/DigitalCertificate.png',
-      );
-      template = pw.MemoryImage(bytes.buffer.asUint8List());
+      if (isExam) {
+        final examPdfBytes = await rootBundle.load(
+          'assets/images/digital_cert_exam.pdf',
+        );
+        await for (final page in Printing.raster(
+          examPdfBytes.buffer.asUint8List(),
+          pages: const [0],
+          dpi: 144,
+        )) {
+          final rasterBytes = await page.toPng();
+          template = pw.MemoryImage(rasterBytes);
+          break;
+        }
+      } else {
+        final bytes = await rootBundle.load(
+          'assets/images/DigitalCertificate.png',
+        );
+        template = pw.MemoryImage(bytes.buffer.asUint8List());
+      }
     } catch (_) {}
+    if (template == null) {
+      try {
+        final bytes = await rootBundle.load(
+          'assets/images/DigitalCertificate.png',
+        );
+        template = pw.MemoryImage(bytes.buffer.asUint8List());
+      } catch (_) {}
+    }
     try {
       final bytes = await rootBundle.load(
         'assets/fonts/PlayfairDisplay-Regular.ttf',
@@ -117,17 +142,18 @@ class CertificatePdfService {
                   ),
                 ),
               ),
-              centeredText(
-                centerX: 142,
-                top: instructorTop,
-                boxWidth: 210,
-                text: instructor,
-                style: pw.TextStyle(
-                  fontSize: 14,
-                  font: playfairBold,
-                  color: PdfColor.fromInt(0xFF1F2937),
+              if (!isExam)
+                centeredText(
+                  centerX: 142,
+                  top: instructorTop,
+                  boxWidth: 210,
+                  text: instructor,
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    font: playfairBold,
+                    color: PdfColor.fromInt(0xFF1F2937),
+                  ),
                 ),
-              ),
               centeredText(
                 centerX: 466,
                 top: academicDirectorTop,

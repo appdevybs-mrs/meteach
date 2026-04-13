@@ -42,6 +42,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   String _searchQuery = '';
   CertificateStatus? _statusFilter;
   String? _titleFilter;
+  String? _examCourseFilter;
   String? _trainingDateFrom;
   String? _trainingDateTo;
   String? _expirationDateFrom;
@@ -135,6 +136,10 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         if (cert.certificateTitle != _titleFilter) return false;
       }
 
+      if (_examCourseFilter != null && _examCourseFilter!.isNotEmpty) {
+        if (cert.examCourse != _examCourseFilter) return false;
+      }
+
       if (_trainingDateFrom != null && _trainingDateFrom!.isNotEmpty) {
         if (cert.trainingDate.compareTo(_trainingDateFrom!) < 0) return false;
       }
@@ -221,6 +226,13 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     });
   }
 
+  void _setExamCourseFilter(String? examCourse) {
+    setState(() {
+      _examCourseFilter = examCourse;
+      _applyFilters();
+    });
+  }
+
   void _setDateFilter(String? from, String? to, bool isTrainingDate) {
     setState(() {
       if (isTrainingDate) {
@@ -239,6 +251,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       _searchQuery = '';
       _statusFilter = null;
       _titleFilter = null;
+      _examCourseFilter = null;
       _trainingDateFrom = null;
       _trainingDateTo = null;
       _expirationDateFrom = null;
@@ -255,6 +268,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   bool get _hasActiveFilters {
     return _statusFilter != null ||
         (_titleFilter != null && _titleFilter!.isNotEmpty) ||
+        (_examCourseFilter != null && _examCourseFilter!.isNotEmpty) ||
         _trainingDateFrom != null ||
         _trainingDateTo != null ||
         _expirationDateFrom != null ||
@@ -620,6 +634,13 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
+                  label: 'exam_course',
+                  value: _examCourseFilter ?? 'All',
+                  isActive: _examCourseFilter != null,
+                  onTap: () => _showExamCourseFilterMenu(),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
                   label: 'Training Date',
                   value: _trainingDateFrom != null || _trainingDateTo != null
                       ? '${_trainingDateFrom ?? '...'} - ${_trainingDateTo ?? '...'}'
@@ -724,6 +745,52 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 ),
               ),
             )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showExamCourseFilterMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('All'),
+              leading: Radio<String?>(
+                value: null,
+                groupValue: _examCourseFilter,
+                onChanged: (v) {
+                  _setExamCourseFilter(null);
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+            ListTile(
+              title: const Text('course'),
+              leading: Radio<String?>(
+                value: 'course',
+                groupValue: _examCourseFilter,
+                onChanged: (v) {
+                  _setExamCourseFilter(v);
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+            ListTile(
+              title: const Text('exam'),
+              leading: Radio<String?>(
+                value: 'exam',
+                groupValue: _examCourseFilter,
+                onChanged: (v) {
+                  _setExamCourseFilter(v);
+                  Navigator.pop(context);
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -1081,6 +1148,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     final titleC = TextEditingController(text: cert.certificateTitle);
     final instructorC = TextEditingController(text: cert.instructorName ?? '');
     final notesC = TextEditingController(text: cert.notes ?? '');
+    String examCourse = cert.examCourse;
     String trainingDate = cert.trainingDate;
     String expirationDate = cert.expirationDate;
     bool downloadsEnabled = cert.downloadsEnabled;
@@ -1098,9 +1166,12 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         fullName: fullNameC.text.trim(),
         nationalIdNumber: nationalIdC.text.trim(),
         certificateTitle: titleC.text.trim(),
-        instructorName: instructorC.text.trim().isEmpty
-            ? 'Seddik. B'
-            : instructorC.text.trim(),
+        instructorName: examCourse == 'exam'
+            ? null
+            : (instructorC.text.trim().isEmpty
+                  ? 'Seddik. B'
+                  : instructorC.text.trim()),
+        examCourse: examCourse,
         trainingDate: trainingDate,
         expirationDate: expirationDate,
         updatedAt: now,
@@ -1138,13 +1209,27 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                   decoration: const InputDecoration(labelText: 'Title'),
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
-                  controller: instructorC,
-                  decoration: const InputDecoration(
-                    labelText: 'Instructor Name',
-                  ),
+                SwitchListTile(
+                  value: examCourse == 'exam',
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('exam_course'),
+                  subtitle: Text(examCourse),
+                  onChanged: (v) => setSheetState(() {
+                    examCourse = v ? 'exam' : 'course';
+                    if (v) instructorC.clear();
+                  }),
                 ),
                 const SizedBox(height: 10),
+                if (examCourse != 'exam') ...[
+                  TextFormField(
+                    controller: instructorC,
+                    decoration: const InputDecoration(
+                      labelText: 'Instructor Name',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 TextFormField(
                   readOnly: true,
                   controller: TextEditingController(text: trainingDate),
@@ -1606,6 +1691,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
   String _trainingDate = '';
   String _expirationDate = '';
   int _durationYears = 1;
+  String _examCourse = 'course';
   CertificateStatus _status = CertificateStatus.valid;
   bool _downloadsEnabled = true;
   bool _loading = false;
@@ -1622,6 +1708,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
       _nationalIdController.text = cert.nationalIdNumber;
       _titleController.text = cert.certificateTitle;
       _instructorController.text = cert.instructorName ?? '';
+      _examCourse = cert.examCourse;
       _trainingDate = cert.trainingDate;
       _expirationDate = cert.expirationDate;
       _calculateDurationFromDates();
@@ -1719,9 +1806,12 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
         fullName: _fullNameController.text.trim(),
         nationalIdNumber: _nationalIdController.text.trim(),
         certificateTitle: _titleController.text.trim(),
-        instructorName: _instructorController.text.trim().isEmpty
-            ? 'Seddik. B'
-            : _instructorController.text.trim(),
+        instructorName: _examCourse == 'exam'
+            ? null
+            : (_instructorController.text.trim().isEmpty
+                  ? 'Seddik. B'
+                  : _instructorController.text.trim()),
+        examCourse: _examCourse,
         trainingDate: _trainingDate,
         expirationDate: _expirationDate,
         status: _status,
@@ -1878,15 +1968,32 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
                       : null,
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _instructorController,
-                  decoration: const InputDecoration(
-                    labelText: 'Instructor Name',
-                    hintText: 'Defaults to Seddik. B',
-                    border: OutlineInputBorder(),
-                  ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('exam_course'),
+                  subtitle: Text(_examCourse),
+                  value: _examCourse == 'exam',
+                  onChanged: (v) {
+                    setState(() {
+                      _examCourse = v ? 'exam' : 'course';
+                      if (v) {
+                        _instructorController.clear();
+                      }
+                    });
+                  },
                 ),
                 const SizedBox(height: 16),
+                if (_examCourse != 'exam') ...[
+                  TextFormField(
+                    controller: _instructorController,
+                    decoration: const InputDecoration(
+                      labelText: 'Instructor Name',
+                      hintText: 'Defaults to Seddik. B',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Row(
                   children: [
                     Expanded(
@@ -2179,12 +2286,14 @@ class _CertificateViewSheet extends StatelessWidget {
                 label: 'Certificate Title',
                 value: certificate.certificateTitle,
               ),
-              _DetailRow(
-                label: 'Instructor',
-                value: (certificate.instructorName ?? '').trim().isEmpty
-                    ? 'Seddik. B'
-                    : certificate.instructorName!,
-              ),
+              _DetailRow(label: 'exam_course', value: certificate.examCourse),
+              if (certificate.examCourse != 'exam')
+                _DetailRow(
+                  label: 'Instructor',
+                  value: (certificate.instructorName ?? '').trim().isEmpty
+                      ? 'Seddik. B'
+                      : certificate.instructorName!,
+                ),
               _DetailRow(
                 label: 'Training Date',
                 value: certificate.trainingDate,
