@@ -68,7 +68,8 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
       log('Sign out failed: $e');
       if (!mounted) return;
 
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not sign out. Please try again.'),
@@ -112,7 +113,7 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
                   const SizedBox(height: 12),
 
                   Text(
-                    'Your account has been temporarily paused by the academy.\n'
+                    'Your account has been temporarily paused by Your Bridge School.\n'
                     'If you believe this is a mistake, please contact the administration.',
                     style: theme.textTheme.bodyMedium,
                     textAlign: TextAlign.center,

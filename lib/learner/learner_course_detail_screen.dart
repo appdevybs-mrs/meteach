@@ -1757,7 +1757,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-
     final counts = _attendanceCountsAll();
 
     // ✅ Meetings = attendance records (in-class + online)
@@ -2149,7 +2148,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       const SizedBox(height: 10),
                       if (!hasPaymentHistory)
                         Text(
-                          'Your payment info is not available yet. If you already paid, contact the academy to sync it.',
+                          'Your payment info is not available yet. If you already paid, contact Your Bridge School to sync it.',
                           style: UiK.subtleText(),
                         )
                       else ...[
@@ -2220,7 +2219,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                   : !hasSessionBalance
                                   ? 'Payment is saved. Session balance will appear after sync.'
                                   : (overdue || expiryDue)
-                                  ? 'Payment is due now. Please contact the academy to renew your sessions.'
+                                  ? 'Payment is due now. Please contact Your Bridge School to renew your sessions.'
                                   : (dueSoon || expirySoon)
                                   ? (leftSafe == 1
                                         ? 'Payment due in 1 session. It’s a good time to renew now.'

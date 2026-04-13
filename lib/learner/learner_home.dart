@@ -215,8 +215,8 @@ class _LearnerHomeState extends State<LearnerHome> {
 
       AppToast.show(
         context,
-        'تنبيه لطيف: يوجد دفع مستحق في إحدى دوراتك. يرجى التواصل مع الأكاديمية 💛\n'
-        'Friendly reminder: a payment is due for one of your courses. Please contact the academy 💛',
+        'تنبيه لطيف: يوجد دفع مستحق في إحدى دوراتك. يرجى التواصل مع Your Bridge School 💛\n'
+        'Friendly reminder: a payment is due for one of your courses. Please contact Your Bridge School 💛',
         type: AppToastType.info,
         duration: const Duration(seconds: 5),
       );

@@ -585,7 +585,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   String _lessonUnavailableMessage({required String lessonType}) {
     return '$lessonType is currently unavailable or misconfigured. '
-        'Please refresh. If this continues, contact academy support and share your course name + session number.';
+        'Please refresh. If this continues, contact Your Bridge School support and share your course name + session number.';
   }
 
   Future<void> _openMaterials(_RecordedSession session) async {
@@ -2858,7 +2858,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     final Widget content;
 
     if (_busy) {
@@ -2923,7 +2922,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'If this issue continues, please contact academy support and share your course title + session number.',
+                  'If this issue continues, please contact Your Bridge School support and share your course title + session number.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Color(0xFF64748B),

@@ -3731,7 +3731,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       key: diagramKey,
                       child: _ReportWatermarkBackground(
                         child: _ReportCardDiagramV2(
-                          schoolTitle: 'Your Bridge School Academy',
+                          schoolTitle: 'Your Bridge School',
                           learnerName: _peerNameShown,
                           courseKey: courseKey!,
                           createdAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -4125,7 +4125,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         : (_peerNameShown.isEmpty ? 'Mail' : _peerNameShown);
     final subjectTrim = displaySubject(widget.subject);
     final canReport = _peerIsLearner;
-
 
     return Scaffold(
       appBar: AppBar(

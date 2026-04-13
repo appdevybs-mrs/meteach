@@ -114,7 +114,8 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
     } catch (e) {
       log('❌ finalize error: $e');
       if (mounted) {
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           SnackBar(
             content: Text(
               'Couldn’t finalize automatically.\nPlease sign out.\n$e',
@@ -160,7 +161,7 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                   const SizedBox(height: 10),
 
                   Text(
-                    'Your account has been blocked by the academy.\n'
+                    'Your account has been blocked by Your Bridge School.\n'
                     'If you believe this is a mistake, please contact the administration.',
                     style: theme.textTheme.bodyMedium,
                     textAlign: TextAlign.center,

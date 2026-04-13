@@ -196,11 +196,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     switch (type) {
       case _QuickLearnerReminder.payment:
         title = 'Payment Reminder';
-        message = 'Your payment is due. Please contact the academy.';
+        message = 'Your payment is due. Please contact Your Bridge School.';
         break;
       case _QuickLearnerReminder.absence:
         title = 'Absence Reminder';
-        message = 'We noticed an absence. Please confirm with the academy.';
+        message =
+            'We noticed an absence. Please confirm with Your Bridge School.';
         break;
       case _QuickLearnerReminder.empty:
         return;
