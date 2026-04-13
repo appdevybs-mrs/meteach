@@ -549,6 +549,22 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     }
   }
 
+  String _taughtSessionNumbersLabel() {
+    final numbers = <int>{};
+    for (final item in _taughtItems) {
+      final type = (item['type'] ?? 'syllabus').toString();
+      if (type != 'syllabus') continue;
+      final raw = item['sessionNumber'];
+      final sessionNo = (raw is num)
+          ? raw.toInt()
+          : (int.tryParse(raw?.toString() ?? '') ?? 0);
+      if (sessionNo > 0) numbers.add(sessionNo);
+    }
+    if (numbers.isEmpty) return '-';
+    final sorted = numbers.toList()..sort();
+    return sorted.map((n) => 'S$n').join(', ');
+  }
+
   Future<void> _openSyllabusLessonPickerToAdd() async {
     if (_syllabiSessions.isEmpty) {
       AppToast.fromSnackBar(
@@ -1117,6 +1133,23 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   ),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.menu_book_rounded,
+                  size: 20,
+                  color: primaryBlue,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Syllabus session(s): ${_taughtSessionNumbersLabel()}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             const Text(
               "Lessons Taught (this meeting)",
@@ -1501,7 +1534,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(

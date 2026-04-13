@@ -318,6 +318,27 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return result;
   }
 
+  List<String> _skillTagsForCard(Map<String, dynamic> session) {
+    final tags = <String>{};
+    final taughtItems = _normalizedTaughtItems(session);
+    for (final item in taughtItems) {
+      final raw = (item['skillType'] ?? '').toString().trim();
+      if (raw.isEmpty) continue;
+      tags.add(raw);
+    }
+    return tags.toList();
+  }
+
+  String _lessonSummaryForCard(Map<String, dynamic> session) {
+    final taughtItems = _normalizedTaughtItems(session);
+    if (taughtItems.isEmpty) return '';
+    final first = taughtItems.first;
+    final firstTitle = (first['title'] ?? '').toString().trim();
+    if (firstTitle.isEmpty) return '';
+    if (taughtItems.length == 1) return firstTitle;
+    return '$firstTitle +${taughtItems.length - 1} more';
+  }
+
   void _showSessionDetails(Map<String, dynamic> session) {
     final p = palette;
     final taughtItems = _normalizedTaughtItems(session);
@@ -872,7 +893,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     final p = palette;
     final totalSessions = _sessions.length;
 
-
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -1034,6 +1054,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   Widget _buildSessionCard(AppPalette p, Map<String, dynamic> s) {
     final dateText = (s['date'] ?? 'No Date').toString();
     final taughtTitle = _sessionHeadline(s);
+    final lessonSummary = _lessonSummaryForCard(s);
+    final skillTags = _skillTagsForCard(s);
     final presentCount = _safeMapLength(s['present']);
     final absentCount = _safeMapLength(s['absent']);
     final successRate = _safeInt(s['successRate']);
@@ -1145,6 +1167,28 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                     ),
                   ],
                 ),
+                if (lessonSummary.isNotEmpty || skillTags.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (lessonSummary.isNotEmpty)
+                        _statBadge(
+                          lessonSummary,
+                          p.primary,
+                          Icons.menu_book_rounded,
+                        ),
+                      ...skillTags.map(
+                        (tag) => _statBadge(
+                          tag,
+                          p.accent,
+                          Icons.record_voice_over_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,

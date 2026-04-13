@@ -1290,7 +1290,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         () => _pushScreen(
                                           const TeacherClassesScreen(
                                             initialMainTab: 1,
-                                            initialOnlineTab: 1,
+                                            initialOnlineTab: 2,
                                           ),
                                         ),
                                       ),
@@ -1316,7 +1316,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         () => _pushScreen(
                                           const TeacherClassesScreen(
                                             initialMainTab: 1,
-                                            initialOnlineTab: 1,
+                                            initialOnlineTab: 2,
                                           ),
                                         ),
                                       );

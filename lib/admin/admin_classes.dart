@@ -2541,7 +2541,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         .trim();
     final objective = (info?['objective'] ?? '').toString().trim();
     final content = (info?['content'] ?? '').toString().trim();
-    final homework = (info?['homework'] ?? '').toString().trim();
+    final teacherComment = row.teacherComment.trim();
     final source = (info?['source'] ?? 'not_found').toString().trim();
 
     await showModalBottomSheet<void>(
@@ -2604,7 +2604,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   const SizedBox(height: 10),
                   _detailsBlock('Content', content),
                   const SizedBox(height: 10),
-                  _detailsBlock('Homework', homework),
+                  _detailsBlock('Teacher Comment', teacherComment),
                 ],
               ),
             ),
@@ -3457,7 +3457,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
-    final reviewBySessionNo = <int, int>{};
+    final learnerReviewBySessionNo = <int, int>{};
     try {
       final reviewSnap = await _db
           .child(
@@ -3469,16 +3469,22 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         for (final entry in reviews.entries) {
           if (entry.value is! Map) continue;
           final rm = Map<String, dynamic>.from(entry.value as Map);
-          final sessionNo = _asInt(rm['sessionNo']);
+          var sessionNo = _asInt(rm['sessionNo']);
+          if (sessionNo <= 0) {
+            sessionNo = _asInt(entry.key);
+          }
           if (sessionNo <= 0) continue;
           final rating = _asInt(rm['rating']);
           if (rating >= 1 && rating <= 5) {
-            reviewBySessionNo[sessionNo] = rating;
+            learnerReviewBySessionNo[sessionNo] = rating;
           }
         }
       }
     } catch (_) {}
 
+    final teacherReviewBySessionNo = <int, int>{};
+    final teacherCommentBySessionNo = <int, String>{};
+    final teacherNoteStampBySessionNo = <int, int>{};
     final presentRows = <_FlexAttendanceRow>[];
     try {
       final progressSnap = await _db
@@ -3504,6 +3510,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           }
 
           final sessionNo = _asInt(m['sessionNo']);
+          final teacherRating = _asInt(m['teacherRating']);
+          final teacherComment = (m['teacherComment'] ?? '').toString().trim();
+          final teacherNoteStamp = _asInt(m['teacherCommentUpdatedAt']) > 0
+              ? _asInt(m['teacherCommentUpdatedAt'])
+              : ts;
+          if (sessionNo > 0) {
+            final prevStamp = teacherNoteStampBySessionNo[sessionNo] ?? 0;
+            if (teacherNoteStamp >= prevStamp) {
+              if (teacherRating >= 1 && teacherRating <= 5) {
+                teacherReviewBySessionNo[sessionNo] = teacherRating;
+              }
+              teacherCommentBySessionNo[sessionNo] = teacherComment;
+              teacherNoteStampBySessionNo[sessionNo] = teacherNoteStamp;
+            }
+          }
           String taughtTitle = '';
           final taughtItems = m['taughtItems'];
           if (taughtItems is List) {
@@ -3535,7 +3556,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       .trim(),
               lessonTitle: syllabusTitleBySession[sessionNo] ?? taughtTitle,
               taughtTitle: taughtTitle,
-              reviewRating: reviewBySessionNo[sessionNo] ?? 0,
+              learnerReviewRating: learnerReviewBySessionNo[sessionNo] ?? 0,
+              teacherReviewRating: teacherReviewBySessionNo[sessionNo] ?? 0,
+              teacherComment: teacherCommentBySessionNo[sessionNo] ?? '',
             ),
           );
         });
@@ -4752,10 +4775,10 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
     }
   }
 
-  Widget _reviewStars(int rating) {
+  Widget _reviewStars(int rating, {required String label}) {
     if (rating < 1 || rating > 5) {
       return Text(
-        'Review: Not rated',
+        '$label: Not rated',
         style: TextStyle(
           color: Colors.grey.shade700,
           fontWeight: FontWeight.w700,
@@ -4768,7 +4791,7 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Review: ',
+          '$label: ',
           style: TextStyle(
             color: Colors.grey.shade700,
             fontWeight: FontWeight.w700,
@@ -4896,19 +4919,25 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                 final teacher = row.teacherName.isEmpty
                     ? 'Teacher'
                     : row.teacherName;
-                final reviewLabel =
-                    row.reviewRating >= 1 && row.reviewRating <= 5
-                    ? '${row.reviewRating}/5'
+                final learnerReviewLabel =
+                    row.learnerReviewRating >= 1 && row.learnerReviewRating <= 5
+                    ? '${row.learnerReviewRating}/5'
                     : '-';
-                final rating = row.reviewRating;
+                final teacherReviewLabel =
+                    row.teacherReviewRating >= 1 && row.teacherReviewRating <= 5
+                    ? '${row.teacherReviewRating}/5'
+                    : '-';
+                final rowRating = row.learnerReviewRating > 0
+                    ? row.learnerReviewRating
+                    : row.teacherReviewRating;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: _reviewBg(rating),
+                    color: _reviewBg(rowRating),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _reviewBorder(rating)),
+                    border: Border.all(color: _reviewBorder(rowRating)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -4929,7 +4958,20 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          _reviewStars(row.reviewRating),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _reviewStars(
+                                row.teacherReviewRating,
+                                label: 'Teacher',
+                              ),
+                              const SizedBox(height: 2),
+                              _reviewStars(
+                                row.learnerReviewRating,
+                                label: 'Learner',
+                              ),
+                            ],
+                          ),
                           const SizedBox(width: 4),
                           IconButton(
                             tooltip: 'Session details',
@@ -4964,13 +5006,26 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Review: $reviewLabel',
+                        'Learner review: $learnerReviewLabel • Teacher review: $teacherReviewLabel',
                         style: TextStyle(
                           color: Colors.grey.shade800,
                           fontWeight: FontWeight.w800,
                           fontSize: 12,
                         ),
                       ),
+                      if (row.teacherComment.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Teacher comment: ${row.teacherComment.trim()}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey.shade800,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
@@ -5019,7 +5074,9 @@ class _FlexAttendanceRow {
   final String teacherName;
   final String lessonTitle;
   final String taughtTitle;
-  final int reviewRating;
+  final int learnerReviewRating;
+  final int teacherReviewRating;
+  final String teacherComment;
 
   const _FlexAttendanceRow({
     required this.bookingKey,
@@ -5030,7 +5087,9 @@ class _FlexAttendanceRow {
     required this.teacherName,
     required this.lessonTitle,
     required this.taughtTitle,
-    required this.reviewRating,
+    required this.learnerReviewRating,
+    required this.teacherReviewRating,
+    required this.teacherComment,
   });
 
   int get sortTs {

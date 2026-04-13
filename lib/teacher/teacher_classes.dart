@@ -1887,83 +1887,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _heroTeacherCard(),
-        const SizedBox(height: 14),
         if (_myClasses.isEmpty)
           _emptyState('No classes found for you yet.')
         else
           ..._myClasses.map((c) => _classCard(c)),
       ],
-    );
-  }
-
-  Widget _heroTeacherCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: p.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Center(
-              child: Text(
-                _teacherName.isEmpty ? 'T' : _teacherName[0].toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 26,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _teacherName.isEmpty ? 'Teacher' : _teacherName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 20,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Your in-class teaching overview',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.82),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2430,11 +2358,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     return Column(
       children: [
-        _onlineHeroSummary(
-          live: startingOrOngoing.length,
-          upcoming: upcoming.length,
-          past: past.length,
-        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Container(
@@ -2448,10 +2371,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               labelColor: p.primary,
               unselectedLabelColor: p.text.withValues(alpha: 0.62),
               indicatorColor: p.accent,
-              tabs: const [
-                Tab(text: 'Live'),
-                Tab(text: 'Upcoming'),
-                Tab(text: 'Past'),
+              tabs: [
+                Tab(text: 'Past (${past.length})'),
+                Tab(text: 'Live (${startingOrOngoing.length})'),
+                Tab(text: 'Upcoming (${upcoming.length})'),
               ],
             ),
           ),
@@ -2462,6 +2385,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             controller: _onlineTab,
             children: [
               _onlineBookingsList(
+                items: past.reversed.toList(),
+                emptyText: 'No past sessions in the last 7 days.',
+              ),
+              _onlineBookingsList(
                 items: startingOrOngoing,
                 emptyText: 'No ongoing sessions right now.',
               ),
@@ -2469,111 +2396,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 items: upcoming,
                 emptyText: 'No upcoming sessions.',
               ),
-              _onlineBookingsList(
-                items: past.reversed.toList(),
-                emptyText: 'No past sessions in the last 7 days.',
-              ),
             ],
           ),
         ),
       ],
-    );
-  }
-
-  Widget _onlineHeroSummary({
-    required int live,
-    required int upcoming,
-    required int past,
-  }) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: p.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Online Sessions',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.82),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Booking Overview',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 22,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _heroMiniStat(label: 'Live', value: '$live'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _heroMiniStat(label: 'Upcoming', value: '$upcoming'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _heroMiniStat(label: 'Past', value: '$past'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heroMiniStat({required String label, required String value}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.80),
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2614,6 +2440,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Widget _bookingCard(_OnlineBooking b) {
     final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
+    final endAt = dt.add(Duration(minutes: b.durationMinutes));
+    final classPassed = !DateTime.now().isBefore(endAt);
     final when =
         '${dt.year}-${_two(dt.month)}-${_two(dt.day)}  ${_two(dt.hour)}:${_two(dt.minute)}';
 
@@ -2778,45 +2606,56 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                 ? Icons.edit_note_rounded
                                 : Icons.visibility_rounded)
                           : Icons.fact_check_rounded;
+                      final canOpenTake = hasAttendance || classPassed;
+                      final actionBg = hasAttendance
+                          ? (mine
+                                ? const Color(0xFFD97706)
+                                : p.text.withValues(alpha: 0.55))
+                          : (classPassed
+                                ? p.accent
+                                : p.text.withValues(alpha: 0.35));
 
                       return ElevatedButton.icon(
                         icon: Icon(icon),
                         label: Text(label),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: p.accent,
+                          backgroundColor: actionBg,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        onPressed: () {
-                          if (!mine && hasAttendance) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => OnlineAttendanceHistoryScreen(
-                                  booking: b,
-                                  teacherUid: _teacherUid,
-                                ),
-                              ),
-                            );
-                            return;
-                          }
+                        onPressed: canOpenTake
+                            ? () {
+                                if (!mine && hasAttendance) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          OnlineAttendanceHistoryScreen(
+                                            booking: b,
+                                            teacherUid: _teacherUid,
+                                          ),
+                                    ),
+                                  );
+                                  return;
+                                }
 
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => OnlineTakeAttendanceScreen(
-                                booking: b,
-                                teacherUid: _teacherUid,
-                                teacherName: _teacherName.isEmpty
-                                    ? 'Teacher'
-                                    : _teacherName,
-                              ),
-                            ),
-                          );
-                        },
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => OnlineTakeAttendanceScreen(
+                                      booking: b,
+                                      teacherUid: _teacherUid,
+                                      teacherName: _teacherName.isEmpty
+                                          ? 'Teacher'
+                                          : _teacherName,
+                                    ),
+                                  ),
+                                );
+                              }
+                            : null,
                       );
                     },
                   ),
@@ -3581,6 +3420,14 @@ class _OnlineTakeAttendanceScreenState
                   ),
                   const SizedBox(height: 4),
                   Text(
+                    'Session: ${b.sessionNo > 0 ? b.sessionNo : '-'}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: p.text.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
                     'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
@@ -3910,6 +3757,7 @@ class _OnlineAttendanceHistoryScreenState
                 'objective': _safeStr(sm['objective']),
                 'content': _safeStr(sm['content']),
                 'homework': _safeStr(sm['homework']),
+                'skillType': _safeStr(sm['skillType']),
               };
             }
           }
@@ -4807,6 +4655,67 @@ class _OnlineAttendanceHistoryScreenState
                               ),
                             ],
                           ),
+                          if (sessionNo > 0) ...[
+                            const SizedBox(height: 6),
+                            FutureBuilder<Map<String, dynamic>?>(
+                              future: _loadSyllabusSessionByNo(
+                                _safeStr(rec['courseId']),
+                                sessionNo,
+                              ),
+                              builder: (context, infoSnap) {
+                                final info = infoSnap.data;
+                                final title = _safeStr(
+                                  info?['sessionTitle'] ?? info?['title'],
+                                );
+                                final skill = _safeStr(info?['skillType']);
+                                if (title.isEmpty && skill.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                final lessonLine = title.isEmpty
+                                    ? 'Lesson: -'
+                                    : 'Lesson: $title';
+                                return Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    Text(
+                                      lessonLine,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: p.text.withValues(alpha: 0.82),
+                                      ),
+                                    ),
+                                    if (skill.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: p.soft.withValues(alpha: 0.25),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: p.border.withValues(
+                                              alpha: 0.78,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          skill,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: p.primary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           if (learners is Map && learners.isNotEmpty)
                             ...learners.entries.map((entry) {

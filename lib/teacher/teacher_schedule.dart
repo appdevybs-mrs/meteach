@@ -1021,7 +1021,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       context,
       MaterialPageRoute(
         builder: (_) =>
-            const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 1),
+            const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 2),
       ),
     );
   }
