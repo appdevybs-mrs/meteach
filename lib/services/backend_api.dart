@@ -4,10 +4,41 @@ import 'package:http/http.dart' as http;
 class BackendApi {
   static const String secureBaseUrl = String.fromEnvironment(
     'YBS_SECURE_API_BASE',
-    defaultValue: 'https://www.yourbridgeschool.com/app/secure',
+    defaultValue:
+        'https://api.yourbridgeschool.com/apps/your-bridge-school/secure',
+  );
+
+  static const String mediaBaseUrl = String.fromEnvironment(
+    'YBS_MEDIA_BASE',
+    defaultValue:
+        'https://api.yourbridgeschool.com/apps/your-bridge-school/storage',
   );
 
   static Uri uri(String path) => Uri.parse('$secureBaseUrl/$path');
+
+  static String get mediaOrigin {
+    final parsed = Uri.tryParse(mediaBaseUrl);
+    if (parsed == null || parsed.scheme.isEmpty || parsed.host.isEmpty) {
+      return mediaBaseUrl;
+    }
+    return '${parsed.scheme}://${parsed.host}${parsed.hasPort ? ':${parsed.port}' : ''}';
+  }
+
+  static Uri mediaUri({required String root, String path = ''}) {
+    final rootPart = Uri.encodeComponent(root.trim());
+    final pathPart = path
+        .split('/')
+        .where((segment) => segment.trim().isNotEmpty)
+        .map(Uri.encodeComponent)
+        .join('/');
+    final base = mediaBaseUrl.endsWith('/')
+        ? mediaBaseUrl.substring(0, mediaBaseUrl.length - 1)
+        : mediaBaseUrl;
+    final full = pathPart.isEmpty
+        ? '$base/$rootPart'
+        : '$base/$rootPart/$pathPart';
+    return Uri.parse(full);
+  }
 
   static void _debug(String message) {
     // no-op in production build

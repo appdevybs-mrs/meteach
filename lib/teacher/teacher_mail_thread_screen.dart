@@ -68,7 +68,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   static Color _datePillBorder(BuildContext context) =>
       _navy.withValues(alpha: 0.15);
 
-  static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
+  static final String _uploadOrigin = BackendApi.mediaBaseUrl;
 
   static String _safeNetworkUrl(String raw) {
     var s = raw.trim();
@@ -5185,7 +5185,7 @@ class MailUploadClient {
 
   factory MailUploadClient.defaultClient() {
     return MailUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
+      endpoint: BackendApi.uri('upload_secure.php').toString(),
       appId: 'dreamenglishacademy',
     );
   }

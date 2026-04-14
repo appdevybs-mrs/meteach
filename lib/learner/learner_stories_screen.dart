@@ -1134,7 +1134,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 270,
+          height: 332,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: stories.length,

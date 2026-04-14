@@ -3,17 +3,24 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 
-const ALLOWED_ROOTS = ['courses', 'games', 'stories'];
+const ALLOWED_ROOTS = ['courses', 'games', 'stories', 'shared_files'];
 
 function storage_root_dir(): string
 {
     $root = getenv('YBS_STORAGE_DIR');
     if (!is_string($root) || trim($root) === '') {
+        $candidateAppStorage = dirname(__DIR__) . '/storage';
+        if (is_dir(dirname($candidateAppStorage))) {
+            $root = $candidateAppStorage;
+        }
+    }
+
+    if (!is_string($root) || trim($root) === '') {
         $docRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
         if (is_string($docRoot) && trim($docRoot) !== '' && is_dir($docRoot)) {
             $root = $docRoot;
         } else {
-            // Typical deployment path: /public_html/app/secure -> /public_html
+            // Legacy deployment fallback: /public_html/app/secure -> /public_html
             $candidatePublic = dirname(__DIR__, 2);
             if (is_dir($candidatePublic)) {
                 $root = $candidatePublic;
@@ -32,7 +39,7 @@ function public_base_url(): string
 {
     $base = getenv('YBS_PUBLIC_BASE_URL');
     if (!is_string($base) || trim($base) === '') {
-        $base = 'https://www.yourbridgeschool.com';
+        $base = 'https://api.yourbridgeschool.com/apps/your-bridge-school/storage';
     }
     return rtrim($base, '/');
 }

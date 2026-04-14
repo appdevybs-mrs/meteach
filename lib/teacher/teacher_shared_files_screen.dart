@@ -27,12 +27,11 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
   static const String _serverRoot = 'shared_files';
   static const String _legacyServerRoot = 'shared';
   static const String _coursesRoot = 'courses';
-  static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
-  static const String _deleteUrl =
-      'https://www.yourbridgeschool.com/app/secure/delete_file_secure.php';
-  static const String _createFolderUrl =
-      'https://www.yourbridgeschool.com/app/secure/create_folder_secure.php';
+  static final Uri _uploadUrl = BackendApi.uri('upload_file_secure.php');
+  static final Uri _deleteUrl = BackendApi.uri('delete_file_secure.php');
+  static final Uri _createFolderUrl = BackendApi.uri(
+    'create_folder_secure.php',
+  );
 
   static const Set<String> _allowedDocExt = {
     'pdf',
@@ -93,7 +92,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
   }
 
   Future<void> _ensureSharedRoot(String root) async {
-    final uri = await BackendApi.withAuthQuery(Uri.parse(_createFolderUrl));
+    final uri = await BackendApi.withAuthQuery(_createFolderUrl);
     final headers = await BackendApi.authHeaders();
     final authFields = await BackendApi.authFormFields();
 
@@ -133,7 +132,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     required String folderName,
     required String root,
   }) async {
-    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final uploadUri = await BackendApi.withAuthQuery(_uploadUrl);
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
     req.fields['root'] = root;
@@ -440,7 +439,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
           : (inferred?.path ?? relPath);
 
       if (deletePath.isNotEmpty) {
-        final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
+        final deleteUri = await BackendApi.withAuthQuery(_deleteUrl);
         final headers = await BackendApi.authHeaders();
         final authFields = await BackendApi.authFormFields();
         await http
@@ -579,7 +578,6 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Shared'),

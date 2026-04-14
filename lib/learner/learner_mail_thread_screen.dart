@@ -77,7 +77,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static Color _mineText(BuildContext context) => Colors.white;
   static Color _theirsText(BuildContext context) => _navyDark;
 
-  static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
+  static final String _uploadOrigin = BackendApi.mediaBaseUrl;
 
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
@@ -2225,7 +2225,6 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     final title = _selectionMode
         ? '${_selectedMessageIds.length} selected'
         : (_peerNameShown.isEmpty ? 'Mail' : _peerNameShown);
@@ -2853,7 +2852,7 @@ class MailUploadClient {
 
   factory MailUploadClient.defaultClient() {
     return MailUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
+      endpoint: BackendApi.uri('upload_secure.php').toString(),
       appId: 'dreamenglishacademy',
     );
   }

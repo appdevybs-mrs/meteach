@@ -4,24 +4,27 @@
 
 Upload `backend/php_secure_api/*` to your server path (recommended):
 
-- `/app/secure/upload_secure.php`
-- `/app/secure/push_secure.php`
-- `/app/secure/list_items_secure.php`
-- `/app/secure/create_folder_secure.php`
-- `/app/secure/rename_item_secure.php`
-- `/app/secure/delete_item_secure.php`
-- `/app/secure/upload_file_secure.php`
-- `/app/secure/delete_file_secure.php`
-- `/app/secure/delete_auth_user_secure.php`
+- `/apps/your-bridge-school/secure/upload_secure.php`
+- `/apps/your-bridge-school/secure/push_secure.php`
+- `/apps/your-bridge-school/secure/list_items_secure.php`
+- `/apps/your-bridge-school/secure/create_folder_secure.php`
+- `/apps/your-bridge-school/secure/rename_item_secure.php`
+- `/apps/your-bridge-school/secure/delete_item_secure.php`
+- `/apps/your-bridge-school/secure/upload_file_secure.php`
+- `/apps/your-bridge-school/secure/delete_file_secure.php`
+- `/apps/your-bridge-school/secure/delete_auth_user_secure.php`
+- `/apps/your-bridge-school/secure/check_item_exists_secure.php`
+- `/apps/your-bridge-school/secure/upload_job_cv.php`
+- `/apps/your-bridge-school/secure/certificate_download_ping.php`
 
 Also upload shared files:
 
-- `/app/secure/bootstrap.php`
-- `/app/secure/file_ops.php`
+- `/apps/your-bridge-school/secure/bootstrap.php`
+- `/apps/your-bridge-school/secure/file_ops.php`
 
 ## 2) Install backend dependency
 
-On server inside `/app/secure`:
+On server inside `/apps/your-bridge-school/secure`:
 
 ```bash
 composer require kreait/firebase-php
@@ -33,8 +36,8 @@ Set these in Apache/Nginx/PHP-FPM env:
 
 - `GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/service-account.json`
 - `FIREBASE_DB_URL=https://<your-project>.firebaseio.com`
-- `YBS_STORAGE_DIR=/absolute/path/to/public/file/storage`
-- `YBS_PUBLIC_BASE_URL=https://www.yourbridgeschool.com/uploads`
+- `YBS_STORAGE_DIR=/home/<cpanel-user>/api.yourbridgeschool.com/apps/your-bridge-school/storage`
+- `YBS_PUBLIC_BASE_URL=https://api.yourbridgeschool.com/apps/your-bridge-school/storage`
 
 ## 4) Lock folder permissions
 
@@ -67,7 +70,10 @@ Action:
 You can override base secure API URL using:
 
 ```bash
-flutter run --dart-define=YBS_SECURE_API_BASE=https://www.yourbridgeschool.com/app/secure
+flutter run --dart-define=YBS_SECURE_API_BASE=https://api.yourbridgeschool.com/apps/your-bridge-school/secure
+
+# Optional media override:
+# --dart-define=YBS_MEDIA_BASE=https://api.yourbridgeschool.com/apps/your-bridge-school/storage
 ```
 
 ## 8) Smoke test checklist

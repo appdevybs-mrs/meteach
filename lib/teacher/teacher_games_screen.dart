@@ -35,11 +35,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   String _categoryFilter = 'all';
   String _sortBy = 'updated_desc';
 
-  static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
+  static final Uri _uploadUrl = BackendApi.uri('upload_file_secure.php');
 
-  static const String _deleteUrl =
-      'https://www.yourbridgeschool.com/app/secure/delete_file_secure.php';
+  static final Uri _deleteUrl = BackendApi.uri('delete_file_secure.php');
 
   static const List<String> _categoryOptions = [
     'Vocabulary',
@@ -145,7 +143,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final picked = result.files.single;
     onSelectedName?.call(_friendlyFileName(picked.name));
     onSelectedFile?.call(picked);
-    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final uploadUri = await BackendApi.withAuthQuery(_uploadUrl);
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
 
@@ -240,7 +238,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   }) async {
     final headers = await BackendApi.authHeaders();
     final authFields = await BackendApi.authFormFields();
-    final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
+    final deleteUri = await BackendApi.withAuthQuery(_deleteUrl);
     final response = await http.post(
       deleteUri,
       headers: headers,

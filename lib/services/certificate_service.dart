@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:http/http.dart' as http;
 import '../models/certificate_model.dart';
+import 'backend_api.dart';
 
 class CertificateServiceException implements Exception {
   final String message;
@@ -21,8 +22,9 @@ class CertificateService {
   static const String _recordedCertificatesPath = 'recorded_certificates';
   static const String _cvnIndexPath = 'certificate_cvn_index';
   static const String _prefix = 'DZ01SB';
-  static const String _downloadPingUrl =
-      'https://www.yourbridgeschool.com/app/secure/certificate_download_ping.php';
+  static final Uri _downloadPingUrl = BackendApi.uri(
+    'certificate_download_ping.php',
+  );
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
@@ -144,7 +146,7 @@ class CertificateService {
 
     final response = await http
         .post(
-          Uri.parse(_downloadPingUrl),
+          _downloadPingUrl,
           headers: const {'Content-Type': 'application/json'},
           body: json.encode({
             'certificateKey': k,

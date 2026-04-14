@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
+import '../services/storage_existence.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/shared_pdf_reader_screen.dart';
@@ -35,12 +36,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   String _statusFilter = 'all';
   String _genreFilter = 'all';
   String _sortBy = 'updated_desc';
+  bool _storiesCleanupRunning = false;
+  final Map<String, String> _checkedStoryFolders = <String, String>{};
 
-  static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
+  static final Uri _uploadUrl = BackendApi.uri('upload_file_secure.php');
 
-  static const String _deleteUrl =
-      'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
+  static final Uri _deleteUrl = BackendApi.uri('delete_item_secure.php');
 
   static const List<String> _genreOptions = [
     'Adventure',
@@ -185,7 +186,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     onSelectedName?.call(_friendlyFileName(picked.name));
     onSelectedFile?.call(picked);
-    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final uploadUri = await BackendApi.withAuthQuery(_uploadUrl);
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
 
@@ -245,7 +246,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   Future<void> _deleteFromServer({required String folderPath}) async {
     final headers = await BackendApi.authHeaders();
     final authFields = await BackendApi.authFormFields();
-    final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
+    final deleteUri = await BackendApi.withAuthQuery(_deleteUrl);
     final response = await http.post(
       deleteUri,
       headers: headers,
@@ -3224,6 +3225,57 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     return items.where((e) => _canEditStory(e.value)).length;
   }
 
+  Future<void> _cleanupMissingStoryFolders(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) async {
+    if (_storiesCleanupRunning) return;
+
+    _storiesCleanupRunning = true;
+    var removed = 0;
+
+    try {
+      final ids = items.map((e) => e.key).toSet();
+      _checkedStoryFolders.removeWhere((k, _) => !ids.contains(k));
+
+      for (final entry in items) {
+        final storyId = entry.key;
+        final story = entry.value;
+        final folderPath = (story['serverFolderPath'] ?? '').toString().trim();
+
+        if (folderPath.isEmpty) continue;
+        if (_checkedStoryFolders[storyId] == folderPath) continue;
+
+        final check = await StorageExistence.checkPathExists(
+          root: 'stories',
+          path: folderPath,
+          expect: 'folder',
+        );
+
+        if (check == StorageCheckResult.unknown) continue;
+
+        _checkedStoryFolders[storyId] = folderPath;
+
+        if (check == StorageCheckResult.missing) {
+          await _storiesRef.child(storyId).remove();
+          _checkedStoryFolders.remove(storyId);
+          removed++;
+        }
+      }
+
+      if (!mounted || removed <= 0) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Auto-cleaned $removed missing stor${removed == 1 ? 'y' : 'ies'}.',
+          ),
+        ),
+      );
+    } finally {
+      _storiesCleanupRunning = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -3320,6 +3372,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               return MapEntry(storyId, story);
             }).toList();
+
+            unawaited(_cleanupMissingStoryFolders(items));
 
             final visibleItems = _applyFiltersAndSort(items: items);
 

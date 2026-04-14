@@ -36,7 +36,7 @@ class MailUploadClient {
 
   factory MailUploadClient.defaultClient() {
     return MailUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
+      endpoint: BackendApi.uri('upload_secure.php').toString(),
       appId: 'dreamenglishacademy',
     );
   }
@@ -146,7 +146,7 @@ class AdminTeacherMailThreadScreen extends StatefulWidget {
 class _AdminTeacherMailThreadScreenState
     extends State<AdminTeacherMailThreadScreen> {
   static const int _messageWindowSize = 300;
-  static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
+  static final String _uploadOrigin = BackendApi.mediaBaseUrl;
 
   final _db = FirebaseDatabase.instance;
 
@@ -913,7 +913,6 @@ class _AdminTeacherMailThreadScreenState
     final title = _selectionMode
         ? '${_selectedMessageIds.length} selected'
         : (teacherName.isEmpty ? 'Mail' : 'Mail — $teacherName');
-
 
     return Scaffold(
       appBar: AppBar(

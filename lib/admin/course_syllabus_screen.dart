@@ -1777,12 +1777,9 @@ class _LessonAssetPresence {
 }
 
 class _SyllabusServerStorage {
-  static const String uploadUrl =
-      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
-  static const String listUrl =
-      'https://www.yourbridgeschool.com/app/secure/list_items_secure.php';
-  static const String deleteUrl =
-      'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
+  static final Uri uploadUrl = BackendApi.uri('upload_file_secure.php');
+  static final Uri listUrl = BackendApi.uri('list_items_secure.php');
+  static final Uri deleteUrl = BackendApi.uri('delete_item_secure.php');
 
   static void _debug(String message) {
     // no-op in production build
@@ -1845,7 +1842,7 @@ class _SyllabusServerStorage {
       'file=${file.name} uidPresent=${uid.isNotEmpty} tokenLen=${token.length}',
     );
 
-    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(uploadUrl));
+    final uploadUri = await BackendApi.withAuthQuery(uploadUrl);
 
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
@@ -1938,7 +1935,7 @@ class _SyllabusServerStorage {
       'uidPresent=${uid.isNotEmpty} tokenLen=${token.length}',
     );
 
-    final deleteUri = await BackendApi.withAuthQuery(Uri.parse(deleteUrl));
+    final deleteUri = await BackendApi.withAuthQuery(deleteUrl);
 
     final r = await http.post(
       deleteUri,
@@ -1972,7 +1969,7 @@ class _SyllabusServerStorage {
   }) async {
     final authFields = await BackendApi.authFormFields();
     final headers = await BackendApi.authHeaders();
-    final listUri = await BackendApi.withAuthQuery(Uri.parse(listUrl));
+    final listUri = await BackendApi.withAuthQuery(listUrl);
 
     final r = await http
         .post(

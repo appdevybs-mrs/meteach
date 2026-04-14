@@ -4024,7 +4024,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
     const double fixedRowHeight = 158;
 
-    final double timeColumnWidth = expanded ? 84 : 74;
+    final double timeColumnWidth = expanded ? 66 : 58;
     final double dayColumnWidth = expanded ? 202 : 154;
 
     // Fixed heights so the sticky time column stays aligned with the grid rows.

@@ -971,7 +971,6 @@ class _AdminTeacherRemindersScreenState
   Widget build(BuildContext context) {
     final teacherName = (widget.teacher?.fullName ?? '').toString().trim();
 
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -1659,7 +1658,7 @@ class ReminderUploadClient {
 
   factory ReminderUploadClient.defaultClient() {
     return ReminderUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
+      endpoint: BackendApi.uri('upload_secure.php').toString(),
       appId: 'dreamenglishacademy',
     );
   }

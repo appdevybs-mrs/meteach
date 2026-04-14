@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../services/storage_existence.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/media_download.dart';
@@ -113,6 +114,60 @@ Future<http.StreamedResponse> _sendMultipartWithProgress({
   }
 }
 
+class _GalleryCleanupStats {
+  const _GalleryCleanupStats({
+    required this.stage,
+    required this.found,
+    required this.checked,
+    required this.missing,
+    required this.deleted,
+    required this.unknown,
+  });
+
+  const _GalleryCleanupStats.initial()
+    : stage = 'Preparing cleanup...',
+      found = 0,
+      checked = 0,
+      missing = 0,
+      deleted = 0,
+      unknown = 0;
+
+  final String stage;
+  final int found;
+  final int checked;
+  final int missing;
+  final int deleted;
+  final int unknown;
+
+  _GalleryCleanupStats copyWith({
+    String? stage,
+    int? found,
+    int? checked,
+    int? missing,
+    int? deleted,
+    int? unknown,
+  }) {
+    return _GalleryCleanupStats(
+      stage: stage ?? this.stage,
+      found: found ?? this.found,
+      checked: checked ?? this.checked,
+      missing: missing ?? this.missing,
+      deleted: deleted ?? this.deleted,
+      unknown: unknown ?? this.unknown,
+    );
+  }
+}
+
+typedef _CleanupProgressCallback =
+    void Function({
+      String? stage,
+      int foundDelta,
+      int checkedDelta,
+      int missingDelta,
+      int deletedDelta,
+      int unknownDelta,
+    });
+
 class AdminPublicGalleryScreen extends StatefulWidget {
   const AdminPublicGalleryScreen({super.key});
 
@@ -151,11 +206,34 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
   String _learnerSearch = '';
   String _teacherSearch = '';
   bool _onlyEmptyLearnerGalleries = false;
+  bool _publicVideoCleanupRunning = false;
+  final Map<String, String> _publicVideoCheckedUrls = <String, String>{};
+  bool _teacherMediaCleanupRunning = false;
+  final Map<String, String> _teacherMediaCheckedSignatures = <String, String>{};
+  bool _globalCleanupRunning = false;
+  bool _bulkDeleting = false;
+  bool _publicBulkMode = false;
+  final Set<String> _selectedPublicIds = <String>{};
+  bool _learnerBulkMode = false;
+  final Set<String> _selectedLearnerUids = <String>{};
+  bool _teacherBulkMode = false;
+  final Set<String> _selectedTeacherUids = <String>{};
+  int _activeTabIndex = 0;
+  List<Map<String, dynamic>> _visiblePublicItems =
+      const <Map<String, dynamic>>[];
+  List<_AdminLearnerLite> _visibleLearners = const <_AdminLearnerLite>[];
+  List<_AdminTeacherProfileLite> _visibleTeachers =
+      const <_AdminTeacherProfileLite>[];
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    _tab.addListener(() {
+      if (!mounted) return;
+      if (_activeTabIndex == _tab.index) return;
+      setState(() => _activeTabIndex = _tab.index);
+    });
 
     _publicGalleryStream = _galleryRef().onValue.asBroadcastStream();
     _usersStream = _db.child('users').onValue.asBroadcastStream();
@@ -169,6 +247,83 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         .asBroadcastStream();
 
     _loadAdminName();
+  }
+
+  bool get _isBulkModeActive {
+    if (_activeTabIndex == 0) return _publicBulkMode;
+    if (_activeTabIndex == 1) return _learnerBulkMode;
+    return _teacherBulkMode;
+  }
+
+  int get _selectedCount {
+    if (_activeTabIndex == 0) return _selectedPublicIds.length;
+    if (_activeTabIndex == 1) return _selectedLearnerUids.length;
+    return _selectedTeacherUids.length;
+  }
+
+  void _toggleBulkModeForActiveTab() {
+    if (_bulkDeleting) return;
+    setState(() {
+      if (_activeTabIndex == 0) {
+        _publicBulkMode = !_publicBulkMode;
+        if (!_publicBulkMode) _selectedPublicIds.clear();
+      } else if (_activeTabIndex == 1) {
+        _learnerBulkMode = !_learnerBulkMode;
+        if (!_learnerBulkMode) _selectedLearnerUids.clear();
+      } else {
+        _teacherBulkMode = !_teacherBulkMode;
+        if (!_teacherBulkMode) _selectedTeacherUids.clear();
+      }
+    });
+  }
+
+  void _selectAllForActiveTab() {
+    if (_bulkDeleting) return;
+    setState(() {
+      if (_activeTabIndex == 0) {
+        _selectedPublicIds
+          ..clear()
+          ..addAll(
+            _visiblePublicItems
+                .map((e) => (e['id'] ?? '').toString().trim())
+                .where((id) => id.isNotEmpty),
+          );
+      } else if (_activeTabIndex == 1) {
+        _selectedLearnerUids
+          ..clear()
+          ..addAll(_visibleLearners.map((e) => e.uid.trim()));
+      } else {
+        _selectedTeacherUids
+          ..clear()
+          ..addAll(_visibleTeachers.map((e) => e.uid.trim()));
+      }
+    });
+  }
+
+  void _clearSelectionForActiveTab() {
+    if (_bulkDeleting) return;
+    setState(() {
+      if (_activeTabIndex == 0) {
+        _selectedPublicIds.clear();
+      } else if (_activeTabIndex == 1) {
+        _selectedLearnerUids.clear();
+      } else {
+        _selectedTeacherUids.clear();
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedForActiveTab() async {
+    if (_bulkDeleting) return;
+    if (_activeTabIndex == 0) {
+      await _bulkDeletePublicItems(_visiblePublicItems);
+      return;
+    }
+    if (_activeTabIndex == 1) {
+      await _bulkDeleteLearnerGalleries(_visibleLearners);
+      return;
+    }
+    await _bulkDeleteTeacherMedia(_visibleTeachers);
   }
 
   @override
@@ -481,6 +636,566 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     }
   }
 
+  Future<bool> _confirmBulkDelete({
+    required String title,
+    required String message,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _bulkDeletePublicItems(
+    List<Map<String, dynamic>> allItems,
+  ) async {
+    final selectedItems = allItems.where((item) {
+      final id = (item['id'] ?? '').toString().trim();
+      return id.isNotEmpty && _selectedPublicIds.contains(id);
+    }).toList();
+    if (selectedItems.isEmpty) return;
+
+    final ok = await _confirmBulkDelete(
+      title: 'Delete selected public media',
+      message:
+          'Delete ${selectedItems.length} selected public item${selectedItems.length == 1 ? '' : 's'}? This removes from RTDB and server storage.',
+    );
+    if (!ok) return;
+
+    setState(() {
+      _bulkDeleting = true;
+      _error = null;
+    });
+
+    var removed = 0;
+    try {
+      for (final item in selectedItems) {
+        final itemId = (item['id'] ?? '').toString().trim();
+        if (itemId.isEmpty) continue;
+
+        final url = (item['url'] ?? '').toString().trim();
+        if (url.isNotEmpty) {
+          try {
+            await _deleteUploadedCoursesAsset(url);
+          } catch (_) {}
+        }
+
+        await _galleryRef().child(itemId).remove();
+        removed++;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedPublicIds.clear();
+        _publicBulkMode = false;
+        _ok = 'Deleted $removed public item${removed == 1 ? '' : 's'}.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = toHumanError(
+          e,
+          fallback: 'Could not bulk delete public items.',
+        );
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _bulkDeleting = false;
+      });
+    }
+  }
+
+  Future<void> _bulkDeleteLearnerGalleries(
+    List<_AdminLearnerLite> allLearners,
+  ) async {
+    final selectedLearners = allLearners.where((l) {
+      return l.uid.trim().isNotEmpty && _selectedLearnerUids.contains(l.uid);
+    }).toList();
+    if (selectedLearners.isEmpty) return;
+
+    final ok = await _confirmBulkDelete(
+      title: 'Delete selected learner galleries',
+      message:
+          'Delete gallery contents for ${selectedLearners.length} selected learner${selectedLearners.length == 1 ? '' : 's'}? This removes all their gallery items from RTDB and server storage.',
+    );
+    if (!ok) return;
+
+    setState(() {
+      _bulkDeleting = true;
+      _error = null;
+    });
+
+    var removedItems = 0;
+    try {
+      for (final learner in selectedLearners) {
+        final uid = learner.uid.trim();
+        if (uid.isEmpty) continue;
+
+        final snap = await _db.child('learner_gallery/$uid').get();
+        final value = snap.value;
+        if (value is Map) {
+          final gallery = Map<dynamic, dynamic>.from(value);
+          for (final entry in gallery.entries) {
+            final raw = entry.value;
+            if (raw is! Map) continue;
+            final item = raw.map((k, v) => MapEntry(k.toString(), v));
+            final url = (item['url'] ?? '').toString().trim();
+            if (url.isNotEmpty) {
+              try {
+                await _deleteUploadedCoursesAsset(url);
+              } catch (_) {}
+            }
+            removedItems++;
+          }
+        }
+
+        await _db.child('learner_gallery/$uid').remove();
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedLearnerUids.clear();
+        _learnerBulkMode = false;
+        _ok =
+            'Deleted $removedItems learner gallery item${removedItems == 1 ? '' : 's'} from selected learners.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = toHumanError(
+          e,
+          fallback: 'Could not bulk delete learner galleries.',
+        );
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _bulkDeleting = false;
+      });
+    }
+  }
+
+  Future<void> _bulkDeleteTeacherMedia(
+    List<_AdminTeacherProfileLite> allTeachers,
+  ) async {
+    final selectedTeachers = allTeachers.where((t) {
+      return t.uid.trim().isNotEmpty && _selectedTeacherUids.contains(t.uid);
+    }).toList();
+    if (selectedTeachers.isEmpty) return;
+
+    final ok = await _confirmBulkDelete(
+      title: 'Delete selected teacher media',
+      message:
+          'Delete photos and intro video for ${selectedTeachers.length} selected teacher${selectedTeachers.length == 1 ? '' : 's'}? This clears teacher media URLs from RTDB and removes files from server when possible.',
+    );
+    if (!ok) return;
+
+    setState(() {
+      _bulkDeleting = true;
+      _error = null;
+    });
+
+    var removedFiles = 0;
+    try {
+      for (final teacher in selectedTeachers) {
+        for (final photo in teacher.photoUrls) {
+          final url = photo.trim();
+          if (url.isEmpty) continue;
+          try {
+            await _deleteUploadedCoursesAsset(url);
+          } catch (_) {}
+          removedFiles++;
+        }
+
+        final videoUrl = teacher.introVideoUrl.trim();
+        if (videoUrl.isNotEmpty) {
+          try {
+            await _deleteUploadedCoursesAsset(videoUrl);
+          } catch (_) {}
+          removedFiles++;
+        }
+
+        await _db.child('website/teachers/${teacher.uid}/profile').update({
+          'profile_photos': <String>[],
+          'profile_photo': '',
+          'intro_video_url': '',
+        });
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedTeacherUids.clear();
+        _teacherBulkMode = false;
+        _ok =
+            'Cleared media for ${selectedTeachers.length} teacher${selectedTeachers.length == 1 ? '' : 's'} ($removedFiles file${removedFiles == 1 ? '' : 's'}).';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = toHumanError(
+          e,
+          fallback: 'Could not bulk delete teacher media.',
+        );
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _bulkDeleting = false;
+      });
+    }
+  }
+
+  Future<StorageCheckResult> _probeMediaUrl(
+    String url, {
+    required String expectedType,
+  }) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return StorageCheckResult.missing;
+    }
+
+    Future<http.Response> headReq() {
+      return http.head(uri).timeout(const Duration(seconds: 8));
+    }
+
+    Future<http.Response> rangeReq() {
+      return http
+          .get(uri, headers: const {'Range': 'bytes=0-0'})
+          .timeout(const Duration(seconds: 8));
+    }
+
+    http.Response response;
+    try {
+      response = await headReq();
+      if (response.statusCode == 405 || response.statusCode == 501) {
+        response = await rangeReq();
+      }
+    } catch (_) {
+      return StorageCheckResult.unknown;
+    }
+
+    final code = response.statusCode;
+    if (code == 404 || code == 410) return StorageCheckResult.missing;
+    if (code == 401 || code == 403 || code >= 500) {
+      return StorageCheckResult.unknown;
+    }
+    if (code >= 400) return StorageCheckResult.missing;
+
+    final contentType = (response.headers['content-type'] ?? '').toLowerCase();
+    final contentLength = int.tryParse(
+      response.headers['content-length'] ?? '',
+    );
+
+    if (contentLength != null && contentLength == 0) {
+      return StorageCheckResult.missing;
+    }
+
+    if (contentType.startsWith('text/html')) {
+      return StorageCheckResult.missing;
+    }
+
+    if (expectedType == 'photo' &&
+        contentType.isNotEmpty &&
+        !contentType.startsWith('image/')) {
+      return StorageCheckResult.missing;
+    }
+
+    if (expectedType == 'video' &&
+        contentType.isNotEmpty &&
+        !contentType.startsWith('video/')) {
+      return StorageCheckResult.missing;
+    }
+
+    return StorageCheckResult.exists;
+  }
+
+  Future<StorageCheckResult> _checkMediaHealth(
+    String url, {
+    required String expectedType,
+  }) async {
+    final existence = await StorageExistence.checkUrlExistsOnManagedStorage(
+      url,
+      expect: 'file',
+      allowedRoots: const {'courses'},
+    );
+
+    if (existence != StorageCheckResult.exists) return existence;
+
+    final probe = await _probeMediaUrl(url, expectedType: expectedType);
+    if (probe == StorageCheckResult.missing) return StorageCheckResult.missing;
+    if (probe == StorageCheckResult.unknown) return StorageCheckResult.unknown;
+    return StorageCheckResult.exists;
+  }
+
+  Future<int> _cleanupMissingPublicMedia(
+    List<Map<String, dynamic>> items, {
+    _CleanupProgressCallback? onProgress,
+  }) async {
+    if (_publicVideoCleanupRunning) return 0;
+
+    _publicVideoCleanupRunning = true;
+    var removed = 0;
+
+    try {
+      final existingIds = items
+          .map((e) => (e['id'] ?? '').toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+      _publicVideoCheckedUrls.removeWhere((k, _) => !existingIds.contains(k));
+
+      for (final item in items) {
+        final itemId = (item['id'] ?? '').toString().trim();
+        if (itemId.isEmpty) continue;
+
+        final type = (item['type'] ?? '').toString().trim().toLowerCase();
+        if (type != 'video' && type != 'photo') continue;
+
+        final url = (item['url'] ?? '').toString().trim();
+        if (url.isEmpty) continue;
+
+        onProgress?.call(stage: 'Public Gallery', foundDelta: 1);
+
+        if (_publicVideoCheckedUrls[itemId] == url) continue;
+
+        final check = await _checkMediaHealth(url, expectedType: type);
+        onProgress?.call(stage: 'Public Gallery', checkedDelta: 1);
+
+        if (check == StorageCheckResult.unknown) {
+          onProgress?.call(stage: 'Public Gallery', unknownDelta: 1);
+          continue;
+        }
+
+        _publicVideoCheckedUrls[itemId] = url;
+
+        if (check == StorageCheckResult.missing) {
+          onProgress?.call(stage: 'Public Gallery', missingDelta: 1);
+          await _galleryRef().child(itemId).remove();
+          _publicVideoCheckedUrls.remove(itemId);
+          removed++;
+          onProgress?.call(stage: 'Public Gallery', deletedDelta: 1);
+        }
+      }
+
+      return removed;
+    } finally {
+      _publicVideoCleanupRunning = false;
+    }
+  }
+
+  Future<int> _cleanupMissingLearnerGalleryMediaGlobal({
+    _CleanupProgressCallback? onProgress,
+  }) async {
+    final snap = await _db.child('learner_gallery').get();
+    final value = snap.value;
+    if (value is! Map) return 0;
+
+    var removed = 0;
+    final learners = Map<dynamic, dynamic>.from(value);
+
+    for (final learnerEntry in learners.entries) {
+      final learnerUid = learnerEntry.key.toString().trim();
+      final learnerNode = learnerEntry.value;
+      if (learnerUid.isEmpty || learnerNode is! Map) continue;
+
+      final galleryMap = Map<dynamic, dynamic>.from(learnerNode);
+      for (final itemEntry in galleryMap.entries) {
+        final itemId = itemEntry.key.toString().trim();
+        final itemRaw = itemEntry.value;
+        if (itemId.isEmpty || itemRaw is! Map) continue;
+
+        final item = itemRaw.map((k, v) => MapEntry(k.toString(), v));
+        final type = (item['type'] ?? '').toString().trim().toLowerCase();
+        if (type != 'photo' && type != 'video') continue;
+
+        final url = (item['url'] ?? '').toString().trim();
+        if (url.isEmpty) continue;
+
+        onProgress?.call(stage: 'Learner Galleries', foundDelta: 1);
+
+        final check = await _checkMediaHealth(url, expectedType: type);
+        onProgress?.call(stage: 'Learner Galleries', checkedDelta: 1);
+
+        if (check == StorageCheckResult.unknown) {
+          onProgress?.call(stage: 'Learner Galleries', unknownDelta: 1);
+          continue;
+        }
+        if (check != StorageCheckResult.missing) continue;
+
+        onProgress?.call(stage: 'Learner Galleries', missingDelta: 1);
+        await _db.child('learner_gallery/$learnerUid/$itemId').remove();
+        removed++;
+        onProgress?.call(stage: 'Learner Galleries', deletedDelta: 1);
+      }
+    }
+
+    return removed;
+  }
+
+  Future<void> _runGlobalGalleryCleanup() async {
+    if (_globalCleanupRunning) return;
+
+    final progress = ValueNotifier<_GalleryCleanupStats>(
+      const _GalleryCleanupStats.initial(),
+    );
+
+    void bumpProgress({
+      String? stage,
+      int foundDelta = 0,
+      int checkedDelta = 0,
+      int missingDelta = 0,
+      int deletedDelta = 0,
+      int unknownDelta = 0,
+    }) {
+      final current = progress.value;
+      progress.value = current.copyWith(
+        stage: stage ?? current.stage,
+        found: current.found + foundDelta,
+        checked: current.checked + checkedDelta,
+        missing: current.missing + missingDelta,
+        deleted: current.deleted + deletedDelta,
+        unknown: current.unknown + unknownDelta,
+      );
+    }
+
+    var dialogOpen = false;
+
+    if (mounted) {
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) {
+            dialogOpen = true;
+            return PopScope(
+              canPop: false,
+              child: AlertDialog(
+                title: const Text('Cleaning Gallery'),
+                content: ValueListenableBuilder<_GalleryCleanupStats>(
+                  valueListenable: progress,
+                  builder: (context, s, _) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                s.stage,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Found: ${s.found}'),
+                        Text('Checked: ${s.checked}'),
+                        Text('Missing: ${s.missing}'),
+                        Text('Deleted: ${s.deleted}'),
+                        Text('Unknown/Skipped: ${s.unknown}'),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    setState(() {
+      _globalCleanupRunning = true;
+      _ok = null;
+      _error = null;
+    });
+
+    try {
+      _publicVideoCheckedUrls.clear();
+      _teacherMediaCheckedSignatures.clear();
+
+      bumpProgress(stage: 'Checking Public Gallery...');
+      final publicSnap = await _galleryRef().get();
+      final publicItems = _itemsFromSnapshot(publicSnap.value);
+      final removedPublic = await _cleanupMissingPublicMedia(
+        publicItems,
+        onProgress: bumpProgress,
+      );
+
+      bumpProgress(stage: 'Checking Learner Galleries...');
+      final removedLearner = await _cleanupMissingLearnerGalleryMediaGlobal(
+        onProgress: bumpProgress,
+      );
+
+      bumpProgress(stage: 'Checking Teacher Gallery...');
+      final usersSnap = await _db.child('users').get();
+      final teacherProfilesSnap = await _db.child('website/teachers').get();
+      final teachers = _parseTeacherProfiles(
+        usersValue: usersSnap.value,
+        websiteTeachersValue: teacherProfilesSnap.value,
+      );
+      final cleanedTeachers = await _cleanupMissingTeacherProfileMedia(
+        teachers,
+        onProgress: bumpProgress,
+      );
+
+      final refreshedPublic = await _galleryRef().get();
+      final refreshedLearner = await _db.child('learner_gallery').get();
+      final refreshedTeachers = await _db.child('website/teachers').get();
+
+      if (!mounted) return;
+      final totalRemoved = removedPublic + removedLearner;
+      setState(() {
+        _publicGalleryCache = refreshedPublic.value;
+        _learnerGalleryCache = refreshedLearner.value;
+        _teacherProfilesCache = refreshedTeachers.value;
+        _ok =
+            'Cleanup done: found ${progress.value.found}, checked ${progress.value.checked}, deleted ${progress.value.deleted}. Removed $totalRemoved gallery item${totalRemoved == 1 ? '' : 's'} and updated $cleanedTeachers teacher profile${cleanedTeachers == 1 ? '' : 's'}.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = toHumanError(e, fallback: 'Global cleanup failed.');
+      });
+    } finally {
+      if (dialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      progress.dispose();
+
+      if (!mounted) return;
+      setState(() {
+        _globalCleanupRunning = false;
+      });
+    }
+  }
+
   String _fmtDate(dynamic ts) {
     final ms = _toInt(ts);
     if (ms <= 0) return '-';
@@ -559,6 +1274,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         }
 
         final items = _itemsFromSnapshot(rawValue ?? _publicGalleryCache);
+        _visiblePublicItems = items;
 
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -689,16 +1405,34 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                       .trim()
                       .toLowerCase();
                   final url = (item['url'] ?? '').toString().trim();
+                  final itemId = (item['id'] ?? '').toString().trim();
+                  final isSelected = _selectedPublicIds.contains(itemId);
 
                   return InkWell(
                     borderRadius: BorderRadius.circular(18),
-                    onTap: () => _openViewer(item),
+                    onTap: () {
+                      if (_publicBulkMode) {
+                        if (itemId.isEmpty || _bulkDeleting) return;
+                        setState(() {
+                          if (isSelected) {
+                            _selectedPublicIds.remove(itemId);
+                          } else {
+                            _selectedPublicIds.add(itemId);
+                          }
+                        });
+                        return;
+                      }
+                      _openViewer(item);
+                    },
                     child: Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(
-                          color: uiBorder.withValues(alpha: 0.85),
+                          color: _publicBulkMode && isSelected
+                              ? actionOrange
+                              : uiBorder.withValues(alpha: 0.85),
+                          width: _publicBulkMode && isSelected ? 2 : 1,
                         ),
                       ),
                       child: ClipRRect(
@@ -759,6 +1493,34 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                                 ),
                               ),
                             ),
+                            if (_publicBulkMode)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Checkbox(
+                                    value: isSelected,
+                                    onChanged: _bulkDeleting
+                                        ? null
+                                        : (_) {
+                                            if (itemId.isEmpty) return;
+                                            setState(() {
+                                              if (isSelected) {
+                                                _selectedPublicIds.remove(
+                                                  itemId,
+                                                );
+                                              } else {
+                                                _selectedPublicIds.add(itemId);
+                                              }
+                                            });
+                                          },
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -1043,6 +1805,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   l.phone1.toLowerCase().contains(q) ||
                   l.serial.toLowerCase().contains(q);
             }).toList();
+            _visibleLearners = filtered;
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -1143,7 +1906,35 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                             thumbnailUrl: (stat['thumbnailUrl'] ?? '')
                                 .toString()
                                 .trim(),
+                            selectionMode: _learnerBulkMode,
+                            selected: _selectedLearnerUids.contains(
+                              learner.uid.trim(),
+                            ),
+                            onSelectToggle: () {
+                              if (_bulkDeleting) return;
+                              final uid = learner.uid.trim();
+                              if (uid.isEmpty) return;
+                              setState(() {
+                                if (_selectedLearnerUids.contains(uid)) {
+                                  _selectedLearnerUids.remove(uid);
+                                } else {
+                                  _selectedLearnerUids.add(uid);
+                                }
+                              });
+                            },
                             onTap: () async {
+                              if (_learnerBulkMode) {
+                                final uid = learner.uid.trim();
+                                if (uid.isEmpty || _bulkDeleting) return;
+                                setState(() {
+                                  if (_selectedLearnerUids.contains(uid)) {
+                                    _selectedLearnerUids.remove(uid);
+                                  } else {
+                                    _selectedLearnerUids.add(uid);
+                                  }
+                                });
+                                return;
+                              }
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => AdminLearnerGalleryScreen(
@@ -1232,6 +2023,105 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     return out;
   }
 
+  Future<int> _cleanupMissingTeacherProfileMedia(
+    List<_AdminTeacherProfileLite> teachers, {
+    _CleanupProgressCallback? onProgress,
+  }) async {
+    if (_teacherMediaCleanupRunning) return 0;
+
+    _teacherMediaCleanupRunning = true;
+    var cleanedTeachers = 0;
+
+    try {
+      final liveUids = teachers.map((t) => t.uid).toSet();
+      _teacherMediaCheckedSignatures.removeWhere(
+        (k, _) => !liveUids.contains(k),
+      );
+
+      for (final teacher in teachers) {
+        final uid = teacher.uid.trim();
+        if (uid.isEmpty) continue;
+
+        final signature =
+            '${teacher.photoUrls.join('|')}|${teacher.introVideoUrl.trim()}';
+        if (_teacherMediaCheckedSignatures[uid] == signature) continue;
+
+        var hadUnknown = false;
+        var changed = false;
+        final keptPhotos = <String>[];
+
+        for (final photoUrl in teacher.photoUrls) {
+          onProgress?.call(stage: 'Teacher Gallery', foundDelta: 1);
+          final check = await _checkMediaHealth(
+            photoUrl,
+            expectedType: 'photo',
+          );
+          onProgress?.call(stage: 'Teacher Gallery', checkedDelta: 1);
+
+          if (check == StorageCheckResult.missing) {
+            onProgress?.call(stage: 'Teacher Gallery', missingDelta: 1);
+            changed = true;
+            continue;
+          }
+          if (check == StorageCheckResult.unknown) {
+            hadUnknown = true;
+            onProgress?.call(stage: 'Teacher Gallery', unknownDelta: 1);
+          }
+          keptPhotos.add(photoUrl);
+        }
+
+        var nextIntroVideo = teacher.introVideoUrl.trim();
+        if (nextIntroVideo.isNotEmpty) {
+          onProgress?.call(stage: 'Teacher Gallery', foundDelta: 1);
+          final check = await _checkMediaHealth(
+            nextIntroVideo,
+            expectedType: 'video',
+          );
+          onProgress?.call(stage: 'Teacher Gallery', checkedDelta: 1);
+
+          if (check == StorageCheckResult.missing) {
+            nextIntroVideo = '';
+            changed = true;
+            onProgress?.call(stage: 'Teacher Gallery', missingDelta: 1);
+          } else if (check == StorageCheckResult.unknown) {
+            hadUnknown = true;
+            onProgress?.call(stage: 'Teacher Gallery', unknownDelta: 1);
+          }
+        }
+
+        if (changed) {
+          await _db.child('website/teachers/$uid/profile').update({
+            'profile_photos': keptPhotos,
+            'profile_photo': keptPhotos.isEmpty ? '' : keptPhotos.first,
+            'intro_video_url': nextIntroVideo,
+          });
+          cleanedTeachers++;
+
+          final removedForTeacher =
+              teacher.photoUrls.length -
+              keptPhotos.length +
+              (teacher.introVideoUrl.trim().isNotEmpty && nextIntroVideo.isEmpty
+                  ? 1
+                  : 0);
+          if (removedForTeacher > 0) {
+            onProgress?.call(
+              stage: 'Teacher Gallery',
+              deletedDelta: removedForTeacher,
+            );
+          }
+        }
+
+        if (!hadUnknown) {
+          _teacherMediaCheckedSignatures[uid] = signature;
+        }
+      }
+
+      return cleanedTeachers;
+    } finally {
+      _teacherMediaCleanupRunning = false;
+    }
+  }
+
   Widget _buildTeacherGalleryTab() {
     return StreamBuilder<DatabaseEvent>(
       stream: _usersStream,
@@ -1271,6 +2161,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   t.email.toLowerCase().contains(q) ||
                   t.phone1.toLowerCase().contains(q);
             }).toList();
+            _visibleTeachers = filtered;
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -1347,7 +2238,35 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                             thumbnailUrl: teacher.photoUrls.isEmpty
                                 ? ''
                                 : teacher.photoUrls.first,
+                            selectionMode: _teacherBulkMode,
+                            selected: _selectedTeacherUids.contains(
+                              teacher.uid.trim(),
+                            ),
+                            onSelectToggle: () {
+                              if (_bulkDeleting) return;
+                              final uid = teacher.uid.trim();
+                              if (uid.isEmpty) return;
+                              setState(() {
+                                if (_selectedTeacherUids.contains(uid)) {
+                                  _selectedTeacherUids.remove(uid);
+                                } else {
+                                  _selectedTeacherUids.add(uid);
+                                }
+                              });
+                            },
                             onTap: () async {
+                              if (_teacherBulkMode) {
+                                final uid = teacher.uid.trim();
+                                if (uid.isEmpty || _bulkDeleting) return;
+                                setState(() {
+                                  if (_selectedTeacherUids.contains(uid)) {
+                                    _selectedTeacherUids.remove(uid);
+                                  } else {
+                                    _selectedTeacherUids.add(uid);
+                                  }
+                                });
+                                return;
+                              }
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) =>
@@ -1372,7 +2291,6 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -1384,7 +2302,55 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           'Gallery',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
-        actions: [const SizedBox.shrink()],
+        actions: [
+          IconButton(
+            tooltip: 'Refresh and clean all galleries',
+            onPressed: _globalCleanupRunning ? null : _runGlobalGalleryCleanup,
+            icon: _globalCleanupRunning
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            tooltip: _isBulkModeActive ? 'Exit bulk select' : 'Bulk select',
+            onPressed: _globalCleanupRunning
+                ? null
+                : _toggleBulkModeForActiveTab,
+            icon: Icon(
+              _isBulkModeActive
+                  ? Icons.checklist_rtl_rounded
+                  : Icons.select_all_rounded,
+            ),
+          ),
+          if (_isBulkModeActive) ...[
+            IconButton(
+              tooltip: 'Select all',
+              onPressed: _bulkDeleting ? null : _selectAllForActiveTab,
+              icon: const Icon(Icons.done_all_rounded),
+            ),
+            IconButton(
+              tooltip: 'Clear selection',
+              onPressed: _bulkDeleting ? null : _clearSelectionForActiveTab,
+              icon: const Icon(Icons.deselect_rounded),
+            ),
+            IconButton(
+              tooltip: 'Delete selected',
+              onPressed: _bulkDeleting || _selectedCount == 0
+                  ? null
+                  : _deleteSelectedForActiveTab,
+              icon: _bulkDeleting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_sweep_rounded),
+            ),
+          ],
+        ],
         bottom: TabBar(
           controller: _tab,
           labelColor: primaryBlue,
@@ -1456,11 +2422,17 @@ class _AdminTeacherProfileCard extends StatelessWidget {
     required this.teacher,
     required this.thumbnailUrl,
     required this.onTap,
+    required this.selectionMode,
+    required this.selected,
+    required this.onSelectToggle,
   });
 
   final _AdminTeacherProfileLite teacher;
   final String thumbnailUrl;
   final VoidCallback onTap;
+  final bool selectionMode;
+  final bool selected;
+  final VoidCallback onSelectToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -1473,12 +2445,36 @@ class _AdminTeacherProfileCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+          border: Border.all(
+            color: selectionMode && selected
+                ? _AdminPublicGalleryScreenState.actionOrange
+                : uiBorder.withValues(alpha: 0.85),
+            width: selectionMode && selected ? 2 : 1,
+          ),
         ),
-        child: _SingleCardImage(
-          url: thumbnailUrl,
-          emptyIcon: Icons.person_rounded,
-          topTag: teacher.name,
+        child: Stack(
+          children: [
+            _SingleCardImage(
+              url: thumbnailUrl,
+              emptyIcon: Icons.person_rounded,
+              topTag: teacher.name,
+            ),
+            if (selectionMode)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Checkbox(
+                    value: selected,
+                    onChanged: (_) => onSelectToggle(),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -1492,12 +2488,18 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
     required this.itemCount,
     required this.thumbnailUrl,
     required this.onTap,
+    required this.selectionMode,
+    required this.selected,
+    required this.onSelectToggle,
   });
 
   final _AdminLearnerLite learner;
   final int itemCount;
   final String thumbnailUrl;
   final VoidCallback onTap;
+  final bool selectionMode;
+  final bool selected;
+  final VoidCallback onSelectToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -1510,13 +2512,37 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+          border: Border.all(
+            color: selectionMode && selected
+                ? _AdminPublicGalleryScreenState.actionOrange
+                : uiBorder.withValues(alpha: 0.85),
+            width: selectionMode && selected ? 2 : 1,
+          ),
         ),
-        child: _SingleCardImage(
-          url: thumbnailUrl,
-          emptyIcon: Icons.photo_library_rounded,
-          topTag: learner.fullName,
-          trailingCount: itemCount,
+        child: Stack(
+          children: [
+            _SingleCardImage(
+              url: thumbnailUrl,
+              emptyIcon: Icons.photo_library_rounded,
+              topTag: learner.fullName,
+              trailingCount: itemCount,
+            ),
+            if (selectionMode)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Checkbox(
+                    value: selected,
+                    onChanged: (_) => onSelectToggle(),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -2263,7 +3289,6 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -2681,7 +3706,7 @@ class _AdminVideoTileState extends State<_AdminVideoTile> {
         Uri.parse(widget.url),
       );
 
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 10));
       await controller.setLooping(false);
       await controller.pause();
       await controller.seekTo(Duration.zero);
@@ -2787,7 +3812,7 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.url),
       );
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 10));
       await controller.setLooping(false);
       await controller.setPlaybackSpeed(_speed);
       controller.addListener(_videoListener);
@@ -3033,7 +4058,6 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
         ? 'Admin'
         : uploaderName.trim();
 
-
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -3201,7 +4225,6 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
     final displayUploader = uploaderName.trim().isEmpty
         ? 'Admin'
         : uploaderName.trim();
-
 
     return Scaffold(
       backgroundColor: Colors.black,

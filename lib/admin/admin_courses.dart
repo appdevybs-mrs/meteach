@@ -62,7 +62,6 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: AdminCoursesScreen.appBg,
       appBar: AppBar(
@@ -1886,7 +1885,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
 
-
     return Scaffold(
       backgroundColor: AdminCoursesScreen.appBg,
       appBar: AppBar(
@@ -2605,7 +2603,7 @@ class UploadClient {
   /// Hardcoded default client per your requirements
   factory UploadClient.defaultClient() {
     return UploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
+      endpoint: BackendApi.uri('upload_secure.php').toString(),
       appId: 'dreamenglishacademy',
     );
   }

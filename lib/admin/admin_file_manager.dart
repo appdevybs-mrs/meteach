@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/backend_api.dart';
+import '../services/storage_existence.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
@@ -23,11 +25,23 @@ class AdminFileManager extends StatefulWidget {
 class _AdminFileManagerState extends State<AdminFileManager>
     with TickerProviderStateMixin {
   late TabController _tabs;
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  bool _globalCleanupRunning = false;
+  final GlobalKey<_AdminGamesManagerState> _gamesKey =
+      GlobalKey<_AdminGamesManagerState>();
+  final GlobalKey<_AdminStoriesManagerState> _storiesKey =
+      GlobalKey<_AdminStoriesManagerState>();
+  int _activeTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 3, vsync: this);
+    _tabs.addListener(() {
+      if (!mounted) return;
+      if (_activeTabIndex == _tabs.index) return;
+      setState(() => _activeTabIndex = _tabs.index);
+    });
   }
 
   @override
@@ -36,18 +50,231 @@ class _AdminFileManagerState extends State<AdminFileManager>
     super.dispose();
   }
 
+  Future<void> _runGlobalCleanup() async {
+    if (_globalCleanupRunning) return;
+    setState(() => _globalCleanupRunning = true);
+
+    var removedGames = 0;
+    var clearedGameThumbs = 0;
+    var removedStories = 0;
+
+    try {
+      final gamesSnap = await _db.child('games').get();
+      if (gamesSnap.value is Map) {
+        final games = Map<dynamic, dynamic>.from(gamesSnap.value as Map);
+        final gameUpdates = <String, Object?>{};
+
+        for (final entry in games.entries) {
+          final gameId = entry.key.toString().trim();
+          final raw = entry.value;
+          if (gameId.isEmpty || raw is! Map) continue;
+          final game = raw.map((k, v) => MapEntry(k.toString(), v));
+
+          final link = (game['link'] ?? '').toString().trim();
+          if (link.isNotEmpty) {
+            final linkCheck =
+                await StorageExistence.checkUrlExistsOnManagedStorage(
+                  link,
+                  expect: 'file',
+                  allowedRoots: const {'games'},
+                );
+            if (linkCheck == StorageCheckResult.missing) {
+              gameUpdates[gameId] = null;
+              removedGames++;
+              continue;
+            }
+          }
+
+          final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+          if (thumbnail.isNotEmpty) {
+            final thumbCheck =
+                await StorageExistence.checkUrlExistsOnManagedStorage(
+                  thumbnail,
+                  expect: 'file',
+                  allowedRoots: const {'games'},
+                );
+            if (thumbCheck == StorageCheckResult.missing) {
+              gameUpdates['$gameId/thumbnail'] = '';
+              clearedGameThumbs++;
+            }
+          }
+        }
+
+        if (gameUpdates.isNotEmpty) {
+          await _db.child('games').update(gameUpdates);
+        }
+      }
+
+      final storiesSnap = await _db.child('stories').get();
+      if (storiesSnap.value is Map) {
+        final stories = Map<dynamic, dynamic>.from(storiesSnap.value as Map);
+        final storyUpdates = <String, Object?>{};
+
+        for (final entry in stories.entries) {
+          final storyId = entry.key.toString().trim();
+          final raw = entry.value;
+          if (storyId.isEmpty || raw is! Map) continue;
+          final story = raw.map((k, v) => MapEntry(k.toString(), v));
+
+          final folderPath = (story['serverFolderPath'] ?? '')
+              .toString()
+              .trim();
+          if (folderPath.isEmpty) continue;
+
+          final folderCheck = await StorageExistence.checkPathExists(
+            root: 'stories',
+            path: folderPath,
+            expect: 'folder',
+          );
+          if (folderCheck == StorageCheckResult.missing) {
+            storyUpdates[storyId] = null;
+            removedStories++;
+          }
+        }
+
+        if (storyUpdates.isNotEmpty) {
+          await _db.child('stories').update(storyUpdates);
+        }
+      }
+
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Cleanup done: deleted $removedGames games, cleared $clearedGameThumbs game thumbnails, removed $removedStories stories.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Global cleanup failed.')),
+        ),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() => _globalCleanupRunning = false);
+    }
+  }
+
+  bool get _bulkSupportedTab => _activeTabIndex == 1 || _activeTabIndex == 2;
+
+  bool get _bulkModeEnabled {
+    if (_activeTabIndex == 1) {
+      return _gamesKey.currentState?.bulkModeEnabled ?? false;
+    }
+    if (_activeTabIndex == 2) {
+      return _storiesKey.currentState?.bulkModeEnabled ?? false;
+    }
+    return false;
+  }
+
+  int get _selectedCount {
+    if (_activeTabIndex == 1) {
+      return _gamesKey.currentState?.selectedCount ?? 0;
+    }
+    if (_activeTabIndex == 2) {
+      return _storiesKey.currentState?.selectedCount ?? 0;
+    }
+    return 0;
+  }
+
+  void _notifyBulkStateChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _toggleBulkMode() {
+    if (_activeTabIndex == 1) {
+      _gamesKey.currentState?.toggleBulkMode();
+    } else if (_activeTabIndex == 2) {
+      _storiesKey.currentState?.toggleBulkMode();
+    }
+    _notifyBulkStateChanged();
+  }
+
+  void _selectAll() {
+    if (_activeTabIndex == 1) {
+      _gamesKey.currentState?.selectAllVisible();
+    } else if (_activeTabIndex == 2) {
+      _storiesKey.currentState?.selectAllVisible();
+    }
+    _notifyBulkStateChanged();
+  }
+
+  void _clearSelection() {
+    if (_activeTabIndex == 1) {
+      _gamesKey.currentState?.clearSelection();
+    } else if (_activeTabIndex == 2) {
+      _storiesKey.currentState?.clearSelection();
+    }
+    _notifyBulkStateChanged();
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_activeTabIndex == 1) {
+      await _gamesKey.currentState?.deleteSelected();
+    } else if (_activeTabIndex == 2) {
+      await _storiesKey.currentState?.deleteSelected();
+    }
+    _notifyBulkStateChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('File Manager'),
-        actions: [const SizedBox.shrink()],
+        actions: [
+          IconButton(
+            tooltip: 'Refresh and clean games/stories',
+            onPressed: _globalCleanupRunning ? null : _runGlobalCleanup,
+            icon: _globalCleanupRunning
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+          if (_bulkSupportedTab) ...[
+            IconButton(
+              tooltip: _bulkModeEnabled ? 'Exit bulk select' : 'Bulk select',
+              onPressed: _toggleBulkMode,
+              icon: Icon(
+                _bulkModeEnabled
+                    ? Icons.checklist_rtl_rounded
+                    : Icons.select_all_rounded,
+              ),
+            ),
+            if (_bulkModeEnabled) ...[
+              IconButton(
+                tooltip: 'Select all',
+                onPressed: _selectAll,
+                icon: const Icon(Icons.done_all_rounded),
+              ),
+              IconButton(
+                tooltip: 'Clear selection',
+                onPressed: _clearSelection,
+                icon: const Icon(Icons.deselect_rounded),
+              ),
+              IconButton(
+                tooltip: 'Delete selected',
+                onPressed: _selectedCount <= 0 ? null : _deleteSelected,
+                icon: const Icon(Icons.delete_sweep_rounded),
+              ),
+            ],
+          ],
+        ],
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
             Tab(text: 'Courses'),
             Tab(text: 'Games'),
+            Tab(text: 'Stories'),
           ],
         ),
       ),
@@ -56,9 +283,19 @@ class _AdminFileManagerState extends State<AdminFileManager>
         maxWidth: 1650,
         child: TabBarView(
           controller: _tabs,
-          children: const [
-            _FileBrowser(key: PageStorageKey('courses_tab'), root: 'courses'),
-            _AdminGamesManager(key: PageStorageKey('games_tab')),
+          children: [
+            const _FileBrowser(
+              key: PageStorageKey('courses_tab'),
+              root: 'courses',
+            ),
+            _AdminGamesManager(
+              key: _gamesKey,
+              onBulkStateChanged: _notifyBulkStateChanged,
+            ),
+            _AdminStoriesManager(
+              key: _storiesKey,
+              onBulkStateChanged: _notifyBulkStateChanged,
+            ),
           ],
         ),
       ),
@@ -78,17 +315,11 @@ class _FileBrowser extends StatefulWidget {
 
 class _FileBrowserState extends State<_FileBrowser>
     with AutomaticKeepAliveClientMixin {
-  static const String baseDomain = 'https://www.yourbridgeschool.com';
-  static const String listUrl =
-      'https://www.yourbridgeschool.com/app/secure/list_items_secure.php';
-  static const String createFolderUrl =
-      'https://www.yourbridgeschool.com/app/secure/create_folder_secure.php';
-  static const String uploadUrl =
-      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
-  static const String renameUrl =
-      'https://www.yourbridgeschool.com/app/secure/rename_item_secure.php';
-  static const String deleteUrl =
-      'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
+  static final Uri listUrl = BackendApi.uri('list_items_secure.php');
+  static final Uri createFolderUrl = BackendApi.uri('create_folder_secure.php');
+  static final Uri uploadUrl = BackendApi.uri('upload_file_secure.php');
+  static final Uri renameUrl = BackendApi.uri('rename_item_secure.php');
+  static final Uri deleteUrl = BackendApi.uri('delete_item_secure.php');
 
   List<Map<String, dynamic>> items = [];
   String path = '';
@@ -105,22 +336,16 @@ class _FileBrowserState extends State<_FileBrowser>
 
   String _publicUrlForItem({required String itemName, required bool isFolder}) {
     final joined = _joinPath(path, itemName);
-    final encodedSegments = joined
-        .split('/')
-        .where((e) => e.trim().isNotEmpty)
-        .map(Uri.encodeComponent)
-        .join('/');
-
-    final suffix = isFolder ? '/' : '';
-    return '$baseDomain/${widget.root}/$encodedSegments$suffix';
+    final uri = BackendApi.mediaUri(root: widget.root, path: joined);
+    return isFolder ? '${uri.toString()}/' : uri.toString();
   }
 
   Future<Map<String, dynamic>> _postForm({
-    required String url,
+    required Uri url,
     required Map<String, String> body,
   }) async {
     final authFields = await BackendApi.authFormFields();
-    final postUri = await BackendApi.withAuthQuery(Uri.parse(url));
+    final postUri = await BackendApi.withAuthQuery(url);
     final headers = await BackendApi.authHeaders();
     final r = await http
         .post(postUri, body: {...body, ...authFields}, headers: headers)
@@ -409,7 +634,7 @@ class _FileBrowserState extends State<_FileBrowser>
 
       final picked = result.files.single;
 
-      final uploadUri = await BackendApi.withAuthQuery(Uri.parse(uploadUrl));
+      final uploadUri = await BackendApi.withAuthQuery(uploadUrl);
       final req = http.MultipartRequest('POST', uploadUri);
       await BackendApi.applyAuthToMultipart(req);
       req.fields['root'] = widget.root;
@@ -636,7 +861,6 @@ class _FileBrowserState extends State<_FileBrowser>
   Widget build(BuildContext context) {
     super.build(context);
 
-
     return Scaffold(
       body: adminWebBodyFrame(
         context: context,
@@ -711,7 +935,9 @@ class _FileBrowserState extends State<_FileBrowser>
 // ======================= GAMES TAB (ADMIN POWERS) =======================
 
 class _AdminGamesManager extends StatefulWidget {
-  const _AdminGamesManager({super.key});
+  const _AdminGamesManager({super.key, this.onBulkStateChanged});
+
+  final VoidCallback? onBulkStateChanged;
 
   @override
   State<_AdminGamesManager> createState() => _AdminGamesManagerState();
@@ -729,9 +955,14 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   String _statusFilter = 'all';
   String _categoryFilter = 'all';
   String _sortBy = 'updated_desc';
+  bool _bulkModeEnabled = false;
+  final Set<String> _selectedGameIds = <String>{};
+  List<String> _visibleGameIds = const <String>[];
 
-  static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
+  bool get bulkModeEnabled => _bulkModeEnabled;
+  int get selectedCount => _selectedGameIds.length;
+
+  static final Uri _uploadUrl = BackendApi.uri('upload_file_secure.php');
 
   DatabaseReference get _gamesRef => _db.child('games');
 
@@ -742,6 +973,78 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void toggleBulkMode() {
+    setState(() {
+      _bulkModeEnabled = !_bulkModeEnabled;
+      if (!_bulkModeEnabled) _selectedGameIds.clear();
+    });
+    widget.onBulkStateChanged?.call();
+  }
+
+  void selectAllVisible() {
+    setState(() {
+      _selectedGameIds
+        ..clear()
+        ..addAll(_visibleGameIds);
+    });
+    widget.onBulkStateChanged?.call();
+  }
+
+  void clearSelection() {
+    setState(() => _selectedGameIds.clear());
+    widget.onBulkStateChanged?.call();
+  }
+
+  Future<void> deleteSelected() async {
+    if (_selectedGameIds.isEmpty) return;
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete selected games'),
+            content: Text(
+              'Delete ${_selectedGameIds.length} selected game${_selectedGameIds.length == 1 ? '' : 's'} from RTDB?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    try {
+      for (final id in _selectedGameIds) {
+        await _gamesRef.child(id).remove();
+      }
+      if (!mounted) return;
+      setState(() {
+        _selectedGameIds.clear();
+        _bulkModeEnabled = false;
+      });
+      widget.onBulkStateChanged?.call();
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Selected games deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Bulk delete failed.')),
+        ),
+      );
+    }
   }
 
   String _safeFolderName(String value) {
@@ -771,7 +1074,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     }
 
     final picked = result.files.single;
-    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final uploadUri = await BackendApi.withAuthQuery(_uploadUrl);
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
 
@@ -1913,6 +2216,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     required String gameId,
     required Map<String, dynamic> game,
     required List<String> knownTags,
+    required bool selectionMode,
+    required bool selected,
   }) {
     final name = (game['name'] ?? '').toString().trim();
     final description = (game['description'] ?? '').toString().trim();
@@ -1924,33 +2229,80 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selectionMode && selected ? Colors.orange : Colors.transparent,
+          width: selectionMode && selected ? 2 : 1,
+        ),
+      ),
       child: InkWell(
-        onTap: () => _openGame(game),
+        onTap: () {
+          if (selectionMode) {
+            setState(() {
+              if (selected) {
+                _selectedGameIds.remove(gameId);
+              } else {
+                _selectedGameIds.add(gameId);
+              }
+            });
+            widget.onBulkStateChanged?.call();
+            return;
+          }
+          _openGame(game);
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (thumbnail.isNotEmpty)
-              Image.network(
-                thumbnail,
-                height: 110,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  height: 110,
-                  color: Colors.grey.shade100,
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.image_not_supported_rounded),
-                ),
-              )
-            else
-              Container(
-                height: 110,
-                width: double.infinity,
-                color: Colors.grey.shade100,
-                alignment: Alignment.center,
-                child: const Icon(Icons.sports_esports_rounded, size: 36),
-              ),
+            Stack(
+              children: [
+                if (thumbnail.isNotEmpty)
+                  Image.network(
+                    thumbnail,
+                    height: 110,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      height: 110,
+                      color: Colors.grey.shade100,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.image_not_supported_rounded),
+                    ),
+                  )
+                else
+                  Container(
+                    height: 110,
+                    width: double.infinity,
+                    color: Colors.grey.shade100,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.sports_esports_rounded, size: 36),
+                  ),
+                if (selectionMode)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Checkbox(
+                        value: selected,
+                        onChanged: (_) {
+                          setState(() {
+                            if (selected) {
+                              _selectedGameIds.remove(gameId);
+                            } else {
+                              _selectedGameIds.add(gameId);
+                            }
+                          });
+                          widget.onBulkStateChanged?.call();
+                        },
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(10),
@@ -2043,26 +2395,29 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                         ),
                       ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => _showGameForm(
-                              gameId: gameId,
-                              existingGame: game,
-                              knownTags: knownTags,
+                    if (selectionMode)
+                      const SizedBox.shrink()
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => _showGameForm(
+                                gameId: gameId,
+                                existingGame: game,
+                                knownTags: knownTags,
+                              ),
+                              child: const Text('Edit'),
                             ),
-                            child: const Text('Edit'),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          onPressed: () => _deleteGame(gameId),
-                          icon: const Icon(Icons.delete_rounded),
-                          tooltip: 'Delete',
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () => _deleteGame(gameId),
+                            icon: const Icon(Icons.delete_rounded),
+                            tooltip: 'Delete',
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -2283,7 +2638,6 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   Widget build(BuildContext context) {
     super.build(context);
 
-
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
@@ -2356,6 +2710,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
             }).toList();
 
             final visibleItems = _applyFiltersAndSort(items: items);
+            _visibleGameIds = visibleItems.map((e) => e.key).toList();
+            _selectedGameIds.removeWhere((id) => !_visibleGameIds.contains(id));
 
             return Column(
               children: [
@@ -2415,6 +2771,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                 gameId: item.key,
                                 game: item.value,
                                 knownTags: knownTags,
+                                selectionMode: _bulkModeEnabled,
+                                selected: _selectedGameIds.contains(item.key),
                               );
                             },
                           ),
@@ -2432,5 +2790,770 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class _AdminStoriesManager extends StatefulWidget {
+  const _AdminStoriesManager({super.key, this.onBulkStateChanged});
+
+  final VoidCallback? onBulkStateChanged;
+
+  @override
+  State<_AdminStoriesManager> createState() => _AdminStoriesManagerState();
+}
+
+class _AdminStoriesManagerState extends State<_AdminStoriesManager>
+    with AutomaticKeepAliveClientMixin {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final TextEditingController _searchController = TextEditingController();
+  final String? _myUid = FirebaseAuth.instance.currentUser?.uid;
+
+  static final Uri _uploadUrl = BackendApi.uri('upload_file_secure.php');
+
+  String _searchQuery = '';
+  bool _bulkModeEnabled = false;
+  final Set<String> _selectedStoryIds = <String>{};
+  List<String> _visibleStoryIds = const <String>[];
+
+  DatabaseReference get _storiesRef => _db.child('stories');
+
+  bool get bulkModeEnabled => _bulkModeEnabled;
+  int get selectedCount => _selectedStoryIds.length;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _safeFolderName(String value) {
+    final cleaned = value
+        .trim()
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    if (cleaned.isEmpty) return 'story';
+    return cleaned;
+  }
+
+  String _buildServerFolderPath({
+    required String ownerUid,
+    required String storyUid,
+    required String storyName,
+  }) {
+    return 'admin/$ownerUid/$storyUid-${_safeFolderName(storyName)}';
+  }
+
+  Future<String?> _uploadStoryAsset({
+    required String folderPath,
+    required bool imageOnly,
+  }) async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      withData: true,
+      type: imageOnly ? FileType.image : FileType.any,
+    );
+    if (result == null || result.files.isEmpty) return null;
+
+    final picked = result.files.single;
+    final uploadUri = await BackendApi.withAuthQuery(_uploadUrl);
+    final req = http.MultipartRequest('POST', uploadUri);
+    await BackendApi.applyAuthToMultipart(req);
+
+    req.fields['root'] = 'stories';
+    req.fields['path'] = folderPath;
+
+    if (picked.path != null && picked.path!.isNotEmpty) {
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          picked.path!,
+          filename: picked.name,
+        ),
+      );
+    } else {
+      final bytes = picked.bytes;
+      if (bytes == null) {
+        throw Exception('Could not read selected file');
+      }
+      req.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
+      );
+    }
+
+    final streamed = await req.send();
+    final response = await http.Response.fromStream(streamed);
+    final raw = response.body.trim();
+    if (!raw.startsWith('{')) {
+      throw Exception('Server did not return JSON.');
+    }
+
+    final data = jsonDecode(raw);
+    if (data is! Map<String, dynamic> || data['success'] != true) {
+      throw Exception(
+        (data is Map ? data['message'] : 'Upload failed').toString(),
+      );
+    }
+
+    final url = (data['url'] ?? '').toString().trim();
+    if (url.isEmpty) {
+      throw Exception('Upload succeeded but no URL was returned');
+    }
+    return url;
+  }
+
+  Future<void> _showAddStorySheet() async {
+    final uid = _myUid;
+    if (uid == null || uid.isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Please sign in again.')),
+      );
+      return;
+    }
+
+    final ref = _storiesRef.push();
+    final storyId = ref.key ?? '';
+    if (storyId.isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not prepare story id.')),
+      );
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+    final genreController = TextEditingController();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        var uploadingStory = false;
+        var uploadingThumb = false;
+        var saving = false;
+        String storyUrl = '';
+        String thumbnailUrl = '';
+
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            final storyName = nameController.text.trim();
+            final folderPath = _buildServerFolderPath(
+              ownerUid: uid,
+              storyUid: storyId,
+              storyName: storyName.isEmpty ? 'story' : storyName,
+            );
+
+            Future<void> uploadStoryFile() async {
+              setLocalState(() => uploadingStory = true);
+              try {
+                final uploaded = await _uploadStoryAsset(
+                  folderPath: folderPath,
+                  imageOnly: false,
+                );
+                if (uploaded != null) {
+                  setLocalState(() => storyUrl = uploaded);
+                }
+              } catch (e) {
+                if (!context.mounted) return;
+                AppToast.fromSnackBar(
+                  context,
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload story file.'),
+                    ),
+                  ),
+                );
+              } finally {
+                setLocalState(() => uploadingStory = false);
+              }
+            }
+
+            Future<void> uploadThumbnail() async {
+              setLocalState(() => uploadingThumb = true);
+              try {
+                final uploaded = await _uploadStoryAsset(
+                  folderPath: folderPath,
+                  imageOnly: true,
+                );
+                if (uploaded != null) {
+                  setLocalState(() => thumbnailUrl = uploaded);
+                }
+              } catch (e) {
+                if (!context.mounted) return;
+                AppToast.fromSnackBar(
+                  context,
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload thumbnail.'),
+                    ),
+                  ),
+                );
+              } finally {
+                setLocalState(() => uploadingThumb = false);
+              }
+            }
+
+            Future<void> saveStory() async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) {
+                AppToast.fromSnackBar(
+                  context,
+                  const SnackBar(content: Text('Please enter story title.')),
+                );
+                return;
+              }
+              if (storyUrl.trim().isEmpty) {
+                AppToast.fromSnackBar(
+                  context,
+                  const SnackBar(content: Text('Please upload story file.')),
+                );
+                return;
+              }
+
+              setLocalState(() => saving = true);
+              try {
+                await ref.update({
+                  'storyId': storyId,
+                  'storyUid': storyId,
+                  'teacherUid': uid,
+                  'adminUid': uid,
+                  'name': name,
+                  'description': descController.text.trim(),
+                  'genre': genreController.text.trim(),
+                  'link': storyUrl.trim(),
+                  'thumbnail': thumbnailUrl.trim(),
+                  'status': 'ready',
+                  'serverFolderPath': folderPath,
+                  'createdAt': ServerValue.timestamp,
+                  'updatedAt': ServerValue.timestamp,
+                });
+
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+                if (!mounted) return;
+                AppToast.fromSnackBar(
+                  context,
+                  const SnackBar(content: Text('Story added successfully.')),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                AppToast.fromSnackBar(
+                  context,
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not save story.'),
+                    ),
+                  ),
+                );
+              } finally {
+                setLocalState(() => saving = false);
+              }
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  8,
+                  16,
+                  MediaQuery.of(context).viewInsets.bottom + 16,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Add Story',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Title',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setLocalState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: descController,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: genreController,
+                        decoration: const InputDecoration(
+                          labelText: 'Genre',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: uploadingStory
+                                  ? null
+                                  : uploadStoryFile,
+                              icon: uploadingStory
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.upload_file_rounded),
+                              label: Text(
+                                storyUrl.isEmpty
+                                    ? 'Upload Story File'
+                                    : 'Replace Story File',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (storyUrl.isNotEmpty)
+                        Text(
+                          storyUrl,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: uploadingThumb
+                                  ? null
+                                  : uploadThumbnail,
+                              icon: uploadingThumb
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.image_rounded),
+                              label: Text(
+                                thumbnailUrl.isEmpty
+                                    ? 'Upload Thumbnail'
+                                    : 'Replace Thumbnail',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (thumbnailUrl.isNotEmpty)
+                        Text(
+                          thumbnailUrl,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: saving
+                                  ? null
+                                  : () => Navigator.of(ctx).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: saving ? null : saveStory,
+                              child: Text(saving ? 'Saving...' : 'Save Story'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    nameController.dispose();
+    descController.dispose();
+    genreController.dispose();
+  }
+
+  void toggleBulkMode() {
+    setState(() {
+      _bulkModeEnabled = !_bulkModeEnabled;
+      if (!_bulkModeEnabled) _selectedStoryIds.clear();
+    });
+    widget.onBulkStateChanged?.call();
+  }
+
+  void selectAllVisible() {
+    setState(() {
+      _selectedStoryIds
+        ..clear()
+        ..addAll(_visibleStoryIds);
+    });
+    widget.onBulkStateChanged?.call();
+  }
+
+  void clearSelection() {
+    setState(() => _selectedStoryIds.clear());
+    widget.onBulkStateChanged?.call();
+  }
+
+  Future<void> deleteSelected() async {
+    if (_selectedStoryIds.isEmpty) return;
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete selected stories'),
+            content: Text(
+              'Delete ${_selectedStoryIds.length} selected stor${_selectedStoryIds.length == 1 ? 'y' : 'ies'} from RTDB?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    try {
+      for (final id in _selectedStoryIds) {
+        await _storiesRef.child(id).remove();
+      }
+      if (!mounted) return;
+      setState(() {
+        _selectedStoryIds.clear();
+        _bulkModeEnabled = false;
+      });
+      widget.onBulkStateChanged?.call();
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Selected stories deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Bulk delete failed.')),
+        ),
+      );
+    }
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  List<MapEntry<String, Map<String, dynamic>>> _applyFilters(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
+    var filtered = items.where((entry) {
+      final story = entry.value;
+      final name = (story['name'] ?? '').toString().toLowerCase().trim();
+      final desc = (story['description'] ?? '').toString().toLowerCase().trim();
+      final genre = (story['genre'] ?? '').toString().toLowerCase().trim();
+      final status = (story['status'] ?? '').toString().toLowerCase().trim();
+      final q = _searchQuery;
+      return q.isEmpty ||
+          name.contains(q) ||
+          desc.contains(q) ||
+          genre.contains(q) ||
+          status.contains(q);
+    }).toList();
+
+    filtered.sort((a, b) {
+      final aTs = _toInt(a.value['updatedAt']);
+      final bTs = _toInt(b.value['updatedAt']);
+      return bTs.compareTo(aTs);
+    });
+    return filtered;
+  }
+
+  Widget _buildStoryCard(String storyId, Map<String, dynamic> story) {
+    final name = (story['name'] ?? '').toString().trim();
+    final status = (story['status'] ?? 'ready').toString().trim();
+    final genre = (story['genre'] ?? '').toString().trim();
+    final thumbnail = (story['thumbnail'] ?? '').toString().trim();
+    final selected = _selectedStoryIds.contains(storyId);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: _bulkModeEnabled && selected
+              ? Colors.orange
+              : Colors.transparent,
+          width: _bulkModeEnabled && selected ? 2 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: () {
+          if (!_bulkModeEnabled) return;
+          setState(() {
+            if (selected) {
+              _selectedStoryIds.remove(storyId);
+            } else {
+              _selectedStoryIds.add(storyId);
+            }
+          });
+          widget.onBulkStateChanged?.call();
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                if (thumbnail.isNotEmpty)
+                  Image.network(
+                    thumbnail,
+                    height: 110,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      height: 110,
+                      color: Colors.grey.shade100,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.image_not_supported_rounded),
+                    ),
+                  )
+                else
+                  Container(
+                    height: 110,
+                    width: double.infinity,
+                    color: Colors.grey.shade100,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.menu_book_rounded, size: 36),
+                  ),
+                if (_bulkModeEnabled)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Checkbox(
+                        value: selected,
+                        onChanged: (_) {
+                          setState(() {
+                            if (selected) {
+                              _selectedStoryIds.remove(storyId);
+                            } else {
+                              _selectedStoryIds.add(storyId);
+                            }
+                          });
+                          widget.onBulkStateChanged?.call();
+                        },
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'Untitled Story' : name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        Chip(
+                          label: Text(status),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        if (genre.isNotEmpty)
+                          Chip(
+                            label: Text(genre),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      'ID: $storyId',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddStorySheet,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add Story'),
+      ),
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1600,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: _storiesRef.onValue,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting &&
+                snap.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final value = snap.data?.snapshot.value;
+            if (value == null || value is! Map) {
+              return const Center(
+                child: Text(
+                  'No stories found.',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              );
+            }
+
+            final raw = Map<dynamic, dynamic>.from(value);
+            final items = raw.entries.map((entry) {
+              final id = entry.key.toString();
+              final map = entry.value is Map
+                  ? Map<String, dynamic>.from(entry.value)
+                  : <String, dynamic>{};
+              return MapEntry(id, map);
+            }).toList();
+
+            final visible = _applyFilters(items);
+            _visibleStoryIds = visible.map((e) => e.key).toList();
+            _selectedStoryIds.removeWhere(
+              (id) => !_visibleStoryIds.contains(id),
+            );
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (v) =>
+                        setState(() => _searchQuery = v.trim().toLowerCase()),
+                    decoration: InputDecoration(
+                      hintText: 'Search stories...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              icon: const Icon(Icons.clear_rounded),
+                            ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Total stories: ${visible.length}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: visible.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No stories match your search.',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        )
+                      : GridView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.72,
+                              ),
+                          itemCount: visible.length,
+                          itemBuilder: (context, index) {
+                            final item = visible[index];
+                            return _buildStoryCard(item.key, item.value);
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
 }
