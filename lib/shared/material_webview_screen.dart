@@ -754,6 +754,27 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     await launchUrl(uri, webOnlyWindowName: '_self');
   }
 
+  bool _looksLikeMissingContentError(String raw) {
+    final lower = raw.toLowerCase();
+    return lower.contains('404') ||
+        lower.contains('410') ||
+        lower.contains('not found') ||
+        lower.contains('err_file_not_found') ||
+        lower.contains('file not found');
+  }
+
+  String _displayErrorMessage() {
+    final raw = (_lastError ?? '').trim();
+    if (raw.isEmpty) return 'Unknown error';
+    if (_looksLikeMissingContentError(raw)) {
+      final title = widget.title.trim();
+      final sessionPart = title.isEmpty ? '' : ' Session: "$title".';
+      return 'This lesson file is currently unavailable. '
+          'Please contact Your Bridge School support and share your course title + session number.$sessionPart';
+    }
+    return raw;
+  }
+
   Widget _buildErrorState() {
     return Center(
       child: Padding(
@@ -776,12 +797,12 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               ),
               const SizedBox(height: 12),
               const Text(
-                'Could not open game',
+                'Could not open content',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 10),
               Text(
-                _lastError ?? 'Unknown error',
+                _displayErrorMessage(),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   height: 1.45,

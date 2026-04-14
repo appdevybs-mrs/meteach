@@ -16,6 +16,7 @@ import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../services/course_feedback_service.dart';
+import '../services/storage_existence.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
@@ -583,18 +584,49 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
   }
 
-  String _lessonUnavailableMessage({required String lessonType}) {
-    return '$lessonType is currently unavailable or misconfigured. '
+  String _lessonUnavailableMessage({
+    required String lessonType,
+    required _RecordedSession session,
+  }) {
+    final sessionTitle = session.title.trim().isEmpty
+        ? 'Session ${session.sessionNumber > 0 ? session.sessionNumber : '#'}'
+        : session.title.trim();
+    return '$lessonType is currently unavailable for "$sessionTitle". '
         'Please refresh. If this continues, contact Your Bridge School support and share your course name + session number.';
+  }
+
+  Future<bool> _isLessonAssetMissingOnServer({required String url}) async {
+    final check = await StorageExistence.checkUrlExistsOnManagedStorage(
+      url,
+      expect: 'file',
+    );
+    return check == StorageCheckResult.missing;
   }
 
   Future<void> _openMaterials(_RecordedSession session) async {
     final url = session.materialsUrl.trim();
     _debug('openMaterials sessionId=${session.id} hasUrl=${url.isNotEmpty}');
     if (!_isValidWebUrl(url)) {
-      _snack(_lessonUnavailableMessage(lessonType: 'Reading lesson'));
+      _snack(
+        _lessonUnavailableMessage(
+          lessonType: 'Reading lesson',
+          session: session,
+        ),
+      );
       return;
     }
+
+    final isMissing = await _isLessonAssetMissingOnServer(url: url);
+    if (isMissing) {
+      _snack(
+        _lessonUnavailableMessage(
+          lessonType: 'Reading lesson',
+          session: session,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
 
     await Navigator.push(
       context,
@@ -852,9 +884,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final videoUrl = session.videoUrl.trim();
     _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
     if (!hasVideo || !_isValidWebUrl(videoUrl)) {
-      _snack(_lessonUnavailableMessage(lessonType: 'Video lesson'));
+      _snack(
+        _lessonUnavailableMessage(lessonType: 'Video lesson', session: session),
+      );
       return;
     }
+
+    final isMissing = await _isLessonAssetMissingOnServer(url: videoUrl);
+    if (isMissing) {
+      _snack(
+        _lessonUnavailableMessage(lessonType: 'Video lesson', session: session),
+      );
+      return;
+    }
+    if (!mounted) return;
 
     await Navigator.push(
       context,

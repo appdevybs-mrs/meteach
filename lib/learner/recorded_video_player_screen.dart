@@ -80,6 +80,23 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     // no-op in production build
   }
 
+  bool _looksLikeMissingAssetError(String raw) {
+    final lower = raw.toLowerCase();
+    return lower.contains('404') ||
+        lower.contains('410') ||
+        lower.contains('not found') ||
+        lower.contains('err_file_not_found') ||
+        lower.contains('file not found');
+  }
+
+  String _videoUnavailableMessage() {
+    final sessionTitle = widget.sessionTitle.trim().isEmpty
+        ? 'this session'
+        : '"${widget.sessionTitle.trim()}"';
+    return 'This video lesson is currently unavailable. '
+        'Please contact Your Bridge School support and share your course title + session number. Session: $sessionTitle.';
+  }
+
   DatabaseReference get _progressRef => _db
       .ref(_usersNode)
       .child(widget.uid)
@@ -245,9 +262,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _debug('loadAndInit success initialized=true');
     } catch (e) {
       _debug('loadAndInit error=$e');
+      final message = e.toString();
       if (!mounted) return;
       setState(() {
-        _error = toHumanError(e);
+        _error = _looksLikeMissingAssetError(message)
+            ? _videoUnavailableMessage()
+            : toHumanError(e);
         _busy = false;
       });
     }
@@ -313,9 +333,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final value = controller.value;
     if (value.hasError) {
       final raw = (value.errorDescription ?? '').trim();
-      final lower = raw.toLowerCase();
-      final pretty = lower.contains('response code: 404')
-          ? 'Video file not found on server (404). Please contact support.'
+      final pretty = _looksLikeMissingAssetError(raw)
+          ? _videoUnavailableMessage()
           : (raw.isEmpty
                 ? 'Video playback failed.'
                 : 'Video playback failed: $raw');
@@ -1609,7 +1628,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-
     final title = widget.sessionTitle.trim().isEmpty
         ? 'Session Video'
         : widget.sessionTitle.trim();
