@@ -1,10 +1,19 @@
 RewriteEngine On
 RewriteBase /
 
-# Serve static files directly
+# Serve static files and directories directly
 RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^ - [L]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
 
-# If file not found, serve index
+# Support extensionless page URLs (e.g. /courses -> /courses/index.html)
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^ /website/index.html [L]
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{DOCUMENT_ROOT}/$1/index.html -f
+RewriteRule ^(.+?)/?$ /$1/index.html [L]
+
+# Fallback to home page
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ /index.html [L]
