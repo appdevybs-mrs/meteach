@@ -62,3 +62,9 @@ firebase-debug.log
 .vscode/settings.json
 .vscode/launch.json
 .vscode/tasks.json
+
+# Local locked secret archives (never commit)
+_LOCAL_LOCKED_SECRETS_DO_NOT_DELETE/
+local_transfer_2026-04-14_api_your-bridge-school/
+cpanel_upload_secure_hotfix.zip
+dream_english_academy.zip

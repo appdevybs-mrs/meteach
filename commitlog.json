@@ -1,33 +1,99 @@
 {
   "commit_log_version": 1,
-  "date": "2026-04-13",
+  "date": "2026-04-14",
   "commit": "TBD_AFTER_COMMIT",
-  "title": "Add standardized human+machine commit logging artifacts",
+  "title": "Fix recorded syllabus sync and quarantine sensitive archives",
   "branch": "main",
   "pushed": false,
   "summary": [
-    "Standardized commit logging format for future commits.",
-    "Added machine-readable JSON alongside human-readable shell log.",
-    "Made commit log expectations explicit and parse-friendly."
+    "Added server-truth sync behavior for recorded syllabus asset status in admin.",
+    "Auto-clears stale RTDB recorded asset URLs when files do not exist on server.",
+    "Moved sensitive local transfer/deployment archives into a locked local vault and removed them from git tracking."
   ],
   "changes": [
     {
+      "file": "lib/admin/course_syllabus_screen.dart",
+      "what": "Changed refresh behavior into full server sync plus stale URL cleanup and save.",
+      "why": "RTDB URL existence alone caused false positive lesson icons after bulk upload and stale links.",
+      "how": "Checked server file presence per video/material URL, cleared missing URLs and dependent fields, persisted cleanup with merge-skip save path, and updated app bar action icon/tooltip."
+    },
+    {
+      "file": ".gitignore",
+      "what": "Added ignore rules for local locked vault and sensitive archive sources.",
+      "why": "Prevent accidental recommit of credential-bearing local artifacts.",
+      "how": "Ignored _LOCAL_LOCKED_SECRETS_DO_NOT_DELETE/, local transfer directory, and selected top-level zip archives."
+    },
+    {
+      "file": "cpanel_upload_secure_hotfix.zip",
+      "what": "Removed from tracking.",
+      "why": "Deployment archive should not remain versioned due to security risk.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
+      "file": "dream_english_academy.zip",
+      "what": "Removed from tracking.",
+      "why": "Project archive is local artifact and can contain sensitive data.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
+      "file": "local_transfer_2026-04-14_api_your-bridge-school/TRANSFER_LOG.txt",
+      "what": "Removed from tracking.",
+      "why": "Log references credential archive handling and should remain local-only.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
+      "file": "local_transfer_2026-04-14_api_your-bridge-school/api-config.bak.zip",
+      "what": "Removed from tracking.",
+      "why": "Archive includes sensitive API/service-account backup data.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
+      "file": "local_transfer_2026-04-14_api_your-bridge-school/firebase-service-account.json.zip",
+      "what": "Removed from tracking.",
+      "why": "Contains service account private key material.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
+      "file": "local_transfer_2026-04-14_api_your-bridge-school/secure.zip",
+      "what": "Removed from tracking.",
+      "why": "Contains secure runtime configuration data.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
+      "file": "local_transfer_2026-04-14_api_your-bridge-school/storage.zip",
+      "what": "Removed from tracking.",
+      "why": "Storage archive may include sensitive assets.",
+      "how": "Moved to local vault and committed deletion from git tree."
+    },
+    {
       "file": "commitlog.sh",
-      "what": "Replaced ad-hoc notes with a stable, sectioned commit log format.",
-      "why": "Keep logs human-readable and script-friendly in one artifact.",
-      "how": "Added normalized headings and key=value style entries for parsing."
+      "what": "Updated human-readable release log for this commit.",
+      "why": "Provide audit-friendly narrative of intent, impact, and validation.",
+      "how": "Recorded what/why/how entries for every tracked change and security action."
     },
     {
       "file": "commitlog.json",
-      "what": "Added machine-readable commit metadata and per-file change entries.",
-      "why": "Allow automation/reporting systems to ingest commit rationale reliably.",
-      "how": "Defined a simple JSON schema with summary, changes[], and validation[] blocks."
+      "what": "Updated machine-readable commit log schema payload for this commit.",
+      "why": "Enable deterministic tooling to parse commit scope and validation outcomes.",
+      "how": "Wrote structured summary, per-file actions, and validation command results."
     }
   ],
   "validation": [
     {
-      "command": "python3 -m json.tool commitlog.json",
-      "result": "Schema and JSON syntax are valid."
+      "command": "flutter analyze lib/admin/course_syllabus_screen.dart",
+      "result": "No new errors introduced by this change (existing warnings/infos remain)."
+    },
+    {
+      "command": "git status --short --branch",
+      "result": "Only intended files are modified/deleted before commit."
+    },
+    {
+      "command": "chmod 500 _LOCAL_LOCKED_SECRETS_DO_NOT_DELETE && chmod 400 _LOCAL_LOCKED_SECRETS_DO_NOT_DELETE/*",
+      "result": "Local vault permission lock applied."
+    },
+    {
+      "command": "chattr +i _LOCAL_LOCKED_SECRETS_DO_NOT_DELETE ...",
+      "result": "Immutable flag unsupported on current filesystem; permission lock retained."
     }
   ]
 }

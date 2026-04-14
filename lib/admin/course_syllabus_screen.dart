@@ -142,12 +142,16 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         _recordedAssetBusy = true;
         _recordedAssetDone = 0;
         _recordedAssetTotal = _totalSessions;
-        _recordedAssetLabel = 'Checking lesson assets from server...';
+        _recordedAssetLabel = 'Syncing lesson assets with server...';
       });
     }
 
     final next = <String, _LessonAssetPresence>{};
     final listCache = <String, List<Map<String, dynamic>>>{};
+    final nextUnits = <SyllabusUnit>[];
+    int checkedAssetCount = 0;
+    int clearedVideoCount = 0;
+    int clearedHtmlCount = 0;
 
     Future<bool> existsOnServer(String url) async {
       final rel = _SyllabusServerStorage.extractRelativePathFromUrl(url);
@@ -174,10 +178,14 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
 
     try {
-      for (final unit in _units) {
-        for (final s in unit.sessions) {
+      for (int ui = 0; ui < _units.length; ui++) {
+        final unit = _units[ui];
+        final sessions = <SyllabusSession>[];
+        for (int si = 0; si < unit.sessions.length; si++) {
+          final s = unit.sessions[si];
           final id = s.id.trim();
           if (id.isEmpty) {
+            sessions.add(s);
             if (mounted) setState(() => _recordedAssetDone += 1);
             continue;
           }
@@ -185,6 +193,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           final htmlUrl = s.materialsUrl.trim();
           bool videoOk = videoUrl.isNotEmpty;
           bool htmlOk = htmlUrl.isNotEmpty;
+
+          if (videoUrl.isNotEmpty) checkedAssetCount += 1;
+          if (htmlUrl.isNotEmpty) checkedAssetCount += 1;
 
           if (videoUrl.isNotEmpty) {
             try {
@@ -201,21 +212,57 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             }
           }
 
+          var updated = s;
+          if (videoUrl.isNotEmpty && !videoOk) {
+            updated = updated.copyWith(videoUrl: '', videoThumbnailUrl: '');
+            clearedVideoCount += 1;
+          }
+          if (htmlUrl.isNotEmpty && !htmlOk) {
+            updated = updated.copyWith(materialsUrl: '');
+            clearedHtmlCount += 1;
+          }
+          if (updated.videoUrl.trim().isEmpty &&
+              updated.materialsUrl.trim().isEmpty &&
+              updated.serverFolderPath.trim().isNotEmpty) {
+            updated = updated.copyWith(serverFolderPath: '');
+          }
+
+          if (updated.videoUrl != s.videoUrl ||
+              updated.materialsUrl != s.materialsUrl ||
+              updated.videoThumbnailUrl != s.videoThumbnailUrl ||
+              updated.serverFolderPath != s.serverFolderPath) {
+            _bulkTouchedSessionIds.add(id);
+          }
+
           next[id] = _LessonAssetPresence(videoOk: videoOk, htmlOk: htmlOk);
+          sessions.add(updated);
           if (mounted) setState(() => _recordedAssetDone += 1);
         }
+        nextUnits.add(unit.copyWith(sessions: sessions));
       }
+
+      final clearedTotal = clearedVideoCount + clearedHtmlCount;
+
       if (mounted) {
         setState(() {
+          _units = nextUnits;
           _lessonPresenceBySessionId
             ..clear()
             ..addAll(next);
         });
       }
+
+      if (clearedTotal > 0) {
+        await _saveSyllabus(showToast: false, skipRecordedMerge: true);
+      }
+
       if (mounted) {
+        final clearedText = clearedTotal > 0
+            ? ' • Cleared $clearedTotal stale URL${clearedTotal == 1 ? '' : 's'}'
+            : '';
         AppToast.show(
           context,
-          'Lesson assets refreshed from server.',
+          'Sync complete. Checked $checkedAssetCount asset URL${checkedAssetCount == 1 ? '' : 's'}$clearedText.',
           type: AppToastType.success,
         );
       }
@@ -338,7 +385,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
   }
 
-  Future<void> _saveSyllabus({bool showToast = true}) async {
+  Future<void> _saveSyllabus({
+    bool showToast = true,
+    bool skipRecordedMerge = false,
+  }) async {
     setState(() => _saving = true);
     try {
       for (int i = 0; i < _units.length; i++) {
@@ -350,7 +400,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
       _ensureSessionNumbers();
 
-      await _mergeRecordedAssetsForUntouchedBulkSessions();
+      if (!skipRecordedMerge) {
+        await _mergeRecordedAssetsForUntouchedBulkSessions();
+      }
 
       final courseMap = await _loadCourseMeta();
       final courseCode = (courseMap['course_code'] ?? '').toString();
@@ -1334,12 +1386,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             ),
           if (_isRecordedVariant)
             IconButton(
-              tooltip: 'Refresh lesson files status',
+              tooltip: 'Sync lesson files from server',
               onPressed: (_loading || _saving || _recordedAssetBusy)
                   ? null
                   : _refreshRecordedLessonPresenceFromServer,
-              icon: const Icon(Icons.check_circle_outline_rounded),
-              color: const Color(0xFF16A34A),
+              icon: const Icon(Icons.refresh_rounded),
+              color: const Color(0xFF2563EB),
             ),
           IconButton(
             tooltip: 'Reload',
