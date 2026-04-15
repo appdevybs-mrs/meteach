@@ -38,6 +38,7 @@ import 'admin_priority_alerts_screen.dart';
 import 'admin_notification_audit_screen.dart';
 import 'admin_vocab_words_lists_screen.dart';
 import 'admin_window_access_screen.dart';
+import 'admin_finance_screen.dart';
 import '../services/window_access_service.dart';
 import 'admin_payment_summary_sync_service.dart';
 
@@ -254,6 +255,24 @@ class _AdminHomeState extends State<AdminHome> {
               () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
               ),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Finance',
+        'Range income and X plans',
+        _DashCard(
+          title: 'Finance',
+          subtitle: 'Range income and X plans',
+          tags: const ['From-To', '1x/2x/...'],
+          icon: Icons.account_balance_wallet_rounded,
+          color: AdminHome.accentAmber,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminFinance,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminFinanceScreen()),
             ),
           ),
         ),

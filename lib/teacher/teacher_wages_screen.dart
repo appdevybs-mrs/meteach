@@ -1,10 +1,10 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/material.dart';
 
+import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
-import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherWagesScreen extends StatefulWidget {
@@ -14,19 +14,12 @@ class TeacherWagesScreen extends StatefulWidget {
     if (v == null) return 0;
     if (v is int) return v;
     if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  static bool asBool(dynamic v) {
-    if (v == null) return false;
-    if (v is bool) return v;
-    final s = v.toString().trim().toLowerCase();
-    return s == 'true' || s == '1' || s == 'yes';
+    return int.tryParse(v.toString().trim()) ?? 0;
   }
 
   static String two(int n) => n.toString().padLeft(2, '0');
 
-  static String monthKeyFromPaidAtMs(int ms) {
+  static String monthKeyFromMs(int ms) {
     if (ms <= 0) return 'Unknown';
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     return '${d.year}-${two(d.month)}';
@@ -87,9 +80,76 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
 
   AppPalette get p => appThemeController.palette;
 
-  Future<void> _confirmPaidByTeacher({
+  _Allocation _allocationFromPayment(Map<String, dynamic> payment) {
+    final original = TeacherWagesScreen.asInt(payment['amount']);
+    final w = TeacherWagesScreen.asInt(payment['financeWaitingAmount']);
+    final t = TeacherWagesScreen.asInt(payment['financeTbpaidAmount']);
+    final d = TeacherWagesScreen.asInt(payment['financeDoneAmount']);
+    if (w + t + d == original && original >= 0) {
+      return _Allocation(original: original, waiting: w, tbpaid: t, done: d);
+    }
+
+    final status = (payment['financePayoutStatus'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (status == 'done') {
+      return _Allocation(
+        original: original,
+        waiting: 0,
+        tbpaid: 0,
+        done: original,
+      );
+    }
+    if (status == 'tbpaid') {
+      return _Allocation(
+        original: original,
+        waiting: 0,
+        tbpaid: original,
+        done: 0,
+      );
+    }
+    if (status == 'split') {
+      final splitPaid = TeacherWagesScreen.asInt(
+        payment['financeSplitPaidAmount'],
+      );
+      var splitWaiting = TeacherWagesScreen.asInt(
+        payment['financeSplitWaitingAmount'],
+      );
+      if (splitWaiting <= 0) splitWaiting = original - splitPaid;
+      final paid = splitPaid.clamp(0, original);
+      final waiting = splitWaiting.clamp(0, original - paid);
+      final paidStatus = (payment['financeSplitPaidStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      if (paidStatus == 'done') {
+        return _Allocation(
+          original: original,
+          waiting: waiting,
+          tbpaid: 0,
+          done: paid,
+        );
+      }
+      return _Allocation(
+        original: original,
+        waiting: waiting,
+        tbpaid: paid,
+        done: 0,
+      );
+    }
+
+    return _Allocation(
+      original: original,
+      waiting: original,
+      tbpaid: 0,
+      done: 0,
+    );
+  }
+
+  Future<void> _confirmTbpaidAsDone({
     required BuildContext context,
-    required String paymentId,
+    required _TeacherWageItem item,
   }) async {
     final ok =
         await showDialog<bool>(
@@ -100,15 +160,15 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
             title: Text(
-              'Confirm this wage?',
+              'Confirm payment received?',
               style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
             ),
             content: Text(
-              'Only confirm if you really received the money from the admin.\nAfter confirming, you cannot undo it.',
+              'This will move ${item.tbpaidAmount} DA from TBPAID to DONE for ${item.learnerName}.',
               style: TextStyle(
                 color: p.text.withValues(alpha: 0.82),
                 fontWeight: FontWeight.w700,
-                height: 1.4,
+                height: 1.35,
               ),
             ),
             actions: [
@@ -143,12 +203,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
 
     if (!ok) return;
 
-    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (myUid.trim().isEmpty) return;
-
-    final ref = FirebaseDatabase.instance.ref('payments/$paymentId');
-
     try {
+      final ref = FirebaseDatabase.instance.ref('payments/${item.paymentId}');
       final snap = await ref.get();
       final v = snap.value;
       if (v is! Map) {
@@ -159,56 +215,35 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
         );
         return;
       }
-
       final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-
-      final teacherId = (m['teacherId'] ?? '').toString().trim();
-      if (teacherId != myUid) {
+      final allocation = _allocationFromPayment(m.cast<String, dynamic>());
+      if (allocation.tbpaid <= 0) {
         if (!context.mounted) return;
         AppToast.fromSnackBar(
           context,
-          const SnackBar(
-            content: Text('Not allowed: this is not your payment.'),
-          ),
+          const SnackBar(content: Text('This item has no TBPAID amount now.')),
         );
         return;
       }
 
-      final adminPaid = TeacherWagesScreen.asBool(m['teacherPaid']);
-      if (!adminPaid) {
-        if (!context.mounted) return;
-        AppToast.fromSnackBar(
-          context,
-          const SnackBar(
-            content: Text('Admin has not marked this as PAID yet.'),
-          ),
-        );
-        return;
-      }
-
-      final alreadyConfirmed = TeacherWagesScreen.asBool(m['teacherConfirmed']);
-      if (alreadyConfirmed) {
-        if (!context.mounted) return;
-        AppToast.fromSnackBar(
-          context,
-          const SnackBar(content: Text('Already confirmed ✅')),
-        );
-        return;
-      }
-
+      final nextDone = allocation.done + allocation.tbpaid;
       await ref.update({
+        'financeWaitingAmount': allocation.waiting,
+        'financeTbpaidAmount': 0,
+        'financeDoneAmount': nextDone,
+        'financePayoutStatus': nextDone == allocation.original
+            ? 'done'
+            : 'split',
+        'financeAllocationUpdatedAt': ServerValue.timestamp,
         'teacherConfirmed': true,
         'teacherConfirmedAt': ServerValue.timestamp,
-        'teacherConfirmedBy': myUid,
+        'teacherConfirmedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
       });
 
       if (!context.mounted) return;
       AppToast.fromSnackBar(
         context,
-        const SnackBar(
-          content: Text('Confirmed ✅'),
-          duration: Duration(milliseconds: 900),
-        ),
+        const SnackBar(content: Text('Moved to DONE ✅')),
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -226,7 +261,6 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
   @override
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -248,7 +282,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             ),
             const SizedBox(height: 2),
             Text(
-              'Track paid, pending, and confirmed wages',
+              'TBPAID items waiting your confirmation',
               style: TextStyle(
                 color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
@@ -257,7 +291,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             ),
           ],
         ),
-        actions: [const SizedBox.shrink()],
+        actions: const [SizedBox.shrink()],
       ),
       body: teacherWebBodyFrame(
         context: context,
@@ -271,8 +305,6 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
                     .equalTo(myUid)
                     .onValue,
           builder: (context, snap) {
-            final raw = snap.data?.snapshot.value;
-
             if (snap.hasError) {
               return Center(
                 child: Text(
@@ -289,87 +321,146 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
               return Center(child: CircularProgressIndicator(color: p.accent));
             }
 
+            final raw = snap.data?.snapshot.value;
             if (raw is! Map) {
-              return _EmptyWagesState(palette: p, text: 'No payments found.');
-            }
-
-            final mine = <Map<String, dynamic>>[];
-            raw.forEach((k, v) {
-              if (k == null || v == null) return;
-              if (v is! Map) return;
-
-              final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-              final teacherId = (m['teacherId'] ?? '').toString().trim();
-              if (teacherId != myUid) return;
-
-              mine.add({'paymentId': k.toString(), ...m});
-            });
-
-            if (mine.isEmpty) {
               return _EmptyWagesState(
                 palette: p,
-                text: 'No payments assigned to you yet.',
+                text: 'No TBPAID wage items found.',
               );
             }
 
-            mine.sort(
-              (a, b) => TeacherWagesScreen.asInt(
-                b['paidAt'],
-              ).compareTo(TeacherWagesScreen.asInt(a['paidAt'])),
-            );
-
-            final Map<String, List<Map<String, dynamic>>> byMonth = {};
-            for (final payment in mine) {
-              final monthKey = TeacherWagesScreen.monthKeyFromPaidAtMs(
-                TeacherWagesScreen.asInt(payment['paidAt']),
+            final items = <_TeacherWageItem>[];
+            raw.forEach((k, v) {
+              if (k == null || v == null || v is! Map) return;
+              final map = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+              final allocation = _allocationFromPayment(
+                map.cast<String, dynamic>(),
               );
-              byMonth.putIfAbsent(monthKey, () => []);
-              byMonth[monthKey]!.add(payment);
+              if (allocation.tbpaid <= 0) return;
+
+              items.add(
+                _TeacherWageItem(
+                  paymentId: k.toString(),
+                  learnerName: (map['learner_name'] ?? '(No name)').toString(),
+                  learnerSerial: (map['learner_serial'] ?? '').toString(),
+                  paidAtMs: TeacherWagesScreen.asInt(map['paidAt']),
+                  originalAmount: allocation.original,
+                  tbpaidAmount: allocation.tbpaid,
+                  waitingAmount: allocation.waiting,
+                  doneAmount: allocation.done,
+                ),
+              );
+            });
+
+            if (items.isEmpty) {
+              return _EmptyWagesState(
+                palette: p,
+                text: 'No TBPAID items right now. All clear ✅',
+              );
             }
 
+            items.sort((a, b) => b.paidAtMs.compareTo(a.paidAtMs));
+
+            int totalTbpaid = 0;
+            for (final item in items) {
+              totalTbpaid += item.tbpaidAmount;
+            }
+
+            final byMonth = <String, List<_TeacherWageItem>>{};
+            for (final item in items) {
+              final key = TeacherWagesScreen.monthKeyFromMs(item.paidAtMs);
+              byMonth.putIfAbsent(key, () => <_TeacherWageItem>[]).add(item);
+            }
             final monthKeys = byMonth.keys.toList()
               ..sort((a, b) => b.compareTo(a));
-
-            int totalAll = 0;
-            int paidByAdminAll = 0;
-            int confirmedAll = 0;
-
-            for (final payment in mine) {
-              final amt = TeacherWagesScreen.asInt(payment['amount']);
-              totalAll += amt;
-              if (TeacherWagesScreen.asBool(payment['teacherPaid'])) {
-                paidByAdminAll += amt;
-              }
-              if (TeacherWagesScreen.asBool(payment['teacherConfirmed'])) {
-                confirmedAll += amt;
-              }
-            }
-
-            final leftToBePaidByAdmin = totalAll - paidByAdminAll;
-            final leftToBeConfirmed = paidByAdminAll - confirmedAll;
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               children: [
-                _WagesHeroCard(
-                  palette: p,
-                  totalAll: totalAll,
-                  paidByAdminAll: paidByAdminAll,
-                  leftToBeConfirmed: leftToBeConfirmed,
-                  leftToBePaidByAdmin: leftToBePaidByAdmin,
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [p.primary, p.primary.withValues(alpha: 0.88)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: [
+                      _HeroPill(
+                        label: 'TBPAID Total',
+                        value: '$totalTbpaid DA',
+                      ),
+                      _HeroPill(label: 'Items', value: '${items.length}'),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 14),
                 ...monthKeys.map((monthKey) {
+                  final monthItems =
+                      byMonth[monthKey] ?? const <_TeacherWageItem>[];
+                  var monthTotal = 0;
+                  for (final i in monthItems) {
+                    monthTotal += i.tbpaidAmount;
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: _MonthSection(
-                      palette: p,
-                      monthKey: monthKey,
-                      payments: byMonth[monthKey] ?? const [],
-                      onConfirmPaid: (paymentId) => _confirmPaidByTeacher(
-                        context: context,
-                        paymentId: paymentId,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: p.cardBg,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.88),
+                        ),
+                      ),
+                      child: ExpansionTile(
+                        tilePadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          14,
+                          0,
+                          14,
+                          14,
+                        ),
+                        title: Text(
+                          TeacherWagesScreen.prettyMonthLabel(monthKey),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: p.primary,
+                            fontSize: 15,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'TBPAID: $monthTotal DA',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.74),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        children: [
+                          ...monthItems.map((item) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _TeacherWageRow(
+                                palette: p,
+                                item: item,
+                                onConfirm: () => _confirmTbpaidAsDone(
+                                  context: context,
+                                  item: item,
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
                       ),
                     ),
                   );
@@ -383,371 +474,74 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
   }
 }
 
-class _WagesHeroCard extends StatelessWidget {
-  const _WagesHeroCard({
+class _Allocation {
+  const _Allocation({
+    required this.original,
+    required this.waiting,
+    required this.tbpaid,
+    required this.done,
+  });
+
+  final int original;
+  final int waiting;
+  final int tbpaid;
+  final int done;
+}
+
+class _TeacherWageItem {
+  const _TeacherWageItem({
+    required this.paymentId,
+    required this.learnerName,
+    required this.learnerSerial,
+    required this.paidAtMs,
+    required this.originalAmount,
+    required this.tbpaidAmount,
+    required this.waitingAmount,
+    required this.doneAmount,
+  });
+
+  final String paymentId;
+  final String learnerName;
+  final String learnerSerial;
+  final int paidAtMs;
+  final int originalAmount;
+  final int tbpaidAmount;
+  final int waitingAmount;
+  final int doneAmount;
+}
+
+class _TeacherWageRow extends StatelessWidget {
+  const _TeacherWageRow({
     required this.palette,
-    required this.totalAll,
-    required this.paidByAdminAll,
-    required this.leftToBeConfirmed,
-    required this.leftToBePaidByAdmin,
+    required this.item,
+    required this.onConfirm,
   });
 
   final AppPalette palette;
-  final int totalAll;
-  final int paidByAdminAll;
-  final int leftToBeConfirmed;
-  final int leftToBePaidByAdmin;
+  final _TeacherWageItem item;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Wages Overview',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.82),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$totalAll DA',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 26,
-              height: 1.0,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'All payments assigned to you',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.86),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _HeroMiniStat(
-                  label: 'Admin Paid',
-                  value: '$paidByAdminAll DA',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HeroMiniStat(
-                  label: 'To Confirm',
-                  value: '$leftToBeConfirmed DA',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _HeroMiniStat(
-            label: 'Not Paid Yet',
-            value: '$leftToBePaidByAdmin DA',
-            fullWidth: true,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroMiniStat extends StatelessWidget {
-  const _HeroMiniStat({
-    required this.label,
-    required this.value,
-    this.fullWidth = false,
-  });
-
-  final String label;
-  final String value;
-  final bool fullWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Container(
-      width: fullWidth ? double.infinity : null,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      child: Column(
-        crossAxisAlignment: fullWidth
-            ? CrossAxisAlignment.start
-            : CrossAxisAlignment.center,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.80),
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return child;
-  }
-}
-
-class _MonthSection extends StatelessWidget {
-  const _MonthSection({
-    required this.palette,
-    required this.monthKey,
-    required this.payments,
-    required this.onConfirmPaid,
-  });
-
-  final AppPalette palette;
-  final String monthKey;
-  final List<Map<String, dynamic>> payments;
-  final Future<void> Function(String paymentId) onConfirmPaid;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [...payments]
-      ..sort(
-        (a, b) => TeacherWagesScreen.asInt(
-          b['paidAt'],
-        ).compareTo(TeacherWagesScreen.asInt(a['paidAt'])),
-      );
-
-    int total = 0;
-    int adminPaid = 0;
-    int confirmed = 0;
-
-    for (final payment in items) {
-      final amt = TeacherWagesScreen.asInt(payment['amount']);
-      total += amt;
-      if (TeacherWagesScreen.asBool(payment['teacherPaid'])) {
-        adminPaid += amt;
-      }
-      if (TeacherWagesScreen.asBool(payment['teacherConfirmed'])) {
-        confirmed += amt;
-      }
-    }
-
-    final notPaidYet = total - adminPaid;
-    final toConfirm = adminPaid - confirmed;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: palette.border.withValues(alpha: 0.88)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        iconColor: palette.primary,
-        collapsedIconColor: palette.primary,
-        title: Text(
-          TeacherWagesScreen.prettyMonthLabel(monthKey),
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: palette.primary,
-            fontSize: 15,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MonthPill(palette: palette, label: 'Total', value: '$total DA'),
-              _MonthPill(
-                palette: palette,
-                label: 'Paid',
-                value: '$adminPaid DA',
-              ),
-              _MonthPill(
-                palette: palette,
-                label: 'To Confirm',
-                value: '$toConfirm DA',
-              ),
-              _MonthPill(
-                palette: palette,
-                label: 'Not Paid',
-                value: '$notPaidYet DA',
-              ),
-            ],
-          ),
-        ),
-        children: [
-          ...items.map((payment) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _TeacherPaymentRow(
-                palette: palette,
-                payment: payment,
-                onConfirmPaid: onConfirmPaid,
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-class _MonthPill extends StatelessWidget {
-  const _MonthPill({
-    required this.palette,
-    required this.label,
-    required this.value,
-  });
-
-  final AppPalette palette;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: palette.soft.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: palette.border.withValues(alpha: 0.75)),
-      ),
-      child: Text(
-        '$label: $value',
-        style: TextStyle(
-          fontWeight: FontWeight.w800,
-          color: palette.primary,
-          fontSize: 11,
-        ),
-      ),
-    );
-  }
-}
-
-class _TeacherPaymentRow extends StatelessWidget {
-  const _TeacherPaymentRow({
-    required this.palette,
-    required this.payment,
-    required this.onConfirmPaid,
-  });
-
-  final AppPalette palette;
-  final Map<String, dynamic> payment;
-  final Future<void> Function(String paymentId) onConfirmPaid;
-
-  @override
-  Widget build(BuildContext context) {
-    final paymentId = (payment['paymentId'] ?? '').toString().trim();
-
-    final learnerName = (payment['learner_name'] ?? '').toString().trim();
-    final serial = (payment['learner_serial'] ?? '').toString().trim();
-
-    final paidAt = TeacherWagesScreen.fmtYmdFromMs(
-      TeacherWagesScreen.asInt(payment['paidAt']),
-    );
-    final startDate = (payment['startDate'] ?? '').toString().trim();
-
-    final amount = TeacherWagesScreen.asInt(payment['amount']);
-
-    final adminPaid = TeacherWagesScreen.asBool(payment['teacherPaid']);
-    final confirmed = TeacherWagesScreen.asBool(payment['teacherConfirmed']);
-
-    String chipText;
-    Color chipBorder;
-    Color chipBg;
-    bool canTap;
-    IconData chipIcon;
-
-    if (!adminPaid) {
-      chipText = 'UNPAID';
-      chipBorder = Colors.red;
-      chipBg = Colors.red.withValues(alpha: 0.12);
-      chipIcon = Icons.cancel_rounded;
-      canTap = false;
-    } else if (adminPaid && !confirmed) {
-      chipText = 'PAID';
-      chipBorder = Colors.green;
-      chipBg = Colors.green.withValues(alpha: 0.15);
-      chipIcon = Icons.payments_rounded;
-      canTap = true;
-    } else {
-      chipText = 'CONFIRMED';
-      chipBorder = Colors.green.shade800;
-      chipBg = Colors.green.withValues(alpha: 0.18);
-      chipIcon = Icons.verified_rounded;
-      canTap = false;
-    }
+    final paidAt = TeacherWagesScreen.fmtYmdFromMs(item.paidAtMs);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: palette.soft.withValues(alpha: 0.28),
+        color: const Color(0xFF3666D8).withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.border.withValues(alpha: 0.75)),
+        border: Border.all(
+          color: const Color(0xFF3666D8).withValues(alpha: 0.38),
+        ),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: palette.cardBg,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
-            ),
-            child: Icon(Icons.person_rounded, color: palette.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  learnerName.isEmpty ? '(No name)' : learnerName,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.learnerName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -756,71 +550,118 @@ class _TeacherPaymentRow extends StatelessWidget {
                     fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  [
-                    if (serial.isNotEmpty) serial,
-                    if (paidAt.isNotEmpty) 'Paid: $paidAt',
-                    if (startDate.isNotEmpty) 'Start: $startDate',
-                  ].join(' • '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.text.withValues(alpha: 0.62),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '$amount DA',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: palette.primary,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: (canTap && paymentId.isNotEmpty)
-                ? () => onConfirmPaid(paymentId)
-                : null,
-            child: Opacity(
-              opacity: canTap ? 1.0 : 0.82,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: chipBg,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: chipBorder.withValues(alpha: 0.75)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(chipIcon, size: 15, color: chipBorder),
-                    const SizedBox(width: 6),
-                    Text(
-                      chipText,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: chipBorder,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+              ),
+              Text(
+                paidAt,
+                style: TextStyle(
+                  color: palette.text.withValues(alpha: 0.66),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            [
+              if (item.learnerSerial.trim().isNotEmpty) item.learnerSerial,
+              'Original: ${item.originalAmount} DA',
+            ].join(' • '),
+            style: TextStyle(
+              color: palette.text.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w700,
             ),
           ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _WageChip(
+                label: 'TBPAID',
+                value: '${item.tbpaidAmount} DA',
+                color: const Color(0xFF3666D8),
+              ),
+              _WageChip(
+                label: 'WAITING',
+                value: '${item.waitingAmount} DA',
+                color: const Color(0xFFF0A526),
+              ),
+              _WageChip(
+                label: 'DONE',
+                value: '${item.doneAmount} DA',
+                color: const Color(0xFF22945A),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: onConfirm,
+            icon: const Icon(Icons.verified_rounded),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            label: const Text('Confirm Received (Move to DONE)'),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _WageChip extends StatelessWidget {
+  const _WageChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroPill extends StatelessWidget {
+  const _HeroPill({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }

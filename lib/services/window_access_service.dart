@@ -47,6 +47,7 @@ class AppWindowKeys {
   static const adminClasses = 'classes';
   static const adminStaff = 'staff';
   static const adminPayments = 'payments';
+  static const adminFinance = 'finance';
   static const adminSchedule = 'schedule';
   static const adminAttendance = 'attendance';
   static const adminCourses = 'courses';
@@ -375,6 +376,14 @@ class WindowAccessService {
       labelEn: 'Payments',
       labelAr: 'المدفوعات',
       tab: 'Operations',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminFinance,
+      labelEn: 'Finance',
+      labelAr: 'المالية',
+      tab: 'Finance',
       canClose: true,
     ),
     AppWindowDefinition(
