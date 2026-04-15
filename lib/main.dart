@@ -1481,6 +1481,10 @@ class _JoinOnlineCircleEntryButtonState
                   initialData: 0,
                   builder: (context, _) {
                     final now = DateTime.now();
+                    final screenHeight = MediaQuery.of(context).size.height;
+                    final carouselHeight = (screenHeight * 0.62)
+                        .clamp(300.0, 560.0)
+                        .toDouble();
 
                     return StreamBuilder<DatabaseEvent>(
                       stream: _circlesRef.onValue,
@@ -1593,7 +1597,8 @@ class _JoinOnlineCircleEntryButtonState
                                 ),
                               )
                             else ...[
-                              Expanded(
+                              SizedBox(
+                                height: carouselHeight,
                                 child: PageView.builder(
                                   controller: _pageController,
                                   itemCount: circles.length,
