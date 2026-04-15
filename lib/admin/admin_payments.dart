@@ -365,74 +365,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     return total > 0 ? total : 24;
   }
 
-  static int _defaultAmountForVariant({
-    required String variantKey,
-    required Map<String, dynamic> course,
-    required int sessionsPaid,
-    required int totalSessions,
-    required int durationMonths,
-    required int expiryMonths,
-  }) {
-    final pricePerMonth = _asInt(course['price_per_month']);
-    final pricePerLevel = _asInt(course['price_per_level']);
-    final v = _normalizeVariantKey(variantKey);
-    final cfgFee = _variantFeeFromDeliveryConfigs(
-      deliveryConfigs: course['delivery_configs'],
-      cfgKey: deliveryConfigKeyForVariant(v),
-    );
-
-    if (cfgFee > 0) {
-      if (v == 'recorded')
-        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
-      if (v == 'flexible')
-        return cfgFee * (expiryMonths > 0 ? expiryMonths : 1);
-      if (sessionsPaid > 0) return cfgFee * sessionsPaid;
-    }
-
-    if (v == 'recorded') {
-      if (pricePerMonth > 0 && durationMonths > 0) {
-        return pricePerMonth * durationMonths;
-      }
-      return 0;
-    }
-
-    if (v == 'flexible') {
-      if (pricePerMonth > 0 && expiryMonths > 0) {
-        return pricePerMonth * expiryMonths;
-      }
-      if (pricePerMonth > 0) return pricePerMonth;
-    }
-
-    if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
-    if (totalSessions > 0 &&
-        sessionsPaid == totalSessions &&
-        pricePerLevel > 0) {
-      return pricePerLevel;
-    }
-    if (totalSessions > 0 && pricePerLevel > 0) {
-      return ((pricePerLevel * sessionsPaid) / totalSessions).round();
-    }
-    return 0;
-  }
-
-  static int _variantFeeFromDeliveryConfigs({
-    required dynamic deliveryConfigs,
-    required String cfgKey,
-  }) {
-    if (deliveryConfigs is! Map) return 0;
-    final root = deliveryConfigs.map((k, v) => MapEntry(k.toString(), v));
-    final cfg = root[cfgKey];
-    if (cfg is! Map) return 0;
-
-    final m = cfg.map((k, v) => MapEntry(k.toString(), v));
-    if (m['enabled'] != true) return 0;
-
-    final fee = m['fee'];
-    if (fee is num) return fee.round();
-    if (fee == null) return 0;
-    return double.tryParse(fee.toString().trim())?.round() ?? 0;
-  }
-
   Future<void> _rebuildLearnerSummaryFromPayments({
     required String uid,
     required String courseKey,
@@ -2247,7 +2179,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     int expiryMonths = 1;
     int durationMonths = 1;
 
-    final amountC = TextEditingController(text: '0');
+    final amountC = TextEditingController();
     final notesC = TextEditingController();
 
     String paidDateYmd = _todayYmd();
@@ -2308,15 +2240,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       if (_variantIsFlexible(pickedVariantKey)) expiryMonths = 1;
       if (_variantIsRecorded(pickedVariantKey)) durationMonths = 1;
 
-      amountC.text = _defaultAmountForVariant(
-        variantKey: pickedVariantKey,
-        course: pickedCourse,
-        sessionsPaid: sessionsPaid,
-        totalSessions: totalSessions,
-        durationMonths: durationMonths,
-        expiryMonths: expiryMonths,
-      ).toString();
-
       if (!_variantUsesTeacher(pickedVariantKey)) {
         selectedTeacherUid = null;
         selectedTeacherName = null;
@@ -2327,9 +2250,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
-          final totalSessions = _parseTotalSessions(
-            (pickedCourse['duration'] ?? '').toString(),
-          );
           final maxSessions = _maxSessionsFromCourse(pickedCourse);
           final usesTeacher =
               _variantUsesTeacher(pickedVariantKey) &&
@@ -2621,15 +2541,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: maxSessions,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          amountC.text = _defaultAmountForVariant(
-                            variantKey: pickedVariantKey,
-                            course: pickedCourse,
-                            sessionsPaid: sessionsPaid,
-                            totalSessions: totalSessions,
-                            durationMonths: durationMonths,
-                            expiryMonths: expiryMonths,
-                          ).toString();
-
                           if (usesReminder) {
                             remindBeforeSession = normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
@@ -2664,14 +2575,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: 12,
                         onChanged: (v) {
                           expiryMonths = v;
-                          amountC.text = _defaultAmountForVariant(
-                            variantKey: pickedVariantKey,
-                            course: pickedCourse,
-                            sessionsPaid: sessionsPaid,
-                            totalSessions: totalSessions,
-                            durationMonths: durationMonths,
-                            expiryMonths: expiryMonths,
-                          ).toString();
                           setD(() {});
                         },
                       ),
@@ -2693,14 +2596,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: 12,
                         onChanged: (v) {
                           durationMonths = v;
-                          amountC.text = _defaultAmountForVariant(
-                            variantKey: pickedVariantKey,
-                            course: pickedCourse,
-                            sessionsPaid: sessionsPaid,
-                            totalSessions: totalSessions,
-                            durationMonths: durationMonths,
-                            expiryMonths: expiryMonths,
-                          ).toString();
                           setD(() {});
                         },
                       ),
@@ -2729,7 +2624,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       controller: amountC,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Fee (editable)',
+                        labelText: 'Fee (manual)',
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -2893,23 +2788,28 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             'monthKey': monthKey,
                           });
 
-                          await _rebuildLearnerSummaryFromPayments(
-                            uid: pickedUid!,
-                            courseKey: pickedCourseKey!,
-                          );
-
-                          if (usesExpiry) {
-                            await _writeVariantAccess(
+                          String postWarning = '';
+                          try {
+                            await _rebuildLearnerSummaryFromPayments(
                               uid: pickedUid!,
                               courseKey: pickedCourseKey!,
-                              variantKey: pickedVariantKey,
-                              expiresAt: expiresAt,
-                              months: monthsForExpiry,
-                              paymentId: paymentId,
                             );
+
+                            if (usesExpiry) {
+                              await _writeVariantAccess(
+                                uid: pickedUid!,
+                                courseKey: pickedCourseKey!,
+                                variantKey: pickedVariantKey,
+                                expiresAt: expiresAt,
+                                months: monthsForExpiry,
+                                paymentId: paymentId,
+                              );
+                            }
+                          } catch (_) {
+                            postWarning =
+                                'Payment saved, but learner summary refresh failed.';
                           }
 
-                          String postWarning = '';
                           try {
                             await _sendPaymentReceiptMail(
                               learnerUid: pickedUid!,
@@ -2928,8 +2828,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               expiresAt: expiresAt,
                             );
                           } catch (mailErr) {
-                            postWarning =
-                                'Payment saved, but receipt mail failed (${humanizeUiMessage(mailErr.toString())}).';
+                            final mailWarning =
+                                'Receipt mail failed (${humanizeUiMessage(mailErr.toString())}).';
+                            postWarning = postWarning.isEmpty
+                                ? 'Payment saved, but $mailWarning'
+                                : '$postWarning $mailWarning';
                           }
 
                           if (context.mounted) Navigator.pop(context);
@@ -3347,24 +3250,32 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         (p['variantKey'] ?? '').toString(),
       );
 
+      String postWarning = '';
       if (uid.isNotEmpty && courseKey.isNotEmpty) {
-        await _rebuildLearnerSummaryFromPayments(
-          uid: uid,
-          courseKey: courseKey,
-        );
-        if (_variantUsesExpiry(variantKey)) {
-          await _rebuildVariantAccessFromPayments(
+        try {
+          await _rebuildLearnerSummaryFromPayments(
             uid: uid,
             courseKey: courseKey,
-            variantKey: variantKey,
           );
+          if (_variantUsesExpiry(variantKey)) {
+            await _rebuildVariantAccessFromPayments(
+              uid: uid,
+              courseKey: courseKey,
+              variantKey: variantKey,
+            );
+          }
+        } catch (_) {
+          postWarning = 'Payment deleted, but learner summary refresh failed.';
         }
       }
 
       setState(() => _selectedPaymentIds.remove(paymentId));
       _toast('Deleted ✅');
+      if (postWarning.isNotEmpty) {
+        _toast(postWarning);
+      }
     } catch (e) {
-      _toast(toHumanError(e));
+      _toast(toHumanError(e, fallback: 'Could not delete payment.'));
     }
   }
 
@@ -3435,26 +3346,31 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
       await _paymentsRef.update(updates);
 
-      for (final entry in pairVariants.entries) {
-        final sep = entry.key.indexOf('|');
-        if (sep <= 0 || sep >= entry.key.length - 1) continue;
-        final uid = entry.key.substring(0, sep);
-        final courseKey = entry.key.substring(sep + 1);
-        if (uid.isEmpty || courseKey.isEmpty) continue;
+      String postWarning = '';
+      try {
+        for (final entry in pairVariants.entries) {
+          final sep = entry.key.indexOf('|');
+          if (sep <= 0 || sep >= entry.key.length - 1) continue;
+          final uid = entry.key.substring(0, sep);
+          final courseKey = entry.key.substring(sep + 1);
+          if (uid.isEmpty || courseKey.isEmpty) continue;
 
-        await _rebuildLearnerSummaryFromPayments(
-          uid: uid,
-          courseKey: courseKey,
-        );
-
-        for (final variantKey in entry.value) {
-          if (!_variantUsesExpiry(variantKey)) continue;
-          await _rebuildVariantAccessFromPayments(
+          await _rebuildLearnerSummaryFromPayments(
             uid: uid,
             courseKey: courseKey,
-            variantKey: variantKey,
           );
+
+          for (final variantKey in entry.value) {
+            if (!_variantUsesExpiry(variantKey)) continue;
+            await _rebuildVariantAccessFromPayments(
+              uid: uid,
+              courseKey: courseKey,
+              variantKey: variantKey,
+            );
+          }
         }
+      } catch (_) {
+        postWarning = 'Payments deleted, but learner summary refresh failed.';
       }
 
       if (!mounted) return;
@@ -3463,6 +3379,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         _isBulkDeleting = false;
       });
       _toast('Deleted ${idsToDelete.length} payment(s) ✅');
+      if (postWarning.isNotEmpty) {
+        _toast(postWarning);
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isBulkDeleting = false);

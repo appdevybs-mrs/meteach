@@ -39,6 +39,7 @@ import 'admin_notification_audit_screen.dart';
 import 'admin_vocab_words_lists_screen.dart';
 import 'admin_window_access_screen.dart';
 import '../services/window_access_service.dart';
+import 'admin_payment_summary_sync_service.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -92,6 +93,7 @@ class _AdminHomeState extends State<AdminHome> {
     _homeSearchController.text = _homeSearch;
     _loadSavedRoleMode();
     unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
+    unawaited(AdminPaymentSummarySyncService.runForAdminLogin());
   }
 
   @override
@@ -2595,10 +2597,15 @@ class _PaymentAttentionLogic {
       final accessMap = access is Map
           ? access.map((k, v) => MapEntry(k.toString(), v))
           : <String, dynamic>{};
-      final expiresAt = asInt(accessMap['expiresAt']);
-      if (expiresAt <= 0) return _PayFlag.black;
-      if (isExpiredMs(expiresAt)) return _PayFlag.red;
-      if (isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      final accessExpiresAt = asInt(accessMap['expiresAt']);
+      final summaryExpiresAt = asInt(summaryMap['expiresAt']);
+      final effectiveExpiresAt = accessExpiresAt > 0
+          ? accessExpiresAt
+          : summaryExpiresAt;
+
+      if (effectiveExpiresAt <= 0) return _PayFlag.black;
+      if (isExpiredMs(effectiveExpiresAt)) return _PayFlag.red;
+      if (isNearExpiryMs(effectiveExpiresAt)) return _PayFlag.yellow;
       return _PayFlag.ok;
     }
 

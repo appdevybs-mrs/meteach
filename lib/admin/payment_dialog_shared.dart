@@ -110,68 +110,6 @@ class PaymentDialogShared {
     return int.tryParse(m.group(1) ?? '') ?? 0;
   }
 
-  static int _defaultAmountForVariant({
-    required String variantKey,
-    required int pricePerMonth,
-    required int pricePerLevel,
-    required int sessionsPaid,
-    required int totalSessions,
-    required int durationMonths,
-    required dynamic deliveryConfigs,
-  }) {
-    final v = _normalizeDeliveryKey(variantKey);
-    final cfgKey = deliveryConfigKeyForVariant(v);
-    final cfgFee = _variantFeeFromDeliveryConfigs(
-      deliveryConfigs: deliveryConfigs,
-      cfgKey: cfgKey,
-    );
-
-    if (cfgFee > 0) {
-      if (v == 'recorded')
-        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
-      if (v == 'flexible')
-        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
-      if (sessionsPaid > 0) return cfgFee * sessionsPaid;
-    }
-
-    if (v == 'recorded') {
-      if (pricePerMonth > 0 && durationMonths > 0) {
-        return pricePerMonth * durationMonths;
-      }
-      return 0;
-    }
-
-    if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
-    if (totalSessions > 0 &&
-        sessionsPaid == totalSessions &&
-        pricePerLevel > 0) {
-      return pricePerLevel;
-    }
-    if (totalSessions > 0 && pricePerLevel > 0) {
-      return ((pricePerLevel * sessionsPaid) / totalSessions).round();
-    }
-    return 0;
-  }
-
-  static int _variantFeeFromDeliveryConfigs({
-    required dynamic deliveryConfigs,
-    required String cfgKey,
-  }) {
-    if (deliveryConfigs is! Map) return 0;
-
-    final root = deliveryConfigs.map((k, v) => MapEntry(k.toString(), v));
-    final cfg = root[cfgKey];
-    if (cfg is! Map) return 0;
-
-    final m = cfg.map((k, v) => MapEntry(k.toString(), v));
-    if (m['enabled'] != true) return 0;
-
-    final fee = m['fee'];
-    if (fee is num) return fee.round();
-    if (fee == null) return 0;
-    return double.tryParse(fee.toString().trim())?.round() ?? 0;
-  }
-
   static bool _isTeacherRole(dynamic role) {
     final r = (role ?? '').toString().trim().toLowerCase();
     return r == 'teacher';
@@ -820,26 +758,34 @@ class PaymentDialogShared {
     try {
       await paymentsRef.child(paymentId).remove();
 
-      await _rebuildLearnerSummaryFromPayments(
-        db: db,
-        uid: uid,
-        courseKey: courseKey,
-      );
-
-      if (_variantUsesExpiry(variantKey)) {
-        await _rebuildVariantAccessFromPayments(
+      String postWarning = '';
+      try {
+        await _rebuildLearnerSummaryFromPayments(
           db: db,
           uid: uid,
           courseKey: courseKey,
-          variantKey: variantKey,
         );
+
+        if (_variantUsesExpiry(variantKey)) {
+          await _rebuildVariantAccessFromPayments(
+            db: db,
+            uid: uid,
+            courseKey: courseKey,
+            variantKey: variantKey,
+          );
+        }
+      } catch (_) {
+        postWarning = 'Payment deleted, but learner summary refresh failed.';
       }
 
       if (!context.mounted) return;
       _snack(context, 'Deleted ✅');
+      if (postWarning.isNotEmpty) {
+        _snack(context, postWarning);
+      }
     } catch (e) {
       if (!context.mounted) return;
-      _snack(context, 'Delete failed: $e');
+      _snack(context, toHumanError(e, fallback: 'Could not delete payment.'));
     }
   }
 
@@ -1150,7 +1096,7 @@ class PaymentDialogShared {
 
                     _prettyField(
                       controller: amountC,
-                      label: 'Fee (editable)',
+                      label: 'Fee (manual)',
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
@@ -1247,24 +1193,33 @@ class PaymentDialogShared {
                       'updatedAt': ServerValue.timestamp,
                     });
 
-                    await _rebuildLearnerSummaryFromPayments(
-                      db: db,
-                      uid: uid,
-                      courseKey: courseKey,
-                    );
-
-                    if (usesExpiry) {
-                      await _rebuildVariantAccessFromPayments(
+                    String postWarning = '';
+                    try {
+                      await _rebuildLearnerSummaryFromPayments(
                         db: db,
                         uid: uid,
                         courseKey: courseKey,
-                        variantKey: variantKey,
                       );
+
+                      if (usesExpiry) {
+                        await _rebuildVariantAccessFromPayments(
+                          db: db,
+                          uid: uid,
+                          courseKey: courseKey,
+                          variantKey: variantKey,
+                        );
+                      }
+                    } catch (_) {
+                      postWarning =
+                          'Payment updated, but learner summary refresh failed.';
                     }
 
                     if (!context.mounted) return;
                     Navigator.pop(context);
                     _snack(context, 'Updated ✅');
+                    if (postWarning.isNotEmpty) {
+                      _snack(context, postWarning);
+                    }
                   } catch (e) {
                     if (!context.mounted) return;
                     _snack(context, toHumanError(e));
@@ -1326,7 +1281,7 @@ class PaymentDialogShared {
     String? selectedTeacherUid;
     String selectedTeacherName = '';
 
-    final amountC = TextEditingController(text: '0');
+    final amountC = TextEditingController();
     final notesC = TextEditingController();
 
     Future<void> loadCourseAndDefaults() async {
@@ -1384,19 +1339,6 @@ class PaymentDialogShared {
 
       expiryMonths = _variantIsFlexible(variantKey) ? 1 : expiryMonths;
       durationMonths = _variantIsRecorded(variantKey) ? 1 : durationMonths;
-
-      final pricePerMonth = _asInt(pickedCourse['price_per_month']);
-      final pricePerLevel = _asInt(pickedCourse['price_per_level']);
-
-      amountC.text = _defaultAmountForVariant(
-        variantKey: variantKey,
-        pricePerMonth: pricePerMonth,
-        pricePerLevel: pricePerLevel,
-        sessionsPaid: sessionsPaid,
-        totalSessions: totalSessions,
-        durationMonths: durationMonths,
-        deliveryConfigs: pickedCourse['delivery_configs'],
-      ).toString();
 
       if (!_variantUsesTeacher(variantKey)) {
         selectedTeacherUid = null;
@@ -1770,24 +1712,6 @@ class PaymentDialogShared {
                         max: maxSessions,
                         onChanged: (v) {
                           sessionsPaid = v;
-
-                          final pricePerMonth = _asInt(
-                            pickedCourse['price_per_month'],
-                          );
-                          final pricePerLevel = _asInt(
-                            pickedCourse['price_per_level'],
-                          );
-
-                          amountC.text = _defaultAmountForVariant(
-                            variantKey: variantKey,
-                            pricePerMonth: pricePerMonth,
-                            pricePerLevel: pricePerLevel,
-                            sessionsPaid: sessionsPaid,
-                            totalSessions: totalSessions,
-                            durationMonths: durationMonths,
-                            deliveryConfigs: pickedCourse['delivery_configs'],
-                          ).toString();
-
                           if (usesReminder) {
                             remindBeforeSession = normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
@@ -1841,24 +1765,6 @@ class PaymentDialogShared {
                         max: 12,
                         onChanged: (v) {
                           durationMonths = v;
-
-                          final pricePerMonth = _asInt(
-                            pickedCourse['price_per_month'],
-                          );
-                          final pricePerLevel = _asInt(
-                            pickedCourse['price_per_level'],
-                          );
-
-                          amountC.text = _defaultAmountForVariant(
-                            variantKey: variantKey,
-                            pricePerMonth: pricePerMonth,
-                            pricePerLevel: pricePerLevel,
-                            sessionsPaid: sessionsPaid,
-                            totalSessions: totalSessions,
-                            durationMonths: durationMonths,
-                            deliveryConfigs: pickedCourse['delivery_configs'],
-                          ).toString();
-
                           setD(() {});
                         },
                       ),
@@ -1882,7 +1788,7 @@ class PaymentDialogShared {
 
                     _prettyField(
                       controller: amountC,
-                      label: 'Fee (editable)',
+                      label: 'Fee (manual)',
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
@@ -2039,27 +1945,36 @@ class PaymentDialogShared {
                       'variantLabel': variantLabel,
                     });
 
-                    await _rebuildLearnerSummaryFromPayments(
-                      db: db,
-                      uid: pickedUid!,
-                      courseKey: pickedCourseKey!,
-                    );
-
-                    if (usesExpiry) {
-                      await _writeVariantAccess(
-                        usersRef: usersRef,
+                    String postWarning = '';
+                    try {
+                      await _rebuildLearnerSummaryFromPayments(
+                        db: db,
                         uid: pickedUid!,
                         courseKey: pickedCourseKey!,
-                        variantKey: normalizedVariantKey,
-                        expiresAt: expiresAt,
-                        months: monthsForExpiry,
-                        paymentId: paymentId,
                       );
+
+                      if (usesExpiry) {
+                        await _writeVariantAccess(
+                          usersRef: usersRef,
+                          uid: pickedUid!,
+                          courseKey: pickedCourseKey!,
+                          variantKey: normalizedVariantKey,
+                          expiresAt: expiresAt,
+                          months: monthsForExpiry,
+                          paymentId: paymentId,
+                        );
+                      }
+                    } catch (_) {
+                      postWarning =
+                          'Payment saved, but learner summary refresh failed.';
                     }
 
                     if (!context.mounted) return;
                     Navigator.pop(context);
                     _snack(context, 'Payment saved ✅');
+                    if (postWarning.isNotEmpty) {
+                      _snack(context, postWarning);
+                    }
                   } catch (e) {
                     if (!context.mounted) return;
                     _snack(context, toHumanError(e));

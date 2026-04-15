@@ -1243,12 +1243,19 @@ class _LearnersListState extends State<_LearnersList>
           ? access.map((k, v) => MapEntry(k.toString(), v))
           : <String, dynamic>{};
 
-      final expiresAt = _LearnerExpandedTabsState._asInt(
+      final accessExpiresAt = _LearnerExpandedTabsState._asInt(
         accessMap['expiresAt'],
       );
-      if (expiresAt <= 0) return _PayFlag.black;
-      if (_isExpiredMs(expiresAt)) return _PayFlag.red;
-      if (_isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      final summaryExpiresAt = _LearnerExpandedTabsState._asInt(
+        summaryMap['expiresAt'],
+      );
+      final effectiveExpiresAt = accessExpiresAt > 0
+          ? accessExpiresAt
+          : summaryExpiresAt;
+
+      if (effectiveExpiresAt <= 0) return _PayFlag.black;
+      if (_isExpiredMs(effectiveExpiresAt)) return _PayFlag.red;
+      if (_isNearExpiryMs(effectiveExpiresAt)) return _PayFlag.yellow;
       return _PayFlag.ok;
     }
 
