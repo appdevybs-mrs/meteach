@@ -1,8 +1,14 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
+import '../services/backend_api.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/teacher_web_layout.dart';
@@ -26,8 +32,10 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
   final _durationCtrl = TextEditingController(text: '60');
 
   DateTime? _selectedDateTime;
+  String? _circleImageUrl;
   bool _isOpen = true;
   bool _busy = false;
+  bool _uploadingCircleImage = false;
 
   bool _hasExistingCircle = false;
   String? _error;
@@ -69,6 +77,9 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
     try {
       final user = _auth.currentUser;
       if (user == null) throw Exception('Not logged in.');
+      debugPrint(
+        '[OnlineCircle][Teacher] Loading circle data for uid=${user.uid}',
+      );
 
       final meetingUrlFuture = _db
           .ref('users/${user.uid}/google_meet_url')
@@ -90,6 +101,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
         _topicCtrl.text = (data['topic'] ?? '').toString();
         _descriptionCtrl.text = (data['description'] ?? '').toString();
         _durationCtrl.text = (data['duration'] ?? '60').toString();
+        _circleImageUrl = (data['circle_image_url'] ?? '').toString().trim();
 
         final timeValue = data['time'];
         if (timeValue != null) {
@@ -101,11 +113,16 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
 
         _isOpen = (data['status'] ?? 'open').toString() == 'open';
         _hasExistingCircle = true;
+        debugPrint(
+          '[OnlineCircle][Teacher] Existing circle loaded. status=${_isOpen ? 'open' : 'closed'} time=${_selectedDateTime?.millisecondsSinceEpoch ?? 0}',
+        );
       } else {
         _hasExistingCircle = false;
+        debugPrint('[OnlineCircle][Teacher] No existing circle found.');
       }
     } catch (e) {
       _error = toHumanError(e);
+      debugPrint('[OnlineCircle][Teacher] Failed to load circle data: $e');
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -241,13 +258,26 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
     setState(() => _busy = true);
 
     try {
+      debugPrint(
+        '[OnlineCircle][Teacher] Saving circle. topic="${_topicCtrl.text.trim()}" status=${_isOpen ? 'open' : 'closed'} time=${_selectedDateTime?.millisecondsSinceEpoch ?? 0}',
+      );
       final circleRef = _db.ref('circle/${user.uid}');
+      final userRef = _db.ref('users/${user.uid}');
       final existingSnap = await circleRef.get();
+      final userSnap = await userRef.get();
       final alreadyExists = existingSnap.exists;
+      final teacherData = userSnap.value is Map
+          ? Map<String, dynamic>.from(userSnap.value as Map)
+          : <String, dynamic>{};
+      final teacherName = _extractTeacherName(teacherData);
+      final teacherProfilePhoto = _extractTeacherProfilePhoto(teacherData);
 
       await circleRef.set({
         'circle_id': user.uid,
         'teacher_uid': user.uid,
+        'teacher_name': teacherName,
+        'teacher_profile_photo': teacherProfilePhoto,
+        'circle_image_url': (_circleImageUrl ?? '').trim(),
         'meeting_url': meetingUrl,
         'topic': _topicCtrl.text.trim(),
         'description': _descriptionCtrl.text.trim(),
@@ -268,16 +298,296 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
             ? 'Circle updated successfully ✅'
             : 'Circle saved successfully ✅';
       });
+      debugPrint(
+        '[OnlineCircle][Teacher] Circle saved successfully. existed=$alreadyExists imageSet=${(_circleImageUrl ?? '').trim().isNotEmpty}',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
       });
+      debugPrint('[OnlineCircle][Teacher] Save failed: $e');
     } finally {
       if (mounted) {
         setState(() => _busy = false);
       }
     }
+  }
+
+  String _teacherAppId(String uid) => 'teacher_$uid';
+
+  String _extractTeacherName(Map<String, dynamic> data) {
+    final first = (data['first_name'] ?? '').toString().trim();
+    final last = (data['last_name'] ?? '').toString().trim();
+    final full = '$first $last'.trim();
+    if (full.isNotEmpty) return full;
+    final fallback = (data['name'] ?? data['display_name'] ?? '')
+        .toString()
+        .trim();
+    return fallback;
+  }
+
+  String _extractTeacherProfilePhoto(Map<String, dynamic> data) {
+    final direct = (data['profile_photo'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return direct;
+
+    final photos = data['profile_photos'];
+    if (photos is List) {
+      for (final item in photos) {
+        final p = item.toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+    }
+
+    if (photos is Map) {
+      final entries = photos.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final e in entries) {
+        final p = e.value.toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+    }
+
+    return '';
+  }
+
+  Future<String> _uploadPlatformFile(PlatformFile file) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+
+    final uploadUri = await BackendApi.withAuthQuery(
+      BackendApi.uri('upload_secure.php'),
+    );
+    final request = http.MultipartRequest('POST', uploadUri);
+    request.headers['X-Requested-With'] = 'XMLHttpRequest';
+    await BackendApi.applyAuthToMultipart(request);
+    request.fields['app_id'] = _teacherAppId(user.uid);
+
+    if (kIsWeb) {
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw Exception('Could not read selected file bytes.');
+      }
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
+      );
+    } else {
+      final path = file.path;
+      if (path == null || path.isEmpty) {
+        throw Exception('Could not read selected file path.');
+      }
+      request.files.add(
+        await http.MultipartFile.fromPath('file', path, filename: file.name),
+      );
+    }
+
+    debugPrint(
+      '[OnlineCircle][Teacher] Uploading circle media file="${file.name}"',
+    );
+    final streamedResponse = await request.send();
+    final responseBody = await streamedResponse.stream.bytesToString();
+    if (streamedResponse.statusCode != 200) {
+      throw Exception(
+        'Upload failed (${streamedResponse.statusCode}): $responseBody',
+      );
+    }
+
+    final decoded = jsonDecode(responseBody);
+    if (decoded is! Map || decoded['success'] != true) {
+      throw Exception(
+        decoded is Map
+            ? (decoded['message'] ?? 'Upload failed')
+            : 'Upload failed',
+      );
+    }
+
+    final url = (decoded['url'] ?? '').toString().trim();
+    if (url.isEmpty) {
+      throw Exception('Upload succeeded but no URL returned.');
+    }
+    debugPrint('[OnlineCircle][Teacher] Upload completed. url=$url');
+    return url;
+  }
+
+  Future<void> _pickAndUploadCircleImage() async {
+    if (_uploadingCircleImage || _busy) return;
+
+    try {
+      setState(() {
+        _uploadingCircleImage = true;
+        _error = null;
+        _ok = null;
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: kIsWeb,
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      final url = await _uploadPlatformFile(file);
+
+      if (!mounted) return;
+      setState(() {
+        _circleImageUrl = url;
+        _ok = 'Circle image uploaded ✅';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = toHumanError(e));
+      debugPrint('[OnlineCircle][Teacher] Image upload failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingCircleImage = false);
+      }
+    }
+  }
+
+  void _removeCircleImage() {
+    setState(() {
+      _circleImageUrl = null;
+      _ok = 'Circle image removed';
+      _error = null;
+    });
+  }
+
+  Widget _circleImagePicker() {
+    final imageUrl = (_circleImageUrl ?? '').trim();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Circle Image',
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Upload a cover image for the guest circle card.',
+          style: TextStyle(
+            color: p.text.withValues(alpha: 0.68),
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          height: 190,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: p.border.withValues(alpha: 0.95)),
+            color: p.soft.withValues(alpha: 0.45),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(17),
+            child: imageUrl.isEmpty
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.image_outlined,
+                        color: p.primary.withValues(alpha: 0.8),
+                        size: 34,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No image selected',
+                        style: TextStyle(
+                          color: p.text.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  )
+                : Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: p.primary.withValues(alpha: 0.7),
+                        size: 30,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: (_busy || _uploadingCircleImage)
+                    ? null
+                    : _pickAndUploadCircleImage,
+                icon: _uploadingCircleImage
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(
+                        imageUrl.isEmpty
+                            ? Icons.add_photo_alternate_outlined
+                            : Icons.refresh_rounded,
+                      ),
+                label: Text(
+                  _uploadingCircleImage
+                      ? 'Uploading...'
+                      : imageUrl.isEmpty
+                      ? 'Upload image'
+                      : 'Replace image',
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: p.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            if (imageUrl.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: (_busy || _uploadingCircleImage)
+                    ? null
+                    : _removeCircleImage,
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Remove'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: p.primary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 13,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
   }
 
   Widget _statusBanner() {
@@ -366,7 +676,6 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -410,7 +719,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: p.accent,
         foregroundColor: Colors.white,
-        onPressed: _busy ? null : _saveCircle,
+        onPressed: (_busy || _uploadingCircleImage) ? null : _saveCircle,
         icon: _busy
             ? const SizedBox(
                 width: 18,
@@ -453,6 +762,8 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                         autovalidateMode: AutovalidateMode.onUserInteraction,
                         child: Column(
                           children: [
+                            _circleImagePicker(),
+                            const SizedBox(height: 14),
                             TextFormField(
                               controller: _meetingUrlCtrl,
                               readOnly: true,

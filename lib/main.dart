@@ -848,27 +848,18 @@ class _JoinOnlineCircleEntryButton extends StatefulWidget {
 }
 
 class _JoinOnlineCircleEntryButtonState
-    extends State<_JoinOnlineCircleEntryButton>
-    with SingleTickerProviderStateMixin {
+    extends State<_JoinOnlineCircleEntryButton> {
   static const String circlesPath = 'circle';
-  late final AnimationController _pulseController;
-  late final Animation<double> _scaleAnimation;
+  late final PageController _pageController;
   List<_OnlineCircle> _prefetchedOpenCircles = const [];
   bool _prefetching = true;
+  int _activeIndex = 0;
+  String _openCirclesSignature = '';
+
   @override
   void initState() {
     super.initState();
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-
-    _pulseController.repeat(reverse: true);
+    _pageController = PageController(viewportFraction: 0.86);
     _prefetchCircles();
   }
 
@@ -903,6 +894,9 @@ class _JoinOnlineCircleEntryButtonState
         description: _safe(m['description']),
         meetingUrl: _safe(m['meeting_url']),
         teacherUid: _safe(m['teacher_uid']),
+        teacherName: _safe(m['teacher_name']),
+        teacherProfilePhoto: _safe(m['teacher_profile_photo']),
+        circleImageUrl: _safe(m['circle_image_url']),
         status: _safe(m['status']).toLowerCase(),
         timeMs: _toInt(m['time']),
         durationMinutes: _toInt(m['duration']),
@@ -919,6 +913,416 @@ class _JoinOnlineCircleEntryButtonState
     return out;
   }
 
+  int _nearestUpcomingIndex(List<_OnlineCircle> circles) {
+    if (circles.isEmpty) return 0;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    for (var i = 0; i < circles.length; i++) {
+      if (circles[i].timeMs >= nowMs) return i;
+    }
+    return circles.length - 1;
+  }
+
+  void _ensureCarouselAnchor(List<_OnlineCircle> circles) {
+    if (circles.isEmpty) {
+      _openCirclesSignature = '';
+      _activeIndex = 0;
+      return;
+    }
+
+    final signature = circles
+        .map((c) => '${c.id}_${c.updatedAtMs}_${c.timeMs}_${c.status}')
+        .join('|');
+    if (signature == _openCirclesSignature) return;
+
+    _openCirclesSignature = signature;
+    final target = _nearestUpcomingIndex(circles);
+    _activeIndex = target;
+    debugPrint(
+      '[OnlineCircle][Guest] Carousel anchored. total=${circles.length} targetIndex=$target targetId=${circles[target].id}',
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(target);
+      setState(() => _activeIndex = target);
+    });
+  }
+
+  bool _isPastCircle(_OnlineCircle circle, DateTime now) {
+    final start = DateTime.fromMillisecondsSinceEpoch(circle.timeMs);
+    final end = start.add(
+      Duration(
+        minutes: circle.durationMinutes <= 0 ? 60 : circle.durationMinutes,
+      ),
+    );
+    return now.isAfter(end);
+  }
+
+  String _countdownLabel(_OnlineCircle circle, DateTime now) {
+    final start = DateTime.fromMillisecondsSinceEpoch(circle.timeMs);
+    final openFrom = start.subtract(const Duration(minutes: 5));
+    final end = start.add(
+      Duration(
+        minutes: circle.durationMinutes <= 0 ? 60 : circle.durationMinutes,
+      ),
+    );
+
+    if (now.isAfter(end)) return 'Ended';
+    if (now.isAfter(openFrom)) return 'Live now';
+
+    final diff = start.difference(now);
+    final total = diff.inSeconds.clamp(0, 864000);
+    final h = total ~/ 3600;
+    final m = (total % 3600) ~/ 60;
+    final s = total % 60;
+    return 'Starts in ${_two(h)}:${_two(m)}:${_two(s)}';
+  }
+
+  Widget _circleHeroImage({
+    required _OnlineCircle circle,
+    required bool isPast,
+  }) {
+    final imageUrl = circle.circleImageUrl.trim();
+
+    Widget child;
+    if (imageUrl.isEmpty) {
+      child = Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Brand.primaryBlue.withValues(alpha: 0.96),
+              Brand.actionOrange.withValues(alpha: 0.88),
+            ],
+          ),
+        ),
+        child: const Center(
+          child: Icon(Icons.groups_rounded, color: Colors.white, size: 52),
+        ),
+      );
+    } else {
+      child = Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Brand.primaryBlue.withValues(alpha: 0.96),
+                Brand.actionOrange.withValues(alpha: 0.88),
+              ],
+            ),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: Colors.white,
+              size: 42,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: isPast ? 0.38 : 0.14),
+                Colors.black.withValues(alpha: isPast ? 0.62 : 0.38),
+              ],
+            ),
+          ),
+        ),
+        if (isPast)
+          Container(color: const Color(0xFF9E9E9E).withValues(alpha: 0.36)),
+      ],
+    );
+  }
+
+  Widget _buildCircleCarouselCard({
+    required BuildContext context,
+    required _OnlineCircle circle,
+    required DateTime now,
+    required bool active,
+  }) {
+    final isPast = _isPastCircle(circle, now);
+    final countdown = _countdownLabel(circle, now);
+    final teacherName = circle.teacherName.trim().isEmpty
+        ? 'Teacher'
+        : circle.teacherName.trim();
+    final badgeColor = _statusColor(countdown);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
+      margin: EdgeInsets.only(top: active ? 4 : 14, bottom: active ? 4 : 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: active
+              ? Brand.primaryBlue.withValues(alpha: 0.35)
+              : Brand.uiBorder,
+          width: active ? 1.4 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: active ? 0.14 : 0.08),
+            blurRadius: active ? 22 : 14,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => _showCircleDetails(circle),
+        child: Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: _circleHeroImage(circle: circle, isPast: isPast),
+                    ),
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          countdown,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 12,
+                      bottom: 12,
+                      child: Row(
+                        children: [
+                          ProfileAvatar(
+                            name: teacherName,
+                            photoUrl: circle.teacherProfilePhoto,
+                            radius: 16,
+                            fallbackBg: Colors.white.withValues(alpha: 0.28),
+                            fallbackFg: Colors.white,
+                            borderColor: Colors.white.withValues(alpha: 0.72),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            teacherName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    circle.topic,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: isPast
+                          ? Brand.mainText.withValues(alpha: 0.75)
+                          : Brand.primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _formatDateTime(circle.timeMs),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Brand.mainText.withValues(
+                        alpha: isPast ? 0.56 : 0.78,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _statusColor(String countdown) {
+    return switch (countdown) {
+      'Live now' => Brand.actionOrange,
+      'Ended' => const Color(0xFF757575),
+      _ => Brand.primaryBlue,
+    };
+  }
+
+  Widget _buildSheetCircleRow({
+    required _OnlineCircle circle,
+    required DateTime now,
+  }) {
+    final isPast = _isPastCircle(circle, now);
+    final countdown = _countdownLabel(circle, now);
+    final teacherName = circle.teacherName.trim().isEmpty
+        ? 'Teacher'
+        : circle.teacherName.trim();
+    final countdownColor = _statusColor(countdown);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: () => _showCircleDetails(circle),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Brand.uiBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 118,
+              height: 86,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _circleHeroImage(circle: circle, isPast: isPast),
+                    Positioned(
+                      top: 7,
+                      left: 7,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: countdownColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          countdown,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 7,
+                      left: 7,
+                      child: ProfileAvatar(
+                        name: teacherName,
+                        photoUrl: circle.teacherProfilePhoto,
+                        radius: 12,
+                        fallbackBg: Colors.white.withValues(alpha: 0.24),
+                        fallbackFg: Colors.white,
+                        borderColor: Colors.white.withValues(alpha: 0.68),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    circle.topic,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      color: isPast
+                          ? Brand.mainText.withValues(alpha: 0.70)
+                          : Brand.primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _formatTimeOnly(circle.timeMs),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: Brand.mainText.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    teacherName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: Brand.mainText.withValues(alpha: 0.64),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: Brand.primaryBlue.withValues(alpha: 0.8),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _prefetchCircles() async {
     try {
       final snap = await _circlesRef.get();
@@ -926,12 +1330,16 @@ class _JoinOnlineCircleEntryButtonState
         final status = c.status.toLowerCase();
         return status == 'open' || status.isEmpty;
       }).toList();
+      debugPrint(
+        '[OnlineCircle][Guest] Prefetch complete. openCircles=${circles.length}',
+      );
       if (!mounted) return;
       setState(() {
         _prefetchedOpenCircles = circles;
         _prefetching = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[OnlineCircle][Guest] Prefetch failed: $e');
       if (!mounted) return;
       setState(() => _prefetching = false);
     }
@@ -1150,6 +1558,9 @@ class _JoinOnlineCircleEntryButtonState
       return;
     }
 
+    debugPrint(
+      '[OnlineCircle][Guest] Attempting join for circleId=${circle.id} topic="${circle.topic}"',
+    );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!ok && mounted) {
@@ -1157,6 +1568,13 @@ class _JoinOnlineCircleEntryButtonState
         context,
         'Could not open Google Meet.',
         type: AppToastType.error,
+      );
+      debugPrint(
+        '[OnlineCircle][Guest] Launch failed for circleId=${circle.id}',
+      );
+    } else {
+      debugPrint(
+        '[OnlineCircle][Guest] Launch succeeded for circleId=${circle.id}',
       );
     }
   }
@@ -1271,12 +1689,29 @@ class _JoinOnlineCircleEntryButtonState
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Online Meetings',
+                            'All Online Circles',
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
                                   fontWeight: FontWeight.w900,
                                   color: Brand.primaryBlue,
                                 ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Brand.primaryBlue.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${circles.length}',
+                            style: const TextStyle(
+                              color: Brand.primaryBlue,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
                       ],
@@ -1285,7 +1720,7 @@ class _JoinOnlineCircleEntryButtonState
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Tap a meeting to see details',
+                        'Clean timeline view. Tap any circle for details.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Brand.mainText.withValues(alpha: 0.75),
                           fontWeight: FontWeight.w700,
@@ -1300,87 +1735,9 @@ class _JoinOnlineCircleEntryButtonState
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final circle = circles[index];
-                          final state = circle.joinStateAt(DateTime.now());
-
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(22),
-                            onTap: () => _showCircleDetails(circle),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(22),
-                                border: Border.all(color: Brand.uiBorder),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.04),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: BoxDecoration(
-                                      color: state.canJoin
-                                          ? Brand.actionOrange.withValues(
-                                              alpha: 0.12,
-                                            )
-                                          : Brand.primaryBlue.withValues(
-                                              alpha: 0.10,
-                                            ),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Icon(
-                                      state.canJoin
-                                          ? Icons.video_call_rounded
-                                          : Icons.schedule_rounded,
-                                      color: state.canJoin
-                                          ? Brand.actionOrange
-                                          : Brand.primaryBlue,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          circle.topic,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 15,
-                                            color: Brand.primaryBlue,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          _formatDateTime(circle.timeMs),
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: Brand.mainText.withValues(
-                                              alpha: 0.75,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  const Icon(
-                                    Icons.arrow_forward_ios_rounded,
-                                    size: 18,
-                                    color: Brand.primaryBlue,
-                                  ),
-                                ],
-                              ),
-                            ),
+                          return _buildSheetCircleRow(
+                            circle: circle,
+                            now: DateTime.now(),
                           );
                         },
                       ),
@@ -1397,90 +1754,141 @@ class _JoinOnlineCircleEntryButtonState
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: _openCirclesSheet,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFD54F),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFFFC107), width: 1.4),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFFC107).withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
+    return StreamBuilder<int>(
+      stream: Stream.periodic(const Duration(seconds: 1), (x) => x),
+      initialData: 0,
+      builder: (context, _) {
+        final now = DateTime.now();
+
+        return StreamBuilder<DatabaseEvent>(
+          stream: _circlesRef.onValue,
+          builder: (context, snap) {
+            final source = snap.hasData
+                ? _parseCircles(snap.data?.snapshot.value)
+                : _prefetchedOpenCircles;
+            final circles = source.where((c) {
+              final status = c.status.toLowerCase();
+              return status == 'open' || status.isEmpty;
+            }).toList();
+
+            _ensureCarouselAnchor(circles);
+
+            if (circles.isEmpty) {
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: _openCirclesSheet,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: const Color(0xFFFFE082),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.event_busy_rounded,
+                          color: Brand.primaryBlue,
+                        ),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'No online circles are available right now.',
+                            style: TextStyle(
+                              color: Brand.primaryBlue,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ),
-            child: Row(
+              );
+            }
+
+            final total = circles.length;
+            final safeIndex = _activeIndex.clamp(0, total - 1);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Icon(
-                    Icons.groups_rounded,
-                    color: Brand.primaryBlue,
-                    size: 28,
+                Row(
+                  children: [
+                    const Expanded(
+                      child: _SectionHeader(
+                        title: 'Online Circles',
+                        subtitle: 'Swipe to explore upcoming and past circles.',
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: _openCirclesSheet,
+                      icon: const Icon(Icons.list_rounded),
+                      label: const Text('See all'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 320,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: total,
+                    onPageChanged: (i) => setState(() => _activeIndex = i),
+                    itemBuilder: (context, index) {
+                      final circle = circles[index];
+                      final active = index == safeIndex;
+                      return Transform.scale(
+                        scale: active ? 1.0 : 0.95,
+                        child: Opacity(
+                          opacity: active ? 1 : 0.84,
+                          child: _buildCircleCarouselCard(
+                            context: context,
+                            circle: circle,
+                            now: now,
+                            active: active,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Join Online Meeting',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                          color: Brand.primaryBlue,
+                const SizedBox(height: 8),
+                Center(
+                  child: Wrap(
+                    spacing: 6,
+                    children: List.generate(total, (i) {
+                      final active = i == safeIndex;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: active ? 18 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? Brand.primaryBlue
+                              : Brand.primaryBlue.withValues(alpha: 0.24),
+                          borderRadius: BorderRadius.circular(999),
                         ),
-                      ),
-                      SizedBox(height: 5),
-                      Text(
-                        'Tap to view upcoming circle meetings and join on time.',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Brand.primaryBlue,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Brand.primaryBlue,
+                      );
+                    }),
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -1491,6 +1899,9 @@ class _OnlineCircle {
   final String description;
   final String meetingUrl;
   final String teacherUid;
+  final String teacherName;
+  final String teacherProfilePhoto;
+  final String circleImageUrl;
   final String status;
   final int timeMs;
   final int durationMinutes;
@@ -1503,6 +1914,9 @@ class _OnlineCircle {
     required this.description,
     required this.meetingUrl,
     required this.teacherUid,
+    required this.teacherName,
+    required this.teacherProfilePhoto,
+    required this.circleImageUrl,
     required this.status,
     required this.timeMs,
     required this.durationMinutes,

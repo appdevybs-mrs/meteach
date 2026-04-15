@@ -1513,11 +1513,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
     int week = 0;
     int upcoming = 0;
 
-    bool countedSlot = false;
-
     void markSlot(DateTime dt) {
-      if (countedSlot) return;
-      countedSlot = true;
       upcoming += 1;
       if (!dt.isBefore(todayStart) && dt.isBefore(todayEnd)) today += 1;
       if (!dt.isBefore(weekStart) && dt.isBefore(weekEnd)) week += 1;
@@ -1548,15 +1544,12 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
 
           if (!dt.isAfter(now)) continue;
 
-          countedSlot = false;
-
           final slotMap = Map<dynamic, dynamic>.from(slotNode);
 
           // Flat shape: /{day}/{time} => {learners:{...}, ...}
           final learnersRaw = slotMap['learners'];
           if (learnersRaw is Map && learnersRaw.isNotEmpty) {
             markSlot(dt);
-            continue;
           }
 
           // Nested shape: /{day}/{time}/{teacherId} => {learners:{...}, ...}
@@ -1595,7 +1588,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           tags: ['Today ${stats.today}', 'Upcoming ${stats.upcoming}'],
           icon: Icons.event_available_rounded,
           color: AdminHome.accentGreen,
-          badgeCount: 0,
+          badgeCount: stats.upcoming,
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(
             context,

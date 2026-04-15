@@ -794,6 +794,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     final nextUnits = [..._units];
     int success = 0;
     int failed = 0;
+    final failureDetails = <String>[];
 
     if (mounted) {
       setState(() {
@@ -872,8 +873,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               localNo: i,
             );
             success += 1;
-          } catch (_) {
+          } catch (e, st) {
             failed += 1;
+            final message = 'HTML $i failed: $e';
+            failureDetails.add(message);
+            debugPrint('[RecordedBulkUpload] $message');
+            debugPrint('$st');
           } finally {
             if (mounted) setState(() => _recordedAssetDone += 1);
           }
@@ -893,8 +898,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               localNo: i,
             );
             success += 1;
-          } catch (_) {
+          } catch (e, st) {
             failed += 1;
+            final message = 'Video $i failed: $e';
+            failureDetails.add(message);
+            debugPrint('[RecordedBulkUpload] $message');
+            debugPrint('$st');
           } finally {
             if (mounted) setState(() => _recordedAssetDone += 1);
           }
@@ -915,10 +924,15 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     });
     await _saveSyllabus(showToast: false);
     if (!mounted) return;
+    final firstFailure = failureDetails.isNotEmpty
+        ? '\nFirst error: ${failureDetails.first}'
+        : '';
     AppToast.show(
       context,
-      'Bulk upload completed for $scopeLabel. Success: $success • Failed: $failed',
-      type: failed == 0 ? AppToastType.success : AppToastType.info,
+      'Bulk upload completed for $scopeLabel. Success: $success • Failed: $failed$firstFailure',
+      type: failed == 0
+          ? AppToastType.success
+          : (success == 0 ? AppToastType.error : AppToastType.info),
     );
   }
 
