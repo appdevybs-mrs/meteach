@@ -113,6 +113,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
   bool? _openFilter; // null = all, true=open only, false=closed only
+  bool _waitingStatusOnly = false;
   String _teacherFilterUid = 'all';
   bool _emptyClassesOnly = false;
   bool _showClassesSearch = false;
@@ -1040,6 +1041,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return _openFilter == isOpen;
   }
 
+  bool _matchesWaitingStatusFilter(Map<String, dynamic> cls) {
+    if (!_waitingStatusOnly) return true;
+    final status = (cls['status'] ?? '').toString().trim().toLowerCase();
+    return status == 'waiting';
+  }
+
   String _classInstructorUid(Map<String, dynamic> cls) {
     final current = cls['instructor_current'];
     if (current is Map) {
@@ -1122,6 +1129,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Color _statusColor(String status) {
     switch (status) {
+      case 'waiting':
+        return Colors.amber.shade700;
       case "paused":
         return Colors.orange;
       case "blocked":
@@ -1388,7 +1397,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (_courses.isEmpty) return _notify("No courses found.", error: true);
 
     if (_loadingTeachers) return _notify("Teachers are still loading...");
-    if (_teachers.isEmpty) return _notify("No teachers found.", error: true);
 
     final bool isEdit = existingClass != null;
 
@@ -1416,10 +1424,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     bool isOpen = isEdit ? ((existingClass["is_open"] ?? true) == true) : true;
 
-    // Instructors from teachers list
-    List<Map<String, String>> instructors = List<Map<String, String>>.from(
-      _teachers,
-    );
+    // Instructors list with explicit waiting option (no teacher yet)
+    List<Map<String, String>> instructors = [
+      {'uid': '', 'name': 'Waiting', 'serial': ''},
+      ...List<Map<String, String>>.from(_teachers),
+    ];
     String instKey(Map<String, String> t) => (t["uid"] ?? "").trim();
 
     Map<String, String>? selectedInstructorObj = instructors.isNotEmpty
@@ -1684,10 +1693,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   if (val == null) return;
                                   setModalState(() {
                                     selectedCourse = val;
-                                    instructors =
-                                        List<Map<String, String>>.from(
-                                          _teachers,
-                                        );
+                                    instructors = [
+                                      {
+                                        'uid': '',
+                                        'name': 'Waiting',
+                                        'serial': '',
+                                      },
+                                      ...List<Map<String, String>>.from(
+                                        _teachers,
+                                      ),
+                                    ];
                                     selectedInstructorObj =
                                         instructors.isNotEmpty
                                         ? instructors.first
@@ -1712,10 +1727,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           final uid = (t["uid"] ?? "").toString();
                           final name = (t["name"] ?? "").toString();
                           final serial = (t["serial"] ?? "").toString();
+                          final waiting = uid.trim().isEmpty;
+                          final label = waiting
+                              ? 'Waiting (no teacher yet)'
+                              : "$name${serial.isEmpty ? "" : " ($serial)"}";
                           return DropdownMenuItem<String>(
                             value: uid,
                             child: Text(
-                              "$name${serial.isEmpty ? "" : " ($serial)"}",
+                              label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -2037,11 +2056,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   final pickedUid =
                                       (selectedInstructorObj?["uid"] ?? "")
                                           .trim();
-                                  final pickedName =
+                                  final pickedNameRaw =
                                       (selectedInstructorObj?["name"] ?? "")
                                           .trim();
+                                  final isWaitingInstructor =
+                                      pickedUid.isEmpty ||
+                                      pickedNameRaw.toLowerCase() == 'waiting';
+                                  final pickedName = isWaitingInstructor
+                                      ? 'Waiting'
+                                      : pickedNameRaw;
 
-                                  if (pickedUid.isEmpty || pickedName.isEmpty) {
+                                  if (pickedName.isEmpty) {
                                     return _notify(
                                       "Pick an instructor.",
                                       error: true,
@@ -2164,9 +2189,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     "assignedAt": ServerValue.timestamp,
                                   };
 
+                                  final effectiveStatus = isWaitingInstructor
+                                      ? 'waiting'
+                                      : (status.toLowerCase() == 'waiting'
+                                            ? 'active'
+                                            : status);
+
                                   final payload = <String, dynamic>{
                                     "class_id": classId,
-                                    "status": status,
+                                    "status": effectiveStatus,
                                     "is_open": isOpen,
 
                                     "course_id": courseId,
@@ -2646,6 +2677,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     var statusValue = _openFilter == null
         ? 'all'
         : (_openFilter! ? 'open' : 'closed');
+    if (_waitingStatusOnly) statusValue = 'waiting';
     var teacherValue = teacherIds.contains(_teacherFilterUid)
         ? _teacherFilterUid
         : 'all';
@@ -2717,6 +2749,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           value: 'closed',
                           child: Text('Closed only'),
                         ),
+                        DropdownMenuItem(
+                          value: 'waiting',
+                          child: Text('Waiting status'),
+                        ),
                       ],
                       onChanged: (v) {
                         if (v == null) return;
@@ -2782,11 +2818,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                               _dayFilter = dayValue;
                               _teacherFilterUid = teacherValue;
                               _emptyClassesOnly = emptyOnlyValue;
-                              if (statusValue == 'all') {
+                              if (statusValue == 'waiting') {
+                                _waitingStatusOnly = true;
+                                _openFilter = null;
+                              } else if (statusValue == 'all') {
+                                _waitingStatusOnly = false;
                                 _openFilter = null;
                               } else if (statusValue == 'open') {
+                                _waitingStatusOnly = false;
                                 _openFilter = true;
                               } else {
+                                _waitingStatusOnly = false;
                                 _openFilter = false;
                               }
                             });
@@ -2897,6 +2939,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   .where(_matchesSearch)
                   .where(_matchesDayFilter)
                   .where(_matchesOpenFilter)
+                  .where(_matchesWaitingStatusFilter)
                   .where(_matchesTeacherFilter)
                   .where(_matchesEmptyClassesFilter)
                   .toList();
@@ -3029,6 +3072,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                           _setClassStatus(id, 'active');
                                           return;
                                         }
+                                        if (value == 'waiting') {
+                                          _setClassStatus(id, 'waiting');
+                                          return;
+                                        }
                                         if (value == 'delete') {
                                           _deleteClass(id);
                                         }
@@ -3053,6 +3100,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                           value: 'block',
                                           enabled: status != 'blocked',
                                           child: const Text('Block'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'waiting',
+                                          enabled: status != 'waiting',
+                                          child: const Text('Set waiting'),
                                         ),
                                         const PopupMenuDivider(),
                                         const PopupMenuItem(
@@ -3107,6 +3159,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   style: TextStyle(
                                     color: Colors.grey.shade700,
                                     fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Status: ${status.toUpperCase()}',
+                                  style: TextStyle(
+                                    color: _statusColor(status),
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
 

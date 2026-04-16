@@ -435,6 +435,175 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     );
   }
 
+  static int _schoolNetFromPayment(Map<String, dynamic> p) {
+    final pushed = _asInt(p['financePushedAt']) > 0;
+    if (!pushed) return 0;
+    final saved = _asInt(p['financeSchoolNet']);
+    if (saved > 0) return saved;
+
+    var gross = _asInt(p['financeTeacherGross']);
+    if (gross <= 0) {
+      gross = _asInt(p['amount']);
+    }
+    var teacherNet = _asInt(p['financeTeacherNet']);
+    if (teacherNet <= 0 && gross > 0) {
+      teacherNet = _percentOf(
+        gross,
+        _normalizePercent(p['financeTeacherPercent']),
+      );
+    }
+    final net = gross - teacherNet;
+    return net < 0 ? 0 : net;
+  }
+
+  void _openWaitingDetailsDialog(List<Map<String, dynamic>> rows) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('Waiting (All Teachers)'),
+          content: SizedBox(
+            width: 760,
+            child: rows.isEmpty
+                ? const Center(child: Text('No waiting items in this range.'))
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: rows.length,
+                    separatorBuilder: (_, _) => Divider(
+                      height: 1,
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
+                    itemBuilder: (_, i) {
+                      final p = rows[i];
+                      final alloc = _amountsFrom(p);
+                      final learner = _learnerNameFrom(p);
+                      final teacher = _teacherNameFrom(p);
+                      final amount = _asInt(p['amount']);
+                      final method = _normalizeMethod(p['financeMethod']);
+                      final paidAt = _asInt(p['paidAt']);
+                      final date = paidAt > 0
+                          ? _fmtDate(
+                              DateTime.fromMillisecondsSinceEpoch(paidAt),
+                            )
+                          : '—';
+                      final paidPartLabel =
+                          (alloc.splitPaidStatus ?? alloc.status).toUpperCase();
+                      final paymentId = (p['paymentId'] ?? '')
+                          .toString()
+                          .trim();
+
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          learner,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: AdminFinanceScreen.primary,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Teacher: $teacher · Date: $date · Method: ${method.toUpperCase()}\nPayment: ${_money(amount)} · Paid($paidPartLabel): ${_money(alloc.payoutAmount)} · Waiting: ${_money(alloc.waitingAmount)}\nID: ${paymentId.isEmpty ? '-' : paymentId}',
+                          style: const TextStyle(
+                            color: AdminFinanceScreen.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        isThreeLine: true,
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _openSchoolDetailsDialog(List<Map<String, dynamic>> rows) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('School Net (Pushed Only)'),
+          content: SizedBox(
+            width: 760,
+            child: rows.isEmpty
+                ? const Center(
+                    child: Text('No pushed school items in this range.'),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: rows.length,
+                    separatorBuilder: (_, _) => Divider(
+                      height: 1,
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
+                    itemBuilder: (_, i) {
+                      final p = rows[i];
+                      final learner = _learnerNameFrom(p);
+                      final teacher = _teacherNameFrom(p);
+                      final method = _normalizeMethod(p['financeMethod']);
+                      final percent = _normalizePercent(
+                        p['financeTeacherPercent'],
+                      );
+                      final gross = _asInt(p['financeTeacherGross']) > 0
+                          ? _asInt(p['financeTeacherGross'])
+                          : _asInt(p['amount']);
+                      final teacherNet = _asInt(p['financeTeacherNet']) > 0
+                          ? _asInt(p['financeTeacherNet'])
+                          : _percentOf(gross, percent);
+                      final schoolNet = _schoolNetFromPayment(p);
+                      final pushedStatus = (p['financePushedStatus'] ?? '')
+                          .toString()
+                          .trim()
+                          .toUpperCase();
+                      final confirmed = (p['teacherConfirmed'] == true)
+                          ? 'YES'
+                          : 'NO';
+                      final paidAt = _asInt(p['paidAt']);
+                      final date = paidAt > 0
+                          ? _fmtDate(
+                              DateTime.fromMillisecondsSinceEpoch(paidAt),
+                            )
+                          : '—';
+
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          learner,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: AdminFinanceScreen.primary,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Teacher: $teacher · Date: $date · Method: ${method.toUpperCase()}\nGross: ${_money(gross)} · Teacher net: ${_money(teacherNet)} · School net: ${_money(schoolNet)} · %: $percent\nPushed: ${pushedStatus.isEmpty ? '-' : pushedStatus} · Confirmed: $confirmed',
+                          style: const TextStyle(
+                            color: AdminFinanceScreen.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        isThreeLine: true,
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_unlocked) {
@@ -520,8 +689,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
 
                   var originalIncome = 0;
                   var waitingTotal = 0;
+                  var schoolTotal = 0;
                   var originalByMethod = _methodTotalsZero();
                   var waitingByMethod = _methodTotalsZero();
+                  var schoolByMethod = _methodTotalsZero();
+                  final waitingRows = <Map<String, dynamic>>[];
+                  final schoolRows = <Map<String, dynamic>>[];
                   final teacherMap = <String, List<Map<String, dynamic>>>{};
 
                   for (final p in visible) {
@@ -545,6 +718,21 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                       method: method,
                       amount: alloc.waitingAmount,
                     );
+
+                    if (alloc.waitingAmount > 0) {
+                      waitingRows.add(p);
+                    }
+
+                    final schoolNet = _schoolNetFromPayment(p);
+                    if (schoolNet > 0) {
+                      schoolTotal += schoolNet;
+                      schoolRows.add(p);
+                      schoolByMethod = _addToMethodTotals(
+                        current: schoolByMethod,
+                        method: method,
+                        amount: schoolNet,
+                      );
+                    }
                   }
 
                   final teacherCards = <_TeacherCardData>[];
@@ -632,6 +820,14 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         totalWaiting: waitingTotal,
                         byMethod: waitingByMethod,
                         money: _money,
+                        onTap: () => _openWaitingDetailsDialog(waitingRows),
+                      ),
+                      const SizedBox(height: 10),
+                      _SchoolCard(
+                        totalSchool: schoolTotal,
+                        byMethod: schoolByMethod,
+                        money: _money,
+                        onTap: () => _openSchoolDetailsDialog(schoolRows),
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -1136,13 +1332,14 @@ class _TeacherFinanceDetailsScreenState
                   : a.status == 'tbpaid'
                   ? 'tbpaid'
                   : (a.splitPaidStatus == 'done' ? 'done' : 'tbpaid');
+              final hasPushed = _asInt(row['financePushedAt']) > 0;
               final pushedStatus = (row['financePushedStatus'] ?? '')
                   .toString()
                   .trim()
                   .toLowerCase();
-              final alreadyPushedSame =
-                  _asInt(row['financePushedAt']) > 0 &&
-                  pushedStatus == pushTarget;
+              final alreadyPushedSame = hasPushed && pushedStatus == pushTarget;
+              final alreadyPushedTbpaid = hasPushed && pushedStatus == 'tbpaid';
+              final alreadyPushedDone = hasPushed && pushedStatus == 'done';
 
               String statusText;
               if (a.status == 'split') {
@@ -1181,7 +1378,7 @@ class _TeacherFinanceDetailsScreenState
                     ),
                   ),
                   subtitle: Text(
-                    'Amount: ${widget.money(amount)} · Date: $paidAt\nMethod: $methodLabel · Teacher %: $percent\n$statusText',
+                    'Amount: ${widget.money(amount)} · Date: $paidAt\nMethod: $methodLabel · Teacher %: $percent\n$statusText${hasPushed ? ' · PUSHED ${pushedStatus.toUpperCase()}' : ''}',
                     style: const TextStyle(
                       color: AdminFinanceScreen.primary,
                       fontWeight: FontWeight.w700,
@@ -1214,6 +1411,28 @@ class _TeacherFinanceDetailsScreenState
                         }
                         _pushRow(row, pushTarget);
                       }
+                      if (v == 'push_tbpaid') {
+                        if (alreadyPushedTbpaid) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Already pushed as TBPAID.'),
+                            ),
+                          );
+                          return;
+                        }
+                        _pushRow(row, 'tbpaid');
+                      }
+                      if (v == 'push_done') {
+                        if (alreadyPushedDone) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Already pushed as DONE.'),
+                            ),
+                          );
+                          return;
+                        }
+                        _pushRow(row, 'done');
+                      }
                     },
                     itemBuilder: (_) => [
                       const PopupMenuItem(
@@ -1233,6 +1452,16 @@ class _TeacherFinanceDetailsScreenState
                         value: 'push_current',
                         enabled: !alreadyPushedSame,
                         child: Text('Push ${pushTarget.toUpperCase()} + %'),
+                      ),
+                      PopupMenuItem(
+                        value: 'push_tbpaid',
+                        enabled: !alreadyPushedTbpaid,
+                        child: const Text('Push TBPAID + %'),
+                      ),
+                      PopupMenuItem(
+                        value: 'push_done',
+                        enabled: !alreadyPushedDone,
+                        child: const Text('Push DONE + %'),
                       ),
                     ],
                   ),
@@ -1424,56 +1653,132 @@ class _WaitingCard extends StatelessWidget {
     required this.totalWaiting,
     required this.byMethod,
     required this.money,
+    required this.onTap,
   });
 
   final int totalWaiting;
   final _MethodTotals byMethod;
   final String Function(int amount) money;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: 240,
       height: 130,
-      child: Card(
-        elevation: 0,
-        color: const Color(0xFFFFF6EC),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: Colors.orange.withValues(alpha: 0.22)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Card(
+          elevation: 0,
+          color: const Color(0xFFFFF6EC),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: Colors.orange.withValues(alpha: 0.22)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Waiting',
+                  style: TextStyle(
+                    color: AdminFinanceScreen.primary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  money(totalWaiting),
+                  style: const TextStyle(
+                    color: AdminFinanceScreen.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 24,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
+                  style: TextStyle(
+                    color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Waiting',
-                style: TextStyle(
-                  color: AdminFinanceScreen.primary,
-                  fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+
+class _SchoolCard extends StatelessWidget {
+  const _SchoolCard({
+    required this.totalSchool,
+    required this.byMethod,
+    required this.money,
+    required this.onTap,
+  });
+
+  final int totalSchool;
+  final _MethodTotals byMethod;
+  final String Function(int amount) money;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 320,
+      height: 130,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Card(
+          elevation: 0,
+          color: const Color(0xFFEFF4FF),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(
+              color: const Color(0xFF3666D8).withValues(alpha: 0.28),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'School (Pushed Only)',
+                  style: TextStyle(
+                    color: AdminFinanceScreen.primary,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                money(totalWaiting),
-                style: const TextStyle(
-                  color: AdminFinanceScreen.primary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 24,
-                  height: 1.1,
+                const Spacer(),
+                Text(
+                  money(totalSchool),
+                  style: const TextStyle(
+                    color: AdminFinanceScreen.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 24,
+                    height: 1.1,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
-                style: TextStyle(
-                  color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
+                const SizedBox(height: 2),
+                Text(
+                  'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
+                  style: TextStyle(
+                    color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

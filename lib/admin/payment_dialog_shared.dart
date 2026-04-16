@@ -7,6 +7,8 @@ import '../shared/study_variant.dart';
 
 class PaymentDialogShared {
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
+  static const String _teacherWaitingValue = '__waiting_no_teacher__';
+  static const String _teacherServiceValue = '__service_no_teacher__';
 
   // ---------- Date helpers ----------
 
@@ -153,6 +155,44 @@ class PaymentDialogShared {
     }
 
     return teachers;
+  }
+
+  static bool _isWaitingLabel(String name) {
+    return name.trim().toLowerCase() == 'waiting';
+  }
+
+  static bool _isServiceLabel(String name) {
+    return name.trim().toLowerCase() == 'service';
+  }
+
+  static String? _teacherPickerValue({
+    required String? teacherUid,
+    required String teacherName,
+    required Map<String, String> teachers,
+  }) {
+    final uid = (teacherUid ?? '').trim();
+    if (uid.isNotEmpty && teachers.containsKey(uid)) return uid;
+    if (_isWaitingLabel(teacherName)) return _teacherWaitingValue;
+    if (_isServiceLabel(teacherName)) return _teacherServiceValue;
+    return null;
+  }
+
+  static String? _teacherUidFromPickerValue(String? value) {
+    if (value == null) return null;
+    if (value == _teacherWaitingValue || value == _teacherServiceValue) {
+      return '';
+    }
+    return value;
+  }
+
+  static String _teacherNameFromPickerValue(
+    String? value,
+    Map<String, String> teachers,
+  ) {
+    if (value == null) return '';
+    if (value == _teacherWaitingValue) return 'Waiting';
+    if (value == _teacherServiceValue) return 'Service';
+    return teachers[value] ?? '';
   }
 
   // ---------- Variant / Study mode helpers ----------
@@ -906,6 +946,11 @@ class PaymentDialogShared {
     String? teacherUid = (payment['teacherId'] ?? '').toString().trim();
     if (teacherUid.isEmpty) teacherUid = null;
     String teacherName = (payment['teacherName'] ?? '').toString().trim();
+    String? teacherPickerValue = _teacherPickerValue(
+      teacherUid: teacherUid,
+      teacherName: teacherName,
+      teachers: teachers,
+    );
 
     if (!context.mounted) return;
 
@@ -1001,14 +1046,20 @@ class PaymentDialogShared {
                     if (usesTeacher) ...[
                       _prettyDropdown<String>(
                         label: 'Teacher',
-                        value: teacherUid,
+                        value: teacherPickerValue,
                         items: {
                           null: '— Select teacher —',
+                          _teacherWaitingValue: 'Waiting (no teacher yet)',
+                          _teacherServiceValue: 'Service (school payment)',
                           ...teachers.map((k, v) => MapEntry(k, v)),
                         },
                         onChanged: (v) => setD(() {
-                          teacherUid = v;
-                          teacherName = (v == null) ? '' : (teachers[v] ?? '');
+                          teacherPickerValue = v;
+                          teacherUid = _teacherUidFromPickerValue(v);
+                          teacherName = _teacherNameFromPickerValue(
+                            v,
+                            teachers,
+                          );
                         }),
                       ),
                       const SizedBox(height: 12),
@@ -1280,6 +1331,7 @@ class PaymentDialogShared {
 
     String? selectedTeacherUid;
     String selectedTeacherName = '';
+    String? selectedTeacherPickerValue;
 
     final amountC = TextEditingController();
     final notesC = TextEditingController();
@@ -1689,16 +1741,20 @@ class PaymentDialogShared {
                     if (usesTeacher) ...[
                       _prettyDropdown<String>(
                         label: 'Teacher',
-                        value: selectedTeacherUid,
+                        value: selectedTeacherPickerValue,
                         items: {
                           null: '— Select teacher —',
+                          _teacherWaitingValue: 'Waiting (no teacher yet)',
+                          _teacherServiceValue: 'Service (school payment)',
                           ...teachers.map((k, v) => MapEntry(k, v)),
                         },
                         onChanged: (v) => setD(() {
-                          selectedTeacherUid = v;
-                          selectedTeacherName = (v == null)
-                              ? ''
-                              : (teachers[v] ?? '');
+                          selectedTeacherPickerValue = v;
+                          selectedTeacherUid = _teacherUidFromPickerValue(v);
+                          selectedTeacherName = _teacherNameFromPickerValue(
+                            v,
+                            teachers,
+                          );
                         }),
                       ),
                       const SizedBox(height: 12),

@@ -3544,6 +3544,9 @@ class _TableHeaderRow extends StatelessWidget {
 // ------------------ Teacher dropdown from /users (role=teacher) ------------------
 
 class _TeacherDropdownFromUsers extends StatelessWidget {
+  static const String waitingValue = '__waiting_no_teacher__';
+  static const String serviceValue = '__service_no_teacher__';
+
   const _TeacherDropdownFromUsers({
     required this.usersRef,
     required this.valueUid,
@@ -3555,6 +3558,14 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
   final String? valueUid;
   final String? fallbackName;
   final void Function(String? teacherUid, String? teacherName) onChanged;
+
+  bool _isWaitingLabel(String name) {
+    return name.trim().toLowerCase() == 'waiting';
+  }
+
+  bool _isServiceLabel(String name) {
+    return name.trim().toLowerCase() == 'service';
+  }
 
   bool _isTeacherRole(dynamic role) {
     final r = (role ?? '').toString().trim().toLowerCase();
@@ -3605,7 +3616,14 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
 
         String? effectiveUid = (valueUid ?? '').trim();
         if (effectiveUid.isEmpty || !uidSet.contains(effectiveUid)) {
-          effectiveUid = null;
+          final fallback = (fallbackName ?? '').trim();
+          if (_isWaitingLabel(fallback)) {
+            effectiveUid = waitingValue;
+          } else if (_isServiceLabel(fallback)) {
+            effectiveUid = serviceValue;
+          } else {
+            effectiveUid = null;
+          }
         }
 
         return DropdownButtonFormField<String>(
@@ -3615,6 +3633,14 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
             const DropdownMenuItem<String>(
               value: null,
               child: Text('— Select teacher —'),
+            ),
+            const DropdownMenuItem<String>(
+              value: waitingValue,
+              child: Text('Waiting (no teacher yet)'),
+            ),
+            const DropdownMenuItem<String>(
+              value: serviceValue,
+              child: Text('Service (school payment)'),
             ),
             ...teachers.map((t) {
               final uid = t['uid'] ?? '';
@@ -3628,6 +3654,14 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
           onChanged: (uid) {
             if (uid == null) {
               onChanged(null, null);
+              return;
+            }
+            if (uid == waitingValue) {
+              onChanged('', 'Waiting');
+              return;
+            }
+            if (uid == serviceValue) {
+              onChanged('', 'Service');
               return;
             }
             final found = teachers.firstWhere(

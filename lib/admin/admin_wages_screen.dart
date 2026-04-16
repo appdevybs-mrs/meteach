@@ -82,12 +82,71 @@ class AdminWagesScreen extends StatelessWidget {
     return ((amount * percent) / 100).round();
   }
 
+  static bool _isPushed(Map<String, dynamic> p) {
+    return _asInt(p['financePushedAt']) > 0;
+  }
+
+  static int _teacherGross(Map<String, dynamic> p) {
+    var gross = _asInt(p['financeTeacherGross']);
+    if (gross <= 0) {
+      final alloc = _financeAlloc(p);
+      gross = alloc.tbpaid + alloc.done;
+    }
+    if (gross <= 0) gross = _asInt(p['amount']);
+    return gross;
+  }
+
+  static int _teacherNet(Map<String, dynamic> p) {
+    final saved = _asInt(p['financeTeacherNet']);
+    if (saved > 0) return saved;
+    final gross = _teacherGross(p);
+    return _netOf(gross, _teacherPercent(p['financeTeacherPercent']));
+  }
+
+  static int _schoolNet(Map<String, dynamic> p) {
+    if (!_isPushed(p)) return 0;
+    final saved = _asInt(p['financeSchoolNet']);
+    if (saved > 0) return saved;
+    final net = _teacherGross(p) - _teacherNet(p);
+    return net < 0 ? 0 : net;
+  }
+
+  static String _learnerName(Map<String, dynamic> p) {
+    final n1 = (p['learner_name'] ?? '').toString().trim();
+    if (n1.isNotEmpty) return n1;
+    final n2 = (p['learnerName'] ?? '').toString().trim();
+    if (n2.isNotEmpty) return n2;
+    return '(No name)';
+  }
+
+  static String _teacherName(Map<String, dynamic> p) {
+    final t1 = (p['teacherName'] ?? '').toString().trim();
+    if (t1.isNotEmpty) return t1;
+    final t2 = (p['teacher_name'] ?? '').toString().trim();
+    if (t2.isNotEmpty) return t2;
+    final t3 = (p['teacherId'] ?? '').toString().trim();
+    return t3.isEmpty ? 'Unknown teacher' : t3;
+  }
+
+  static String _methodLabel(Map<String, dynamic> p) {
+    final m = (p['financeMethod'] ?? '').toString().trim().toLowerCase();
+    if (m == 'cash') return '💵 Cash';
+    if (m == 'ccp') return '🏤 CCP';
+    return '❔ Unspecified';
+  }
+
   static String _two(int n) => n.toString().padLeft(2, '0');
 
   static String _monthKeyFromPaidAtMs(int ms) {
     if (ms <= 0) return 'Unknown';
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     return '${d.year}-${_two(d.month)}'; // yyyy-MM
+  }
+
+  static String _fmtYmdFromMs(int ms) {
+    if (ms <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}';
   }
 
   static String _monthKeyNow() {
@@ -664,6 +723,110 @@ class AdminWagesScreen extends StatelessWidget {
                       return list;
                     }
 
+                    final waitingRows = <Map<String, dynamic>>[];
+                    final schoolRows = <Map<String, dynamic>>[];
+                    var waitingTotal = 0;
+                    var schoolTotal = 0;
+                    var grossTotal = 0;
+                    var teacherNetTotal = 0;
+                    var confirmedCount = 0;
+
+                    for (final p in payments) {
+                      final alloc = _financeAlloc(p);
+                      if (alloc.waiting > 0) {
+                        waitingRows.add(p);
+                        waitingTotal += alloc.waiting;
+                      }
+
+                      if (_isPushed(p)) {
+                        final gross = _teacherGross(p);
+                        final tNet = _teacherNet(p);
+                        final sNet = _schoolNet(p);
+                        grossTotal += gross;
+                        teacherNetTotal += tNet;
+                        schoolTotal += sNet;
+                        if (sNet > 0) schoolRows.add(p);
+                      }
+
+                      if (_asBool(p['teacherConfirmed'])) {
+                        confirmedCount++;
+                      }
+                    }
+
+                    void openFinanceDetails({
+                      required String title,
+                      required List<Map<String, dynamic>> rows,
+                      required bool waitingMode,
+                    }) {
+                      showDialog<void>(
+                        context: context,
+                        builder: (dialogCtx) {
+                          return AlertDialog(
+                            title: Text(title),
+                            content: SizedBox(
+                              width: 860,
+                              child: rows.isEmpty
+                                  ? const Center(child: Text('No records.'))
+                                  : ListView.separated(
+                                      shrinkWrap: true,
+                                      itemCount: rows.length,
+                                      separatorBuilder: (_, _) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (_, i) {
+                                        final p = rows[i];
+                                        final alloc = _financeAlloc(p);
+                                        final learner = _learnerName(p);
+                                        final teacher = _teacherName(p);
+                                        final method = _methodLabel(p);
+                                        final date = _fmtYmdFromMs(
+                                          _asInt(p['paidAt']),
+                                        );
+                                        final percent = _teacherPercent(
+                                          p['financeTeacherPercent'],
+                                        );
+                                        final gross = _teacherGross(p);
+                                        final tNet = _teacherNet(p);
+                                        final sNet = _schoolNet(p);
+                                        final pushed =
+                                            (p['financePushedStatus'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .toUpperCase();
+
+                                        return ListTile(
+                                          dense: true,
+                                          title: Text(
+                                            learner,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: primaryBlue,
+                                            ),
+                                          ),
+                                          subtitle: Text(
+                                            waitingMode
+                                                ? 'Teacher: $teacher · Date: ${date.isEmpty ? '—' : date} · $method\nPayment: ${_asInt(p['amount'])} DA · Paid: ${alloc.tbpaid + alloc.done} DA · Waiting: ${alloc.waiting} DA\nSplit status: ${(p['financePayoutStatus'] ?? '').toString().toUpperCase()}'
+                                                : 'Teacher: $teacher · Date: ${date.isEmpty ? '—' : date} · $method\nGross: $gross DA · Teacher net: $tNet DA · School net: $sNet DA · %: $percent\nPushed: ${pushed.isEmpty ? '-' : pushed} · Confirmed: ${_asBool(p['teacherConfirmed']) ? 'YES' : 'NO'}',
+                                            style: const TextStyle(
+                                              color: primaryBlue,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          isThreeLine: true,
+                                        );
+                                      },
+                                    ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(dialogCtx).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    }
+
                     return ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
                       itemCount: teacherKeys.length + 1,
@@ -671,15 +834,62 @@ class AdminWagesScreen extends StatelessWidget {
                         if (i == 0) {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: _StatsHeaderCard(
-                              data: stats,
-                              onTapMissing: () {
-                                _showMissingBottomSheet(
-                                  context: context,
-                                  title: 'Not paid yet • ${stats.monthLabel}',
-                                  learners: missingGlobalList(),
-                                );
-                              },
+                            child: Column(
+                              children: [
+                                _StatsHeaderCard(
+                                  data: stats,
+                                  onTapMissing: () {
+                                    _showMissingBottomSheet(
+                                      context: context,
+                                      title:
+                                          'Not paid yet • ${stats.monthLabel}',
+                                      learners: missingGlobalList(),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: [
+                                    _FinanceSummaryCard(
+                                      title: 'Gross (Pushed)',
+                                      value: '$grossTotal DA',
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                    _FinanceSummaryCard(
+                                      title: 'Teacher Net',
+                                      value: '$teacherNetTotal DA',
+                                      color: const Color(0xFF3666D8),
+                                    ),
+                                    _FinanceSummaryCard(
+                                      title: 'School (Pushed)',
+                                      value: '$schoolTotal DA',
+                                      color: const Color(0xFF1F3B7A),
+                                      onTap: () => openFinanceDetails(
+                                        title: 'School Net (Pushed Only)',
+                                        rows: schoolRows,
+                                        waitingMode: false,
+                                      ),
+                                    ),
+                                    _FinanceSummaryCard(
+                                      title: 'Waiting (All Teachers)',
+                                      value: '$waitingTotal DA',
+                                      color: const Color(0xFFF0A526),
+                                      onTap: () => openFinanceDetails(
+                                        title: 'Waiting (All Teachers)',
+                                        rows: waitingRows,
+                                        waitingMode: true,
+                                      ),
+                                    ),
+                                    _FinanceSummaryCard(
+                                      title: 'Confirmed',
+                                      value: '$confirmedCount',
+                                      color: const Color(0xFF22945A),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           );
                         }
@@ -1042,6 +1252,62 @@ class _StatsHeaderCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FinanceSummaryCard extends StatelessWidget {
+  const _FinanceSummaryCard({
+    required this.title,
+    required this.value,
+    required this.color,
+    this.onTap,
+  });
+
+  final String title;
+  final String value;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Container(
+      width: 230,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return child;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: child,
     );
   }
 }
