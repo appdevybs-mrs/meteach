@@ -796,6 +796,20 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                     (a, b) => b.originalTotal.compareTo(a.originalTotal),
                   );
 
+                  final screenW = MediaQuery.of(context).size.width;
+                  const cardsSpacing = 12.0;
+                  const horizontalPadding = 24.0;
+                  final twoUpWidth =
+                      (screenW - horizontalPadding - cardsSpacing) / 2;
+                  final compactCardWidth = twoUpWidth < 150
+                      ? 150.0
+                      : (twoUpWidth > 250 ? 250.0 : twoUpWidth);
+                  final compactMode = screenW < 800;
+                  final teacherCardWidth = compactMode
+                      ? compactCardWidth
+                      : 250.0;
+                  final teacherCardHeight = compactMode ? 270.0 : 320.0;
+
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
                     children: [
@@ -838,6 +852,8 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             _TeacherSquareCard(
                               data: card,
                               money: _money,
+                              width: teacherCardWidth,
+                              height: teacherCardHeight,
                               onBulkPushTbpaid: () => _bulkPushTeacher(
                                 card: card,
                                 targetStatus: 'tbpaid',
@@ -1790,6 +1806,8 @@ class _TeacherSquareCard extends StatelessWidget {
   const _TeacherSquareCard({
     required this.data,
     required this.money,
+    required this.width,
+    required this.height,
     required this.onBulkPushTbpaid,
     required this.onBulkPushDone,
     required this.onTap,
@@ -1797,6 +1815,8 @@ class _TeacherSquareCard extends StatelessWidget {
 
   final _TeacherCardData data;
   final String Function(int amount) money;
+  final double width;
+  final double height;
   final VoidCallback onBulkPushTbpaid;
   final VoidCallback onBulkPushDone;
   final VoidCallback onTap;
@@ -1804,8 +1824,8 @@ class _TeacherSquareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 250,
-      height: 320,
+      width: width,
+      height: height,
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
@@ -1882,7 +1902,7 @@ class _TeacherSquareCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        child: const Text('Push TBPAID'),
+                        child: const Text('TBPAID'),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -1897,7 +1917,7 @@ class _TeacherSquareCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        child: const Text('Push DONE'),
+                        child: const Text('DONE'),
                       ),
                     ),
                   ],
