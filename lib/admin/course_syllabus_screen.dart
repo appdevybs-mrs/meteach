@@ -1071,9 +1071,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   // ----------------------------
 
   Future<void> _addSession(int unitIndex) async {
-    final courseFolderName = _isRecordedVariant
-        ? await _loadCourseFolderName()
-        : '';
+    final courseFolderName = await _loadCourseFolderName();
     if (!mounted) return;
 
     final res = await showModalBottomSheet<_SessionDraft>(
@@ -1082,6 +1080,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       builder: (_) => _SessionEditorSheet(
         title: 'Add Session',
         isRecorded: _isRecordedVariant,
+        variantKey: widget.variantKey,
         courseFolderName: courseFolderName,
         suggestedSessionNumber: _totalSessions + 1,
         initial: _SessionDraft(
@@ -1142,9 +1141,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _editSession(int unitIndex, int sessionIndex) async {
     final unit = _units[unitIndex];
     final s = unit.sessions[sessionIndex];
-    final courseFolderName = _isRecordedVariant
-        ? await _loadCourseFolderName()
-        : '';
+    final courseFolderName = await _loadCourseFolderName();
     if (!mounted) return;
 
     final res = await showModalBottomSheet<_SessionDraft>(
@@ -1153,6 +1150,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       builder: (_) => _SessionEditorSheet(
         title: 'Edit Session',
         isRecorded: _isRecordedVariant,
+        variantKey: widget.variantKey,
         courseFolderName: courseFolderName,
         suggestedSessionNumber: s.sessionNumber > 0
             ? s.sessionNumber
@@ -2708,6 +2706,7 @@ class _SessionEditorSheet extends StatefulWidget {
     required this.title,
     required this.initial,
     required this.isRecorded,
+    required this.variantKey,
     required this.courseFolderName,
     required this.suggestedSessionNumber,
   });
@@ -2715,6 +2714,7 @@ class _SessionEditorSheet extends StatefulWidget {
   final String title;
   final _SessionDraft initial;
   final bool isRecorded;
+  final String variantKey;
   final String courseFolderName;
   final int suggestedSessionNumber;
 
@@ -2850,12 +2850,17 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   String _resolvedSessionFolderPath() {
     if (_serverFolderPath.trim().isNotEmpty) return _serverFolderPath.trim();
 
+    final variantFolder = _SyllabusServerStorage.sanitizeSegment(
+      widget.variantKey,
+      fallback: 'variant',
+    );
     final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
       sessionNumber: widget.suggestedSessionNumber,
       sessionTitle: titleC.text.trim(),
     );
 
-    _serverFolderPath = '${widget.courseFolderName}/$sessionFolder';
+    _serverFolderPath =
+        '${widget.courseFolderName}/$variantFolder/$sessionFolder';
     return _serverFolderPath;
   }
 
@@ -3664,15 +3669,95 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                   ),
                 ],
                 if (!widget.isRecorded) ...[
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: materialsUrlC,
-                    decoration: const InputDecoration(
-                      labelText: 'Materials link (PowerPoint/Drive)',
-                      hintText: 'https://...',
-                      filled: true,
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Lesson materials (HTML)',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
                     ),
-                    onChanged: (_) => _clearInlineError(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          materialsUrlC.text.trim().isEmpty
+                              ? 'No HTML materials uploaded yet.'
+                              : _fileNameFromUrl(materialsUrlC.text.trim()),
+                          style: TextStyle(
+                            color: materialsUrlC.text.trim().isEmpty
+                                ? Colors.black.withValues(alpha: 0.72)
+                                : Colors.blue.shade700,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _recordedAssetsBusy
+                              ? null
+                              : _pickAndUploadHtml,
+                          icon: _uploadingMaterials
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.html_rounded),
+                          label: Text(
+                            _uploadingMaterials
+                                ? 'Uploading ${(_materialsUploadProgress * 100).round()}%'
+                                : (materialsUrlC.text.trim().isEmpty
+                                      ? 'Upload HTML'
+                                      : 'Replace HTML'),
+                          ),
+                        ),
+                        if (_uploadingMaterials) ...[
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              minHeight: 7,
+                              value: _materialsUploadProgress
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                            ),
+                          ),
+                        ],
+                        if (materialsUrlC.text.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _recordedAssetsBusy
+                                ? null
+                                : _clearHtmlOnly,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Remove HTML'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade200),
+                            ),
+                          ),
+                        ],
+                        if (_serverFolderPath.trim().isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Server folder: ${_serverFolderPath.trim()}',
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
                 const SizedBox(height: 14),

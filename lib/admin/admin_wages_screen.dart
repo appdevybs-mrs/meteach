@@ -11,10 +11,10 @@ class AdminWagesScreen extends StatelessWidget {
   static const int _paymentsWindowSize = 3000;
 
   static const primaryBlue = Color(0xFF1A2B48);
+  static const uiBorder = Color(0xFFD1D9E0);
   static const actionOrange = Color(0xFFF98D28);
   static const mainText = Color(0xFF2D2D2D);
   static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
@@ -28,6 +28,58 @@ class AdminWagesScreen extends StatelessWidget {
     if (v is bool) return v;
     final s = v.toString().trim().toLowerCase();
     return s == 'true' || s == '1' || s == 'yes';
+  }
+
+  static String _normalizeFinanceStatus(dynamic v) {
+    final s = (v ?? '').toString().trim().toLowerCase();
+    if (s == 'done' || s == 'tbpaid' || s == 'split' || s == 'waiting') {
+      return s;
+    }
+    return 'tbpaid';
+  }
+
+  static _FinanceAlloc _financeAlloc(Map<String, dynamic> p) {
+    final amount = _asInt(p['amount']);
+    final status = _normalizeFinanceStatus(p['financePayoutStatus']);
+    if (status == 'done') {
+      return _FinanceAlloc(gross: amount, tbpaid: 0, waiting: 0, done: amount);
+    }
+    if (status == 'waiting') {
+      return _FinanceAlloc(gross: amount, tbpaid: 0, waiting: amount, done: 0);
+    }
+    if (status == 'tbpaid') {
+      return _FinanceAlloc(gross: amount, tbpaid: amount, waiting: 0, done: 0);
+    }
+
+    final splitPaid = _asInt(p['financeSplitPaidAmount']);
+    var splitWaiting = _asInt(p['financeSplitWaitingAmount']);
+    if (splitWaiting <= 0) {
+      splitWaiting = amount - splitPaid;
+    }
+    final paid = splitPaid.clamp(0, amount);
+    final waiting = splitWaiting.clamp(0, amount - paid);
+    final paidStatus =
+        _normalizeFinanceStatus(p['financeSplitPaidStatus']) == 'done'
+        ? 'done'
+        : 'tbpaid';
+    return _FinanceAlloc(
+      gross: amount,
+      tbpaid: paidStatus == 'tbpaid' ? paid : 0,
+      waiting: waiting,
+      done: paidStatus == 'done' ? paid : 0,
+    );
+  }
+
+  static int _teacherPercent(dynamic v) {
+    final p = _asInt(v);
+    if (p <= 0) return 100;
+    if (p > 100) return 100;
+    return p;
+  }
+
+  static int _netOf(int amount, int percent) {
+    if (amount <= 0) return 0;
+    return ((amount * percent) / 100).round();
   }
 
   static String _two(int n) => n.toString().padLeft(2, '0');
@@ -433,7 +485,6 @@ class AdminWagesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final paymentsRef = FirebaseDatabase.instance.ref('payments');
     final classesRef = FirebaseDatabase.instance.ref('classes');
     final learnersRef = FirebaseDatabase.instance.ref(
@@ -710,6 +761,20 @@ class _LearnerInfo {
   final String serial;
 }
 
+class _FinanceAlloc {
+  const _FinanceAlloc({
+    required this.gross,
+    required this.tbpaid,
+    required this.waiting,
+    required this.done,
+  });
+
+  final int gross;
+  final int tbpaid;
+  final int waiting;
+  final int done;
+}
+
 class _StatsData {
   _StatsData({
     required this.monthLabel,
@@ -807,7 +872,6 @@ class _StatsHeaderCard extends StatelessWidget {
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const uiBorder = Color(0xFFD1D9E0);
-
   String _fmtDa(int n) => '$n DA';
 
   Widget _tile({
@@ -1008,7 +1072,6 @@ class _TeacherSection extends StatelessWidget {
   final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
 
   static const primaryBlue = Color(0xFF1A2B48);
-  static const uiBorder = Color(0xFFD1D9E0);
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
@@ -1130,13 +1193,23 @@ class _TeacherSection extends StatelessWidget {
     final itemsAll = [...payments]
       ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
 
-    // Teacher totals (ALL TIME)
-    int totalAll = 0;
-    int unpaidAll = 0;
+    // Teacher totals (ALL TIME, finance model)
+    int grossAll = 0;
+    int teacherNetAll = 0;
+    int schoolNetAll = 0;
+    int confirmedCount = 0;
     for (final p in itemsAll) {
-      final amount = _asInt(p['amount']);
-      totalAll += amount;
-      if (!_asBool(p['teacherPaid'])) unpaidAll++;
+      final alloc = AdminWagesScreen._financeAlloc(p);
+      final percent = AdminWagesScreen._teacherPercent(
+        p['financeTeacherPercent'],
+      );
+      final int gross = alloc.tbpaid + alloc.done;
+      final int tNet = AdminWagesScreen._netOf(gross, percent);
+      final int sNet = gross - tNet;
+      grossAll += gross;
+      teacherNetAll += tNet;
+      schoolNetAll += sNet;
+      if (_asBool(p['teacherConfirmed'])) confirmedCount++;
     }
 
     // Teacher "not paid yet" (CURRENT MONTH only)
@@ -1214,7 +1287,7 @@ class _TeacherSection extends StatelessWidget {
       });
 
     final subtitle =
-        'Learners: ${learnerKeys.length} • Payments: ${itemsAll.length} • Unpaid: $unpaidAll • Total: $totalAll DA';
+        'Learners: ${learnerKeys.length} • Payments: ${itemsAll.length} • Gross: $grossAll DA • Teacher net: $teacherNetAll DA • School net: $schoolNetAll DA • Confirmed: $confirmedCount';
 
     return Container(
       decoration: BoxDecoration(
@@ -1367,8 +1440,9 @@ class _LearnerSection extends StatelessWidget {
               .trim();
     }
 
-    if (learnerName.isEmpty)
+    if (learnerName.isEmpty) {
       learnerName = learnerUid == 'Unknown' ? 'Unknown learner' : learnerUid;
+    }
 
     int total = 0;
     int unpaid = 0;
@@ -1519,6 +1593,13 @@ class _PaymentRow extends StatelessWidget {
     final sessionsPaid = _asInt(payment['sessionsPaid']);
     final left = _asInt(payment['remindBeforeSession']);
     final amount = _asInt(payment['amount']);
+    final alloc = AdminWagesScreen._financeAlloc(payment);
+    final percent = AdminWagesScreen._teacherPercent(
+      payment['financeTeacherPercent'],
+    );
+    final gross = alloc.tbpaid + alloc.done;
+    final teacherNet = AdminWagesScreen._netOf(gross, percent);
+    final schoolNet = gross - teacherNet;
 
     final isPaidStaff = _asBool(payment['teacherPaid']);
     final confirmed = _asBool(payment['teacherConfirmed']);
@@ -1571,6 +1652,10 @@ class _PaymentRow extends StatelessWidget {
                     _miniTag('Sessions: $sessionsPaid'),
                     _miniTag('Left: $left'),
                     _miniTag('Amount: $amount DA'),
+                    _miniTag('Teacher %: $percent%'),
+                    _miniTag('Gross: $gross DA'),
+                    _miniTag('Teacher net: $teacherNet DA'),
+                    _miniTag('School net: $schoolNet DA'),
                   ],
                 ),
                 const SizedBox(height: 10),

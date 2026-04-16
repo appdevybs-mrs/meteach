@@ -2,7 +2,7 @@
 // ✅ FULL DROP-IN REPLACEMENT (SAFE)
 //
 // Keeps your working Firebase/loading logic intact.
-// Tabs kept: Payment / Attendance / Progress
+// Tabs: Overview / Progress
 //
 // ✅ NEW (requested):
 // 1) Progress now includes BOTH:
@@ -38,6 +38,7 @@ import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
+import '../shared/material_webview_screen.dart';
 import '../services/course_feedback_service.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
@@ -105,7 +106,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 2, vsync: this);
     _joinTicker = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       setState(() {});
@@ -914,6 +915,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     'objective': (sess['objective'] ?? '').toString(),
                     'content': (sess['content'] ?? '').toString(),
                     'homework': (sess['homework'] ?? '').toString(),
+                    'materialsUrl': (sess['materialsUrl'] ?? '').toString(),
                     'durationMinutes': sess['durationMinutes'] ?? 0,
                   });
                 }
@@ -950,6 +952,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       'objective': (sess['objective'] ?? '').toString(),
                       'content': (sess['content'] ?? '').toString(),
                       'homework': (sess['homework'] ?? '').toString(),
+                      'materialsUrl': (sess['materialsUrl'] ?? '').toString(),
                       'durationMinutes': sess['durationMinutes'] ?? 0,
                     });
                   }
@@ -1831,8 +1834,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           labelColor: UiK.primaryBlue,
           indicatorColor: UiK.actionOrange,
           tabs: const [
-            Tab(icon: Icon(Icons.payments_rounded), text: 'Payment'),
-            Tab(icon: Icon(Icons.how_to_reg_rounded), text: 'Attendance'),
+            Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
             Tab(icon: Icon(Icons.insights_rounded), text: 'Progress'),
           ],
         ),
@@ -1860,8 +1862,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               : TabBarView(
                   controller: _tab,
                   children: [
-                    _paymentTab(sessionsPassed: sessionsConsumed),
-                    _attendanceTab(
+                    _paymentTab(
+                      sessionsPassed: sessionsConsumed,
                       attPct: attPct,
                       present: present,
                       total: meetingsHeld,
@@ -1890,7 +1892,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   // -------------------- PAYMENT TAB (UNCHANGED) --------------------
 
-  Widget _paymentTab({required int sessionsPassed}) {
+  Widget _paymentTab({
+    required int sessionsPassed,
+    required int attPct,
+    required int present,
+    required int total,
+  }) {
     if (_payLoading) return const Center(child: CircularProgressIndicator());
 
     final sum = _paymentSummary;
@@ -2233,11 +2240,86 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                _attendanceOverviewSection(
+                  attPct: attPct,
+                  present: present,
+                  total: total,
+                ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _attendanceOverviewSection({
+    required int attPct,
+    required int present,
+    required int total,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+        color: Colors.white,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.how_to_reg_rounded, size: 18, color: UiK.actionOrange),
+              SizedBox(width: 8),
+              Text(
+                'Attendance',
+                style: TextStyle(
+                  color: UiK.mainText,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _kpi(
+                icon: Icons.how_to_reg_rounded,
+                label: 'Attendance',
+                value: '$attPct%',
+              ),
+              _kpi(
+                icon: Icons.check_circle_rounded,
+                label: 'Present',
+                value: '$present/$total',
+              ),
+              _kpi(
+                icon: Icons.wifi_tethering_rounded,
+                label: 'Online records',
+                value: '${_onlineAttendance.length}',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_attendanceAll.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'No attendance records yet.',
+                style: TextStyle(
+                  color: UiK.mainText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            )
+          else
+            ..._attendanceAll.map(_attendanceCard),
+        ],
+      ),
     );
   }
 
@@ -2412,77 +2494,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           ),
         ],
       ),
-    );
-  }
-
-  // -------------------- ATTENDANCE TAB (NOW SHOWS IN-CLASS + ONLINE) --------------------
-
-  Widget _attendanceTab({
-    required int attPct,
-    required int present,
-    required int total,
-  }) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          elevation: 0,
-          color: Colors.white,
-          shape: UiK.cardShape(),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Course Summary', style: UiK.titleText()),
-                const SizedBox(height: 8),
-                Text(
-                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',
-                  style: UiK.subtleText(),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _kpi(
-                      icon: Icons.how_to_reg_rounded,
-                      label: 'Attendance',
-                      value: '$attPct%',
-                    ),
-                    _kpi(
-                      icon: Icons.check_circle_rounded,
-                      label: 'Present',
-                      value: '$present/$total',
-                    ),
-                    _kpi(
-                      icon: Icons.wifi_tethering_rounded,
-                      label: 'Online records',
-                      value: '${_onlineAttendance.length}',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        if (_attendanceAll.isEmpty)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'No attendance records yet.',
-                style: TextStyle(
-                  color: UiK.mainText,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          )
-        else
-          ..._attendanceAll.map(_attendanceCard),
-      ],
     );
   }
 
@@ -3000,13 +3011,108 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
+  bool _isHttpUrl(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return false;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return false;
+    return uri.scheme == 'http' || uri.scheme == 'https';
+  }
+
+  void _showMissingMaterialMessage() {
+    AppToast.fromSnackBar(
+      context,
+      const SnackBar(
+        content: Text(
+          'Lesson material is not available yet. Please contact Your Bridge School administration for support.',
+        ),
+      ),
+    );
+  }
+
+  bool _hasAttendedSession({
+    required String sessionId,
+    required int sessionNumber,
+  }) {
+    for (final row in _attendanceAll) {
+      final status = (row['status'] ?? '').toString().trim().toLowerCase();
+      if (status != 'present') continue;
+
+      final source = (row['source'] ?? '').toString().trim().toLowerCase();
+      if (source == 'online') {
+        if (sessionNumber > 0 && _asInt(row['sessionNo']) == sessionNumber) {
+          return true;
+        }
+        continue;
+      }
+
+      final taughtItems = row['taughtItems'];
+      if (taughtItems is List) {
+        for (final it in taughtItems) {
+          if (it is! Map) continue;
+          final item = Map<String, dynamic>.from(it);
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
+          if (type != 'syllabus') continue;
+
+          final sid = (item['sessionId'] ?? '').toString().trim();
+          if (sessionId.isNotEmpty && sid == sessionId) return true;
+
+          final sn = _asInt(item['sessionNumber']);
+          if (sessionNumber > 0 && sn == sessionNumber) return true;
+        }
+      }
+
+      final taughtOld = (row['taught'] is Map)
+          ? Map<String, dynamic>.from(row['taught'] as Map)
+          : const <String, dynamic>{};
+      final oldSid = (taughtOld['sessionId'] ?? '').toString().trim();
+      final oldNo = _asInt(taughtOld['sessionNumber']);
+      if (sessionId.isNotEmpty && oldSid == sessionId) return true;
+      if (sessionNumber > 0 && oldNo == sessionNumber) return true;
+    }
+
+    return false;
+  }
+
+  Future<void> _openLessonMaterial(Map<String, dynamic> session) async {
+    final url = (session['materialsUrl'] ?? '').toString().trim();
+    if (!_isHttpUrl(url)) {
+      _showMissingMaterialMessage();
+      return;
+    }
+
+    final title = (session['title'] ?? '').toString().trim();
+    if (!mounted) return;
+
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MaterialWebViewScreen.fromUrl(
+            title: title.isEmpty ? 'Lesson Material' : title,
+            url: url,
+          ),
+        ),
+      );
+    } catch (_) {
+      _showMissingMaterialMessage();
+    }
+  }
+
   Widget _sessionLessonRow(Map<String, dynamic> s) {
     final title = (s['title'] ?? '').toString().trim();
     final sessionId = (s['sessionId'] ?? '').toString().trim();
+    final sessionNumber = _asInt(s['sessionNumber']);
     final objective = (s['objective'] ?? '').toString().trim();
     final hw = (s['homework'] ?? '').toString().trim();
+    final hasMaterials = _isHttpUrl((s['materialsUrl'] ?? '').toString());
 
     final passed = _coveredSessionIds.contains(sessionId);
+    final attended = _hasAttendedSession(
+      sessionId: sessionId,
+      sessionNumber: sessionNumber,
+    );
+    final materialAction = attended ? 'Revise' : 'Prepare';
     final statusText = passed ? 'Passed' : 'Coming';
     final passedBorder = UiK.primaryBlue.withValues(alpha: 0.30);
     final pendingBorder = UiK.uiBorder.withValues(alpha: 0.85);
@@ -3106,6 +3212,36 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _openLessonMaterial(s),
+                        icon: const Icon(Icons.auto_stories_rounded, size: 18),
+                        label: Text(materialAction),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: UiK.actionOrange,
+                          foregroundColor: Colors.white,
+                          visualDensity: const VisualDensity(
+                            horizontal: -1,
+                            vertical: -1,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      if (!hasMaterials)
+                        Text(
+                          'Material not uploaded yet.',
+                          style: TextStyle(
+                            color: UiK.mainText.withValues(alpha: 0.62),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),

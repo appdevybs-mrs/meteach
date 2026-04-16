@@ -58,6 +58,55 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     return 'tbpaid';
   }
 
+  static String _normalizeMethod(dynamic v) {
+    final s = (v ?? '').toString().trim().toLowerCase();
+    if (s == 'cash') return 'cash';
+    if (s == 'ccp') return 'ccp';
+    return 'unspecified';
+  }
+
+  static int _normalizePercent(dynamic v) {
+    final p = _asInt(v);
+    if (p <= 0) return 100;
+    if (p > 100) return 100;
+    return p;
+  }
+
+  static int _percentOf(int amount, int percent) {
+    if (amount <= 0) return 0;
+    return ((amount * percent) / 100).round();
+  }
+
+  static _MethodTotals _methodTotalsZero() {
+    return const _MethodTotals(cash: 0, ccp: 0, unspecified: 0);
+  }
+
+  static _MethodTotals _addToMethodTotals({
+    required _MethodTotals current,
+    required String method,
+    required int amount,
+  }) {
+    if (method == 'cash') {
+      return _MethodTotals(
+        cash: current.cash + amount,
+        ccp: current.ccp,
+        unspecified: current.unspecified,
+      );
+    }
+    if (method == 'ccp') {
+      return _MethodTotals(
+        cash: current.cash,
+        ccp: current.ccp + amount,
+        unspecified: current.unspecified,
+      );
+    }
+    return _MethodTotals(
+      cash: current.cash,
+      ccp: current.ccp,
+      unspecified: current.unspecified + amount,
+    );
+  }
+
   static String _teacherNameFrom(Map<String, dynamic> p) {
     final t1 = (p['teacherName'] ?? '').toString().trim();
     if (t1.isNotEmpty) return t1;
@@ -276,6 +325,116 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     );
   }
 
+  Future<void> _setPaymentMethod({
+    required String paymentId,
+    required String method,
+  }) async {
+    final normalized = _normalizeMethod(method);
+    await _paymentsRef.child(paymentId).update({
+      'financeMethod': normalized,
+      'financeUpdatedAt': ServerValue.timestamp,
+    });
+  }
+
+  Future<int?> _askTeacherPercent({required int initialPercent}) async {
+    final c = TextEditingController(text: initialPercent.toString());
+    return showDialog<int>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('Teacher percentage'),
+          content: TextField(
+            controller: c,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Teacher %',
+              hintText: '0-100',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final p = _asInt(c.text);
+                if (p < 0 || p > 100) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Percentage must be from 0 to 100.'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(dialogCtx).pop(p);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _pushPayment({
+    required Map<String, dynamic> payment,
+    required String targetStatus,
+    int? teacherPercent,
+  }) async {
+    final paymentId = (payment['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+
+    final amount = _asInt(payment['amount']);
+    final percent = _normalizePercent(
+      teacherPercent ?? payment['financeTeacherPercent'],
+    );
+    final gross = amount;
+    final teacherNet = _percentOf(gross, percent);
+    final schoolNet = gross - teacherNet;
+
+    await _paymentsRef.child(paymentId).update({
+      'financePayoutStatus': targetStatus,
+      'financeSplitPaidAmount': null,
+      'financeSplitWaitingAmount': null,
+      'financeSplitPaidStatus': null,
+      'financeTeacherPercent': percent,
+      'financeTeacherGross': gross,
+      'financeTeacherNet': teacherNet,
+      'financeSchoolNet': schoolNet,
+      'financePushedAt': ServerValue.timestamp,
+      'financePushedBy': 'admin',
+      'financePushedStatus': targetStatus,
+      'financeUpdatedAt': ServerValue.timestamp,
+    });
+  }
+
+  Future<void> _bulkPushTeacher({
+    required _TeacherCardData card,
+    required String targetStatus,
+  }) async {
+    final p = await _askTeacherPercent(initialPercent: 100);
+    if (p == null) return;
+
+    for (final payment in card.payments) {
+      await _pushPayment(
+        payment: payment,
+        targetStatus: targetStatus,
+        teacherPercent: p,
+      );
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Pushed ${card.paymentsCount} payments as ${targetStatus.toUpperCase()}.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_unlocked) {
@@ -361,26 +520,68 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
 
                   var originalIncome = 0;
                   var waitingTotal = 0;
+                  var originalByMethod = _methodTotalsZero();
+                  var waitingByMethod = _methodTotalsZero();
                   final teacherMap = <String, List<Map<String, dynamic>>>{};
 
                   for (final p in visible) {
-                    originalIncome += _asInt(p['amount']);
+                    final amount = _asInt(p['amount']);
+                    final method = _normalizeMethod(p['financeMethod']);
+                    final alloc = _amountsFrom(p);
+
+                    originalIncome += amount;
                     final teacher = _teacherNameFrom(p);
                     teacherMap
                         .putIfAbsent(teacher, () => <Map<String, dynamic>>[])
                         .add(p);
-                    waitingTotal += _amountsFrom(p).waitingAmount;
+                    waitingTotal += alloc.waitingAmount;
+                    originalByMethod = _addToMethodTotals(
+                      current: originalByMethod,
+                      method: method,
+                      amount: amount,
+                    );
+                    waitingByMethod = _addToMethodTotals(
+                      current: waitingByMethod,
+                      method: method,
+                      amount: alloc.waitingAmount,
+                    );
                   }
 
                   final teacherCards = <_TeacherCardData>[];
                   for (final entry in teacherMap.entries) {
                     var original = 0;
                     var payout = 0;
+                    var waiting = 0;
+                    var originalMethods = _methodTotalsZero();
+                    var payoutMethods = _methodTotalsZero();
+                    var waitingMethods = _methodTotalsZero();
                     final learners = <String>{};
 
                     for (final p in entry.value) {
-                      original += _asInt(p['amount']);
-                      payout += _amountsFrom(p).payoutAmount;
+                      final amount = _asInt(p['amount']);
+                      final method = _normalizeMethod(p['financeMethod']);
+                      final alloc = _amountsFrom(p);
+
+                      original += amount;
+                      payout += alloc.payoutAmount;
+                      waiting += alloc.waitingAmount;
+
+                      originalMethods = _addToMethodTotals(
+                        current: originalMethods,
+                        method: method,
+                        amount: amount,
+                      );
+                      payoutMethods = _addToMethodTotals(
+                        current: payoutMethods,
+                        method: method,
+                        amount: alloc.payoutAmount,
+                      );
+                      waitingMethods = _addToMethodTotals(
+                        current: waitingMethods,
+                        method: method,
+                        amount: alloc.waitingAmount,
+                      );
+
                       final uid = (p['uid'] ?? '').toString().trim();
                       final n = _learnerNameFrom(p);
                       final k = uid.isNotEmpty ? uid : n;
@@ -392,10 +593,10 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         teacherName: entry.key,
                         originalTotal: original,
                         payoutTotal: payout,
-                        waitingTotal: entry.value.fold<int>(
-                          0,
-                          (sum, p) => sum + _amountsFrom(p).waitingAmount,
-                        ),
+                        waitingTotal: waiting,
+                        originalByMethod: originalMethods,
+                        payoutByMethod: payoutMethods,
+                        waitingByMethod: waitingMethods,
                         learnersCount: learners.length,
                         paymentsCount: entry.value.length,
                         payments: entry.value,
@@ -422,10 +623,16 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         onReset: _clearFilter,
                         originalIncome: _money(originalIncome),
                         waitingTotal: _money(waitingTotal),
+                        originalByMethod: originalByMethod,
+                        waitingByMethod: waitingByMethod,
                         teachersCount: teacherCards.length,
                       ),
                       const SizedBox(height: 12),
-                      _WaitingCard(totalWaiting: waitingTotal, money: _money),
+                      _WaitingCard(
+                        totalWaiting: waitingTotal,
+                        byMethod: waitingByMethod,
+                        money: _money,
+                      ),
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 12,
@@ -435,6 +642,14 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             _TeacherSquareCard(
                               data: card,
                               money: _money,
+                              onBulkPushTbpaid: () => _bulkPushTeacher(
+                                card: card,
+                                targetStatus: 'tbpaid',
+                              ),
+                              onBulkPushDone: () => _bulkPushTeacher(
+                                card: card,
+                                targetStatus: 'done',
+                              ),
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -444,6 +659,8 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                           initialPayments: card.payments,
                                           paymentsRef: _paymentsRef,
                                           money: _money,
+                                          onSetMethod: _setPaymentMethod,
+                                          onPushPayment: _pushPayment,
                                         ),
                                   ),
                                 );
@@ -466,12 +683,25 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
     required this.initialPayments,
     required this.paymentsRef,
     required this.money,
+    required this.onSetMethod,
+    required this.onPushPayment,
   });
 
   final String teacherName;
   final List<Map<String, dynamic>> initialPayments;
   final DatabaseReference paymentsRef;
   final String Function(int amount) money;
+  final Future<void> Function({
+    required String paymentId,
+    required String method,
+  })
+  onSetMethod;
+  final Future<void> Function({
+    required Map<String, dynamic> payment,
+    required String targetStatus,
+    int? teacherPercent,
+  })
+  onPushPayment;
 
   @override
   State<_TeacherFinanceDetailsScreen> createState() =>
@@ -552,6 +782,81 @@ class _TeacherFinanceDetailsScreenState
     if (a.status == 'done') return AdminFinanceScreen.done;
     if (a.status == 'tbpaid') return AdminFinanceScreen.tbpaid;
     return AdminFinanceScreen.waiting;
+  }
+
+  String _methodFrom(Map<String, dynamic> row) {
+    final s = (row['financeMethod'] ?? '').toString().trim().toLowerCase();
+    if (s == 'cash') return 'cash';
+    if (s == 'ccp') return 'ccp';
+    return 'unspecified';
+  }
+
+  int _teacherPercentFrom(Map<String, dynamic> row) {
+    final p = _asInt(row['financeTeacherPercent']);
+    if (p <= 0) return 100;
+    if (p > 100) return 100;
+    return p;
+  }
+
+  Future<int?> _askPercent(int initial) {
+    final c = TextEditingController(text: initial.toString());
+    return showDialog<int>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('Teacher percentage'),
+          content: TextField(
+            controller: c,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Teacher % (0-100)'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final p = _asInt(c.text);
+                if (p < 0 || p > 100) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Percentage must be 0-100.')),
+                  );
+                  return;
+                }
+                Navigator.of(dialogCtx).pop(p);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _setMethod(Map<String, dynamic> row, String method) async {
+    final paymentId = (row['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+    await widget.onSetMethod(paymentId: paymentId, method: method);
+    if (!mounted) return;
+    setState(() => row['financeMethod'] = method);
+  }
+
+  Future<void> _pushRow(Map<String, dynamic> row, String targetStatus) async {
+    final p = await _askPercent(_teacherPercentFrom(row));
+    if (p == null) return;
+    await widget.onPushPayment(
+      payment: row,
+      targetStatus: targetStatus,
+      teacherPercent: p,
+    );
+    if (!mounted) return;
+    setState(() {
+      row['financePayoutStatus'] = targetStatus;
+      row['financeTeacherPercent'] = p;
+      row['financePushedStatus'] = targetStatus;
+    });
   }
 
   String _fmtDateMs(int ms) {
@@ -819,6 +1124,25 @@ class _TeacherFinanceDetailsScreenState
               final paidAt = _fmtDateMs(_asInt(row['paidAt']));
               final a = _amountsFrom(row);
               final color = _statusColor(a);
+              final method = _methodFrom(row);
+              final percent = _teacherPercentFrom(row);
+              final methodLabel = method == 'cash'
+                  ? '💵 CASH'
+                  : method == 'ccp'
+                  ? '🏤 CCP'
+                  : '❔ UNSPECIFIED';
+              final pushTarget = a.status == 'done'
+                  ? 'done'
+                  : a.status == 'tbpaid'
+                  ? 'tbpaid'
+                  : (a.splitPaidStatus == 'done' ? 'done' : 'tbpaid');
+              final pushedStatus = (row['financePushedStatus'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              final alreadyPushedSame =
+                  _asInt(row['financePushedAt']) > 0 &&
+                  pushedStatus == pushTarget;
 
               String statusText;
               if (a.status == 'split') {
@@ -857,30 +1181,60 @@ class _TeacherFinanceDetailsScreenState
                     ),
                   ),
                   subtitle: Text(
-                    'Amount: ${widget.money(amount)} · Date: $paidAt\n$statusText',
+                    'Amount: ${widget.money(amount)} · Date: $paidAt\nMethod: $methodLabel · Teacher %: $percent\n$statusText',
                     style: const TextStyle(
                       color: AdminFinanceScreen.primary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   isThreeLine: true,
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      a.status == 'split' ? 'SPLIT' : a.status.toUpperCase(),
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10.5,
+                  trailing: PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.more_horiz_rounded),
+                    onSelected: (v) {
+                      if (v == 'method_cash') {
+                        _setMethod(row, 'cash');
+                      }
+                      if (v == 'method_ccp') {
+                        _setMethod(row, 'ccp');
+                      }
+                      if (v == 'method_unspecified') {
+                        _setMethod(row, 'unspecified');
+                      }
+                      if (v == 'push_current') {
+                        if (alreadyPushedSame) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Already pushed as ${pushTarget.toUpperCase()}.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        _pushRow(row, pushTarget);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'method_cash',
+                        child: Text('Set method: 💵 Cash'),
                       ),
-                    ),
+                      const PopupMenuItem(
+                        value: 'method_ccp',
+                        child: Text('Set method: 🏤 CCP'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'method_unspecified',
+                        child: Text('Set method: ❔ Unspecified'),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'push_current',
+                        enabled: !alreadyPushedSame,
+                        child: Text('Push ${pushTarget.toUpperCase()} + %'),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -900,6 +1254,8 @@ class _FilterHeader extends StatelessWidget {
     required this.onReset,
     required this.originalIncome,
     required this.waitingTotal,
+    required this.originalByMethod,
+    required this.waitingByMethod,
     required this.teachersCount,
   });
 
@@ -910,6 +1266,8 @@ class _FilterHeader extends StatelessWidget {
   final VoidCallback onReset;
   final String originalIncome;
   final String waitingTotal;
+  final _MethodTotals originalByMethod;
+  final _MethodTotals waitingByMethod;
   final int teachersCount;
 
   @override
@@ -950,9 +1308,19 @@ class _FilterHeader extends StatelessWidget {
               strong: true,
             ),
             _FinancePill(
+              icon: Icons.point_of_sale_rounded,
+              text:
+                  'Income Cash/CCP/Un: ${originalByMethod.cash}/${originalByMethod.ccp}/${originalByMethod.unspecified}',
+            ),
+            _FinancePill(
               icon: Icons.schedule_send_rounded,
               text: 'Waiting: $waitingTotal',
               strong: true,
+            ),
+            _FinancePill(
+              icon: Icons.hourglass_top_rounded,
+              text:
+                  'Waiting Cash/CCP/Un: ${waitingByMethod.cash}/${waitingByMethod.ccp}/${waitingByMethod.unspecified}',
             ),
             _FinancePill(
               icon: Icons.badge_rounded,
@@ -988,6 +1356,9 @@ class _TeacherCardData {
     required this.originalTotal,
     required this.payoutTotal,
     required this.waitingTotal,
+    required this.originalByMethod,
+    required this.payoutByMethod,
+    required this.waitingByMethod,
     required this.learnersCount,
     required this.paymentsCount,
     required this.payments,
@@ -997,6 +1368,9 @@ class _TeacherCardData {
   final int originalTotal;
   final int payoutTotal;
   final int waitingTotal;
+  final _MethodTotals originalByMethod;
+  final _MethodTotals payoutByMethod;
+  final _MethodTotals waitingByMethod;
   final int learnersCount;
   final int paymentsCount;
   final List<Map<String, dynamic>> payments;
@@ -1046,9 +1420,14 @@ class _FinancePill extends StatelessWidget {
 }
 
 class _WaitingCard extends StatelessWidget {
-  const _WaitingCard({required this.totalWaiting, required this.money});
+  const _WaitingCard({
+    required this.totalWaiting,
+    required this.byMethod,
+    required this.money,
+  });
 
   final int totalWaiting;
+  final _MethodTotals byMethod;
   final String Function(int amount) money;
 
   @override
@@ -1085,6 +1464,15 @@ class _WaitingCard extends StatelessWidget {
                   height: 1.1,
                 ),
               ),
+              const SizedBox(height: 2),
+              Text(
+                'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
+                style: TextStyle(
+                  color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                ),
+              ),
             ],
           ),
         ),
@@ -1097,18 +1485,22 @@ class _TeacherSquareCard extends StatelessWidget {
   const _TeacherSquareCard({
     required this.data,
     required this.money,
+    required this.onBulkPushTbpaid,
+    required this.onBulkPushDone,
     required this.onTap,
   });
 
   final _TeacherCardData data;
   final String Function(int amount) money;
+  final VoidCallback onBulkPushTbpaid;
+  final VoidCallback onBulkPushDone;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: 250,
-      height: 240,
+      height: 320,
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
@@ -1160,7 +1552,52 @@ class _TeacherSquareCard extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  'Cash/CCP/Un: ${money(data.originalByMethod.cash)} / ${money(data.originalByMethod.ccp)} / ${money(data.originalByMethod.unspecified)}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AdminFinanceScreen.primary.withValues(alpha: 0.72),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
                 const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: onBulkPushTbpaid,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AdminFinanceScreen.tbpaid,
+                          side: BorderSide(
+                            color: AdminFinanceScreen.tbpaid.withValues(
+                              alpha: 0.4,
+                            ),
+                          ),
+                        ),
+                        child: const Text('Push TBPAID'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: onBulkPushDone,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AdminFinanceScreen.done,
+                          side: BorderSide(
+                            color: AdminFinanceScreen.done.withValues(
+                              alpha: 0.4,
+                            ),
+                          ),
+                        ),
+                        child: const Text('Push DONE'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
                 Text(
                   '${data.learnersCount} learners · ${data.paymentsCount} payments',
                   style: TextStyle(
@@ -1176,4 +1613,16 @@ class _TeacherSquareCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MethodTotals {
+  const _MethodTotals({
+    required this.cash,
+    required this.ccp,
+    required this.unspecified,
+  });
+
+  final int cash;
+  final int ccp;
+  final int unspecified;
 }
