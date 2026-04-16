@@ -1559,13 +1559,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     String teacherId,
   ) async {
     try {
-      final start = _parseSlotStart(dayKey, hhmm);
-      if (start == null) return _CancelBookingStatus.failed;
-
-      final locked = !start.isAfter(
-        DateTime.now().add(const Duration(hours: 24)),
-      );
-      if (locked) return _CancelBookingStatus.locked;
+      if (_parseSlotStart(dayKey, hhmm) == null) {
+        return _CancelBookingStatus.failed;
+      }
 
       Future<_CancelBookingStatus> cancelAtRef(DatabaseReference ref) async {
         const maxAttempts = 2;
@@ -1657,17 +1653,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       if (newStatus == _CancelBookingStatus.cancelled) {
         return _CancelBookingStatus.cancelled;
       }
-      if (newStatus == _CancelBookingStatus.locked) {
-        return _CancelBookingStatus.locked;
-      }
 
       final legacyRef = _legacyReservationsRef(cid, dayKey, hhmm);
       final legacyStatus = await cancelAtRef(legacyRef);
       if (legacyStatus == _CancelBookingStatus.cancelled) {
         return _CancelBookingStatus.cancelled;
-      }
-      if (legacyStatus == _CancelBookingStatus.locked) {
-        return _CancelBookingStatus.locked;
       }
 
       if (newStatus == _CancelBookingStatus.notFound ||
@@ -1681,17 +1671,54 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
+  Future<void> _markLateCancelCreditUsed({
+    required String cid,
+    required _Slot slot,
+  }) async {
+    final bookingKey = _bookingKey(cid, slot.dayKey, slot.time);
+    final slotKey = _slotSummaryKey(slot.dayKey, slot.time, slot.teacherId);
+    final sessionNo =
+        slot.groupSessionNo ?? myBookedSlots[slotKey] ?? _targetSessionNo;
+
+    final ref = _progressRef(cid).child('online_attendance/$bookingKey');
+
+    try {
+      await ref.runTransaction((Object? currentData) {
+        final node = (currentData is Map)
+            ? currentData.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
+
+        final alreadyPresent = node['present'] == true;
+        final alreadyCounted = node['countedCredit'] == true;
+        if (alreadyPresent || alreadyCounted) {
+          return Transaction.success(node);
+        }
+
+        final createdAt = node['createdAt'];
+
+        node['bookingKey'] = bookingKey;
+        node['courseId'] = cid;
+        node['dayKey'] = slot.dayKey;
+        node['time'] = slot.time;
+        node['sessionNo'] = sessionNo;
+        node['teacherId'] = slot.teacherId;
+        node['teacherName'] = slot.teacherName;
+        node['present'] = false;
+        node['countedCredit'] = true;
+        node['creditCountReason'] = 'late_cancel_24h';
+        node['updatedAt'] = ServerValue.timestamp;
+        node['createdAt'] = createdAt ?? ServerValue.timestamp;
+
+        return Transaction.success(node);
+      });
+    } catch (_) {}
+  }
+
   Future<void> _cancelMyBooking(_Slot slot) async {
     final cid = courseId;
     if (cid == null) return;
 
-    final locked = !slot.start.isAfter(
-      DateTime.now().add(const Duration(hours: 24)),
-    );
-    if (locked) {
-      _toast('You can’t cancel within 24 hours of the session.');
-      return;
-    }
+    final lateCancel = _isWithin24Hours(slot);
 
     setState(() => booking = true);
 
@@ -1702,10 +1729,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         slot.time,
         slot.teacherId,
       );
-      if (status == _CancelBookingStatus.locked) {
-        _toast('You can’t cancel within 24 hours of the session.');
-        return;
-      }
       if (status == _CancelBookingStatus.failed) {
         _toast('Cancel failed. Please try again.');
         return;
@@ -1713,12 +1736,21 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       await _cancelLearnerLocalReminder(slot);
 
+      if (status == _CancelBookingStatus.cancelled && lateCancel) {
+        await _markLateCancelCreditUsed(cid: cid, slot: slot);
+      }
+
       if (status == _CancelBookingStatus.notFound) {
         _toast('This booking was already canceled. ✅');
       } else {
-        _toast('Booking canceled ✅');
+        _toast(
+          lateCancel
+              ? 'Booking canceled and counted as used credit ✅'
+              : 'Booking canceled ✅',
+        );
       }
 
+      await _loadStudiedSessions(cid);
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } catch (e) {
@@ -2674,10 +2706,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         final bottomPad = MediaQuery.of(context).padding.bottom;
         final targetSession = _targetSessionNo;
 
-        final canCancel =
-            slot.bookedByMe &&
-            slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
-        final cancelLocked = slot.bookedByMe && !canCancel;
+        final canCancel = slot.bookedByMe && slot.start.isAfter(DateTime.now());
+        final lateCancel = canCancel && _isWithin24Hours(slot);
 
         final newBookingLocked = _isBookingLockedForNewBooking(slot);
 
@@ -3032,7 +3062,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   const SizedBox(height: 10),
                   FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor: cancelLocked
+                      backgroundColor: !canCancel
                           ? Colors.grey.shade400
                           : Colors.red.shade600,
                       foregroundColor: Colors.white,
@@ -3046,11 +3076,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         : () async {
                             Navigator.pop(context);
 
+                            final isLate = _isWithin24Hours(slot);
+                            final confirmLabel = isLate
+                                ? 'Yes, cancel and count credit'
+                                : 'Yes, Cancel';
+                            final message = isLate
+                                ? 'This cancellation is within 24 hours of the session.\n\nYou can cancel to free this slot for other learners.\n\nImportant: this session credit will still be counted as used.'
+                                : 'Are you sure you want to cancel this booking?';
+
                             final ok = await _confirmWithLogo(
-                              title: 'Cancel booking',
-                              message:
-                                  'Are you sure you want to cancel this booking?',
-                              confirmLabel: 'Yes, Cancel',
+                              title: isLate
+                                  ? 'Late cancellation (within 24h)'
+                                  : 'Cancel booking',
+                              message: message,
+                              confirmLabel: confirmLabel,
                               confirmColor: Colors.red.shade600,
                             );
 
@@ -3061,9 +3100,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             }
                           },
                     child: Text(
-                      cancelLocked
-                          ? 'Cancel disabled (within 24h)'
-                          : 'Cancel booking',
+                      !canCancel
+                          ? 'Cancel unavailable (class ended)'
+                          : (lateCancel
+                                ? 'Cancel (credit counted)'
+                                : 'Cancel booking'),
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),

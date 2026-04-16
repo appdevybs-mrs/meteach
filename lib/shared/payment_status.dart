@@ -70,13 +70,21 @@ int countHeldUniqueAttendanceDates(dynamic attendance) {
 int countPresentOnlineAttendance(dynamic onlineAttendance) {
   if (onlineAttendance is! Map) return 0;
 
+  bool asBool(dynamic v) {
+    if (v is bool) return v;
+    final s = (v ?? '').toString().trim().toLowerCase();
+    return s == 'true' || s == '1' || s == 'yes';
+  }
+
   int present = 0;
   onlineAttendance.forEach((_, value) {
     if (value is! Map) return;
     final rec = value
         .map((k, v) => MapEntry(k.toString(), v))
         .cast<String, dynamic>();
-    if (rec['present'] == true) present += 1;
+    if (asBool(rec['present']) || asBool(rec['countedCredit'])) {
+      present += 1;
+    }
   });
   return present;
 }

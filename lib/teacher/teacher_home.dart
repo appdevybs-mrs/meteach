@@ -2341,7 +2341,7 @@ class _NextComingClassCard extends StatelessWidget {
   final VoidCallback onTapEmpty;
 
   String _fmtCountdown(Duration d) {
-    if (d.inSeconds <= 0) return 'Starting now';
+    if (d.inSeconds <= 0) return '0s';
     if (d.inDays >= 1) {
       final hours = d.inHours % 24;
       return '${d.inDays}d ${hours}h';
@@ -2357,133 +2357,146 @@ class _NextComingClassCard extends StatelessWidget {
     return '${d.inSeconds}s';
   }
 
+  Widget _buildEmptyCard() {
+    return Material(
+      color: palette.cardBg,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTapEmpty,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Next Coming Class',
+                style: TextStyle(
+                  color: palette.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'No upcoming classes found.',
+                style: TextStyle(
+                  color: palette.text.withValues(alpha: 0.70),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final classes = upcomingClasses;
 
     if (classes.isEmpty) {
-      return Material(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: onTapEmpty,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Next Coming Class',
-                  style: TextStyle(
-                    color: palette.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'No upcoming classes found.',
-                  style: TextStyle(
-                    color: palette.text.withValues(alpha: 0.70),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      return _buildEmptyCard();
     }
 
-    return Column(
-      children: classes.asMap().entries.map((entry) {
-        final index = entry.key;
-        final c = entry.value;
+    return StreamBuilder<DateTime>(
+      stream: Stream<DateTime>.periodic(
+        const Duration(seconds: 1),
+        (_) => DateTime.now(),
+      ),
+      initialData: DateTime.now(),
+      builder: (context, snapshot) {
+        final now = snapshot.data ?? DateTime.now();
+        final visibleClasses = classes.where((c) => c.end.isAfter(now)).toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
 
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: index == classes.length - 1 ? 0 : 10,
-          ),
-          child: Material(
-            color: c.isOnline ? const Color(0xFFF7FCFF) : palette.cardBg,
-            borderRadius: BorderRadius.circular(20),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () => onTapClass(c),
-              child: StreamBuilder<DateTime>(
-                stream: Stream<DateTime>.periodic(
-                  const Duration(seconds: 1),
-                  (_) => DateTime.now(),
-                ),
-                initialData: DateTime.now(),
-                builder: (context, snapshot) {
-                  final now = snapshot.data ?? DateTime.now();
-                  final isOnline = c.isOnline;
-                  final isLive = !now.isBefore(c.start) && now.isBefore(c.end);
-                  final untilStart = c.start.difference(now);
-                  final isSoon =
-                      !isLive &&
-                      untilStart.inSeconds > 0 &&
-                      untilStart.inSeconds <= 300;
+        if (visibleClasses.isEmpty) return _buildEmptyCard();
 
-                  final itemPrimary = isOnline
-                      ? const Color(0xFF0B5E8A)
-                      : palette.primary;
-                  final itemSoft = isOnline
-                      ? const Color(0xFFEAF6FF)
-                      : palette.soft;
-                  final itemCardBg = isOnline
-                      ? const Color(0xFFF7FCFF)
-                      : palette.cardBg;
-                  final itemBorder = isOnline
+        return Column(
+          children: visibleClasses.asMap().entries.map((entry) {
+            final index = entry.key;
+            final c = entry.value;
+            final isOnline = c.isOnline;
+            final hasEnded = !c.end.isAfter(now);
+            final isLive = !now.isBefore(c.start) && !hasEnded;
+            final untilStart = c.start.difference(now);
+            final isUpcoming = !isLive && !hasEnded && untilStart.inSeconds > 0;
+            final isSoon = isUpcoming && untilStart.inSeconds <= 300;
+
+            final itemPrimary = isLive
+                ? const Color(0xFF1B5E20)
+                : (isOnline ? const Color(0xFF0B5E8A) : palette.primary);
+            final itemSoft = isLive
+                ? const Color(0xFFE8F5E9)
+                : (isOnline ? const Color(0xFFEAF6FF) : palette.soft);
+            final itemCardBg = isLive
+                ? const Color(0xFFF1FBF3)
+                : (isOnline ? const Color(0xFFF7FCFF) : palette.cardBg);
+            final itemBorder = isLive
+                ? const Color(0xFF9AD5AB)
+                : (isOnline
                       ? const Color(0xFFB5DDF2)
-                      : palette.border.withValues(alpha: 0.8);
+                      : palette.border.withValues(alpha: 0.8));
 
-                  final countdownText = isLive
-                      ? 'LIVE'
-                      : 'Starts in ${_fmtCountdown(untilStart)}';
+            final countdownText = isLive
+                ? 'LIVE'
+                : 'Starts in ${_fmtCountdown(untilStart)}';
 
-                  final countdownBg = isLive
-                      ? const Color(0xFFE8F5E9)
-                      : (isSoon
-                            ? const Color(0xFFFFEBEE)
-                            : palette.soft.withValues(alpha: 0.72));
-                  final countdownBorder = isLive
-                      ? const Color(0xFFB9E2C5)
-                      : (isSoon
-                            ? const Color(0xFFE57373)
-                            : palette.border.withValues(alpha: 0.75));
-                  final countdownColor = isLive
-                      ? const Color(0xFF1B5E20)
-                      : (isSoon ? const Color(0xFFB71C1C) : palette.primary);
+            final countdownBg = isLive
+                ? const Color(0xFFE8F5E9)
+                : (isSoon
+                      ? const Color(0xFFFFEBEE)
+                      : palette.soft.withValues(alpha: 0.72));
+            final countdownBorder = isLive
+                ? const Color(0xFFB9E2C5)
+                : (isSoon
+                      ? const Color(0xFFE57373)
+                      : palette.border.withValues(alpha: 0.75));
+            final countdownColor = isLive
+                ? const Color(0xFF1B5E20)
+                : (isSoon ? const Color(0xFFB71C1C) : palette.primary);
 
-                  return Container(
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: index == visibleClasses.length - 1 ? 0 : 10,
+              ),
+              child: Material(
+                color: itemCardBg,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => onTapClass(c),
+                  child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: itemCardBg,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isSoon ? const Color(0xFFE57373) : itemBorder,
+                        color: isLive
+                            ? itemBorder
+                            : (isSoon ? const Color(0xFFE57373) : itemBorder),
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
+                          color: isLive
+                              ? const Color(0xFF1B5E20).withValues(alpha: 0.10)
+                              : Colors.black.withValues(alpha: 0.03),
+                          blurRadius: isLive ? 14 : 10,
                           offset: const Offset(0, 5),
                         ),
                       ],
@@ -2649,13 +2662,13 @@ class _NextComingClassCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
-          ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 }

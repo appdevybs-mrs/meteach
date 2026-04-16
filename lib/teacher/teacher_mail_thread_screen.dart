@@ -130,6 +130,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   final List<Map<String, String>> _attachments = [];
   final Set<String> _selectedMessageIds = <String>{};
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
+  final Set<String> _readReceiptWriteInFlight = <String>{};
   final List<_ComposerUploadItem> _uploadingItems = [];
 
   bool _peerIsLearner = false;
@@ -141,7 +142,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   bool _loadingLearnerCourses = false;
   bool _loadedLearnerCourses = false;
   int _peerLastDeliveredAtMs = 0;
-  int _peerLastReadAtMs = 0;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -563,7 +563,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             if (!mounted) return;
             setState(() {
               _peerLastDeliveredAtMs = 0;
-              _peerLastReadAtMs = 0;
             });
             return;
           }
@@ -571,14 +570,60 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           if (!mounted) return;
           setState(() {
             _peerLastDeliveredAtMs = _asInt(m['lastDeliveredAt']);
-            _peerLastReadAtMs = _asInt(m['lastReadAt']);
           });
         });
   }
 
+  Future<void> _markMessagesSeen(List<_MailMsg> msgs) async {
+    if (_meUid.isEmpty) return;
+
+    final targets = msgs
+        .where(
+          (m) =>
+              m.fromUid != _meUid &&
+              !m.deletedFor.contains(_meUid) &&
+              (m.readBy[_meUid] ?? 0) <= 0 &&
+              !_readReceiptWriteInFlight.contains(m.id),
+        )
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+
+    for (final m in targets) {
+      _readReceiptWriteInFlight.add(m.id);
+    }
+
+    var wroteAny = false;
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final m in targets) {
+        try {
+          final tx = await _msgsRef
+              .child(m.id)
+              .child('readBy')
+              .child(_meUid)
+              .runTransaction((cur) {
+                final existing = _asInt(cur);
+                if (existing > 0) return Transaction.abort();
+                return Transaction.success(now);
+              });
+          if (tx.committed == true) wroteAny = true;
+        } catch (_) {}
+      }
+    } finally {
+      for (final m in targets) {
+        _readReceiptWriteInFlight.remove(m.id);
+      }
+    }
+
+    if (wroteAny) {
+      unawaited(_markRead());
+    }
+  }
+
   int _messageReceiptLevel(_MailMsg m) {
     if (m.fromUid != _meUid) return 0;
-    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) return 2;
+    final peerSeenAt = m.readBy[widget.peerUid] ?? 0;
+    if (peerSeenAt > 0) return 2;
     if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
       return 1;
     }
@@ -587,8 +632,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   String _receiptLabel(_MailMsg m) {
     if (m.fromUid != _meUid) return '';
-    if (_peerLastReadAtMs >= m.createdAtMs && _peerLastReadAtMs > 0) {
-      return 'Seen ${_fmtReceiptAt(_peerLastReadAtMs)}';
+    final peerSeenAt = m.readBy[widget.peerUid] ?? 0;
+    if (peerSeenAt > 0) {
+      return 'Seen ${_fmtReceiptAt(peerSeenAt)}';
     }
     if (_peerLastDeliveredAtMs >= m.createdAtMs && _peerLastDeliveredAtMs > 0) {
       return 'Delivered ${_fmtReceiptAt(_peerLastDeliveredAtMs)}';
@@ -4278,6 +4324,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 stream: _msgStream,
                 builder: (_, snap) {
                   final msgsAll = _parseMessages(snap.data?.snapshot.value);
+                  unawaited(_markMessagesSeen(msgsAll));
                   final msgs = _applyLocalSearch(msgsAll);
                   _visibleMessages = msgs;
 
@@ -4967,6 +5014,7 @@ class _MailMsg {
     required this.deletedFor,
     required this.type,
     required this.reactions,
+    required this.readBy,
   });
 
   final String id;
@@ -4979,6 +5027,7 @@ class _MailMsg {
 
   // emoji -> set of uids
   final Map<String, Set<String>> reactions;
+  final Map<String, int> readBy;
 
   factory _MailMsg.fromMap(String id, Map<String, dynamic> m) {
     int parseMs(dynamic v) {
@@ -5029,6 +5078,16 @@ class _MailMsg {
       });
     }
 
+    final readBy = <String, int>{};
+    final rawReadBy = m['readBy'];
+    if (rawReadBy is Map) {
+      rawReadBy.forEach((uid, ts) {
+        if (uid == null) return;
+        final ms = parseMs(ts);
+        if (ms > 0) readBy[uid.toString()] = ms;
+      });
+    }
+
     return _MailMsg(
       id: id,
       fromUid: (m['fromUid'] ?? '').toString(),
@@ -5038,6 +5097,7 @@ class _MailMsg {
       deletedFor: del,
       type: (m['type'] ?? '').toString().trim(),
       reactions: rx,
+      readBy: readBy,
     );
   }
 }

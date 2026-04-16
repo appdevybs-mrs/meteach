@@ -174,6 +174,7 @@ class _AdminTeacherMailThreadScreenState
   final List<Map<String, String>> _attachments = []; // {name,url}
   final Set<String> _selectedMessageIds = <String>{};
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
+  final Set<String> _readReceiptWriteInFlight = <String>{};
 
   bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
@@ -312,10 +313,63 @@ class _AdminTeacherMailThreadScreenState
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _stateRef.child(_meUid).child(_threadId).update({
+        'lastDeliveredAt': now,
         'lastReadAt': now,
       });
       await _indexRef.child(_meUid).child(_threadId).update({'unreadCount': 0});
     } catch (_) {}
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _markMessagesSeen(List<_MailMsg> msgs) async {
+    if (_meUid.isEmpty) return;
+
+    final targets = msgs
+        .where(
+          (m) =>
+              m.fromUid != _meUid &&
+              !m.deletedFor.contains(_meUid) &&
+              (m.readBy[_meUid] ?? 0) <= 0 &&
+              !_readReceiptWriteInFlight.contains(m.id),
+        )
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+
+    for (final m in targets) {
+      _readReceiptWriteInFlight.add(m.id);
+    }
+
+    var wroteAny = false;
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final m in targets) {
+        try {
+          final tx = await _msgsRef
+              .child(m.id)
+              .child('readBy')
+              .child(_meUid)
+              .runTransaction((cur) {
+                final existing = _toInt(cur);
+                if (existing > 0) return Transaction.abort();
+                return Transaction.success(now);
+              });
+          if (tx.committed == true) wroteAny = true;
+        } catch (_) {}
+      }
+    } finally {
+      for (final m in targets) {
+        _readReceiptWriteInFlight.remove(m.id);
+      }
+    }
+
+    if (wroteAny) {
+      unawaited(_markRead());
+    }
   }
 
   List<_MailMsg> _parseMessages(dynamic data) {
@@ -978,6 +1032,7 @@ class _AdminTeacherMailThreadScreenState
                   stream: _msgStream,
                   builder: (_, snap) {
                     final msgs = _parseMessages(snap.data?.snapshot.value);
+                    unawaited(_markMessagesSeen(msgs));
                     _visibleMessages = msgs;
                     if (msgs.isEmpty) {
                       return const Center(child: Text('No mail yet.'));
@@ -1199,6 +1254,7 @@ class _MailMsg {
     required this.attachments,
     required this.createdAtMs,
     required this.deletedFor,
+    required this.readBy,
   });
 
   final String id;
@@ -1207,6 +1263,7 @@ class _MailMsg {
   final List<Map<String, String>> attachments;
   final int createdAtMs;
   final Set<String> deletedFor;
+  final Map<String, int> readBy;
 
   factory _MailMsg.fromMap(String id, Map<String, dynamic> m) {
     int parseMs(dynamic v) {
@@ -1242,6 +1299,16 @@ class _MailMsg {
       });
     }
 
+    final readBy = <String, int>{};
+    final rawReadBy = m['readBy'];
+    if (rawReadBy is Map) {
+      rawReadBy.forEach((uid, ts) {
+        if (uid == null) return;
+        final ms = parseMs(ts);
+        if (ms > 0) readBy[uid.toString()] = ms;
+      });
+    }
+
     return _MailMsg(
       id: id,
       fromUid: (m['fromUid'] ?? '').toString(),
@@ -1249,6 +1316,7 @@ class _MailMsg {
       attachments: atts,
       createdAtMs: parseMs(m['createdAt']),
       deletedFor: del,
+      readBy: readBy,
     );
   }
 }

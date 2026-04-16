@@ -1766,22 +1766,27 @@ class _SessionCard extends StatelessWidget {
     final now = DateTime.now();
     final bool isLive = now.isAfter(o.start) && now.isBefore(o.end);
     final bool isPast = now.isAfter(o.end);
+    final bool isLiveOnline = isLive && o.isOnline;
 
     Color statusColor = enabled
         ? palette.accent
         : palette.text.withValues(alpha: 0.35);
     if (isConflict) statusColor = const Color(0xFFD32F2F);
-    if (isLive) statusColor = palette.primary;
+    if (isLive) statusColor = const Color(0xFF1B5E20);
     if (isPast) statusColor = palette.text.withValues(alpha: 0.30);
-    if (o.isOnline && !isPast) statusColor = const Color(0xFFD32F2F);
+    if (o.isOnline && !isPast && !isLive) statusColor = const Color(0xFFD32F2F);
 
-    final Color bgColor = isPast
+    final Color bgColor = isLive
+        ? const Color(0xFFF1FBF3)
+        : isPast
         ? palette.soft.withValues(alpha: 0.35)
         : (o.isOnline
               ? const Color(0xFFFFF5F5)
               : (isConflict ? const Color(0xFFFFEBEE) : palette.cardBg));
 
-    final Color borderColor = isConflict
+    final Color borderColor = isLive
+        ? const Color(0xFF9AD5AB)
+        : isConflict
         ? const Color(0xFFD32F2F).withValues(alpha: 0.28)
         : (o.isOnline
               ? const Color(0xFFD32F2F).withValues(alpha: 0.25)
@@ -1792,7 +1797,7 @@ class _SessionCard extends StatelessWidget {
         : palette.text;
     final Color timeColor = isPast
         ? palette.text.withValues(alpha: 0.45)
-        : (isLive ? palette.primary : palette.primary);
+        : (isLive ? const Color(0xFF1B5E20) : palette.primary);
 
     return Opacity(
       opacity: isPast ? 0.78 : 1,
@@ -1805,7 +1810,7 @@ class _SessionCard extends StatelessWidget {
           boxShadow: isLive
               ? [
                   BoxShadow(
-                    color: palette.primary.withValues(alpha: 0.10),
+                    color: const Color(0xFF1B5E20).withValues(alpha: 0.10),
                     blurRadius: 14,
                     offset: const Offset(0, 8),
                   ),
@@ -1841,7 +1846,7 @@ class _SessionCard extends StatelessWidget {
                               ),
                             ),
                             const Spacer(),
-                            if (isLive) _LiveBadge(palette: palette),
+                            if (isLive) _LiveBadge(isOnline: isLiveOnline),
                             if (o.isOnline && !isLive)
                               Container(
                                 margin: const EdgeInsets.only(left: 8),
@@ -2011,16 +2016,16 @@ class _ConflictPill extends StatelessWidget {
 }
 
 class _LiveBadge extends StatelessWidget {
-  const _LiveBadge({required this.palette});
+  const _LiveBadge({required this.isOnline});
 
-  final AppPalette palette;
+  final bool isOnline;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: palette.primary,
+        color: isOnline ? const Color(0xFF1B5E20) : const Color(0xFF0D3B66),
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Row(

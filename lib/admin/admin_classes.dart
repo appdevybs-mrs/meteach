@@ -104,7 +104,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   final TextEditingController _flexSearchCtrl = TextEditingController();
   String _flexSearch = "";
   String _flexStatusFilter = 'all';
+  bool _flexUnreadOnly = false;
+  bool _recordedUnreadOnly = false;
   final Set<String> _expandedFlexKeys = <String>{};
+  late final Stream<Map<String, int>> _unreadByLearnerStream;
+  Set<String> _flexLearnerUidsForBadge = <String>{};
+  Set<String> _recordedLearnerUidsForBadge = <String>{};
   final Map<String, Future<_FlexCourseDetails>> _flexDetailsFutureByKey =
       <String, Future<_FlexCourseDetails>>{};
   final Map<String, List<Map<String, dynamic>>> _paymentsByUidCache =
@@ -140,6 +145,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     _bootFuture = _loadTeachers().then((_) => _loadCourses());
     _classesFuture = _classesRef.get();
     _loadAllLearners();
+    _unreadByLearnerStream = _unreadByLearnerMapStream();
 
     _searchCtrl.addListener(() {
       _searchDebounce?.cancel();
@@ -312,6 +318,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   Future<void> _showQuickReminderSheet({
     required String uid,
     required String learnerName,
+    required int unreadCount,
   }) async {
     if (!mounted) return;
 
@@ -335,7 +342,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.mail_rounded),
-              title: const Text('Mail'),
+              title: Text(unreadCount > 0 ? 'Mail ($unreadCount)' : 'Mail'),
               onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty),
             ),
             const SizedBox(height: 10),
@@ -369,32 +376,157 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   Widget _learnerQuickActionsBadge({
     required String uid,
     required String learnerName,
+    required int unreadCount,
   }) {
+    final unreadLabel = _countLabel(unreadCount);
     return Tooltip(
       message: 'Mail / Reminder',
       child: InkWell(
-        onTap: () =>
-            _showQuickReminderSheet(uid: uid, learnerName: learnerName),
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFFFEE2E2),
-            border: Border.all(color: const Color(0xFFFCA5A5)),
-          ),
-          child: const Text(
-            '!',
-            style: TextStyle(
-              color: Color(0xFFB91C1C),
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              height: 1,
-            ),
-          ),
+        onTap: () => _showQuickReminderSheet(
+          uid: uid,
+          learnerName: learnerName,
+          unreadCount: unreadCount,
         ),
+        borderRadius: BorderRadius.circular(999),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFFEE2E2),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: const Text(
+                '!',
+                style: TextStyle(
+                  color: Color(0xFFB91C1C),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: -7,
+                top: -7,
+                child: _countPill(unreadLabel, fontSize: 9, horizontal: 5),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  Stream<Map<String, int>> _unreadByLearnerMapStream() {
+    final uid = _adminUid.trim();
+    if (uid.isEmpty) {
+      return Stream<Map<String, int>>.value(const <String, int>{});
+    }
+    final q = FirebaseDatabase.instance.ref('mail_index/$uid');
+    return q.onValue.map((event) {
+      final v = event.snapshot.value;
+      if (v is! Map) return const <String, int>{};
+      final out = <String, int>{};
+      v.forEach((_, raw) {
+        if (raw is! Map) return;
+        final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
+        if (m['deletedAt'] != null) return;
+        final peerUid = (m['peerUid'] ?? '').toString().trim();
+        if (peerUid.isEmpty) return;
+        final unread = _asInt(m['unreadCount']);
+        if (unread <= 0) return;
+        out[peerUid] = (out[peerUid] ?? 0) + unread;
+      });
+      return out;
+    }).asBroadcastStream();
+  }
+
+  String _countLabel(int count) {
+    if (count <= 0) return '0';
+    return count > 99 ? '99+' : '$count';
+  }
+
+  Widget _countPill(
+    String label, {
+    double fontSize = 10,
+    double horizontal = 6,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: horizontal, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFDC2626),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1.2),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          height: 1.1,
+        ),
+      ),
+    );
+  }
+
+  bool _sameUidSet(Set<String> a, Set<String> b) {
+    if (a.length != b.length) return false;
+    for (final uid in a) {
+      if (!b.contains(uid)) return false;
+    }
+    return true;
+  }
+
+  void _queueFlexBadgeUidSync(List<_FlexCourseSummary> rows) {
+    final next = rows
+        .map((item) => item.uid.trim())
+        .where((uid) => uid.isNotEmpty)
+        .toSet();
+    if (_sameUidSet(next, _flexLearnerUidsForBadge)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _flexLearnerUidsForBadge = next);
+    });
+  }
+
+  void _queueRecordedBadgeUidSync(List<_RecordedCourseSummary> rows) {
+    final next = rows
+        .map((item) => item.uid.trim())
+        .where((uid) => uid.isNotEmpty)
+        .toSet();
+    if (_sameUidSet(next, _recordedLearnerUidsForBadge)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _recordedLearnerUidsForBadge = next);
+    });
+  }
+
+  int _sumUnreadFor(Set<String> learnerUids, Map<String, int> unreadByLearner) {
+    var total = 0;
+    for (final uid in learnerUids) {
+      total += unreadByLearner[uid] ?? 0;
+    }
+    return total;
+  }
+
+  Widget _tabLabelWithBadge(String label, int count) {
+    if (count <= 0) return Tab(text: label);
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          const SizedBox(width: 6),
+          _countPill(_countLabel(count), fontSize: 10, horizontal: 6),
+        ],
       ),
     );
   }
@@ -4145,7 +4277,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return progress.clamp(0.0, 1.0);
   }
 
-  Widget _buildFlexibleAttendanceTab() {
+  Widget _buildFlexibleAttendanceTab(Map<String, int> unreadByLearner) {
     return FutureBuilder<List<_FlexCourseSummary>>(
       future: _loadFlexibleAttendanceSummaries(),
       builder: (context, snap) {
@@ -4165,11 +4297,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         }
 
         final all = snap.data ?? const <_FlexCourseSummary>[];
+        _queueFlexBadgeUidSync(all);
         final shown = all.where((item) {
           final statusOk =
               _flexStatusFilter == 'all' ||
               item.statusLabel.toLowerCase() == _flexStatusFilter;
           if (!statusOk) return false;
+
+          if (_flexUnreadOnly) {
+            final unread = unreadByLearner[item.uid.trim()] ?? 0;
+            if (unread <= 0) return false;
+          }
 
           if (_flexSearch.isEmpty) return true;
           final q = _flexSearch;
@@ -4226,6 +4364,30 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             const SizedBox(height: 10),
             Row(
               children: [
+                ChoiceChip(
+                  label: const Text('All learners'),
+                  selected: !_flexUnreadOnly,
+                  onSelected: (_) {
+                    if (_flexUnreadOnly) {
+                      setState(() => _flexUnreadOnly = false);
+                    }
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Unread only'),
+                  selected: _flexUnreadOnly,
+                  onSelected: (_) {
+                    if (!_flexUnreadOnly) {
+                      setState(() => _flexUnreadOnly = true);
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
                 Expanded(
                   child: Text(
                     'Showing ${shown.length} learner-course items • $consumedCount consumed sessions',
@@ -4277,6 +4439,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         final nearFinish = progressValue >= 0.85;
                         final key = _flexSummaryKey(item);
                         final expanded = _expandedFlexKeys.contains(key);
+                        final unreadCount =
+                            unreadByLearner[item.uid.trim()] ?? 0;
 
                         return Card(
                           elevation: 0,
@@ -4328,6 +4492,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     _learnerQuickActionsBadge(
                                       uid: item.uid,
                                       learnerName: item.learnerName,
+                                      unreadCount: unreadCount,
                                     ),
                                   ],
                                 ),
@@ -4517,7 +4682,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
-  Widget _buildRecordedProgressTab() {
+  Widget _buildRecordedProgressTab(Map<String, int> unreadByLearner) {
     return FutureBuilder<List<_RecordedCourseSummary>>(
       future: _loadRecordedProgressSummaries(),
       builder: (context, snap) {
@@ -4537,11 +4702,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         }
 
         final rows = snap.data ?? const <_RecordedCourseSummary>[];
-        final totalCompleted = rows.fold<int>(
+        _queueRecordedBadgeUidSync(rows);
+        final shown = _recordedUnreadOnly
+            ? rows
+                  .where((item) => (unreadByLearner[item.uid.trim()] ?? 0) > 0)
+                  .toList()
+            : rows;
+        final totalCompleted = shown.fold<int>(
           0,
           (sum, item) => sum + item.completedSessions,
         );
-        final totalSessions = rows.fold<int>(
+        final totalSessions = shown.fold<int>(
           0,
           (sum, item) => sum + item.totalSessions,
         );
@@ -4553,7 +4724,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    'Showing ${rows.length} recorded learner-course items • $totalCompleted / $totalSessions sessions completed',
+                    'Showing ${shown.length} recorded learner-course items • $totalCompleted / $totalSessions sessions completed',
                     style: TextStyle(
                       color: Colors.grey.shade700,
                       fontWeight: FontWeight.w700,
@@ -4568,14 +4739,38 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               ],
             ),
             const SizedBox(height: 10),
+            Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('All learners'),
+                  selected: !_recordedUnreadOnly,
+                  onSelected: (_) {
+                    if (_recordedUnreadOnly) {
+                      setState(() => _recordedUnreadOnly = false);
+                    }
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Unread only'),
+                  selected: _recordedUnreadOnly,
+                  onSelected: (_) {
+                    if (!_recordedUnreadOnly) {
+                      setState(() => _recordedUnreadOnly = true);
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             Expanded(
-              child: rows.isEmpty
+              child: shown.isEmpty
                   ? const Center(child: Text('No recorded progress found.'))
                   : ListView.separated(
-                      itemCount: rows.length,
+                      itemCount: shown.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, i) {
-                        final item = rows[i];
+                        final item = shown[i];
                         final progressValue = item.totalSessions > 0
                             ? (item.completedSessions / item.totalSessions)
                                   .clamp(0.0, 1.0)
@@ -4600,6 +4795,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             : (nearExpiry
                                   ? Colors.orange.shade700
                                   : const Color(0xFF0EA5E9));
+                        final unreadCount =
+                            unreadByLearner[item.uid.trim()] ?? 0;
 
                         return Card(
                           elevation: 0,
@@ -4631,6 +4828,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     _learnerQuickActionsBadge(
                                       uid: item.uid,
                                       learnerName: item.learnerName,
+                                      unreadCount: unreadCount,
                                     ),
                                   ],
                                 ),
@@ -4744,39 +4942,54 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Classes'),
-          actions: [const SizedBox.shrink()],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Classes'),
-              Tab(text: 'Flexible'),
-              Tab(text: 'Recorded'),
-            ],
-          ),
-        ),
-        body: adminWebBodyFrame(
-          context: context,
-          maxWidth: 1560,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: TabBarView(
-              children: [
-                _buildClassesList(),
-                _buildFlexibleAttendanceTab(),
-                _buildRecordedProgressTab(),
-              ],
+    return StreamBuilder<Map<String, int>>(
+      stream: _unreadByLearnerStream,
+      builder: (context, unreadSnap) {
+        final unreadByLearner = unreadSnap.data ?? const <String, int>{};
+        final flexibleUnread = _sumUnreadFor(
+          _flexLearnerUidsForBadge,
+          unreadByLearner,
+        );
+        final recordedUnread = _sumUnreadFor(
+          _recordedLearnerUidsForBadge,
+          unreadByLearner,
+        );
+
+        return DefaultTabController(
+          length: 3,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Classes'),
+              actions: [const SizedBox.shrink()],
+              bottom: TabBar(
+                tabs: [
+                  const Tab(text: 'Classes'),
+                  _tabLabelWithBadge('Flexible', flexibleUnread),
+                  _tabLabelWithBadge('Recorded', recordedUnread),
+                ],
+              ),
+            ),
+            body: adminWebBodyFrame(
+              context: context,
+              maxWidth: 1560,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: TabBarView(
+                  children: [
+                    _buildClassesList(),
+                    _buildFlexibleAttendanceTab(unreadByLearner),
+                    _buildRecordedProgressTab(unreadByLearner),
+                  ],
+                ),
+              ),
+            ),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () => _openClassEditor(existingClass: null),
+              child: const Icon(Icons.add),
             ),
           ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _openClassEditor(existingClass: null),
-          child: const Icon(Icons.add),
-        ),
-      ),
+        );
+      },
     );
   }
 }
