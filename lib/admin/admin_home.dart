@@ -334,11 +334,11 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       card(
-        'Vocabulary Lists',
-        'Course-linked word banks',
+        'Study Coach',
+        'Vocabulary, grammar, speaking',
         _DashCard(
-          title: 'Vocabulary Lists',
-          subtitle: 'Course-linked word banks',
+          title: 'Study Coach',
+          subtitle: 'Vocabulary, grammar, speaking',
           tags: const ['Study Coach', 'CSV'],
           icon: Icons.spellcheck_rounded,
           color: AdminHome.accentCyan,

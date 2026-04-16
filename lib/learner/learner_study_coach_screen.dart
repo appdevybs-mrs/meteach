@@ -21,6 +21,8 @@ enum _CoachMode { spelling, usage }
 
 enum _CoachSpeed { slow, standard, fast }
 
+enum _CoachSection { vocabulary, grammar, speaking }
+
 class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final TextEditingController _typedAnswerController = TextEditingController();
@@ -31,6 +33,8 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
 
   final List<_CourseBundle> _courseBundles = <_CourseBundle>[];
   _CourseBundle? _selectedCourse;
+  final List<_LearnerSpeakingTopic> _speakingTopics = <_LearnerSpeakingTopic>[];
+  _CoachSection _section = _CoachSection.vocabulary;
 
   _CoachMode _mode = _CoachMode.spelling;
   _CoachSpeed _speed = _CoachSpeed.standard;
@@ -96,10 +100,12 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
       _loading = true;
       _error = null;
       _courseBundles.clear();
+      _speakingTopics.clear();
       _selectedCourse = null;
       _sessionStarted = false;
       _learningCompleted = false;
       _learningDeckOpen = false;
+      _section = _CoachSection.vocabulary;
     });
 
     try {
@@ -146,45 +152,78 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
       );
 
       final bundles = <_CourseBundle>[];
+      final speaking = <_LearnerSpeakingTopic>[];
       for (final c in assigned) {
         final courseId = (c['courseId'] ?? '').toString();
         final courseTitle = (c['courseTitle'] ?? '').toString();
-        final wordsSnap = await _db.child('vocab_words/$courseId').get();
-        if (!wordsSnap.exists || wordsSnap.value is! Map) continue;
 
-        final wordsRaw = Map<dynamic, dynamic>.from(wordsSnap.value as Map);
-        final words = <_Word>[];
-        for (final entry in wordsRaw.entries) {
-          if (entry.value is! Map) continue;
-          final map = Map<dynamic, dynamic>.from(entry.value as Map);
-          final parsed = _Word.fromMap(entry.key.toString(), map);
-          if (parsed.word.isEmpty) continue;
-          words.add(parsed);
+        final wordsSnap = await _db.child('vocab_words/$courseId').get();
+        if (wordsSnap.exists && wordsSnap.value is Map) {
+          final wordsRaw = Map<dynamic, dynamic>.from(wordsSnap.value as Map);
+          final words = <_Word>[];
+          for (final entry in wordsRaw.entries) {
+            if (entry.value is! Map) continue;
+            final map = Map<dynamic, dynamic>.from(entry.value as Map);
+            final parsed = _Word.fromMap(entry.key.toString(), map);
+            if (parsed.word.isEmpty) continue;
+            words.add(parsed);
+          }
+
+          if (words.isNotEmpty) {
+            bundles.add(
+              _CourseBundle(
+                courseId: courseId,
+                courseTitle: courseTitle,
+                words: words,
+              ),
+            );
+          }
         }
 
-        if (words.isEmpty) continue;
-
-        bundles.add(
-          _CourseBundle(
-            courseId: courseId,
-            courseTitle: courseTitle,
-            words: words,
-          ),
-        );
+        final speakingSnap = await _db
+            .child('study_coach_speaking/$courseId')
+            .get();
+        if (speakingSnap.exists && speakingSnap.value is Map) {
+          final speakingRaw = Map<dynamic, dynamic>.from(
+            speakingSnap.value as Map,
+          );
+          for (final entry in speakingRaw.entries) {
+            if (entry.value is! Map) continue;
+            final map = Map<dynamic, dynamic>.from(entry.value as Map);
+            final parsed = _LearnerSpeakingTopic.fromMap(
+              id: entry.key.toString(),
+              courseId: courseId,
+              courseTitle: courseTitle,
+              map: map,
+            );
+            if (parsed.topic.isEmpty) continue;
+            speaking.add(parsed);
+          }
+        }
       }
 
-      if (bundles.isEmpty) {
-        throw Exception(
-          'No vocabulary list is linked to your assigned courses yet.',
-        );
+      if (bundles.isEmpty && speaking.isEmpty) {
+        throw Exception('No Study Coach content is available yet.');
       }
+
+      speaking.sort((a, b) {
+        if (a.updatedAt != b.updatedAt)
+          return b.updatedAt.compareTo(a.updatedAt);
+        return a.topic.toLowerCase().compareTo(b.topic.toLowerCase());
+      });
 
       if (!mounted) return;
       setState(() {
         _courseBundles
           ..clear()
           ..addAll(bundles);
-        _selectedCourse = _courseBundles.first;
+        _speakingTopics
+          ..clear()
+          ..addAll(speaking);
+        _selectedCourse = _courseBundles.isEmpty ? null : _courseBundles.first;
+        if (_courseBundles.isEmpty && _speakingTopics.isNotEmpty) {
+          _section = _CoachSection.speaking;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -538,6 +577,268 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
       return;
     }
     _startSession();
+  }
+
+  Widget _buildSectionCards() {
+    final green = const Color(0xFF1E8E5A);
+    final blue = const Color(0xFF12438A);
+    final hasVocab = _courseBundles.isNotEmpty;
+    final hasSpeaking = _speakingTopics.isNotEmpty;
+
+    Widget card({
+      required _CoachSection section,
+      required String title,
+      required String subtitle,
+      required IconData icon,
+      required Color color,
+      required bool enabled,
+      String? chip,
+    }) {
+      final selected = _section == section;
+      return InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: enabled
+            ? () => setState(() {
+                _section = section;
+              })
+            : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.1) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected
+                  ? color.withValues(alpha: 0.52)
+                  : palette.border.withValues(alpha: 0.8),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: palette.text.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (chip != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    chip,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        card(
+          section: _CoachSection.vocabulary,
+          title: 'Vocabulary',
+          subtitle: hasVocab
+              ? 'Learn and test your assigned words'
+              : 'No vocabulary set yet',
+          icon: Icons.auto_stories_rounded,
+          color: green,
+          enabled: hasVocab,
+        ),
+        card(
+          section: _CoachSection.grammar,
+          title: 'Grammar',
+          subtitle: 'Coming soon',
+          icon: Icons.rule_rounded,
+          color: palette.primary,
+          enabled: false,
+          chip: 'Soon',
+        ),
+        card(
+          section: _CoachSection.speaking,
+          title: 'Speaking',
+          subtitle: hasSpeaking
+              ? 'Practice by reading and speaking aloud'
+              : 'No speaking topics yet',
+          icon: Icons.record_voice_over_rounded,
+          color: blue,
+          enabled: hasSpeaking,
+          chip: hasSpeaking ? '${_speakingTopics.length}' : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpeakingPracticeCard() {
+    if (_speakingTopics.isEmpty) {
+      return const _ErrorView(message: 'No speaking topics available yet.');
+    }
+
+    final blue = const Color(0xFF12438A);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: blue.withValues(alpha: 0.26)),
+      ),
+      child: SizedBox(
+        height: 560,
+        child: PageView.builder(
+          itemCount: _speakingTopics.length,
+          padEnds: false,
+          controller: PageController(viewportFraction: 0.94),
+          itemBuilder: (context, index) {
+            final t = _speakingTopics[index];
+            return Padding(
+              padding: const EdgeInsets.all(10),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: blue.withValues(alpha: 0.2)),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [blue.withValues(alpha: 0.08), Colors.white],
+                  ),
+                ),
+                child: ListView(
+                  padding: const EdgeInsets.all(14),
+                  children: [
+                    Text(
+                      t.topic,
+                      style: TextStyle(
+                        color: blue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      t.courseTitle,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: palette.text.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (t.imageUrl.trim().isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          t.imageUrl,
+                          height: 180,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    if (t.imageUrl.trim().isNotEmpty)
+                      const SizedBox(height: 12),
+                    Text(
+                      'Questions to answer',
+                      style: TextStyle(
+                        color: blue,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (t.questions.isEmpty)
+                      Text(
+                        'No questions provided.',
+                        style: TextStyle(
+                          color: palette.text.withValues(alpha: 0.65),
+                        ),
+                      )
+                    else
+                      ...t.questions.map(
+                        (q) => Padding(
+                          padding: const EdgeInsets.only(bottom: 5),
+                          child: Text(
+                            '- $q',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Keywords',
+                      style: TextStyle(
+                        color: blue,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      t.keywordsText.trim().isEmpty
+                          ? 'No keywords provided.'
+                          : t.keywordsText,
+                      style: const TextStyle(height: 1.35),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Example speech',
+                      style: TextStyle(
+                        color: blue,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      t.exampleSpeech.trim().isEmpty
+                          ? 'No sample speech provided.'
+                          : t.exampleSpeech,
+                      style: const TextStyle(height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Widget _buildSetupCard() {
@@ -1278,6 +1579,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   @override
   Widget build(BuildContext context) {
     final selected = _selectedCourse;
+    final showSpeaking = _section == _CoachSection.speaking;
 
     return Scaffold(
       appBar: AppBar(
@@ -1300,50 +1602,59 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
                     ? _ErrorView(message: _error!)
-                    : selected == null
+                    : !showSpeaking && selected == null
                     ? const _ErrorView(
                         message: 'No course vocabulary is available.',
                       )
                     : ListView(
                         padding: const EdgeInsets.only(bottom: 16),
                         children: [
-                          if (!_sessionStarted || !_isTestSession)
-                            _buildSetupCard(),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 240),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              final offset = Tween<Offset>(
-                                begin: const Offset(0, 0.03),
-                                end: Offset.zero,
-                              ).animate(animation);
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: offset,
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: !_sessionStarted
-                                ? const SizedBox.shrink(
-                                    key: ValueKey('setup_idle'),
-                                  )
-                                : _sessionDone
-                                ? KeyedSubtree(
-                                    key: const ValueKey('result_panel'),
-                                    child: _buildResultCard(),
-                                  )
-                                : _isTestSession
-                                ? KeyedSubtree(
-                                    key: ValueKey('test_panel_$_index'),
-                                    child: _buildTestCard(_currentWord!),
-                                  )
-                                : const SizedBox.shrink(
-                                    key: ValueKey('idle_non_test'),
+                          _buildSectionCards(),
+                          if (showSpeaking)
+                            _buildSpeakingPracticeCard()
+                          else if (_section == _CoachSection.grammar)
+                            const _ErrorView(
+                              message: 'Grammar content is coming soon.',
+                            )
+                          else ...[
+                            if (!_sessionStarted || !_isTestSession)
+                              _buildSetupCard(),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 240),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                final offset = Tween<Offset>(
+                                  begin: const Offset(0, 0.03),
+                                  end: Offset.zero,
+                                ).animate(animation);
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: offset,
+                                    child: child,
                                   ),
-                          ),
+                                );
+                              },
+                              child: !_sessionStarted
+                                  ? const SizedBox.shrink(
+                                      key: ValueKey('setup_idle'),
+                                    )
+                                  : _sessionDone
+                                  ? KeyedSubtree(
+                                      key: const ValueKey('result_panel'),
+                                      child: _buildResultCard(),
+                                    )
+                                  : _isTestSession
+                                  ? KeyedSubtree(
+                                      key: ValueKey('test_panel_$_index'),
+                                      child: _buildTestCard(_currentWord!),
+                                    )
+                                  : const SizedBox.shrink(
+                                      key: ValueKey('idle_non_test'),
+                                    ),
+                            ),
+                          ],
                         ],
                       ),
               ),
@@ -1455,6 +1766,72 @@ class _CourseBundle {
   final String courseTitle;
   final List<_Word> words;
   final List<_Word> sessionWords = <_Word>[];
+}
+
+class _LearnerSpeakingTopic {
+  const _LearnerSpeakingTopic({
+    required this.id,
+    required this.courseId,
+    required this.courseTitle,
+    required this.topic,
+    required this.questions,
+    required this.keywordsText,
+    required this.exampleSpeech,
+    required this.imageUrl,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String courseId;
+  final String courseTitle;
+  final String topic;
+  final List<String> questions;
+  final String keywordsText;
+  final String exampleSpeech;
+  final String imageUrl;
+  final int updatedAt;
+
+  factory _LearnerSpeakingTopic.fromMap({
+    required String id,
+    required String courseId,
+    required String courseTitle,
+    required Map<dynamic, dynamic> map,
+  }) {
+    List<String> parseQuestions(dynamic raw) {
+      if (raw is List) {
+        return raw
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList(growable: false);
+      }
+      if (raw is String) {
+        return raw
+            .split('|')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(growable: false);
+      }
+      return const <String>[];
+    }
+
+    int asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    return _LearnerSpeakingTopic(
+      id: id,
+      courseId: courseId,
+      courseTitle: courseTitle,
+      topic: (map['topic'] ?? '').toString().trim(),
+      questions: parseQuestions(map['questions']),
+      keywordsText: (map['keywordsText'] ?? '').toString().trim(),
+      exampleSpeech: (map['exampleSpeech'] ?? '').toString().trim(),
+      imageUrl: (map['imageUrl'] ?? '').toString().trim(),
+      updatedAt: asInt(map['updatedAt']),
+    );
+  }
 }
 
 class _Word {

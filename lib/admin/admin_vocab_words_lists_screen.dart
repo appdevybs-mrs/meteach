@@ -121,7 +121,7 @@ class _AdminVocabWordsListsScreenState
       if (!mounted) return;
       AppToast.show(
         context,
-        'Could not load course lists: ${toHumanError(e)}',
+        'Could not load Study Coach courses: ${toHumanError(e)}',
         type: AppToastType.error,
       );
     } finally {
@@ -207,7 +207,7 @@ class _AdminVocabWordsListsScreenState
 
   Future<void> _deleteList(_CourseListRow row) async {
     final ok = await _confirmDelete(
-      'Delete list?',
+      'Delete vocabulary list?',
       'Delete the vocabulary list for "${row.courseTitle}" and all its words?',
     );
     if (!ok) return;
@@ -253,7 +253,7 @@ class _AdminVocabWordsListsScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vocabulary Lists'),
+        title: const Text('Study Coach'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -357,7 +357,7 @@ class _AdminVocabWordsListsScreenState
                                 itemBuilder: (_) => const [
                                   PopupMenuItem<String>(
                                     value: 'open',
-                                    child: Text('Open words'),
+                                    child: Text('Open Study Coach'),
                                   ),
                                   PopupMenuItem<String>(
                                     value: 'delete',
