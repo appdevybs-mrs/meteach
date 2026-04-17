@@ -13,6 +13,8 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
 
@@ -304,6 +306,25 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
       });
 
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.teacherProfileUpdate,
+        domain: AuditDomain.profile,
+        summary: 'Teacher updated profile',
+        actor: AuditActor(
+          uid: user.uid,
+          role: 'teacher',
+          name: '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'
+              .trim(),
+        ),
+        target: AuditTarget(type: 'teacher', uid: user.uid),
+        keywords: [user.uid],
+        meta: {
+          'hasIntroVideo': (_introVideoUrl ?? '').trim().isNotEmpty,
+          'photoCount': cleanPhotos.length,
+          'hasGoogleMeet': _googleMeetUrlCtrl.text.trim().isNotEmpty,
+        },
+      );
+
       if (mounted) {
         setState(() {
           _ok = showSuccessMessage ? 'Profile saved successfully ✅' : null;
@@ -312,6 +333,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
       return true;
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.teacherProfileUpdate,
+        domain: AuditDomain.profile,
+        summary: 'Failed to update teacher profile',
+        actor: AuditActor(
+          uid: _auth.currentUser?.uid,
+          role: 'teacher',
+          name: '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'
+              .trim(),
+        ),
+        target: AuditTarget(type: 'teacher', uid: _auth.currentUser?.uid),
+        errorMessage: e.toString(),
+      );
       if (mounted) {
         setState(() => _error = toHumanError(e));
       }
@@ -1782,7 +1816,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return PopScope(
       canPop: !_hasUnsavedChanges && !_busy,
       onPopInvokedWithResult: (didPop, result) async {

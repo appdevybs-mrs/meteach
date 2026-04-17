@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../services/audit_log_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/media_download.dart';
@@ -264,6 +265,26 @@ class _TeacherLearnerGalleryScreenState
           'createdAt': ServerValue.timestamp,
         })
         .timeout(const Duration(seconds: 45));
+
+    await AuditLogService.logSuccess(
+      actionKey: 'teacher.gallery.upload',
+      domain: 'content',
+      summary: 'Teacher uploaded $type to learner gallery',
+      actor: AuditActor(uid: teacherUid, role: 'teacher', name: _teacherName),
+      target: AuditTarget(
+        type: 'learner',
+        uid: widget.learnerUid,
+        id: newRef.key,
+        name: widget.learnerName,
+      ),
+      keywords: [widget.classId, widget.learnerUid, type],
+      context: {
+        'itemId': newRef.key ?? '',
+        'classId': widget.classId,
+        'classTitle': widget.classTitle,
+      },
+      meta: {'mediaType': type},
+    );
   }
 
   Future<void> _pickAndUploadPhoto() async {
@@ -438,12 +459,48 @@ class _TeacherLearnerGalleryScreenState
       }
 
       await _galleryRef().child(itemId).remove();
+
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.gallery.delete',
+        domain: 'content',
+        summary: 'Teacher deleted learner gallery item',
+        actor: AuditActor(
+          uid: FirebaseAuth.instance.currentUser?.uid,
+          role: 'teacher',
+          name: _teacherName,
+        ),
+        target: AuditTarget(
+          type: 'learner',
+          uid: widget.learnerUid,
+          id: itemId,
+          name: widget.learnerName,
+        ),
+        keywords: [widget.classId, widget.learnerUid, itemId],
+      );
+
       if (!mounted) return;
       setState(() {
         _ok = 'Gallery item deleted from server and database';
         _error = null;
       });
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.gallery.delete',
+        domain: 'content',
+        summary: 'Teacher failed to delete learner gallery item',
+        actor: AuditActor(
+          uid: FirebaseAuth.instance.currentUser?.uid,
+          role: 'teacher',
+          name: _teacherName,
+        ),
+        target: AuditTarget(
+          type: 'learner',
+          uid: widget.learnerUid,
+          id: itemId,
+          name: widget.learnerName,
+        ),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
@@ -586,7 +643,6 @@ class _TeacherLearnerGalleryScreenState
     final displayClassTitle = widget.classTitle.trim().isEmpty
         ? widget.classId
         : widget.classTitle.trim();
-
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1482,7 +1538,6 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
     final displayTeacher = teacherName.trim().isEmpty
         ? 'Teacher'
         : teacherName.trim();
-
 
     return Scaffold(
       backgroundColor: Colors.black,

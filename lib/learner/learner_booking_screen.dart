@@ -8,6 +8,8 @@ import '../shared/human_error.dart';
 import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../services/notification_service.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
@@ -1746,9 +1748,44 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       await _sendBookingNotifications(slot);
       await _scheduleLearnerLocalReminder(slot);
 
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.learnerBookingCreate,
+        domain: AuditDomain.booking,
+        summary:
+            'Learner booked ${slot.teacherName} ${slot.dayKey} ${slot.time}',
+        actor: AuditActor(uid: myUid, role: 'learner'),
+        target: AuditTarget(
+          type: 'teacher',
+          uid: slot.teacherId,
+          id: _bookingKey(cid, slot.dayKey, slot.time),
+          name: slot.teacherName,
+        ),
+        keywords: [cid, slot.dayKey, slot.time, '$targetSession'],
+        context: {
+          'courseId': cid,
+          'teacherId': slot.teacherId,
+          'dayKey': slot.dayKey,
+          'time': slot.time,
+          'sessionNo': targetSession,
+        },
+      );
+
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.learnerBookingCreate,
+        domain: AuditDomain.booking,
+        summary: 'Learner booking failed',
+        actor: AuditActor(uid: myUid, role: 'learner'),
+        target: AuditTarget(
+          type: 'teacher',
+          uid: slot.teacherId,
+          name: slot.teacherName,
+        ),
+        keywords: [cid, slot.dayKey, slot.time],
+        errorMessage: e.toString(),
+      );
       _toast('Booking failed: $e');
     } finally {
       if (!mounted) return;
@@ -1915,6 +1952,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
         return Transaction.success(node);
       });
+
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.learnerBookingLateCancelCredit,
+        domain: AuditDomain.booking,
+        summary: 'Learner late-cancel credit counted',
+        actor: AuditActor(uid: myUid, role: 'learner'),
+        target: AuditTarget(
+          type: 'booking',
+          id: bookingKey,
+          uid: slot.teacherId,
+          name: slot.teacherName,
+        ),
+        keywords: [cid, slot.dayKey, slot.time, '$sessionNo'],
+      );
     } catch (_) {}
   }
 
@@ -1954,10 +2005,40 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         );
       }
 
+      if (status == _CancelBookingStatus.cancelled ||
+          status == _CancelBookingStatus.notFound) {
+        await AuditLogService.logSuccess(
+          actionKey: AuditActionKeys.learnerBookingCancel,
+          domain: AuditDomain.booking,
+          summary: 'Learner cancelled booking ${slot.dayKey} ${slot.time}',
+          actor: AuditActor(uid: myUid, role: 'learner'),
+          target: AuditTarget(
+            type: 'teacher',
+            uid: slot.teacherId,
+            name: slot.teacherName,
+          ),
+          keywords: [cid, slot.dayKey, slot.time],
+          meta: {'lateCancel': lateCancel, 'status': status.name},
+        );
+      }
+
       await _loadStudiedSessions(cid);
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.learnerBookingCancel,
+        domain: AuditDomain.booking,
+        summary: 'Learner booking cancel failed',
+        actor: AuditActor(uid: myUid, role: 'learner'),
+        target: AuditTarget(
+          type: 'teacher',
+          uid: slot.teacherId,
+          name: slot.teacherName,
+        ),
+        keywords: [cid, slot.dayKey, slot.time],
+        errorMessage: e.toString(),
+      );
       _toast('Cancel failed: $e');
     } finally {
       if (!mounted) return;
@@ -2159,6 +2240,21 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   await _progressRef(
                     cid,
                   ).child('session_reviews/$sessionNo').set(payload);
+
+                  await AuditLogService.logSuccess(
+                    actionKey: AuditActionKeys.learnerSessionReviewSubmit,
+                    domain: AuditDomain.booking,
+                    summary:
+                        'Learner submitted session review for session $sessionNo',
+                    actor: AuditActor(uid: myUid, role: 'learner'),
+                    target: AuditTarget(
+                      type: 'course',
+                      id: cid,
+                      name: teacherName,
+                    ),
+                    keywords: [cid, '$sessionNo', '$rating', teacherName],
+                    context: {'courseId': cid, 'sessionNo': sessionNo},
+                  );
                   existingCreatedAt = existingCreatedAt > 0
                       ? existingCreatedAt
                       : DateTime.now().millisecondsSinceEpoch;
@@ -2166,6 +2262,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   if (!mounted) return;
                   AppToast.show(context, 'Session review submitted.');
                 } catch (e) {
+                  await AuditLogService.logFailure(
+                    actionKey: AuditActionKeys.learnerSessionReviewSubmit,
+                    domain: AuditDomain.booking,
+                    summary: 'Learner session review submit failed',
+                    actor: AuditActor(uid: myUid, role: 'learner'),
+                    target: AuditTarget(type: 'course', id: cid),
+                    keywords: [cid, '$sessionNo'],
+                    errorMessage: e.toString(),
+                  );
                   if (!mounted) return;
                   AppToast.show(
                     context,

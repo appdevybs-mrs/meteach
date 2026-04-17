@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/backend_api.dart';
+import '../services/audit_log_service.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
@@ -453,12 +454,29 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
       await _gamesRef.child(gameId).remove();
 
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.game.delete',
+        domain: 'content',
+        summary: 'Teacher deleted game ${gameName.isEmpty ? gameId : gameName}',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'game', id: gameId, name: gameName),
+        keywords: [gameId, teacherUid],
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
         const SnackBar(content: Text('Game deleted successfully.')),
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.game.delete',
+        domain: 'content',
+        summary: 'Teacher failed to delete game',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'game', id: gameId, name: gameName),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -502,12 +520,33 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
       await ref.set(cloned);
 
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.game.duplicate',
+        domain: 'content',
+        summary: 'Teacher duplicated game',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'game',
+          id: ref.key,
+          name: (cloned['name'] ?? '').toString(),
+        ),
+        keywords: [gameId, ref.key ?? ''],
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
         const SnackBar(content: Text('Game duplicated successfully.')),
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.game.duplicate',
+        domain: 'content',
+        summary: 'Teacher failed to duplicate game',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'game', id: gameId),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -535,6 +574,22 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         'updatedAt': ServerValue.timestamp,
       });
 
+      await AuditLogService.logSuccess(
+        actionKey: nextStatus == 'archived'
+            ? 'teacher.game.archive'
+            : 'teacher.game.restore',
+        domain: 'content',
+        summary:
+            'Teacher ${nextStatus == 'archived' ? 'archived' : 'restored'} game',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'game',
+          id: gameId,
+          name: (game['name'] ?? '').toString(),
+        ),
+        keywords: [gameId, nextStatus],
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -547,6 +602,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         ),
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.game.archive',
+        domain: 'content',
+        summary: 'Teacher failed to change game archive status',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'game', id: gameId),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -931,6 +994,19 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
                 await ref.update(data);
 
+                await AuditLogService.logSuccess(
+                  actionKey: isEdit
+                      ? 'teacher.game.update'
+                      : 'teacher.game.create',
+                  domain: 'content',
+                  summary: isEdit
+                      ? 'Teacher updated game $name'
+                      : 'Teacher created game $name',
+                  actor: AuditActor(uid: uid, role: 'teacher'),
+                  target: AuditTarget(type: 'game', id: ref.key, name: name),
+                  keywords: [ref.key ?? '', selectedStatus, category, level],
+                );
+
                 if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
 
@@ -946,6 +1022,20 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   ),
                 );
               } catch (e) {
+                await AuditLogService.logFailure(
+                  actionKey: isEdit
+                      ? 'teacher.game.update'
+                      : 'teacher.game.create',
+                  domain: 'content',
+                  summary: 'Teacher failed to save game',
+                  actor: AuditActor(uid: uid, role: 'teacher'),
+                  target: AuditTarget(
+                    type: 'game',
+                    id: draftGameUid,
+                    name: name,
+                  ),
+                  errorMessage: e.toString(),
+                );
                 if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,

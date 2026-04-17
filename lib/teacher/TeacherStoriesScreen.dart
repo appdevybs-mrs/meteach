@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
+import '../services/audit_log_service.dart';
 import '../services/storage_existence.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
@@ -526,12 +527,30 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
       await _storiesRef.child(storyId).remove();
 
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.story.delete',
+        domain: 'content',
+        summary:
+            'Teacher deleted story ${storyName.isEmpty ? storyId : storyName}',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'story', id: storyId, name: storyName),
+        keywords: [storyId, teacherUid],
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
         const SnackBar(content: Text('Story deleted successfully.')),
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.story.delete',
+        domain: 'content',
+        summary: 'Teacher failed to delete story',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'story', id: storyId, name: storyName),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -576,12 +595,33 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
       await ref.set(cloned);
 
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.story.duplicate',
+        domain: 'content',
+        summary: 'Teacher duplicated story',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'story',
+          id: ref.key,
+          name: (cloned['name'] ?? '').toString(),
+        ),
+        keywords: [storyId, ref.key ?? ''],
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
         const SnackBar(content: Text('Story duplicated successfully.')),
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.story.duplicate',
+        domain: 'content',
+        summary: 'Teacher failed to duplicate story',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'story', id: storyId),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -609,6 +649,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         'updatedAt': ServerValue.timestamp,
       });
 
+      await AuditLogService.logSuccess(
+        actionKey: nextStatus == 'archived'
+            ? 'teacher.story.archive'
+            : 'teacher.story.restore',
+        domain: 'content',
+        summary:
+            'Teacher ${nextStatus == 'archived' ? 'archived' : 'restored'} story',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'story',
+          id: storyId,
+          name: (story['name'] ?? '').toString(),
+        ),
+        keywords: [storyId, nextStatus],
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -621,6 +677,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         ),
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.story.archive',
+        domain: 'content',
+        summary: 'Teacher failed to change story archive status',
+        actor: AuditActor(uid: _myUid, role: 'teacher'),
+        target: AuditTarget(type: 'story', id: storyId),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -1266,6 +1330,19 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
                 await ref.update(data);
 
+                await AuditLogService.logSuccess(
+                  actionKey: isEdit
+                      ? 'teacher.story.update'
+                      : 'teacher.story.create',
+                  domain: 'content',
+                  summary: isEdit
+                      ? 'Teacher updated story $name'
+                      : 'Teacher created story $name',
+                  actor: AuditActor(uid: uid, role: 'teacher'),
+                  target: AuditTarget(type: 'story', id: ref.key, name: name),
+                  keywords: [ref.key ?? '', selectedStatus, genre, level],
+                );
+
                 if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
 
@@ -1281,6 +1358,20 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   ),
                 );
               } catch (e) {
+                await AuditLogService.logFailure(
+                  actionKey: isEdit
+                      ? 'teacher.story.update'
+                      : 'teacher.story.create',
+                  domain: 'content',
+                  summary: 'Teacher failed to save story',
+                  actor: AuditActor(uid: uid, role: 'teacher'),
+                  target: AuditTarget(
+                    type: 'story',
+                    id: draftStoryUid,
+                    name: name,
+                  ),
+                  errorMessage: e.toString(),
+                );
                 if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,

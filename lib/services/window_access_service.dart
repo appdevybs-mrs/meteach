@@ -57,6 +57,7 @@ class AppWindowKeys {
   static const adminReminders = 'reminders';
   static const adminPriorityAlerts = 'priority_alerts';
   static const adminNotificationAudit = 'notification_audit';
+  static const adminActivityCenter = 'activity_center';
   static const adminWages = 'wages';
   static const adminTeacherAvailability = 'teacher_availability';
   static const adminSubscriptions = 'subscriptions';
@@ -460,6 +461,14 @@ class WindowAccessService {
       labelEn: 'Notification Audit',
       labelAr: 'تدقيق الإشعارات',
       tab: 'Communication',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminActivityCenter,
+      labelEn: 'Activity Center',
+      labelAr: 'مركز النشاط',
+      tab: 'System',
       canClose: true,
     ),
     AppWindowDefinition(

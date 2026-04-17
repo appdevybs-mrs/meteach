@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
+import '../services/audit_log_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/teacher_web_layout.dart';
@@ -329,6 +330,20 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
         'createdAt': ServerValue.timestamp,
       });
 
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.shared.upload',
+        domain: 'content',
+        summary: 'Teacher uploaded shared file ${picked.name}',
+        actor: AuditActor(uid: _uid, role: 'teacher', name: ownerName),
+        target: AuditTarget(type: 'shared_file', id: id, name: picked.name),
+        keywords: [picked.name, ext, selectedRoot],
+        context: {
+          'fileId': id,
+          'serverRoot': selectedRoot,
+          'serverPath': selectedPath,
+        },
+      );
+
       if (!mounted) return;
       AppToast.show(
         context,
@@ -336,6 +351,14 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
         type: AppToastType.success,
       );
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.shared.upload',
+        domain: 'content',
+        summary: 'Teacher shared file upload failed',
+        actor: AuditActor(uid: _uid, role: 'teacher'),
+        target: AuditTarget(type: 'shared_file'),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.show(
         context,
@@ -454,9 +477,35 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       if (id.isNotEmpty) {
         await _sharedRef.child(id).remove();
       }
+
+      await AuditLogService.logSuccess(
+        actionKey: 'teacher.shared.delete',
+        domain: 'content',
+        summary:
+            'Teacher deleted shared file ${(item['name'] ?? '').toString()}',
+        actor: AuditActor(uid: _uid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'shared_file',
+          id: id,
+          name: (item['name'] ?? '').toString(),
+        ),
+        keywords: [id, deleteRoot, deletePath],
+      );
       if (!mounted) return;
       AppToast.show(context, 'File deleted.', type: AppToastType.success);
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: 'teacher.shared.delete',
+        domain: 'content',
+        summary: 'Teacher shared file delete failed',
+        actor: AuditActor(uid: _uid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'shared_file',
+          id: (item['id'] ?? '').toString(),
+          name: (item['name'] ?? '').toString(),
+        ),
+        errorMessage: e.toString(),
+      );
       if (!mounted) return;
       AppToast.show(context, toHumanError(e), type: AppToastType.error);
     }

@@ -36,6 +36,7 @@ import 'admin_admin_todos_screen.dart';
 import 'admin_course_reviews_screen.dart';
 import 'admin_priority_alerts_screen.dart';
 import 'admin_notification_audit_screen.dart';
+import 'admin_activity_center_screen.dart';
 import 'admin_vocab_words_lists_screen.dart';
 import 'admin_window_access_screen.dart';
 import 'admin_finance_screen.dart';
@@ -398,6 +399,26 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const AdminPriorityAlertsScreen(),
+              ),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Activity Center',
+        'Centralized system logs',
+        _DashCard(
+          title: 'Activity Center',
+          subtitle: 'Centralized system logs',
+          tags: const ['Teacher', 'Learner', 'Admin'],
+          icon: Icons.manage_search_rounded,
+          color: AdminHome.accentIndigo,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminActivityCenter,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminActivityCenterScreen(),
               ),
             ),
           ),
@@ -3464,6 +3485,8 @@ class _DashCard extends StatelessWidget {
         return 'Applications';
       case 'Notification Audit':
         return 'Notif Audit';
+      case 'Activity Center':
+        return 'Activity';
       case 'Shared Files':
         return 'Shared';
       default:

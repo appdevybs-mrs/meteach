@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
+import 'audit_action_keys.dart';
+import 'audit_log_service.dart';
 import 'push_client.dart';
 
 class PushErrorLogger {
@@ -98,5 +100,23 @@ class PushErrorLogger {
     } catch (_) {
       // Avoid recursive logging failures.
     }
+
+    await AuditLogService.logFailure(
+      actionKey: AuditActionKeys.systemPushFailed,
+      domain: AuditDomain.push,
+      summary: 'Push send failed in $screen: $action',
+      actor: AuditActor(uid: actorUid, role: 'system', name: 'Push Client'),
+      target: AuditTarget(uid: targetUid, id: topic, type: 'push_target'),
+      errorCode: statusCode?.toString(),
+      errorMessage: record['errorMessage']?.toString(),
+      labels: const ['source:push_client'],
+      keywords: [screen, action, pushEventId],
+      meta: {
+        'mode': mode,
+        'target': target,
+        'topic': topic ?? '',
+        'eventId': pushEventId,
+      },
+    );
   }
 }

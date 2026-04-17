@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../shared/human_error.dart';
 import '../shared/teacher_web_layout.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 import 'teacher_mail_thread_screen.dart';
 
 enum _HomeworkFilter { all, notReviewed, reviewed, sent }
@@ -614,6 +616,26 @@ class _TeacherHomeworkInboxScreenState
       'updatedAt': now,
     });
 
+    await AuditLogService.logSuccess(
+      actionKey: AuditActionKeys.teacherHomeworkEdit,
+      domain: AuditDomain.homework,
+      summary: 'Teacher edited homework for ${v.row.peerName}',
+      actor: AuditActor(uid: _meUid, role: 'teacher'),
+      target: AuditTarget(
+        type: 'learner',
+        uid: v.row.peerUid,
+        id: v.sessionId,
+        name: v.row.peerName,
+      ),
+      keywords: [v.courseKey, v.sessionId, v.row.threadId],
+      context: {
+        'courseKey': v.courseKey,
+        'sessionId': v.sessionId,
+        'threadId': v.row.threadId,
+        'homeworkRefPath': v.homeworkRefPath,
+      },
+    );
+
     _rowsSignature = '';
     _viewsFuture = null;
     if (mounted) {
@@ -696,7 +718,32 @@ class _TeacherHomeworkInboxScreenState
         'needsRedo': false,
         'reviewNote': 'Marked reviewed from homework inbox.',
       });
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.teacherHomeworkReviewPass,
+        domain: AuditDomain.homework,
+        summary: 'Teacher marked homework reviewed for ${v.row.peerName}',
+        actor: AuditActor(uid: _meUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'learner',
+          uid: v.row.peerUid,
+          id: v.sessionId,
+          name: v.row.peerName,
+        ),
+        keywords: [v.courseKey, v.sessionId, v.row.threadId],
+      );
     } catch (_) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.teacherHomeworkReviewPass,
+        domain: AuditDomain.homework,
+        summary: 'Failed to mark homework reviewed',
+        actor: AuditActor(uid: _meUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'learner',
+          uid: v.row.peerUid,
+          id: v.sessionId,
+        ),
+        keywords: [v.courseKey, v.sessionId],
+      );
       _localReviewedOverrideByHwRef.remove(hwRef);
       _rowsSignature = '';
       _viewsFuture = null;
@@ -720,7 +767,32 @@ class _TeacherHomeworkInboxScreenState
         'reviewNote': '',
         'needsRedo': false,
       });
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.teacherHomeworkUnreview,
+        domain: AuditDomain.homework,
+        summary: 'Teacher removed homework review for ${v.row.peerName}',
+        actor: AuditActor(uid: _meUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'learner',
+          uid: v.row.peerUid,
+          id: v.sessionId,
+          name: v.row.peerName,
+        ),
+        keywords: [v.courseKey, v.sessionId, v.row.threadId],
+      );
     } catch (_) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.teacherHomeworkUnreview,
+        domain: AuditDomain.homework,
+        summary: 'Failed to remove homework review',
+        actor: AuditActor(uid: _meUid, role: 'teacher'),
+        target: AuditTarget(
+          type: 'learner',
+          uid: v.row.peerUid,
+          id: v.sessionId,
+        ),
+        keywords: [v.courseKey, v.sessionId],
+      );
       _localReviewedOverrideByHwRef.remove(hwRef);
       _rowsSignature = '';
       _viewsFuture = null;

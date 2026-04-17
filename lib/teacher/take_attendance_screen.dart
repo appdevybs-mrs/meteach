@@ -5,6 +5,8 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 
 class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -1031,6 +1033,33 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       await _db.update(updates);
 
+      await AuditLogService.logSuccess(
+        actionKey: _isEdit
+            ? AuditActionKeys.teacherAttendanceUpdate
+            : AuditActionKeys.teacherAttendanceSave,
+        domain: AuditDomain.attendance,
+        summary:
+            '${_isEdit ? 'Updated' : 'Saved'} attendance for class ${_courseTitle.isEmpty ? _classId : _courseTitle}',
+        actor: AuditActor(uid: user.uid, role: 'teacher', name: teacherName),
+        target: AuditTarget(type: 'class', id: _classId, name: _courseTitle),
+        labels: const ['scope:attendance'],
+        keywords: [_classId, _courseId, _courseCode, _courseTitle],
+        context: {
+          'classId': _classId,
+          'courseId': _courseId,
+          'courseCode': _courseCode,
+          'sessionId': sessionId,
+          'meetingNumber': _meetingNumber,
+        },
+        meta: {
+          'presentCount': presentMap.length,
+          'absentCount': absentMap.length,
+          'successRate': _successRate,
+          'hasHomework': homeworkObj != null,
+          'taughtCount': _taughtItems.length,
+        },
+      );
+
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
@@ -1038,6 +1067,20 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       );
       Navigator.pop(context);
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: _isEdit
+            ? AuditActionKeys.teacherAttendanceUpdate
+            : AuditActionKeys.teacherAttendanceSave,
+        domain: AuditDomain.attendance,
+        summary: 'Failed to save attendance',
+        actor: AuditActor(
+          uid: FirebaseAuth.instance.currentUser?.uid,
+          role: 'teacher',
+        ),
+        target: AuditTarget(type: 'class', id: _classId, name: _courseTitle),
+        keywords: [_classId, _courseId],
+        errorMessage: e.toString(),
+      );
       setState(() {
         _error = toHumanError(
           e,

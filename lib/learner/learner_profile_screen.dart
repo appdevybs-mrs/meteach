@@ -13,6 +13,8 @@ import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 import '../shared/app_feedback.dart';
 
 enum _LeaveChoice { save, discard, cancel }
@@ -837,6 +839,23 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       await _usersRef.child(_uid).update(updates);
 
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.learnerProfileUpdate,
+        domain: AuditDomain.profile,
+        summary: 'Learner updated profile',
+        actor: AuditActor(
+          uid: _uid,
+          role: 'learner',
+          name: '${_fn.text.trim()} ${_ln.text.trim()}'.trim(),
+        ),
+        target: AuditTarget(type: 'learner', uid: _uid),
+        keywords: [_uid],
+        meta: {
+          'hasProfilePhoto': (_profilePhotoUrl ?? '').trim().isNotEmpty,
+          'extraPhotos': _photoUrls.length,
+        },
+      );
+
       if (!mounted) return true;
       if (showSuccessSnackBar) {
         AppToast.fromSnackBar(
@@ -847,6 +866,18 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       await _load();
       return true;
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.learnerProfileUpdate,
+        domain: AuditDomain.profile,
+        summary: 'Failed to update learner profile',
+        actor: AuditActor(
+          uid: _uid,
+          role: 'learner',
+          name: '${_fn.text.trim()} ${_ln.text.trim()}'.trim(),
+        ),
+        target: AuditTarget(type: 'learner', uid: _uid),
+        errorMessage: e.toString(),
+      );
       if (mounted) setState(() => _error = toHumanError(e));
       return false;
     } finally {
@@ -2175,7 +2206,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     final p = palette;
     final email = (_user['email'] ?? '').toString();
     final serial = (_user['serial'] ?? '').toString();

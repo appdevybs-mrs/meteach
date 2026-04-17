@@ -7,6 +7,8 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 
 class LearnerHomeworkScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2...
@@ -182,6 +184,29 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
     await _db.update(updates);
 
+    await AuditLogService.logSuccess(
+      actionKey: AuditActionKeys.learnerHomeworkSubmit,
+      domain: AuditDomain.homework,
+      summary: 'Learner submitted homework for session $sessionId',
+      actor: AuditActor(uid: _uid, role: 'learner'),
+      target: AuditTarget(
+        type: 'teacher',
+        uid: teacherUid,
+        id: threadId,
+        name: teacherName,
+      ),
+      keywords: [widget.courseKey, sessionId, threadId],
+      context: {
+        'courseKey': widget.courseKey,
+        'sessionId': sessionId,
+        'threadId': threadId,
+      },
+      meta: {
+        'hasHomeworkText': homeworkText.trim().isNotEmpty,
+        'hasDueDate': dueDate.trim().isNotEmpty,
+      },
+    );
+
     if (!mounted) return;
 
     await Navigator.push(
@@ -251,10 +276,46 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       if (currentlyDone) {
         // undo
         await _hwRef(sessionId).child('doneAt').remove();
+        await AuditLogService.logSuccess(
+          actionKey: AuditActionKeys.learnerHomeworkUndoSubmit,
+          domain: AuditDomain.homework,
+          summary: 'Learner unmarked homework done for session $sessionId',
+          actor: AuditActor(uid: _uid, role: 'learner'),
+          target: AuditTarget(
+            type: 'course',
+            id: widget.courseKey,
+            name: widget.courseTitle,
+          ),
+          keywords: [widget.courseKey, sessionId],
+        );
       } else {
         await _hwRef(sessionId).update({'doneAt': _nowMs()});
+        await AuditLogService.logSuccess(
+          actionKey: AuditActionKeys.learnerHomeworkDone,
+          domain: AuditDomain.homework,
+          summary: 'Learner marked homework done for session $sessionId',
+          actor: AuditActor(uid: _uid, role: 'learner'),
+          target: AuditTarget(
+            type: 'course',
+            id: widget.courseKey,
+            name: widget.courseTitle,
+          ),
+          keywords: [widget.courseKey, sessionId],
+        );
       }
-    } catch (_) {}
+    } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: currentlyDone
+            ? AuditActionKeys.learnerHomeworkUndoSubmit
+            : AuditActionKeys.learnerHomeworkDone,
+        domain: AuditDomain.homework,
+        summary: 'Learner homework state update failed',
+        actor: AuditActor(uid: _uid, role: 'learner'),
+        target: AuditTarget(type: 'course', id: widget.courseKey),
+        keywords: [widget.courseKey, sessionId],
+        errorMessage: e.toString(),
+      );
+    }
   }
 
   Future<bool> _confirmFirstSubmit() async {
@@ -587,7 +648,6 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: UiK.appBg,
       appBar: AppBar(

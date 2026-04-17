@@ -19,6 +19,8 @@ import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
 import '../services/push_error_logger.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 import '../services/backend_api.dart';
 import 'admin_learner_mail_topics_screen.dart';
 
@@ -1024,6 +1026,16 @@ class _LearnersListState extends State<_LearnersList>
         'push/error': null,
       });
 
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.adminReminderSend,
+        domain: AuditDomain.admin,
+        summary: 'Admin sent ${type.name} reminder to ${learner.fullName}',
+        actor: AuditActor(uid: admin?.uid, role: 'admin', name: admin?.email),
+        target: AuditTarget(type: 'learner', uid: uid, name: learner.fullName),
+        keywords: [uid, type.name, reminderRef.key ?? ''],
+        context: {'reminderId': reminderRef.key ?? '', 'kind': type.name},
+      );
+
       if (!mounted) return;
       _toast('Reminder saved & push sent ✅');
     } catch (e, st) {
@@ -1039,6 +1051,17 @@ class _LearnersListState extends State<_LearnersList>
         'status': 'push_error',
         'push/error': e.toString(),
       });
+
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.adminReminderSend,
+        domain: AuditDomain.admin,
+        summary: 'Admin reminder push failed for ${learner.fullName}',
+        actor: AuditActor(uid: admin?.uid, role: 'admin', name: admin?.email),
+        target: AuditTarget(type: 'learner', uid: uid, name: learner.fullName),
+        keywords: [uid, type.name, reminderRef.key ?? ''],
+        context: {'reminderId': reminderRef.key ?? '', 'kind': type.name},
+        errorMessage: e.toString(),
+      );
 
       if (!mounted) return;
       _toast('Reminder saved but push failed');

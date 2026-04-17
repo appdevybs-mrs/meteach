@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/route_state.dart';
 import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
+import '../services/audit_action_keys.dart';
+import '../services/audit_log_service.dart';
 import '../utils/io_delete.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
@@ -985,6 +987,33 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
 
     await root.update(updates);
+
+    if (updateThreadPreview) {
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.teacherMailSend,
+        domain: AuditDomain.mail,
+        summary: 'Teacher sent mail to ${widget.peerName}',
+        actor: AuditActor(uid: _meUid, role: 'teacher', name: _meDisplayName),
+        target: AuditTarget(
+          type: _peerIsLearner ? 'learner' : 'user',
+          uid: widget.peerUid,
+          id: widget.threadId,
+          name: widget.peerName,
+        ),
+        labels: [
+          if (messageType != null && messageType.trim().isNotEmpty)
+            'type:$messageType',
+        ],
+        keywords: [widget.threadId, widget.subject],
+        context: {
+          'threadId': widget.threadId,
+          'subject': widget.subject,
+          'messageType': messageType ?? '',
+          'attachmentsCount': attachments.length,
+          'sendPush': sendPush,
+        },
+      );
+    }
 
     if (updateThreadPreview) {
       unawaited(_markRead());
@@ -3137,10 +3166,47 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         messageType: 'homework_eval',
       );
 
+      await AuditLogService.logSuccess(
+        actionKey: AuditActionKeys.teacherHomeworkReviewPass,
+        domain: AuditDomain.homework,
+        summary: 'Teacher reviewed homework for $_peerNameShown',
+        actor: AuditActor(uid: _meUid, role: 'teacher', name: _meDisplayName),
+        target: AuditTarget(
+          type: 'learner',
+          uid: widget.peerUid,
+          id: widget.threadId,
+          name: _peerNameShown,
+        ),
+        keywords: [widget.threadId, status, grade],
+        context: {
+          'threadId': widget.threadId,
+          'homeworkRefPath': hwRefPath,
+          'reviewStatus': status,
+        },
+        meta: {
+          'score': parsedScore,
+          'grade': grade,
+          'needsRedo': finalNeedsRedo,
+        },
+      );
+
       _snack('Saved + sent ✅');
       scoreC.dispose();
       noteC.dispose();
     } catch (e) {
+      await AuditLogService.logFailure(
+        actionKey: AuditActionKeys.teacherHomeworkReviewPass,
+        domain: AuditDomain.homework,
+        summary: 'Failed to review homework from thread',
+        actor: AuditActor(uid: _meUid, role: 'teacher', name: _meDisplayName),
+        target: AuditTarget(
+          type: 'learner',
+          uid: widget.peerUid,
+          id: widget.threadId,
+        ),
+        keywords: [widget.threadId],
+        errorMessage: e.toString(),
+      );
       _snack(toHumanError(e));
     }
   }
@@ -4004,11 +4070,66 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               messageType: 'report',
                             );
 
+                            await AuditLogService.logSuccess(
+                              actionKey: AuditActionKeys.teacherReportSend,
+                              domain: AuditDomain.report,
+                              summary:
+                                  'Teacher sent report card to $_peerNameShown',
+                              actor: AuditActor(
+                                uid: _meUid,
+                                role: 'teacher',
+                                name: _meDisplayName,
+                              ),
+                              target: AuditTarget(
+                                type: 'learner',
+                                uid: widget.peerUid,
+                                id: reportId,
+                                name: _peerNameShown,
+                              ),
+                              keywords: [
+                                reportId,
+                                (courseKey ?? ''),
+                                widget.threadId,
+                              ],
+                              context: {
+                                'reportId': reportId,
+                                'threadId': widget.threadId,
+                                'courseKey': courseKey,
+                                'courseLabel': courseLabel,
+                              },
+                              meta: {
+                                'behaviorAvg': behaviorAvg,
+                                'progressAvg': progressAvg,
+                                'homeworkDone': finalDone,
+                                'homeworkRedo': finalRedo,
+                                'homeworkAvgScore': finalAvgScore,
+                                'homeworkCommonGrade': finalCommonGrade,
+                              },
+                            );
+
                             if (!ctx.mounted) return;
                             Navigator.pop(ctx, true);
                             if (!mounted) return;
                             _snack('Report sent ✅');
                           } catch (e, _) {
+                            await AuditLogService.logFailure(
+                              actionKey: AuditActionKeys.teacherReportSend,
+                              domain: AuditDomain.report,
+                              summary: 'Failed to send report card',
+                              actor: AuditActor(
+                                uid: _meUid,
+                                role: 'teacher',
+                                name: _meDisplayName,
+                              ),
+                              target: AuditTarget(
+                                type: 'learner',
+                                uid: widget.peerUid,
+                                id: widget.threadId,
+                                name: _peerNameShown,
+                              ),
+                              keywords: [widget.threadId, (courseKey ?? '')],
+                              errorMessage: e.toString(),
+                            );
                             _snack(
                               toHumanError(
                                 e,
