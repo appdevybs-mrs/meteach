@@ -372,6 +372,20 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   static int _schoolNetFromPayment(Map<String, dynamic> p) {
     final pushed = _asInt(p['financePushedAt']) > 0;
     if (!pushed) return 0;
+
+    final teacherLabel =
+        (p['teacherName'] ?? p['teacher_name'] ?? p['teacher'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final unlocked = p['financeTeacherShareUnlocked'] == true;
+    final schoolOnlyType =
+        teacherLabel == 'service' || teacherLabel == 'waiting';
+    if (schoolOnlyType && !unlocked) {
+      final gross = _amountsFrom(p).payoutAmount;
+      return gross < 0 ? 0 : gross;
+    }
+
     final saved = _asInt(p['financeSchoolNet']);
     if (saved > 0) return saved;
 
@@ -1151,7 +1165,32 @@ class _TeacherFinanceDetailsScreenState
     return raw.isNotEmpty;
   }
 
+  String _teacherLabelFrom(Map<String, dynamic> row) {
+    final t1 = (row['teacherName'] ?? '').toString().trim();
+    if (t1.isNotEmpty) return t1;
+    final t2 = (row['teacher_name'] ?? '').toString().trim();
+    if (t2.isNotEmpty) return t2;
+    final t3 = (row['teacher'] ?? '').toString().trim();
+    if (t3.isNotEmpty) return t3;
+    return '';
+  }
+
+  bool _isSchoolOnlyTeacherLabel(Map<String, dynamic> row) {
+    final t = _teacherLabelFrom(row).toLowerCase();
+    return t == 'service' || t == 'waiting';
+  }
+
+  bool _isTeacherShareUnlocked(Map<String, dynamic> row) {
+    return row['financeTeacherShareUnlocked'] == true;
+  }
+
+  bool _isEffectiveSchoolOnly(Map<String, dynamic> row) {
+    if (!_isSchoolOnlyTeacherLabel(row)) return false;
+    return !_isTeacherShareUnlocked(row);
+  }
+
   bool _isTeacherPercentSet(Map<String, dynamic> row) {
+    if (_isEffectiveSchoolOnly(row)) return true;
     final alloc = _amountsFrom(row);
     if (alloc.payoutAmount <= 0) return true;
     final p = _asInt(row['financeTeacherPercent']);
@@ -1193,6 +1232,35 @@ class _TeacherFinanceDetailsScreenState
     final paymentId = (row['paymentId'] ?? '').toString().trim();
     if (paymentId.isEmpty) return;
 
+    if (_isEffectiveSchoolOnly(row)) {
+      final alloc = _amountsFrom(row);
+      final gross = alloc.payoutAmount;
+      final payoutStatus = _normalizeStatus(row['financePayoutStatus']);
+      final pushedStatus = payoutStatus == 'split'
+          ? ((alloc.splitPaidStatus ?? 'tbpaid') == 'done' ? 'done' : 'tbpaid')
+          : payoutStatus;
+      await widget.paymentsRef.child(paymentId).update({
+        'financeTeacherPercent': 0,
+        'financeTeacherGross': gross,
+        'financeTeacherNet': 0,
+        'financeSchoolNet': gross,
+        'financePushedAt': ServerValue.timestamp,
+        'financePushedBy': 'admin',
+        'financePushedStatus': pushedStatus,
+        'financeUpdatedAt': ServerValue.timestamp,
+      });
+      if (!mounted) return;
+      setState(() {
+        row['financeTeacherPercent'] = 0;
+        row['financeTeacherGross'] = gross;
+        row['financeTeacherNet'] = 0;
+        row['financeSchoolNet'] = gross;
+        row['financePushedAt'] = DateTime.now().millisecondsSinceEpoch;
+        row['financePushedStatus'] = pushedStatus;
+      });
+      return;
+    }
+
     final p = await _askPercent(_initialTeacherPercentForPicker(row));
     if (p == null) return;
 
@@ -1225,6 +1293,27 @@ class _TeacherFinanceDetailsScreenState
       row['financePushedAt'] = DateTime.now().millisecondsSinceEpoch;
       row['financePushedStatus'] = pushedStatus;
     });
+  }
+
+  Future<void> _toggleSchoolOnlyLock(Map<String, dynamic> row) async {
+    final paymentId = (row['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+    if (!_isSchoolOnlyTeacherLabel(row)) return;
+
+    final newUnlocked = !_isTeacherShareUnlocked(row);
+    await widget.paymentsRef.child(paymentId).update({
+      'financeTeacherShareUnlocked': newUnlocked,
+      'financeUpdatedAt': ServerValue.timestamp,
+    });
+
+    if (!mounted) return;
+    setState(() {
+      row['financeTeacherShareUnlocked'] = newUnlocked;
+    });
+
+    if (!newUnlocked) {
+      await _setTeacherPercent(row);
+    }
   }
 
   String _fmtDateMs(int ms) {
@@ -1646,7 +1735,24 @@ class _TeacherFinanceDetailsScreenState
 
   Future<void> _addManualPayment(Map<String, dynamic> learnerRow) async {
     final amountCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
     String method = 'cash';
+    DateTime selectedDate = DateTime.now();
+    String dateLabel(DateTime d) {
+      String two(int n) => n.toString().padLeft(2, '0');
+      return '${d.year}-${two(d.month)}-${two(d.day)}';
+    }
+
+    Future<void> pickDate(StateSetter setD) async {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: selectedDate,
+        firstDate: DateTime(2018, 1, 1),
+        lastDate: DateTime.now().add(const Duration(days: 365)),
+      );
+      if (picked == null) return;
+      setD(() => selectedDate = picked);
+    }
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1664,7 +1770,7 @@ class _TeacherFinanceDetailsScreenState
                       controller: amountCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Amount',
+                        labelText: 'Fee',
                         hintText: 'Enter amount in DA',
                       ),
                     ),
@@ -1684,6 +1790,33 @@ class _TeacherFinanceDetailsScreenState
                         if (v == null) return;
                         setD(() => method = v);
                       },
+                    ),
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: () => pickDate(setD),
+                      borderRadius: BorderRadius.circular(10),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Date',
+                          border: OutlineInputBorder(),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.event_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Text(dateLabel(selectedDate)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: noteCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Note (optional)',
+                        hintText: 'Reason / context',
+                      ),
                     ),
                   ],
                 ),
@@ -1711,7 +1844,15 @@ class _TeacherFinanceDetailsScreenState
     if (ok != true) return;
     final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
     if (amount <= 0) return;
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final note = noteCtrl.text.trim();
+    final paidAt = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      12,
+      0,
+      0,
+    ).millisecondsSinceEpoch;
     final uid = (learnerRow['uid'] ?? '').toString().trim();
     if (uid.isEmpty) return;
 
@@ -1732,7 +1873,11 @@ class _TeacherFinanceDetailsScreenState
       'method': method,
       'financeMethod': method,
       'financePayoutStatus': 'tbpaid',
-      'paidAt': nowMs,
+      'paidAt': paidAt,
+      'notes': note,
+      'manualPayment': true,
+      'manualCreatedBy': 'admin',
+      'manualCreatedAt': ServerValue.timestamp,
       'createdAt': ServerValue.timestamp,
       'variantKey': 'inclass',
       'variantLabel': 'Inclass',
@@ -1755,7 +1900,10 @@ class _TeacherFinanceDetailsScreenState
       'method': method,
       'financeMethod': method,
       'financePayoutStatus': 'tbpaid',
-      'paidAt': nowMs,
+      'paidAt': paidAt,
+      'notes': note,
+      'manualPayment': true,
+      'manualCreatedBy': 'admin',
       'variantKey': 'inclass',
       'variantLabel': 'Inclass',
     };
@@ -1914,6 +2062,11 @@ class _TeacherFinanceDetailsScreenState
                       final method = _methodFrom(row);
                       final percent = _teacherPercentFrom(row);
                       final variant = _variantVisualFrom(row);
+                      final schoolOnlyType =
+                          !isNoPayment && _isSchoolOnlyTeacherLabel(row);
+                      final schoolOnlyLocked =
+                          schoolOnlyType && _isEffectiveSchoolOnly(row);
+                      final isManualPayment = row['manualPayment'] == true;
                       final methodLabel = method == 'cash'
                           ? '💵 CASH'
                           : method == 'ccp'
@@ -2164,43 +2317,143 @@ class _TeacherFinanceDetailsScreenState
                                         ),
                                       ),
                                     ),
-                                  if (!isNoPayment)
-                                    _pulseIfMissing(
-                                      missing: teacherMissing,
-                                      child: InkWell(
-                                        onTap: () => _setTeacherPercent(row),
+                                  if (isManualPayment)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFF178F8B,
+                                        ).withValues(alpha: 0.11),
                                         borderRadius: BorderRadius.circular(
                                           999,
                                         ),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFF178F8B,
+                                          ).withValues(alpha: 0.28),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Manual',
+                                        style: TextStyle(
+                                          color: Color(0xFF178F8B),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 11.5,
+                                        ),
+                                      ),
+                                    ),
+                                  if (schoolOnlyType)
+                                    InkWell(
+                                      onTap: () => _toggleSchoolOnlyLock(row),
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: schoolOnlyLocked
+                                              ? const Color(
+                                                  0xFFF0A526,
+                                                ).withValues(alpha: 0.13)
+                                              : const Color(
+                                                  0xFF4B67D1,
+                                                ).withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xFF3666D8,
-                                            ).withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            border: Border.all(
-                                              color: const Color(
-                                                0xFF3666D8,
-                                              ).withValues(alpha: 0.3),
-                                            ),
+                                          border: Border.all(
+                                            color: schoolOnlyLocked
+                                                ? const Color(
+                                                    0xFFF0A526,
+                                                  ).withValues(alpha: 0.32)
+                                                : const Color(
+                                                    0xFF4B67D1,
+                                                  ).withValues(alpha: 0.28),
                                           ),
-                                          child: Text(
-                                            'Teacher %: $percent',
-                                            style: const TextStyle(
-                                              color: Color(0xFF3666D8),
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 11.5,
-                                            ),
+                                        ),
+                                        child: Text(
+                                          schoolOnlyLocked
+                                              ? 'School-only 🔒'
+                                              : 'Teacher-share 🔓',
+                                          style: TextStyle(
+                                            color: schoolOnlyLocked
+                                                ? const Color(0xFF8A5A00)
+                                                : const Color(0xFF4B67D1),
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11.5,
                                           ),
                                         ),
                                       ),
                                     ),
+                                  if (!isNoPayment)
+                                    if (!schoolOnlyLocked)
+                                      _pulseIfMissing(
+                                        missing: teacherMissing,
+                                        child: InkWell(
+                                          onTap: () => _setTeacherPercent(row),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(
+                                                0xFF3666D8,
+                                              ).withValues(alpha: 0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border: Border.all(
+                                                color: const Color(
+                                                  0xFF3666D8,
+                                                ).withValues(alpha: 0.3),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Teacher %: $percent',
+                                              style: const TextStyle(
+                                                color: Color(0xFF3666D8),
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 11.5,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFF8A5A00,
+                                          ).withValues(alpha: 0.09),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xFF8A5A00,
+                                            ).withValues(alpha: 0.26),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Teacher %: N/A',
+                                          style: TextStyle(
+                                            color: Color(0xFF8A5A00),
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11.5,
+                                          ),
+                                        ),
+                                      ),
                                   if (isNoPayment)
                                     _pulseIfMissing(
                                       missing: needsNoPaymentAction,
