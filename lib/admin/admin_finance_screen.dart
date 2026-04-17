@@ -26,6 +26,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   final DatabaseReference _paymentsRef = FirebaseDatabase.instance.ref(
     'payments',
   );
+  final DatabaseReference _classesRef = FirebaseDatabase.instance.ref(
+    'classes',
+  );
+  final DatabaseReference _financeDoneRef = FirebaseDatabase.instance.ref(
+    'finance_done_marks',
+  );
 
   bool _unlocked = false;
   bool _loadingFilter = true;
@@ -73,12 +79,6 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     return p;
   }
 
-  static int _pickerPercent(int v) {
-    if (v < 35) return 35;
-    if (v > 100) return 100;
-    return v;
-  }
-
   static int _percentOf(int amount, int percent) {
     if (amount <= 0) return 0;
     return ((amount * percent) / 100).round();
@@ -122,6 +122,30 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     final t3 = (p['teacher'] ?? '').toString().trim();
     if (t3.isNotEmpty) return t3;
     return 'Unassigned';
+  }
+
+  static String _teacherIdFrom(Map<String, dynamic> p) {
+    final t = (p['teacherId'] ?? '').toString().trim();
+    return t;
+  }
+
+  static String _slug(String s) {
+    final cleaned = s.trim().toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9]+'),
+      '_',
+    );
+    final squashed = cleaned.replaceAll(RegExp(r'_+'), '_');
+    return squashed.replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  static String _teacherScopeKey({
+    required String teacherId,
+    required String teacherName,
+  }) {
+    final uid = teacherId.trim();
+    if (uid.isNotEmpty) return uid;
+    final s = _slug(teacherName);
+    return s.isEmpty ? 'unassigned' : 'name_$s';
   }
 
   static String _learnerNameFrom(Map<String, dynamic> p) {
@@ -343,112 +367,6 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     });
   }
 
-  Future<int?> _askTeacherPercent({required int initialPercent}) async {
-    int selected = _pickerPercent(initialPercent);
-    final options = List<int>.generate(66, (i) => i + 35);
-    return showDialog<int>(
-      context: context,
-      builder: (dialogCtx) {
-        return StatefulBuilder(
-          builder: (_, setD) {
-            return AlertDialog(
-              title: const Text('Teacher percentage'),
-              content: DropdownButtonFormField<int>(
-                initialValue: selected,
-                decoration: const InputDecoration(
-                  labelText: 'Teacher %',
-                  hintText: '35-100',
-                ),
-                items: options
-                    .map(
-                      (p) =>
-                          DropdownMenuItem<int>(value: p, child: Text('$p%')),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v == null) return;
-                  setD(() => selected = v);
-                },
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(selected),
-                  child: const Text('Apply'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _pushPayment({
-    required Map<String, dynamic> payment,
-    required String targetStatus,
-    int? teacherPercent,
-  }) async {
-    final paymentId = (payment['paymentId'] ?? '').toString().trim();
-    if (paymentId.isEmpty) return;
-
-    final amount = _asInt(payment['amount']);
-    final percent = _normalizePercent(
-      teacherPercent ?? payment['financeTeacherPercent'],
-    );
-    final gross = amount;
-    final teacherNet = _percentOf(gross, percent);
-    final schoolNet = gross - teacherNet;
-
-    await _paymentsRef.child(paymentId).update({
-      'financePayoutStatus': targetStatus,
-      'financeSplitPaidAmount': null,
-      'financeSplitWaitingAmount': null,
-      'financeSplitPaidStatus': null,
-      'financeTeacherPercent': percent,
-      'financeTeacherGross': gross,
-      'financeTeacherNet': teacherNet,
-      'financeSchoolNet': schoolNet,
-      'financePushedAt': ServerValue.timestamp,
-      'financePushedBy': 'admin',
-      'financePushedStatus': targetStatus,
-      'financeUpdatedAt': ServerValue.timestamp,
-    });
-  }
-
-  Future<void> _bulkPushTeacher({
-    required _TeacherCardData card,
-    required String targetStatus,
-  }) async {
-    int? p;
-    if (targetStatus == 'done') {
-      p = 100;
-    } else {
-      p = await _askTeacherPercent(initialPercent: 100);
-      if (p == null) return;
-    }
-
-    for (final payment in card.payments) {
-      await _pushPayment(
-        payment: payment,
-        targetStatus: targetStatus,
-        teacherPercent: p,
-      );
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Pushed ${card.paymentsCount} payments as ${targetStatus.toUpperCase()}.',
-        ),
-      ),
-    );
-  }
-
   static int _schoolNetFromPayment(Map<String, dynamic> p) {
     final pushed = _asInt(p['financePushedAt']) > 0;
     if (!pushed) return 0;
@@ -457,7 +375,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
 
     var gross = _asInt(p['financeTeacherGross']);
     if (gross <= 0) {
-      gross = _asInt(p['amount']);
+      gross = _amountsFrom(p).payoutAmount;
     }
     var teacherNet = _asInt(p['financeTeacherNet']);
     if (teacherNet <= 0 && gross > 0) {
@@ -754,19 +672,23 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                     var original = 0;
                     var payout = 0;
                     var waiting = 0;
+                    var school = 0;
                     var originalMethods = _methodTotalsZero();
                     var payoutMethods = _methodTotalsZero();
                     var waitingMethods = _methodTotalsZero();
                     final learners = <String>{};
+                    final doneLearners = <String>{};
 
                     for (final p in entry.value) {
                       final amount = _asInt(p['amount']);
                       final method = _normalizeMethod(p['financeMethod']);
                       final alloc = _amountsFrom(p);
+                      final schoolNet = _schoolNetFromPayment(p);
 
                       original += amount;
                       payout += alloc.payoutAmount;
                       waiting += alloc.waitingAmount;
+                      school += schoolNet;
 
                       originalMethods = _addToMethodTotals(
                         current: originalMethods,
@@ -788,10 +710,37 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                       final n = _learnerNameFrom(p);
                       final k = uid.isNotEmpty ? uid : n;
                       if (k.isNotEmpty) learners.add(k);
+
+                      final pushedStatus = (p['financePushedStatus'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
+                      final payoutStatus = _normalizeStatus(
+                        p['financePayoutStatus'],
+                      );
+                      final doneLike =
+                          pushedStatus == 'done' ||
+                          payoutStatus == 'done' ||
+                          (payoutStatus == 'split' &&
+                              (alloc.splitPaidStatus == 'done' ||
+                                  _normalizeStatus(
+                                        p['financeSplitPaidStatus'],
+                                      ) ==
+                                      'done'));
+                      if (doneLike && k.isNotEmpty) doneLearners.add(k);
                     }
 
                     teacherCards.add(
                       _TeacherCardData(
+                        teacherId: entry.value.isEmpty
+                            ? ''
+                            : _teacherIdFrom(entry.value.first),
+                        teacherScopeKey: _teacherScopeKey(
+                          teacherId: entry.value.isEmpty
+                              ? ''
+                              : _teacherIdFrom(entry.value.first),
+                          teacherName: entry.key,
+                        ),
                         teacherName: entry.key,
                         originalTotal: original,
                         payoutTotal: payout,
@@ -800,7 +749,9 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         payoutByMethod: payoutMethods,
                         waitingByMethod: waitingMethods,
                         learnersCount: learners.length,
+                        doneLearnersCount: doneLearners.length,
                         paymentsCount: entry.value.length,
+                        schoolTotal: school,
                         payments: entry.value,
                       ),
                     );
@@ -858,25 +809,20 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             child: _TeacherSquareCard(
                               data: card,
                               money: _money,
-                              onBulkPushTbpaid: () => _bulkPushTeacher(
-                                card: card,
-                                targetStatus: 'tbpaid',
-                              ),
-                              onBulkPushDone: () => _bulkPushTeacher(
-                                card: card,
-                                targetStatus: 'done',
-                              ),
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
                                     builder: (_) =>
                                         _TeacherFinanceDetailsScreen(
+                                          teacherId: card.teacherId,
+                                          teacherScopeKey: card.teacherScopeKey,
                                           teacherName: card.teacherName,
                                           initialPayments: card.payments,
                                           paymentsRef: _paymentsRef,
+                                          classesRef: _classesRef,
+                                          financeDoneRef: _financeDoneRef,
                                           money: _money,
                                           onSetMethod: _setPaymentMethod,
-                                          onPushPayment: _pushPayment,
                                         ),
                                   ),
                                 );
@@ -895,29 +841,30 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
 
 class _TeacherFinanceDetailsScreen extends StatefulWidget {
   const _TeacherFinanceDetailsScreen({
+    required this.teacherId,
+    required this.teacherScopeKey,
     required this.teacherName,
     required this.initialPayments,
     required this.paymentsRef,
+    required this.classesRef,
+    required this.financeDoneRef,
     required this.money,
     required this.onSetMethod,
-    required this.onPushPayment,
   });
 
+  final String teacherId;
+  final String teacherScopeKey;
   final String teacherName;
   final List<Map<String, dynamic>> initialPayments;
   final DatabaseReference paymentsRef;
+  final DatabaseReference classesRef;
+  final DatabaseReference financeDoneRef;
   final String Function(int amount) money;
   final Future<void> Function({
     required String paymentId,
     required String method,
   })
   onSetMethod;
-  final Future<void> Function({
-    required Map<String, dynamic> payment,
-    required String targetStatus,
-    int? teacherPercent,
-  })
-  onPushPayment;
 
   @override
   State<_TeacherFinanceDetailsScreen> createState() =>
@@ -1142,16 +1089,23 @@ class _TeacherFinanceDetailsScreenState
     final p = await _askPercent(_teacherPercentFrom(row));
     if (p == null) return;
 
-    final amount = _asInt(row['amount']);
-    final gross = amount;
+    final alloc = _amountsFrom(row);
+    final gross = alloc.payoutAmount;
     final teacherNet = ((gross * p) / 100).round();
     final schoolNet = gross - teacherNet;
+    final payoutStatus = _normalizeStatus(row['financePayoutStatus']);
+    final pushedStatus = payoutStatus == 'split'
+        ? ((alloc.splitPaidStatus ?? 'tbpaid') == 'done' ? 'done' : 'tbpaid')
+        : payoutStatus;
 
     await widget.paymentsRef.child(paymentId).update({
       'financeTeacherPercent': p,
       'financeTeacherGross': gross,
       'financeTeacherNet': teacherNet,
       'financeSchoolNet': schoolNet,
+      'financePushedAt': ServerValue.timestamp,
+      'financePushedBy': 'admin',
+      'financePushedStatus': pushedStatus,
       'financeUpdatedAt': ServerValue.timestamp,
     });
 
@@ -1161,27 +1115,8 @@ class _TeacherFinanceDetailsScreenState
       row['financeTeacherGross'] = gross;
       row['financeTeacherNet'] = teacherNet;
       row['financeSchoolNet'] = schoolNet;
-    });
-  }
-
-  Future<void> _pushRow(Map<String, dynamic> row, String targetStatus) async {
-    int? p;
-    if (targetStatus == 'done') {
-      p = 100;
-    } else {
-      p = await _askPercent(_teacherPercentFrom(row));
-      if (p == null) return;
-    }
-    await widget.onPushPayment(
-      payment: row,
-      targetStatus: targetStatus,
-      teacherPercent: p,
-    );
-    if (!mounted) return;
-    setState(() {
-      row['financePayoutStatus'] = targetStatus;
-      row['financeTeacherPercent'] = p;
-      row['financePushedStatus'] = targetStatus;
+      row['financePushedAt'] = DateTime.now().millisecondsSinceEpoch;
+      row['financePushedStatus'] = pushedStatus;
     });
   }
 
@@ -1376,12 +1311,222 @@ class _TeacherFinanceDetailsScreenState
     );
   }
 
+  bool _isNoPaymentRow(Map<String, dynamic> row) => row['isNoPayment'] == true;
+
+  Map<String, Map<String, String>> _classLearnersForTeacher(dynamic raw) {
+    final out = <String, Map<String, String>>{};
+    if (raw is! Map) return out;
+    final classes = Map<dynamic, dynamic>.from(raw);
+    for (final e in classes.entries) {
+      final clsRaw = e.value;
+      if (clsRaw is! Map) continue;
+      final cls = Map<dynamic, dynamic>.from(clsRaw);
+
+      String instUid = '';
+      final instCur = cls['instructor_current'];
+      if (instCur is Map) {
+        instUid = (instCur['uid'] ?? '').toString().trim();
+      }
+      final instName = (cls['instructor'] ?? '').toString().trim();
+      final matchByUid =
+          widget.teacherId.trim().isNotEmpty &&
+          instUid.isNotEmpty &&
+          instUid == widget.teacherId.trim();
+      final matchByName =
+          widget.teacherId.trim().isEmpty &&
+          widget.teacherName.trim().isNotEmpty &&
+          instUid.isEmpty &&
+          instName.toLowerCase() == widget.teacherName.trim().toLowerCase();
+      if (!matchByUid && !matchByName) continue;
+
+      final learnersRaw = cls['learners'];
+      if (learnersRaw is! Map) continue;
+      final learners = Map<dynamic, dynamic>.from(learnersRaw);
+      for (final l in learners.entries) {
+        final uid = l.key.toString().trim();
+        if (uid.isEmpty) continue;
+        final val = l.value;
+        String name = 'Unnamed learner';
+        String serial = '';
+        if (val is Map) {
+          final mm = Map<dynamic, dynamic>.from(val);
+          final n = (mm['name'] ?? '').toString().trim();
+          final s = (mm['serial'] ?? '').toString().trim();
+          if (n.isNotEmpty) name = n;
+          if (s.isNotEmpty) serial = s;
+        }
+        out[uid] = {'uid': uid, 'name': name, 'serial': serial};
+      }
+    }
+    return out;
+  }
+
+  Set<String> _manualDoneKeys(dynamic raw) {
+    final out = <String>{};
+    if (raw is! Map) return out;
+    final m = Map<dynamic, dynamic>.from(raw);
+    for (final e in m.entries) {
+      final uid = e.key.toString().trim();
+      if (uid.isEmpty) continue;
+      final v = e.value;
+      if (v == true) {
+        out.add(uid);
+        continue;
+      }
+      if (v is Map) {
+        final mm = Map<dynamic, dynamic>.from(v);
+        final done =
+            (mm['done'] == true) ||
+            (mm['status'] ?? '').toString().trim().toLowerCase() == 'done';
+        if (done) out.add(uid);
+      }
+    }
+    return out;
+  }
+
+  Future<void> _setManualDone(Map<String, dynamic> row, bool done) async {
+    final uid = (row['uid'] ?? '').toString().trim();
+    if (uid.isEmpty) return;
+    final markRef = widget.financeDoneRef
+        .child(widget.teacherScopeKey)
+        .child(uid);
+    if (done) {
+      await markRef.set({
+        'done': true,
+        'status': 'done',
+        'learnerName': _learnerNameFrom(row),
+        'learnerSerial': (row['learner_serial'] ?? row['serial'] ?? '')
+            .toString()
+            .trim(),
+        'updatedAt': ServerValue.timestamp,
+      });
+    } else {
+      await markRef.remove();
+    }
+  }
+
+  Future<void> _addManualPayment(Map<String, dynamic> learnerRow) async {
+    final amountCtrl = TextEditingController();
+    String method = 'cash';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (_, setD) {
+            return AlertDialog(
+              title: const Text('Add manual payment'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: amountCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        hintText: 'Enter amount in DA',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: method,
+                      decoration: const InputDecoration(labelText: 'Method'),
+                      items: const [
+                        DropdownMenuItem(value: 'cash', child: Text('💵 Cash')),
+                        DropdownMenuItem(value: 'ccp', child: Text('🏤 CCP')),
+                        DropdownMenuItem(
+                          value: 'unspecified',
+                          child: Text('❔ Unspecified'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setD(() => method = v);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final amt = int.tryParse(amountCtrl.text.trim()) ?? 0;
+                    if (amt <= 0) return;
+                    Navigator.of(dialogCtx).pop(true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok != true) return;
+    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    if (amount <= 0) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final uid = (learnerRow['uid'] ?? '').toString().trim();
+    if (uid.isEmpty) return;
+
+    final ref = widget.paymentsRef.push();
+    await ref.set({
+      'uid': uid,
+      'learner_name': _learnerNameFrom(learnerRow),
+      'learner_serial':
+          (learnerRow['learner_serial'] ?? learnerRow['serial'] ?? '')
+              .toString()
+              .trim(),
+      'teacherId': widget.teacherId,
+      'teacherName': widget.teacherName,
+      'amount': amount,
+      'method': method,
+      'financeMethod': method,
+      'financePayoutStatus': 'tbpaid',
+      'paidAt': nowMs,
+      'createdAt': ServerValue.timestamp,
+      'variantKey': 'inclass',
+      'variantLabel': 'Inclass',
+    });
+
+    final newRow = <String, dynamic>{
+      'paymentId': ref.key,
+      'uid': uid,
+      'learner_name': _learnerNameFrom(learnerRow),
+      'learner_serial':
+          (learnerRow['learner_serial'] ?? learnerRow['serial'] ?? '')
+              .toString()
+              .trim(),
+      'teacherId': widget.teacherId,
+      'teacherName': widget.teacherName,
+      'amount': amount,
+      'method': method,
+      'financeMethod': method,
+      'financePayoutStatus': 'tbpaid',
+      'paidAt': nowMs,
+      'variantKey': 'inclass',
+      'variantLabel': 'Inclass',
+    };
+    if (!mounted) return;
+    setState(() {
+      _rows.add(newRow);
+      _rows.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     var originalTotal = 0;
     var payoutTotal = 0;
     var waitingTotal = 0;
-    for (final row in _rows) {
+    for (final row in _rows.where((r) => !_isNoPaymentRow(r))) {
       final amount = _asInt(row['amount']);
       final a = _amountsFrom(row);
       originalTotal += amount;
@@ -1404,336 +1549,374 @@ class _TeacherFinanceDetailsScreenState
           ),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _FinancePill(
-                icon: Icons.payments_rounded,
-                text: 'Original: ${widget.money(originalTotal)}',
-                strong: true,
-              ),
-              _FinancePill(
-                icon: Icons.account_balance_wallet_rounded,
-                text: 'Teacher total: ${widget.money(payoutTotal)}',
-                strong: true,
-              ),
-              _FinancePill(
-                icon: Icons.schedule_send_rounded,
-                text: 'Waiting: ${widget.money(waitingTotal)}',
-                strong: true,
-              ),
-              _FinancePill(
-                icon: Icons.groups_rounded,
-                text: 'Rows: ${_rows.length}',
-                strong: true,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (_rows.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'No learner payments for this teacher in selected range.',
-                ),
-              ),
-            )
-          else
-            ..._rows.map((row) {
-              final learner = _learnerNameFrom(row);
-              final amount = _asInt(row['amount']);
-              final paidAt = _fmtDateMs(_asInt(row['paidAt']));
-              final a = _amountsFrom(row);
-              final color = _statusColor(a);
-              final method = _methodFrom(row);
-              final percent = _teacherPercentFrom(row);
-              final variant = _variantVisualFrom(row);
-              final methodLabel = method == 'cash'
-                  ? '💵 CASH'
-                  : method == 'ccp'
-                  ? '🏤 CCP'
-                  : '❔ UNSPECIFIED';
-              final pushTarget = a.status == 'done'
-                  ? 'done'
-                  : a.status == 'tbpaid'
-                  ? 'tbpaid'
-                  : (a.splitPaidStatus == 'done' ? 'done' : 'tbpaid');
-              final hasPushed = _asInt(row['financePushedAt']) > 0;
-              final pushedStatus = (row['financePushedStatus'] ?? '')
-                  .toString()
-                  .trim()
-                  .toLowerCase();
-              final alreadyPushedSame = hasPushed && pushedStatus == pushTarget;
-              final alreadyPushedTbpaid = hasPushed && pushedStatus == 'tbpaid';
-              final alreadyPushedDone = hasPushed && pushedStatus == 'done';
-
-              String statusText;
-              if (a.status == 'split') {
-                statusText =
-                    'Split (${(a.splitPaidStatus ?? 'tbpaid').toUpperCase()}: ${widget.money(a.payoutAmount)} · WAITING: ${widget.money(a.waitingAmount)})';
-              } else {
-                statusText = a.status.toUpperCase();
+      body: StreamBuilder<DatabaseEvent>(
+        stream: widget.classesRef.onValue,
+        builder: (context, classSnap) {
+          final classLearners = _classLearnersForTeacher(
+            classSnap.data?.snapshot.value,
+          );
+          return StreamBuilder<DatabaseEvent>(
+            stream: widget.financeDoneRef.child(widget.teacherScopeKey).onValue,
+            builder: (context, doneSnap) {
+              final manualDone = _manualDoneKeys(doneSnap.data?.snapshot.value);
+              final paymentLearnerUids = <String>{};
+              for (final r in _rows) {
+                final uid = (r['uid'] ?? '').toString().trim();
+                if (uid.isNotEmpty) paymentLearnerUids.add(uid);
               }
 
-              return Card(
-                elevation: 0,
-                color: color.withValues(alpha: 0.07),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: color.withValues(alpha: 0.35)),
-                ),
-                child: ListTile(
-                  onTap: () => _editPaymentStatus(row),
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.transparent,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: color.withValues(alpha: 0.15),
-                          child: Icon(
-                            a.status == 'done'
-                                ? Icons.verified_rounded
-                                : a.status == 'tbpaid'
-                                ? Icons.pending_actions_rounded
-                                : Icons.call_split_rounded,
-                            size: 18,
-                            color: color,
-                          ),
-                        ),
-                        Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: Container(
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              color: variant.color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Icon(
-                              variant.icon,
-                              size: 11,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  title: Text(
-                    learner,
-                    style: const TextStyle(
-                      color: AdminFinanceScreen.primary,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Amount: ${widget.money(amount)} · Date: $paidAt',
-                          style: const TextStyle(
-                            color: AdminFinanceScreen.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              'Method: $methodLabel',
-                              style: const TextStyle(
-                                color: AdminFinanceScreen.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: variant.color.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: variant.color.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    variant.icon,
-                                    size: 13,
-                                    color: variant.color,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    variant.label,
-                                    style: TextStyle(
-                                      color: variant.color,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            InkWell(
-                              onTap: () => _setTeacherPercent(row),
-                              borderRadius: BorderRadius.circular(999),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF3666D8,
-                                  ).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFF3666D8,
-                                    ).withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Teacher %: $percent (tap)',
-                                  style: const TextStyle(
-                                    color: Color(0xFF3666D8),
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$statusText${hasPushed ? ' · PUSHED ${pushedStatus.toUpperCase()}' : ''}',
-                          style: const TextStyle(
-                            color: AdminFinanceScreen.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  isThreeLine: true,
-                  trailing: PopupMenuButton<String>(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.more_horiz_rounded),
-                    onSelected: (v) {
-                      if (v == 'method_cash') {
-                        _setMethod(row, 'cash');
-                      }
-                      if (v == 'method_ccp') {
-                        _setMethod(row, 'ccp');
-                      }
-                      if (v == 'method_unspecified') {
-                        _setMethod(row, 'unspecified');
-                      }
-                      if (v == 'set_percent') {
-                        _setTeacherPercent(row);
-                      }
-                      if (v == 'push_current') {
-                        if (alreadyPushedSame) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Already pushed as ${pushTarget.toUpperCase()}.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                        _pushRow(row, pushTarget);
-                      }
-                      if (v == 'push_tbpaid') {
-                        if (alreadyPushedTbpaid) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Already pushed as TBPAID.'),
-                            ),
-                          );
-                          return;
-                        }
-                        _pushRow(row, 'tbpaid');
-                      }
-                      if (v == 'push_done') {
-                        if (alreadyPushedDone) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Already pushed as DONE.'),
-                            ),
-                          );
-                          return;
-                        }
-                        _pushRow(row, 'done');
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 'method_cash',
-                        child: Text('Set method: 💵 Cash'),
+              final noPaymentRows = <Map<String, dynamic>>[];
+              for (final e in classLearners.entries) {
+                if (paymentLearnerUids.contains(e.key)) continue;
+                noPaymentRows.add({
+                  'isNoPayment': true,
+                  'uid': e.key,
+                  'learner_name': e.value['name'] ?? 'Unnamed learner',
+                  'learner_serial': e.value['serial'] ?? '',
+                  'financePayoutStatus': manualDone.contains(e.key)
+                      ? 'done'
+                      : 'tbpaid',
+                });
+              }
+
+              final rowsToShow =
+                  <Map<String, dynamic>>[..._rows, ...noPaymentRows]
+                    ..sort((a, b) {
+                      final am = _asInt(a['paidAt']);
+                      final bm = _asInt(b['paidAt']);
+                      if (am != bm) return bm.compareTo(am);
+                      return _learnerNameFrom(a).toLowerCase().compareTo(
+                        _learnerNameFrom(b).toLowerCase(),
+                      );
+                    });
+
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FinancePill(
+                        icon: Icons.payments_rounded,
+                        text: 'Original: ${widget.money(originalTotal)}',
+                        strong: true,
                       ),
-                      const PopupMenuItem(
-                        value: 'method_ccp',
-                        child: Text('Set method: 🏤 CCP'),
+                      _FinancePill(
+                        icon: Icons.account_balance_wallet_rounded,
+                        text: 'Teacher total: ${widget.money(payoutTotal)}',
+                        strong: true,
                       ),
-                      const PopupMenuItem(
-                        value: 'method_unspecified',
-                        child: Text('Set method: ❔ Unspecified'),
+                      _FinancePill(
+                        icon: Icons.schedule_send_rounded,
+                        text: 'Waiting: ${widget.money(waitingTotal)}',
+                        strong: true,
                       ),
-                      const PopupMenuItem(
-                        value: 'set_percent',
-                        child: Text('Set teacher %'),
+                      _FinancePill(
+                        icon: Icons.groups_rounded,
+                        text: 'Learners listed: ${rowsToShow.length}',
+                        strong: true,
                       ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'push_current',
-                        enabled: !alreadyPushedSame,
-                        child: Text(
-                          pushTarget == 'done'
-                              ? 'Push DONE'
-                              : 'Push TBPAID + %',
-                        ),
-                      ),
-                      if (pushTarget == 'tbpaid')
-                        PopupMenuItem(
-                          value: 'push_done',
-                          enabled: !alreadyPushedDone,
-                          child: const Text('Push DONE'),
-                        )
-                      else
-                        PopupMenuItem(
-                          value: 'push_tbpaid',
-                          enabled: !alreadyPushedTbpaid,
-                          child: const Text('Push TBPAID + %'),
-                        ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 10),
+                  if (rowsToShow.isEmpty)
+                    const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                          'No learners/payments for this teacher in selected range.',
+                        ),
+                      ),
+                    )
+                  else
+                    ...rowsToShow.map((row) {
+                      final learner = _learnerNameFrom(row);
+                      final amount = _asInt(row['amount']);
+                      final paidAt = _fmtDateMs(_asInt(row['paidAt']));
+                      final isNoPayment = _isNoPaymentRow(row);
+                      final a = _amountsFrom(row);
+                      final color = _statusColor(a);
+                      final method = _methodFrom(row);
+                      final percent = _teacherPercentFrom(row);
+                      final variant = _variantVisualFrom(row);
+                      final methodLabel = method == 'cash'
+                          ? '💵 CASH'
+                          : method == 'ccp'
+                          ? '🏤 CCP'
+                          : '❔ UNSPECIFIED';
+                      final hasPushed = _asInt(row['financePushedAt']) > 0;
+                      final pushedStatus = (row['financePushedStatus'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
+
+                      String statusText;
+                      if (isNoPayment) {
+                        statusText =
+                            manualDone.contains((row['uid'] ?? '').toString())
+                            ? 'DONE (manual, no payment record)'
+                            : 'NO PAYMENT RECORD';
+                      } else if (a.status == 'split') {
+                        statusText =
+                            'Split (${(a.splitPaidStatus ?? 'tbpaid').toUpperCase()}: ${widget.money(a.payoutAmount)} · WAITING: ${widget.money(a.waitingAmount)})';
+                      } else {
+                        statusText = a.status.toUpperCase();
+                      }
+
+                      return Card(
+                        elevation: 0,
+                        color: color.withValues(alpha: 0.07),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(
+                            color: color.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: ListTile(
+                          onTap: isNoPayment
+                              ? null
+                              : () => _editPaymentStatus(row),
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.transparent,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: color.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  child: Icon(
+                                    a.status == 'done'
+                                        ? Icons.verified_rounded
+                                        : a.status == 'tbpaid'
+                                        ? Icons.pending_actions_rounded
+                                        : Icons.call_split_rounded,
+                                    size: 18,
+                                    color: color,
+                                  ),
+                                ),
+                                Positioned(
+                                  right: -2,
+                                  bottom: -2,
+                                  child: Container(
+                                    width: 18,
+                                    height: 18,
+                                    decoration: BoxDecoration(
+                                      color: variant.color,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      variant.icon,
+                                      size: 11,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          title: Text(
+                            learner,
+                            style: const TextStyle(
+                              color: AdminFinanceScreen.primary,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isNoPayment
+                                      ? 'No payment yet · Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}'
+                                      : 'Amount: ${widget.money(amount)} · Date: $paidAt',
+                                  style: const TextStyle(
+                                    color: AdminFinanceScreen.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      isNoPayment
+                                          ? 'Method: —'
+                                          : 'Method: $methodLabel',
+                                      style: const TextStyle(
+                                        color: AdminFinanceScreen.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: variant.color.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        border: Border.all(
+                                          color: variant.color.withValues(
+                                            alpha: 0.35,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            variant.icon,
+                                            size: 13,
+                                            color: variant.color,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            variant.label,
+                                            style: TextStyle(
+                                              color: variant.color,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!isNoPayment)
+                                      InkWell(
+                                        onTap: () => _setTeacherPercent(row),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF3666D8,
+                                            ).withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: const Color(
+                                                0xFF3666D8,
+                                              ).withValues(alpha: 0.3),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Teacher %: $percent (tap)',
+                                            style: const TextStyle(
+                                              color: Color(0xFF3666D8),
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$statusText${hasPushed ? ' · PUSHED ${pushedStatus.toUpperCase()}' : ''}',
+                                  style: const TextStyle(
+                                    color: AdminFinanceScreen.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          isThreeLine: true,
+                          trailing: PopupMenuButton<String>(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.more_horiz_rounded),
+                            onSelected: (v) {
+                              if (v == 'add_payment') {
+                                _addManualPayment(row);
+                              }
+                              if (v == 'mark_done_manual') {
+                                _setManualDone(row, true);
+                              }
+                              if (v == 'unmark_done_manual') {
+                                _setManualDone(row, false);
+                              }
+                              if (v == 'method_cash') {
+                                _setMethod(row, 'cash');
+                              }
+                              if (v == 'method_ccp') {
+                                _setMethod(row, 'ccp');
+                              }
+                              if (v == 'method_unspecified') {
+                                _setMethod(row, 'unspecified');
+                              }
+                              if (v == 'set_percent') {
+                                _setTeacherPercent(row);
+                              }
+                            },
+                            itemBuilder: (_) {
+                              if (isNoPayment) {
+                                final uid = (row['uid'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final markedDone = manualDone.contains(uid);
+                                return [
+                                  const PopupMenuItem(
+                                    value: 'add_payment',
+                                    child: Text('Add payment'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: markedDone
+                                        ? 'unmark_done_manual'
+                                        : 'mark_done_manual',
+                                    child: Text(
+                                      markedDone ? 'Unmark done' : 'Mark done',
+                                    ),
+                                  ),
+                                ];
+                              }
+                              return [
+                                const PopupMenuItem(
+                                  value: 'method_cash',
+                                  child: Text('Set method: 💵 Cash'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'method_ccp',
+                                  child: Text('Set method: 🏤 CCP'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'method_unspecified',
+                                  child: Text('Set method: ❔ Unspecified'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'set_percent',
+                                  child: Text('Set teacher %'),
+                                ),
+                              ];
+                            },
+                          ),
+                        ),
+                      );
+                    }),
+                ],
               );
-            }),
-        ],
+            },
+          );
+        },
       ),
     );
   }
@@ -1846,6 +2029,8 @@ class _FinanceAmounts {
 
 class _TeacherCardData {
   const _TeacherCardData({
+    required this.teacherId,
+    required this.teacherScopeKey,
     required this.teacherName,
     required this.originalTotal,
     required this.payoutTotal,
@@ -1854,10 +2039,14 @@ class _TeacherCardData {
     required this.payoutByMethod,
     required this.waitingByMethod,
     required this.learnersCount,
+    required this.doneLearnersCount,
     required this.paymentsCount,
+    required this.schoolTotal,
     required this.payments,
   });
 
+  final String teacherId;
+  final String teacherScopeKey;
   final String teacherName;
   final int originalTotal;
   final int payoutTotal;
@@ -1866,7 +2055,9 @@ class _TeacherCardData {
   final _MethodTotals payoutByMethod;
   final _MethodTotals waitingByMethod;
   final int learnersCount;
+  final int doneLearnersCount;
   final int paymentsCount;
+  final int schoolTotal;
   final List<Map<String, dynamic>> payments;
 }
 
@@ -2063,15 +2254,11 @@ class _TeacherSquareCard extends StatelessWidget {
   const _TeacherSquareCard({
     required this.data,
     required this.money,
-    required this.onBulkPushTbpaid,
-    required this.onBulkPushDone,
     required this.onTap,
   });
 
   final _TeacherCardData data;
   final String Function(int amount) money;
-  final VoidCallback onBulkPushTbpaid;
-  final VoidCallback onBulkPushDone;
   final VoidCallback onTap;
 
   @override
@@ -2116,78 +2303,45 @@ class _TeacherSquareCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _FinancePill(
+                  icon: Icons.groups_rounded,
+                  text:
+                      'Learners/Payments: ${data.learnersCount}/${data.paymentsCount}',
+                  strong: true,
+                ),
+                _FinancePill(
+                  icon: Icons.verified_user_rounded,
+                  text: 'Done learners: ${data.doneLearnersCount}',
+                  bg: AdminFinanceScreen.done.withValues(alpha: 0.08),
+                  fg: AdminFinanceScreen.done,
+                  border: AdminFinanceScreen.done.withValues(alpha: 0.22),
+                  strong: true,
+                ),
+                _FinancePill(
                   icon: Icons.account_balance_wallet_rounded,
-                  text: 'Original: ${money(data.originalTotal)}',
+                  text: 'Total income: ${money(data.originalTotal)}',
+                  strong: true,
+                ),
+                _FinancePill(
+                  icon: Icons.swap_horiz_rounded,
+                  text:
+                      'Cash/CCP: ${money(data.originalByMethod.cash)} / ${money(data.originalByMethod.ccp)}',
                   strong: true,
                 ),
                 _FinancePill(
                   icon: Icons.payments_rounded,
-                  text: 'Payout: ${money(data.payoutTotal)}',
+                  text: 'Teacher part: ${money(data.payoutTotal)}',
                   bg: AdminFinanceScreen.tbpaid.withValues(alpha: 0.08),
                   fg: AdminFinanceScreen.tbpaid,
                   border: AdminFinanceScreen.tbpaid.withValues(alpha: 0.22),
                   strong: true,
                 ),
                 _FinancePill(
-                  icon: Icons.schedule_send_rounded,
-                  text: 'Waiting: ${money(data.waitingTotal)}',
-                  bg: AdminFinanceScreen.waiting.withValues(alpha: 0.09),
-                  fg: const Color(0xFF8A5A00),
-                  border: AdminFinanceScreen.waiting.withValues(alpha: 0.26),
+                  icon: Icons.school_rounded,
+                  text: 'School part: ${money(data.schoolTotal)}',
+                  bg: const Color(0xFF3666D8).withValues(alpha: 0.08),
+                  fg: const Color(0xFF3666D8),
+                  border: const Color(0xFF3666D8).withValues(alpha: 0.22),
                   strong: true,
-                ),
-                _FinancePill(
-                  icon: Icons.groups_rounded,
-                  text:
-                      '${data.learnersCount} learners · ${data.paymentsCount} payments',
-                  strong: true,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Original by method - Cash ${money(data.originalByMethod.cash)} · CCP ${money(data.originalByMethod.ccp)} · Un ${money(data.originalByMethod.unspecified)}',
-              style: TextStyle(
-                color: AdminFinanceScreen.primary.withValues(alpha: 0.8),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-            Text(
-              'Waiting by method - Cash ${money(data.waitingByMethod.cash)} · CCP ${money(data.waitingByMethod.ccp)} · Un ${money(data.waitingByMethod.unspecified)}',
-              style: TextStyle(
-                color: AdminFinanceScreen.primary.withValues(alpha: 0.8),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onBulkPushTbpaid,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AdminFinanceScreen.tbpaid,
-                      side: BorderSide(
-                        color: AdminFinanceScreen.tbpaid.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: const Text('Push TBPAID + %'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onBulkPushDone,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AdminFinanceScreen.done,
-                      side: BorderSide(
-                        color: AdminFinanceScreen.done.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: const Text('Push DONE'),
-                  ),
                 ),
               ],
             ),
