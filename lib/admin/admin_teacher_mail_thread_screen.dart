@@ -804,21 +804,23 @@ class _AdminTeacherMailThreadScreenState
 
   static bool _looksLikeImage(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.jpg') ||
-        s.endsWith('.jpeg') ||
-        s.endsWith('.png') ||
-        s.endsWith('.webp') ||
-        s.endsWith('.gif');
+    final clean = s.split('?').first.split('#').first;
+    return clean.endsWith('.jpg') ||
+        clean.endsWith('.jpeg') ||
+        clean.endsWith('.png') ||
+        clean.endsWith('.webp') ||
+        clean.endsWith('.gif');
   }
 
   static bool _looksLikeVideo(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.mp4') ||
-        s.endsWith('.m4v') ||
-        s.endsWith('.mov') ||
-        s.endsWith('.webm') ||
-        s.endsWith('.mkv') ||
-        s.endsWith('.avi');
+    final clean = s.split('?').first.split('#').first;
+    return clean.endsWith('.mp4') ||
+        clean.endsWith('.m4v') ||
+        clean.endsWith('.mov') ||
+        clean.endsWith('.webm') ||
+        clean.endsWith('.mkv') ||
+        clean.endsWith('.avi');
   }
 
   Future<void> _showVideoViewer(String rawUrl, {String? title}) async {
@@ -836,6 +838,77 @@ class _AdminTeacherMailThreadScreenState
     );
   }
 
+  Future<void> _showImageViewer(String rawUrl, {String? title}) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (_) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(10),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  minScale: 0.6,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Text(
+                        'Failed to load image',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      loadingBuilder: (ctx, child, prog) {
+                        if (prog == null) return child;
+                        return const Center(child: CircularProgressIndicator());
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                left: 10,
+                right: 10,
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if ((title ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          title!.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAttachmentWidget({
     required Map<String, String> a,
     required bool mine,
@@ -849,7 +922,7 @@ class _AdminTeacherMailThreadScreenState
       return Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
-          onTap: () => _openUrlExternal(url),
+          onTap: () => _showImageViewer(url, title: name),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: ConstrainedBox(

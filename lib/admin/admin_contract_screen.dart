@@ -82,30 +82,26 @@ class _AdminContractScreenState extends State<AdminContractScreen>
       _tab.index == 0 ? _teacherRoot : _learnerRoot;
   String _activeLabel() => _tab.index == 0 ? 'Teachers' : 'Learners';
 
-  // ---------- Helpers ----------
-  static Map<String, dynamic> _asMap(dynamic v) {
-    if (v is Map) {
-      return v.map((k, val) => MapEntry(k.toString(), val));
-    }
-    return {};
+  static int? _toNullableInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '');
   }
 
-  static List<String> _asStringList(dynamic v) {
-    if (v is List) {
-      return v
-          .map((e) => (e ?? '').toString())
-          .where((s) => s.trim().isNotEmpty)
-          .toList();
+  Future<int> _nextSortOrder(DatabaseReference root) async {
+    final snap = await root.get();
+    final raw = snap.value;
+    if (raw is! Map) return 1;
+
+    int maxOrder = 0;
+    final map = raw.map((k, v) => MapEntry(k.toString(), v));
+    for (final node in map.values) {
+      if (node is! Map) continue;
+      final m = node.map((k, v) => MapEntry(k.toString(), v));
+      final order = _toNullableInt(m['sortOrder']) ?? 0;
+      if (order > maxOrder) maxOrder = order;
     }
-    if (v is Map) {
-      final m = v.map((k, val) => MapEntry(k.toString(), val));
-      final keys = m.keys.toList()..sort();
-      return keys
-          .map((k) => (m[k] ?? '').toString())
-          .where((s) => s.trim().isNotEmpty)
-          .toList();
-    }
-    return [];
+    return maxOrder + 1;
   }
 
   // ---------- UI actions ----------
@@ -164,7 +160,13 @@ class _AdminContractScreenState extends State<AdminContractScreen>
 
         if (existingId == null) {
           final newRef = root.push();
-          await newRef.set({'title': t, 'items': items, 'updatedAt': now});
+          final sortOrder = await _nextSortOrder(root);
+          await newRef.set({
+            'title': t,
+            'items': items,
+            'updatedAt': now,
+            'sortOrder': sortOrder,
+          });
         } else {
           await root.child(existingId).update({
             'title': t,
@@ -400,6 +402,32 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
+                      color: actionOrange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: actionOrange.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.visibility_rounded,
+                      color: actionOrange,
+                    ),
+                  ),
+                  title: const Text(
+                    'Preview',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: const Text('Preview learner popup cards'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openContractPreviewSheet(title: title, items: items);
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
                       color: primaryBlue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
@@ -479,6 +507,20 @@ class _AdminContractScreenState extends State<AdminContractScreen>
     );
   }
 
+  void _openContractPreviewSheet({
+    required String title,
+    required List<String> items,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return _ContractPreviewSheet(title: title, items: items);
+      },
+    );
+  }
+
   Widget _emptyState({
     required IconData icon,
     required String title,
@@ -538,7 +580,6 @@ class _AdminContractScreenState extends State<AdminContractScreen>
   @override
   Widget build(BuildContext context) {
     final activeLabel = _activeLabel();
-
 
     return Scaffold(
       backgroundColor: appBg,
@@ -633,13 +674,201 @@ class _ContractEntry {
   final String title;
   final List<String> items;
   final int updatedAt;
+  final int? sortOrder;
 
   _ContractEntry({
     required this.id,
     required this.title,
     required this.items,
     required this.updatedAt,
+    required this.sortOrder,
   });
+}
+
+class _ContractPreviewSheet extends StatelessWidget {
+  const _ContractPreviewSheet({required this.title, required this.items});
+
+  final String title;
+  final List<String> items;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const actionOrange = Color(0xFFF98D28);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
+      decoration: const BoxDecoration(
+        color: appBg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(14, 12, 14, 10 + bottomPad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryBlue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.rule_folder_rounded,
+                        color: primaryBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: primaryBlue,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: actionOrange.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: actionOrange.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: Text(
+                              '${items.length} item${items.length == 1 ? '' : 's'}',
+                              style: const TextStyle(
+                                color: actionOrange,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, i) {
+                    return TweenAnimationBuilder<double>(
+                      duration: Duration(milliseconds: 260 + (i * 55)),
+                      tween: Tween(begin: 0, end: 1),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, t, child) {
+                        return Opacity(
+                          opacity: t,
+                          child: Transform.translate(
+                            offset: Offset(0, 12 * (1 - t)),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: uiBorder.withValues(alpha: 0.85),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.03),
+                              blurRadius: 8,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 30,
+                              height: 30,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: actionOrange.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${i + 1}',
+                                style: const TextStyle(
+                                  color: actionOrange,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                items[i],
+                                style: const TextStyle(
+                                  color: Color(0xFF2D2D2D),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.45,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// ✅ A tab that stays alive when switching (fixes "loading forever")
@@ -688,6 +917,7 @@ class _ContractsTabState extends State<_ContractsTab>
   static const primaryBlue = Color(0xFF1A2B48);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
+  bool _savingOrder = false;
 
   static Map<String, dynamic> _asMap(dynamic v) {
     if (v is Map) return v.map((k, val) => MapEntry(k.toString(), val));
@@ -710,6 +940,55 @@ class _ContractsTabState extends State<_ContractsTab>
           .toList();
     }
     return [];
+  }
+
+  static int? _toNullableInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '');
+  }
+
+  int _compareByOrder(_ContractEntry a, _ContractEntry b) {
+    final ao = a.sortOrder;
+    final bo = b.sortOrder;
+    final aHas = ao != null;
+    final bHas = bo != null;
+
+    if (aHas && bHas) {
+      final byOrder = ao.compareTo(bo);
+      if (byOrder != 0) return byOrder;
+    } else if (aHas != bHas) {
+      return aHas ? -1 : 1;
+    }
+
+    return b.updatedAt.compareTo(a.updatedAt);
+  }
+
+  Future<void> _persistSortOrder(List<_ContractEntry> ordered) async {
+    if (_savingOrder) return;
+    setState(() => _savingOrder = true);
+    try {
+      final updates = <String, Object?>{};
+      for (int i = 0; i < ordered.length; i++) {
+        updates['${ordered[i].id}/sortOrder'] = i + 1;
+      }
+      await widget.root.update(updates);
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Order saved ✅')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not save order.')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _savingOrder = false);
+    }
   }
 
   @override
@@ -745,6 +1024,7 @@ class _ContractsTabState extends State<_ContractsTab>
           final updatedAt = (m['updatedAt'] is num)
               ? (m['updatedAt'] as num).toInt()
               : 0;
+          final sortOrder = _toNullableInt(m['sortOrder']);
           if (title.isEmpty) return;
 
           entries.add(
@@ -753,119 +1033,171 @@ class _ContractsTabState extends State<_ContractsTab>
               title: title,
               items: items,
               updatedAt: updatedAt,
+              sortOrder: sortOrder,
             ),
           );
         });
 
-        entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        entries.sort(_compareByOrder);
 
-        return ListView.separated(
+        return ReorderableListView.builder(
+          buildDefaultDragHandles: false,
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
           itemCount: entries.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          onReorder: (oldIndex, newIndex) async {
+            if (_savingOrder) return;
+            if (oldIndex == newIndex) return;
+            if (oldIndex < newIndex) newIndex -= 1;
+
+            final reordered = List<_ContractEntry>.from(entries);
+            final moved = reordered.removeAt(oldIndex);
+            reordered.insert(newIndex, moved);
+            await _persistSortOrder(reordered);
+          },
+          proxyDecorator: (child, index, animation) {
+            return AnimatedBuilder(
+              animation: animation,
+              builder: (context, _) {
+                final t = Curves.easeOut.transform(animation.value);
+                return Transform.scale(
+                  scale: 1 + (0.02 * t),
+                  child: Material(color: Colors.transparent, child: child),
+                );
+              },
+            );
+          },
           itemBuilder: (context, i) {
             final c = entries[i];
 
-            return InkWell(
-              borderRadius: BorderRadius.circular(18),
-              onLongPress: () => widget.openActions(
-                root: widget.root,
-                id: c.id,
-                title: c.title,
-                items: c.items,
-                kindLabel: widget.kindLabel,
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
+            return Padding(
+              key: ValueKey(c.id),
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => widget.openActions(
+                  root: widget.root,
+                  id: c.id,
+                  title: c.title,
+                  items: c.items,
+                  kindLabel: widget.kindLabel,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: primaryBlue.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: primaryBlue.withValues(alpha: 0.12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: primaryBlue.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: primaryBlue.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.description_rounded,
+                            color: primaryBlue,
+                            size: 20,
                           ),
                         ),
-                        child: const Icon(
-                          Icons.description_rounded,
-                          color: primaryBlue,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              c.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                                color: primaryBlue,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                  color: primaryBlue,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: appBg,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(color: uiBorder),
-                                  ),
-                                  child: Text(
-                                    '${c.items.length} item${c.items.length == 1 ? '' : 's'}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: appBg,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(color: uiBorder),
+                                    ),
+                                    child: Text(
+                                      '${c.items.length} item${c.items.length == 1 ? '' : 's'}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Long-press to Edit or Delete',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 11,
-                                      color: Colors.grey.shade600,
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _savingOrder
+                                          ? 'Saving order...'
+                                          : 'Drag to reorder / Tap for actions',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      // ✅ No 3 dots icon (removed)
-                    ],
+                        IconButton(
+                          tooltip: 'Actions',
+                          onPressed: () => widget.openActions(
+                            root: widget.root,
+                            id: c.id,
+                            title: c.title,
+                            items: c.items,
+                            kindLabel: widget.kindLabel,
+                          ),
+                          icon: Icon(
+                            Icons.more_horiz_rounded,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        ReorderableDragStartListener(
+                          index: i,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Icon(
+                              Icons.drag_indicator_rounded,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

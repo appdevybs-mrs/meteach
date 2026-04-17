@@ -70,7 +70,7 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
       if (uid.isEmpty) {
         setState(() {
           _loading = false;
-          _error = 'Not logged in.';
+          _error = 'يجب تسجيل الدخول أولًا.';
         });
         return;
       }
@@ -112,12 +112,6 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
 
       final keys = raw.keys.map((e) => e.toString()).toList();
 
-      keys.sort((a, b) {
-        final aa = _extractUpdatedAt(raw[a]);
-        final bb = _extractUpdatedAt(raw[b]);
-        return bb.compareTo(aa);
-      });
-
       for (final key in keys) {
         final node = raw[key];
         if (node is! Map) continue;
@@ -126,6 +120,7 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
 
         final title = (m['title'] ?? key).toString().trim();
         final updatedAt = _toInt(m['updatedAt']);
+        final sortOrder = _toNullableInt(m['sortOrder']);
 
         final itemsNode = m['items'];
         final items = <_RegItem>[];
@@ -156,10 +151,13 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
             keyName: key,
             title: title,
             updatedAt: updatedAt,
+            sortOrder: sortOrder,
             items: items,
           ),
         );
       }
+
+      sections.sort(_compareSections);
 
       if (!mounted) return;
 
@@ -177,18 +175,34 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
     }
   }
 
-  static int _extractUpdatedAt(dynamic node) {
-    if (node is! Map) return 0;
-    final m = node.map((k, vv) => MapEntry(k.toString(), vv));
-    return _toInt(m['updatedAt']);
-  }
-
   static int _safeInt(String s) => int.tryParse(s.trim()) ?? 0;
 
   static int _toInt(dynamic v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static int? _toNullableInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '');
+  }
+
+  static int _compareSections(_RegSection a, _RegSection b) {
+    final ao = a.sortOrder;
+    final bo = b.sortOrder;
+    final aHas = ao != null;
+    final bHas = bo != null;
+
+    if (aHas && bHas) {
+      final byOrder = ao.compareTo(bo);
+      if (byOrder != 0) return byOrder;
+    } else if (aHas != bHas) {
+      return aHas ? -1 : 1;
+    }
+
+    return b.updatedAt.compareTo(a.updatedAt);
   }
 
   String _formatUpdatedAt(int ms) {
@@ -208,7 +222,6 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -220,12 +233,12 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
           centerTitle: true,
           iconTheme: IconThemeData(color: p.primary),
           title: Text(
-            'Regulations',
+            'القوانين',
             style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
           actions: [
             IconButton(
-              tooltip: 'Refresh',
+              tooltip: 'تحديث',
               icon: Icon(Icons.refresh_rounded, color: p.accent),
               onPressed: _loadAll,
             ),
@@ -241,20 +254,20 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
                   : _error != null
                   ? _ErrorBox(
                       palette: p,
-                      message: 'Failed to load regulations.\n$_error',
+                      message: 'تعذر تحميل القوانين.\n$_error',
                       onRetry: _loadAll,
                     )
                   : !_isLearner
                   ? _InfoBox(
                       palette: p,
-                      title: 'Learners only',
+                      title: 'للمتعلمين فقط',
                       message: 'هذه الصفحة مخصصة للمتعلمين فقط.',
                       icon: Icons.lock_rounded,
                     )
                   : _sections.isEmpty
                   ? _InfoBox(
                       palette: p,
-                      title: 'No content',
+                      title: 'لا يوجد محتوى',
                       message: 'لا توجد قوانين متاحة حاليًا.',
                       icon: Icons.info_rounded,
                     )
@@ -264,22 +277,12 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                         children: [
-                          _HeroHeaderCard(palette: p),
-                          const SizedBox(height: 16),
-                          _QuickMetaStrip(
+                          _RegSectionCarousel(
                             palette: p,
-                            sectionsCount: _sections.length,
+                            sections: _sections,
+                            formatUpdatedAt: _formatUpdatedAt,
+                            onTapSection: _openSectionSheet,
                           ),
-                          const SizedBox(height: 16),
-                          ..._sections.map(
-                            (s) => _SectionCard(
-                              palette: p,
-                              section: s,
-                              updatedAtLabel: _formatUpdatedAt(s.updatedAt),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          _FooterHint(palette: p),
                         ],
                       ),
                     ),
@@ -289,107 +292,136 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
       ),
     );
   }
-}
 
-class _HeroHeaderCard extends StatelessWidget {
-  const _HeroHeaderCard({required this.palette});
-
-  final _RegPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-            ),
-            child: const Icon(
-              Icons.policy_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'القوانين والتنظيم',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 22,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'اطلع على التعليمات الرسمية الخاصة بالمتعلمين بشكل منظم وواضح. اضغط على أي قسم لعرض التفاصيل.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.88),
-                    fontWeight: FontWeight.w700,
-                    height: 1.45,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  void _openSectionSheet(_RegSection section) {
+    final p = palette;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return _RegSectionSheet(
+          palette: p,
+          section: section,
+          updatedAtLabel: _formatUpdatedAt(section.updatedAt),
+        );
+      },
     );
   }
 }
 
-class _QuickMetaStrip extends StatelessWidget {
-  const _QuickMetaStrip({required this.palette, required this.sectionsCount});
+class _RegSectionCarousel extends StatefulWidget {
+  const _RegSectionCarousel({
+    required this.palette,
+    required this.sections,
+    required this.formatUpdatedAt,
+    required this.onTapSection,
+  });
 
   final _RegPalette palette;
-  final int sectionsCount;
+  final List<_RegSection> sections;
+  final String Function(int ms) formatUpdatedAt;
+  final void Function(_RegSection section) onTapSection;
+
+  @override
+  State<_RegSectionCarousel> createState() => _RegSectionCarouselState();
+}
+
+class _RegSectionCarouselState extends State<_RegSectionCarousel> {
+  late final PageController _controller;
+  double _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(viewportFraction: 0.82);
+    _controller.addListener(_syncPage);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_syncPage);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncPage() {
+    if (!_controller.hasClients || !mounted) return;
+    setState(() {
+      _page = _controller.page ?? _controller.initialPage.toDouble();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final sections = widget.sections;
+    final p = widget.palette;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _MetaMiniCard(
-            palette: palette,
-            icon: Icons.menu_book_rounded,
-            title: 'الأقسام',
-            value: '$sectionsCount',
+        Text(
+          'اسحب لاختيار القسم',
+          style: TextStyle(
+            color: p.text.withValues(alpha: 0.7),
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _MetaMiniCard(
-            palette: palette,
-            icon: Icons.visibility_outlined,
-            title: 'التصفح',
-            value: 'واضح وسريع',
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.center,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 940),
+            child: SizedBox(
+              height: 288,
+              child: PageView.builder(
+                controller: _controller,
+                itemCount: sections.length,
+                itemBuilder: (context, i) {
+                  final section = sections[i];
+                  final delta = (_page - i).abs().clamp(0.0, 1.0);
+                  final scale = 1 - (delta * 0.04);
+                  final active = delta < 0.45;
+
+                  return Transform.translate(
+                    offset: Offset(0, active ? -8 : 0),
+                    child: Transform.scale(
+                      scale: scale,
+                      child: _RegCategoryCard(
+                        palette: p,
+                        section: section,
+                        updatedAtLabel: widget.formatUpdatedAt(
+                          section.updatedAt,
+                        ),
+                        active: active,
+                        onTap: () => widget.onTapSection(section),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: Wrap(
+            spacing: 7,
+            children: List.generate(sections.length, (i) {
+              final active = (_page - i).abs() < 0.5;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                width: active ? 22 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: active
+                      ? p.accent.withValues(alpha: 0.95)
+                      : p.border.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              );
+            }),
           ),
         ),
       ],
@@ -397,79 +429,140 @@ class _QuickMetaStrip extends StatelessWidget {
   }
 }
 
-class _MetaMiniCard extends StatelessWidget {
-  const _MetaMiniCard({
+class _RegCategoryCard extends StatelessWidget {
+  const _RegCategoryCard({
     required this.palette,
-    required this.icon,
-    required this.title,
-    required this.value,
+    required this.section,
+    required this.updatedAtLabel,
+    required this.active,
+    required this.onTap,
   });
 
   final _RegPalette palette;
-  final IconData icon;
-  final String title;
-  final String value;
+  final _RegSection section;
+  final String updatedAtLabel;
+  final bool active;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: palette.soft,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: palette.primary),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: palette.text.withValues(alpha: 0.64),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: palette.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                  ),
-                ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                palette.cardBg,
+                active
+                    ? palette.soft.withValues(alpha: 0.65)
+                    : palette.cardBg.withValues(alpha: 0.98),
               ],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
             ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: active
+                  ? palette.accent.withValues(alpha: 0.45)
+                  : palette.border.withValues(alpha: 0.85),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: active ? 0.12 : 0.05),
+                blurRadius: active ? 26 : 14,
+                spreadRadius: active ? 1 : 0,
+                offset: Offset(0, active ? 14 : 8),
+              ),
+            ],
           ),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: palette.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.category_rounded,
+                      color: palette.primary,
+                      size: 28,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${section.items.length} بنود',
+                      style: TextStyle(
+                        color: palette.accent,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                section.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: palette.primary,
+                  fontSize: 22,
+                  height: 1.25,
+                ),
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      updatedAtLabel.isEmpty
+                          ? 'بدون تاريخ تحديث'
+                          : updatedAtLabel,
+                      style: TextStyle(
+                        color: palette.text.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_back_rounded,
+                    color: palette.primary,
+                    size: 22,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _SectionCard extends StatefulWidget {
-  const _SectionCard({
+class _RegSectionSheet extends StatelessWidget {
+  const _RegSectionSheet({
     required this.palette,
     required this.section,
     required this.updatedAtLabel,
@@ -480,130 +573,58 @@ class _SectionCard extends StatefulWidget {
   final String updatedAtLabel;
 
   @override
-  State<_SectionCard> createState() => _SectionCardState();
-}
-
-class _SectionCardState extends State<_SectionCard> {
-  bool _expanded = false;
-
-  @override
   Widget build(BuildContext context) {
-    final s = widget.section;
-    final p = widget.palette;
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: _expanded
-              ? p.accent.withValues(alpha: 0.35)
-              : p.border.withValues(alpha: 0.85),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            onExpansionChanged: (v) => setState(() => _expanded = v),
-            tilePadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 10,
-            ),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            collapsedBackgroundColor: p.cardBg,
-            backgroundColor: p.cardBg,
-            title: Row(
+        decoration: BoxDecoration(
+          color: palette.appBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 10 + bottomPad),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: p.soft,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(Icons.gavel_rounded, color: p.primary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    s.title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
-                      height: 1.2,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-                if (widget.updatedAtLabel.isNotEmpty) ...[
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
-                    ),
+                Center(
+                  child: Container(
+                    width: 48,
+                    height: 5,
                     decoration: BoxDecoration(
-                      color: p.accent.withValues(alpha: 0.10),
+                      color: palette.border,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: p.accent.withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: Text(
-                      widget.updatedAtLabel,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.accent,
-                        fontSize: 11,
-                      ),
                     ),
                   ),
-                ],
+                ),
+                const SizedBox(height: 14),
+                _SectionPopupHeader(
+                  palette: palette,
+                  title: section.title,
+                  count: section.items.length,
+                  updatedAtLabel: updatedAtLabel,
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: section.items.length,
+                    itemBuilder: (context, i) {
+                      return _PopupRegulationCard(
+                        palette: palette,
+                        item: section.items[i],
+                        index: i,
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
-            trailing: AnimatedRotation(
-              turns: _expanded ? 0.5 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: p.primary,
-                size: 28,
-              ),
-            ),
-            children: [
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: p.soft.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: p.border.withValues(alpha: 0.75)),
-                ),
-                child: Text(
-                  '${s.items.length} بند',
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              ...s.items.map((it) => _RegItemRow(palette: p, item: it)),
-            ],
           ),
         ),
       ),
@@ -611,110 +632,201 @@ class _SectionCardState extends State<_SectionCard> {
   }
 }
 
-class _RegItemRow extends StatelessWidget {
-  const _RegItemRow({required this.palette, required this.item});
+class _SectionPopupHeader extends StatelessWidget {
+  const _SectionPopupHeader({
+    required this.palette,
+    required this.title,
+    required this.count,
+    required this.updatedAtLabel,
+  });
+
+  final _RegPalette palette;
+  final String title;
+  final int count;
+  final String updatedAtLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: palette.soft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(Icons.rule_rounded, color: palette.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: palette.primary,
+                    fontSize: 16,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _MiniChip(
+                      palette: palette,
+                      label: '$count بند',
+                      icon: Icons.format_list_bulleted_rounded,
+                    ),
+                    if (updatedAtLabel.isNotEmpty)
+                      _MiniChip(
+                        palette: palette,
+                        label: updatedAtLabel,
+                        icon: Icons.update_rounded,
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniChip extends StatelessWidget {
+  const _MiniChip({
+    required this.palette,
+    required this.label,
+    required this.icon,
+  });
+
+  final _RegPalette palette;
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: palette.accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: palette.accent.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: palette.accent, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: palette.accent,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PopupRegulationCard extends StatelessWidget {
+  const _PopupRegulationCard({
+    required this.palette,
+    required this.item,
+    required this.index,
+  });
 
   final _RegPalette palette;
   final _RegItem item;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
     final isBullet = item.n <= 0;
+    final animationStep = index > 8 ? 8 : index;
 
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: palette.soft.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: palette.border.withValues(alpha: 0.72)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: palette.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: palette.accent.withValues(alpha: 0.25)),
+    return TweenAnimationBuilder<double>(
+      duration: Duration(milliseconds: 280 + (animationStep * 60)),
+      curve: Curves.easeOutCubic,
+      tween: Tween(begin: 0, end: 1),
+      builder: (context, t, child) {
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, 14 * (1 - t)),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
             ),
-            child: Text(
-              isBullet ? '•' : item.n.toString(),
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                color: palette.accent,
-                fontSize: 13,
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 33,
+              height: 33,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: palette.accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: palette.accent.withValues(alpha: 0.22),
+                ),
+              ),
+              child: Text(
+                isBullet ? '•' : item.n.toString(),
+                style: TextStyle(
+                  color: palette.accent,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              item.text,
-              textAlign: TextAlign.start,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: palette.text,
-                height: 1.5,
-                fontSize: 13.5,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                item.text,
+                style: TextStyle(
+                  color: palette.text,
+                  fontWeight: FontWeight.w700,
+                  height: 1.5,
+                  fontSize: 13.5,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FooterHint extends StatelessWidget {
-  const _FooterHint({required this.palette});
-
-  final _RegPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: palette.accent.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: palette.accent.withValues(alpha: 0.18)),
-            ),
-            child: Icon(Icons.info_outline_rounded, color: palette.accent),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'للاستفسارات أو الاعتراضات، يرجى التواصل عبر القنوات الرسمية للمؤسسة.',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: palette.text.withValues(alpha: 0.74),
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -836,7 +948,7 @@ class _ErrorBox extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              'Error',
+              'حدث خطأ',
               style: TextStyle(
                 fontWeight: FontWeight.w900,
                 color: palette.primary,
@@ -869,7 +981,7 @@ class _ErrorBox extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text(
-                  'Retry',
+                  'إعادة المحاولة',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
@@ -886,12 +998,14 @@ class _RegSection {
     required this.keyName,
     required this.title,
     required this.updatedAt,
+    required this.sortOrder,
     required this.items,
   });
 
   final String keyName;
   final String title;
   final int updatedAt;
+  final int? sortOrder;
   final List<_RegItem> items;
 }
 

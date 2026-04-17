@@ -1142,30 +1142,33 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   static bool _looksLikeImage(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.jpg') ||
-        s.endsWith('.jpeg') ||
-        s.endsWith('.png') ||
-        s.endsWith('.webp') ||
-        s.endsWith('.gif');
+    final clean = s.split('?').first.split('#').first;
+    return clean.endsWith('.jpg') ||
+        clean.endsWith('.jpeg') ||
+        clean.endsWith('.png') ||
+        clean.endsWith('.webp') ||
+        clean.endsWith('.gif');
   }
 
   static bool _looksLikeAudio(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.mp3') ||
-        s.endsWith('.m4a') ||
-        s.endsWith('.aac') ||
-        s.endsWith('.wav') ||
-        s.endsWith('.ogg');
+    final clean = s.split('?').first.split('#').first;
+    return clean.endsWith('.mp3') ||
+        clean.endsWith('.m4a') ||
+        clean.endsWith('.aac') ||
+        clean.endsWith('.wav') ||
+        clean.endsWith('.ogg');
   }
 
   static bool _looksLikeVideo(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.mp4') ||
-        s.endsWith('.m4v') ||
-        s.endsWith('.mov') ||
-        s.endsWith('.webm') ||
-        s.endsWith('.mkv') ||
-        s.endsWith('.avi');
+    final clean = s.split('?').first.split('#').first;
+    return clean.endsWith('.mp4') ||
+        clean.endsWith('.m4v') ||
+        clean.endsWith('.mov') ||
+        clean.endsWith('.webm') ||
+        clean.endsWith('.mkv') ||
+        clean.endsWith('.avi');
   }
 
   Future<void> _showVideoViewer(String rawUrl, {String? title}) async {
