@@ -2204,6 +2204,184 @@ class _TeacherFinanceDetailsScreenState
     });
   }
 
+  Future<void> _editOldWaitingPayment(Map<String, dynamic> row) async {
+    final paymentId = (row['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+
+    final amountCtrl = TextEditingController(
+      text: _asInt(row['amount']).toString(),
+    );
+    final noteCtrl = TextEditingController(
+      text: (row['notes'] ?? '').toString().trim(),
+    );
+    String method = _AdminFinanceScreenState._normalizeMethod(
+      row['financeMethod'] ?? row['method'],
+    );
+
+    final existingPaidAt = _asInt(row['paidAt']);
+    DateTime selectedDate = existingPaidAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(existingPaidAt)
+        : DateTime.now();
+
+    String dateLabel(DateTime d) {
+      String two(int n) => n.toString().padLeft(2, '0');
+      return '${d.year}-${two(d.month)}-${two(d.day)}';
+    }
+
+    Future<void> pickDate(StateSetter setD) async {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: selectedDate,
+        firstDate: DateTime(2018, 1, 1),
+        lastDate: DateTime.now().add(const Duration(days: 365)),
+      );
+      if (picked == null) return;
+      setD(() => selectedDate = picked);
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (_, setD) {
+            final maxDialogHeight = MediaQuery.of(dialogCtx).size.height * 0.78;
+            return AlertDialog(
+              title: const Text('Edit old waiting'),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 20,
+              ),
+              content: SizedBox(
+                width: 420,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxDialogHeight),
+                  child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: amountCtrl,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Remaining amount',
+                            hintText: 'Type the leftover amount in DA',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          initialValue: method,
+                          decoration: const InputDecoration(
+                            labelText: 'Method',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'cash',
+                              child: Text('💵 Cash'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ccp',
+                              child: Text('🏤 CCP'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'unspecified',
+                              child: Text('❔ Unspecified'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setD(() => method = v);
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        InkWell(
+                          onTap: () => pickDate(setD),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Date',
+                              border: OutlineInputBorder(),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.event_rounded, size: 18),
+                                const SizedBox(width: 8),
+                                Text(dateLabel(selectedDate)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: noteCtrl,
+                          maxLines: 2,
+                          textInputAction: TextInputAction.done,
+                          decoration: const InputDecoration(
+                            labelText: 'Note (optional)',
+                            hintText: 'Reason / context',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final amt = int.tryParse(amountCtrl.text.trim()) ?? 0;
+                    if (amt <= 0) return;
+                    Navigator.of(dialogCtx).pop(true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok != true) return;
+
+    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    if (amount <= 0) return;
+    final note = noteCtrl.text.trim();
+    final paidAt = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      12,
+      0,
+      0,
+    ).millisecondsSinceEpoch;
+
+    await widget.paymentsRef.child(paymentId).update({
+      'amount': amount,
+      'method': method,
+      'financeMethod': method,
+      'paidAt': paidAt,
+      'notes': note,
+      'financeUpdatedAt': ServerValue.timestamp,
+      'updatedAt': ServerValue.timestamp,
+    });
+
+    if (!mounted) return;
+    setState(() {
+      row['amount'] = amount;
+      row['method'] = method;
+      row['financeMethod'] = method;
+      row['paidAt'] = paidAt;
+      row['notes'] = note;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     var originalTotal = 0;
@@ -2357,6 +2535,9 @@ class _TeacherFinanceDetailsScreenState
                       final schoolOnlyLocked =
                           schoolOnlyType && _isEffectiveSchoolOnly(row);
                       final isOldWaiting = row['oldWaiting'] == true;
+                      final isLegacyManual = row['manualPayment'] == true;
+                      final editableOldWaiting =
+                          !isNoPayment && (isOldWaiting || isLegacyManual);
                       final methodLabel = method == 'cash'
                           ? '💵 CASH'
                           : method == 'ccp'
@@ -2407,6 +2588,35 @@ class _TeacherFinanceDetailsScreenState
                         if (needsNoPaymentAction) 'Add old waiting or Done',
                       ];
 
+                      final payoutBase = a.payoutAmount;
+                      int teacherPart = 0;
+                      int schoolPart = 0;
+                      if (!isNoPayment && payoutBase > 0) {
+                        final hasTeacherNet =
+                            row.containsKey('financeTeacherNet') &&
+                            row['financeTeacherNet'] != null;
+                        final hasSchoolNet =
+                            row.containsKey('financeSchoolNet') &&
+                            row['financeSchoolNet'] != null;
+
+                        if (hasTeacherNet && hasSchoolNet) {
+                          teacherPart = _asInt(row['financeTeacherNet']);
+                          schoolPart = _asInt(row['financeSchoolNet']);
+                        } else if (schoolOnlyLocked) {
+                          teacherPart = 0;
+                          schoolPart = payoutBase;
+                        } else {
+                          var p = _asInt(row['financeTeacherPercent']);
+                          if (p < 0) p = 0;
+                          if (p > 100) p = 100;
+                          teacherPart = ((payoutBase * p) / 100).round();
+                          schoolPart = payoutBase - teacherPart;
+                        }
+
+                        if (teacherPart < 0) teacherPart = 0;
+                        if (schoolPart < 0) schoolPart = 0;
+                      }
+
                       String statusText;
                       if (isNoPayment) {
                         statusText = manualDoneMarked
@@ -2428,153 +2638,260 @@ class _TeacherFinanceDetailsScreenState
                             color: color.withValues(alpha: 0.35),
                           ),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _pulseIfMissing(
-                                    missing:
-                                        statusMissing || needsNoPaymentAction,
-                                    child: InkWell(
-                                      onTap: isNoPayment
-                                          ? () => _setManualDone(
-                                              row,
-                                              !manualDoneMarked,
-                                            )
-                                          : () => _editPaymentStatus(row),
-                                      customBorder: const CircleBorder(),
-                                      child: CircleAvatar(
-                                        backgroundColor: Colors.transparent,
-                                        child: Stack(
-                                          clipBehavior: Clip.none,
-                                          children: [
-                                            CircleAvatar(
-                                              backgroundColor: color.withValues(
-                                                alpha: 0.15,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onLongPress: editableOldWaiting
+                              ? () => _editOldWaitingPayment(row)
+                              : null,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _pulseIfMissing(
+                                      missing:
+                                          statusMissing || needsNoPaymentAction,
+                                      child: InkWell(
+                                        onTap: isNoPayment
+                                            ? () => _setManualDone(
+                                                row,
+                                                !manualDoneMarked,
+                                              )
+                                            : () => _editPaymentStatus(row),
+                                        customBorder: const CircleBorder(),
+                                        child: CircleAvatar(
+                                          backgroundColor: Colors.transparent,
+                                          child: Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              CircleAvatar(
+                                                backgroundColor: color
+                                                    .withValues(alpha: 0.15),
+                                                child: Icon(
+                                                  a.status == 'done'
+                                                      ? Icons.verified_rounded
+                                                      : a.status == 'tbpaid'
+                                                      ? Icons
+                                                            .pending_actions_rounded
+                                                      : Icons
+                                                            .call_split_rounded,
+                                                  size: 18,
+                                                  color: color,
+                                                ),
                                               ),
-                                              child: Icon(
-                                                a.status == 'done'
-                                                    ? Icons.verified_rounded
-                                                    : a.status == 'tbpaid'
-                                                    ? Icons
-                                                          .pending_actions_rounded
-                                                    : Icons.call_split_rounded,
-                                                size: 18,
-                                                color: color,
-                                              ),
-                                            ),
-                                            Positioned(
-                                              right: -2,
-                                              bottom: -2,
-                                              child: Container(
-                                                width: 18,
-                                                height: 18,
-                                                decoration: BoxDecoration(
-                                                  color: variant.color,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
+                                              Positioned(
+                                                right: -2,
+                                                bottom: -2,
+                                                child: Container(
+                                                  width: 18,
+                                                  height: 18,
+                                                  decoration: BoxDecoration(
+                                                    color: variant.color,
+                                                    shape: BoxShape.circle,
+                                                    border: Border.all(
+                                                      color: Colors.white,
+                                                      width: 1.5,
+                                                    ),
+                                                  ),
+                                                  child: Icon(
+                                                    variant.icon,
+                                                    size: 11,
                                                     color: Colors.white,
-                                                    width: 1.5,
                                                   ),
                                                 ),
-                                                child: Icon(
-                                                  variant.icon,
-                                                  size: 11,
-                                                  color: Colors.white,
-                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            learner,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: AdminFinanceScreen.primary,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          Text(
+                                            isNoPayment
+                                                ? 'No payment yet'
+                                                : paidAt,
+                                            style: TextStyle(
+                                              color: AdminFinanceScreen.primary
+                                                  .withValues(alpha: 0.72),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!isNoPayment)
+                                      Text(
+                                        widget.money(amount),
+                                        style: const TextStyle(
+                                          color: AdminFinanceScreen.primary,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  isNoPayment
+                                      ? 'No payment yet · Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}'
+                                      : 'Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}',
+                                  style: const TextStyle(
+                                    color: AdminFinanceScreen.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11.5,
+                                  ),
+                                ),
+                                if (courseLabel.isNotEmpty)
+                                  Text(
+                                    courseLabel,
+                                    style: TextStyle(
+                                      color: AdminFinanceScreen.primary
+                                          .withValues(alpha: 0.78),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                if (courseId.isNotEmpty)
+                                  Text(
+                                    'Sessions with teacher: ${sess.held} · Present: ${sess.present}',
+                                    style: TextStyle(
+                                      color: AdminFinanceScreen.primary
+                                          .withValues(alpha: 0.78),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    if (!isNoPayment)
+                                      _pulseIfMissing(
+                                        missing: methodMissing,
+                                        child: InkWell(
+                                          onTap: () => _pickMethod(row),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(
+                                                0xFF1A2B48,
+                                              ).withValues(alpha: 0.08),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border: Border.all(
+                                                color: const Color(
+                                                  0xFF1A2B48,
+                                                ).withValues(alpha: 0.2),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Method: $methodLabel',
+                                              style: const TextStyle(
+                                                color:
+                                                    AdminFinanceScreen.primary,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 11.5,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    if (isOldWaiting)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFFF0A526,
+                                          ).withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xFFF0A526,
+                                            ).withValues(alpha: 0.35),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.history_rounded,
+                                              size: 13,
+                                              color: Color(0xFF8A5A00),
+                                            ),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              'Old waiting',
+                                              style: TextStyle(
+                                                color: Color(0xFF8A5A00),
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 11.5,
                                               ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          learner,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: AdminFinanceScreen.primary,
-                                            fontWeight: FontWeight.w900,
+                                    if (!isOldWaiting && isLegacyManual)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFF178F8B,
+                                          ).withValues(alpha: 0.11),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xFF178F8B,
+                                            ).withValues(alpha: 0.28),
                                           ),
                                         ),
-                                        Text(
-                                          isNoPayment
-                                              ? 'No payment yet'
-                                              : paidAt,
+                                        child: const Text(
+                                          'Manual',
                                           style: TextStyle(
-                                            color: AdminFinanceScreen.primary
-                                                .withValues(alpha: 0.72),
-                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF178F8B),
+                                            fontWeight: FontWeight.w800,
                                             fontSize: 11.5,
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (!isNoPayment)
-                                    Text(
-                                      widget.money(amount),
-                                      style: const TextStyle(
-                                        color: AdminFinanceScreen.primary,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 13,
                                       ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                isNoPayment
-                                    ? 'No payment yet · Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}'
-                                    : 'Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}',
-                                style: const TextStyle(
-                                  color: AdminFinanceScreen.primary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11.5,
-                                ),
-                              ),
-                              if (courseLabel.isNotEmpty)
-                                Text(
-                                  courseLabel,
-                                  style: TextStyle(
-                                    color: AdminFinanceScreen.primary
-                                        .withValues(alpha: 0.78),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              if (courseId.isNotEmpty)
-                                Text(
-                                  'Sessions with teacher: ${sess.held} · Present: ${sess.present}',
-                                  style: TextStyle(
-                                    color: AdminFinanceScreen.primary
-                                        .withValues(alpha: 0.78),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              const SizedBox(height: 4),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 4,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  if (!isNoPayment)
-                                    _pulseIfMissing(
-                                      missing: methodMissing,
-                                      child: InkWell(
-                                        onTap: () => _pickMethod(row),
+                                    if (schoolOnlyType)
+                                      InkWell(
+                                        onTap: () => _toggleSchoolOnlyLock(row),
                                         borderRadius: BorderRadius.circular(
                                           999,
                                         ),
@@ -2584,147 +2901,112 @@ class _TeacherFinanceDetailsScreenState
                                             vertical: 3,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xFF1A2B48,
-                                            ).withValues(alpha: 0.08),
+                                            color: schoolOnlyLocked
+                                                ? const Color(
+                                                    0xFFF0A526,
+                                                  ).withValues(alpha: 0.13)
+                                                : const Color(
+                                                    0xFF4B67D1,
+                                                  ).withValues(alpha: 0.1),
                                             borderRadius: BorderRadius.circular(
                                               999,
                                             ),
                                             border: Border.all(
-                                              color: const Color(
-                                                0xFF1A2B48,
-                                              ).withValues(alpha: 0.2),
+                                              color: schoolOnlyLocked
+                                                  ? const Color(
+                                                      0xFFF0A526,
+                                                    ).withValues(alpha: 0.32)
+                                                  : const Color(
+                                                      0xFF4B67D1,
+                                                    ).withValues(alpha: 0.28),
                                             ),
                                           ),
                                           child: Text(
-                                            'Method: $methodLabel',
-                                            style: const TextStyle(
-                                              color: AdminFinanceScreen.primary,
+                                            schoolOnlyLocked
+                                                ? 'School-only 🔒'
+                                                : 'Teacher-share 🔓',
+                                            style: TextStyle(
+                                              color: schoolOnlyLocked
+                                                  ? const Color(0xFF8A5A00)
+                                                  : const Color(0xFF4B67D1),
                                               fontWeight: FontWeight.w800,
                                               fontSize: 11.5,
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  if (isOldWaiting)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFFF0A526,
-                                        ).withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                        border: Border.all(
-                                          color: const Color(
-                                            0xFFF0A526,
-                                          ).withValues(alpha: 0.35),
-                                        ),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.history_rounded,
-                                            size: 13,
-                                            color: Color(0xFF8A5A00),
+                                    if (!isNoPayment)
+                                      if (!schoolOnlyLocked)
+                                        _pulseIfMissing(
+                                          missing: teacherMissing,
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _setTeacherPercent(row),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(
+                                                  0xFF3666D8,
+                                                ).withValues(alpha: 0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0xFF3666D8,
+                                                  ).withValues(alpha: 0.3),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                'Teacher %: $percent',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF3666D8),
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 11.5,
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            'Old waiting',
+                                        )
+                                      else
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF8A5A00,
+                                            ).withValues(alpha: 0.09),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: const Color(
+                                                0xFF8A5A00,
+                                              ).withValues(alpha: 0.26),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Teacher %: N/A',
                                             style: TextStyle(
                                               color: Color(0xFF8A5A00),
                                               fontWeight: FontWeight.w800,
                                               fontSize: 11.5,
                                             ),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  if (!isOldWaiting &&
-                                      row['manualPayment'] == true)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF178F8B,
-                                        ).withValues(alpha: 0.11),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
                                         ),
-                                        border: Border.all(
-                                          color: const Color(
-                                            0xFF178F8B,
-                                          ).withValues(alpha: 0.28),
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Manual',
-                                        style: TextStyle(
-                                          color: Color(0xFF178F8B),
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 11.5,
-                                        ),
-                                      ),
-                                    ),
-                                  if (schoolOnlyType)
-                                    InkWell(
-                                      onTap: () => _toggleSchoolOnlyLock(row),
-                                      borderRadius: BorderRadius.circular(999),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: schoolOnlyLocked
-                                              ? const Color(
-                                                  0xFFF0A526,
-                                                ).withValues(alpha: 0.13)
-                                              : const Color(
-                                                  0xFF4B67D1,
-                                                ).withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: schoolOnlyLocked
-                                                ? const Color(
-                                                    0xFFF0A526,
-                                                  ).withValues(alpha: 0.32)
-                                                : const Color(
-                                                    0xFF4B67D1,
-                                                  ).withValues(alpha: 0.28),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          schoolOnlyLocked
-                                              ? 'School-only 🔒'
-                                              : 'Teacher-share 🔓',
-                                          style: TextStyle(
-                                            color: schoolOnlyLocked
-                                                ? const Color(0xFF8A5A00)
-                                                : const Color(0xFF4B67D1),
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 11.5,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  if (!isNoPayment)
-                                    if (!schoolOnlyLocked)
+                                    if (isNoPayment)
                                       _pulseIfMissing(
-                                        missing: teacherMissing,
+                                        missing: needsNoPaymentAction,
                                         child: InkWell(
-                                          onTap: () => _setTeacherPercent(row),
+                                          onTap: () => _addManualPayment(row),
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
@@ -2745,9 +3027,9 @@ class _TeacherFinanceDetailsScreenState
                                                 ).withValues(alpha: 0.3),
                                               ),
                                             ),
-                                            child: Text(
-                                              'Teacher %: $percent',
-                                              style: const TextStyle(
+                                            child: const Text(
+                                              'Add old waiting',
+                                              style: TextStyle(
                                                 color: Color(0xFF3666D8),
                                                 fontWeight: FontWeight.w800,
                                                 fontSize: 11.5,
@@ -2755,40 +3037,13 @@ class _TeacherFinanceDetailsScreenState
                                             ),
                                           ),
                                         ),
-                                      )
-                                    else
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xFF8A5A00,
-                                          ).withValues(alpha: 0.09),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(
-                                              0xFF8A5A00,
-                                            ).withValues(alpha: 0.26),
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Teacher %: N/A',
-                                          style: TextStyle(
-                                            color: Color(0xFF8A5A00),
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 11.5,
-                                          ),
-                                        ),
                                       ),
-                                  if (isNoPayment)
-                                    _pulseIfMissing(
-                                      missing: needsNoPaymentAction,
-                                      child: InkWell(
-                                        onTap: () => _addManualPayment(row),
+                                    if (isNoPayment)
+                                      InkWell(
+                                        onTap: () => _setManualDone(
+                                          row,
+                                          !manualDoneMarked,
+                                        ),
                                         borderRadius: BorderRadius.circular(
                                           999,
                                         ),
@@ -2798,87 +3053,76 @@ class _TeacherFinanceDetailsScreenState
                                             vertical: 3,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xFF3666D8,
-                                            ).withValues(alpha: 0.1),
+                                            color: AdminFinanceScreen.done
+                                                .withValues(alpha: 0.11),
                                             borderRadius: BorderRadius.circular(
                                               999,
                                             ),
                                             border: Border.all(
-                                              color: const Color(
-                                                0xFF3666D8,
-                                              ).withValues(alpha: 0.3),
+                                              color: AdminFinanceScreen.done
+                                                  .withValues(alpha: 0.28),
                                             ),
                                           ),
-                                          child: const Text(
-                                            'Add old waiting',
-                                            style: TextStyle(
-                                              color: Color(0xFF3666D8),
+                                          child: Text(
+                                            manualDoneMarked
+                                                ? 'Unmark done'
+                                                : 'Mark done',
+                                            style: const TextStyle(
+                                              color: AdminFinanceScreen.done,
                                               fontWeight: FontWeight.w800,
                                               fontSize: 11.5,
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  if (isNoPayment)
-                                    InkWell(
-                                      onTap: () => _setManualDone(
-                                        row,
-                                        !manualDoneMarked,
-                                      ),
-                                      borderRadius: BorderRadius.circular(999),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AdminFinanceScreen.done
-                                              .withValues(alpha: 0.11),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: AdminFinanceScreen.done
-                                                .withValues(alpha: 0.28),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          manualDoneMarked
-                                              ? 'Unmark done'
-                                              : 'Mark done',
-                                          style: const TextStyle(
-                                            color: AdminFinanceScreen.done,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 11.5,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '$statusText${hasPushed ? ' · SYNC ${pushedStatus.toUpperCase()}' : ''}',
-                                style: const TextStyle(
-                                  color: AdminFinanceScreen.primary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11.5,
+                                  ],
                                 ),
-                              ),
-                              if (missingLabels.isNotEmpty) ...[
                                 const SizedBox(height: 4),
+                                if (!isNoPayment && payoutBase > 0)
+                                  Text(
+                                    'Teacher part: ${widget.money(teacherPart)} · School part: ${widget.money(schoolPart)}',
+                                    style: TextStyle(
+                                      color: AdminFinanceScreen.primary
+                                          .withValues(alpha: 0.86),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                if (!isNoPayment && payoutBase > 0)
+                                  const SizedBox(height: 4),
                                 Text(
-                                  'Missing: ${missingLabels.join(', ')}',
-                                  style: TextStyle(
-                                    color: const Color(0xFFD14B4B),
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12,
+                                  '$statusText${hasPushed ? ' · SYNC ${pushedStatus.toUpperCase()}' : ''}',
+                                  style: const TextStyle(
+                                    color: AdminFinanceScreen.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11.5,
                                   ),
                                 ),
+                                if (missingLabels.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Missing: ${missingLabels.join(', ')}',
+                                    style: TextStyle(
+                                      color: const Color(0xFFD14B4B),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                                if (editableOldWaiting) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Long press card to edit old waiting',
+                                    style: TextStyle(
+                                      color: AdminFinanceScreen.primary
+                                          .withValues(alpha: 0.68),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       );
