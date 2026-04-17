@@ -1856,92 +1856,104 @@ class _TeacherFinanceDetailsScreenState
       builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (_, setD) {
-            final viewInsets = MediaQuery.of(dialogCtx).viewInsets;
-            return AnimatedPadding(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.only(bottom: viewInsets.bottom),
-              child: AlertDialog(
-                title: const Text('Add manual payment'),
-                scrollable: true,
-                content: SizedBox(
-                  width: 420,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Fee',
-                          hintText: 'Enter amount in DA',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        initialValue: method,
-                        decoration: const InputDecoration(labelText: 'Method'),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'cash',
-                            child: Text('💵 Cash'),
-                          ),
-                          DropdownMenuItem(value: 'ccp', child: Text('🏤 CCP')),
-                          DropdownMenuItem(
-                            value: 'unspecified',
-                            child: Text('❔ Unspecified'),
-                          ),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setD(() => method = v);
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      InkWell(
-                        onTap: () => pickDate(setD),
-                        borderRadius: BorderRadius.circular(10),
-                        child: InputDecorator(
+            final maxDialogHeight = MediaQuery.of(dialogCtx).size.height * 0.78;
+            return AlertDialog(
+              title: const Text('Add manual payment'),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 20,
+              ),
+              content: SizedBox(
+                width: 420,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxDialogHeight),
+                  child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: amountCtrl,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
-                            labelText: 'Date',
-                            border: OutlineInputBorder(),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.event_rounded, size: 18),
-                              const SizedBox(width: 8),
-                              Text(dateLabel(selectedDate)),
-                            ],
+                            labelText: 'Fee',
+                            hintText: 'Enter amount in DA',
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: noteCtrl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Note (optional)',
-                          hintText: 'Reason / context',
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          initialValue: method,
+                          decoration: const InputDecoration(
+                            labelText: 'Method',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'cash',
+                              child: Text('💵 Cash'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ccp',
+                              child: Text('🏤 CCP'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'unspecified',
+                              child: Text('❔ Unspecified'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setD(() => method = v);
+                          },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 10),
+                        InkWell(
+                          onTap: () => pickDate(setD),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Date',
+                              border: OutlineInputBorder(),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.event_rounded, size: 18),
+                                const SizedBox(width: 8),
+                                Text(dateLabel(selectedDate)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: noteCtrl,
+                          maxLines: 2,
+                          textInputAction: TextInputAction.done,
+                          decoration: const InputDecoration(
+                            labelText: 'Note (optional)',
+                            hintText: 'Reason / context',
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogCtx).pop(false),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: () {
-                      final amt = int.tryParse(amountCtrl.text.trim()) ?? 0;
-                      if (amt <= 0) return;
-                      Navigator.of(dialogCtx).pop(true);
-                    },
-                    child: const Text('Save'),
-                  ),
-                ],
               ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final amt = int.tryParse(amountCtrl.text.trim()) ?? 0;
+                    if (amt <= 0) return;
+                    Navigator.of(dialogCtx).pop(true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
             );
           },
         );

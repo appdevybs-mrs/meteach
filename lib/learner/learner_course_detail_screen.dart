@@ -642,12 +642,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   int _sessionsConsumedForPayment({
     required int held,
     required int present,
-    required int onlinePresent,
+    required int onlineConsumed,
   }) {
     final studyType = _deliveryKey;
     if (studyType == 'inclass') return held;
     if (studyType == 'private') return present;
-    if (studyType == 'flexible') return onlinePresent;
+    if (studyType == 'flexible') return onlineConsumed;
     return present;
   }
 
@@ -1765,17 +1765,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     // ✅ Meetings = attendance records (in-class + online)
     final meetingsHeld = counts['total'] ?? 0;
     final present = counts['present'] ?? 0;
-    final onlinePresent = _attendanceAll
-        .where(
-          (x) =>
-              (x['source'] ?? '').toString().toLowerCase() == 'online' &&
-              (x['status'] ?? '').toString().toLowerCase() == 'present',
-        )
-        .length;
+    final onlineConsumed = _attendanceAll.where((x) {
+      if ((x['source'] ?? '').toString().toLowerCase() != 'online') {
+        return false;
+      }
+      return onlineAttendanceRecordConsumesCredit(x);
+    }).length;
     final sessionsConsumed = _sessionsConsumedForPayment(
       held: meetingsHeld,
       present: present,
-      onlinePresent: onlinePresent,
+      onlineConsumed: onlineConsumed,
     );
     final attPct = meetingsHeld == 0
         ? 0

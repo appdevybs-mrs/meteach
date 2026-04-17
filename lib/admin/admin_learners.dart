@@ -1179,7 +1179,7 @@ class _LearnersListState extends State<_LearnersList>
   }
 
   int _flexibleSessionsConsumedFromCourseMap(Map<String, dynamic> courseMap) {
-    final directOnline = countPresentOnlineAttendance(
+    final directOnline = countConsumedOnlineAttendance(
       courseMap['online_attendance'],
     );
     if (directOnline > 0) return directOnline;
@@ -1187,13 +1187,13 @@ class _LearnersListState extends State<_LearnersList>
     final bookingProgress = courseMap['booking_progress'];
     if (bookingProgress is Map) {
       final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
-      final nestedOnline = countPresentOnlineAttendance(
+      final nestedOnline = countConsumedOnlineAttendance(
         bp['online_attendance'],
       );
       if (nestedOnline > 0) return nestedOnline;
     }
 
-    return countPresentUniqueAttendanceDates(courseMap['attendance']);
+    return countHeldUniqueAttendanceDates(courseMap['attendance']);
   }
 
   _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
@@ -3977,7 +3977,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     final v = _normalizeVariantKey(variantKey);
     if (v == 'inclass') return true;
     if (v == 'private') return paymentRecordIsPresent(learnerRec);
-    if (v == 'flexible') return paymentRecordIsPresent(learnerRec);
+    if (v == 'flexible') {
+      return onlineAttendanceRecordConsumesCredit(learnerRec);
+    }
     return false;
   }
 
@@ -4026,7 +4028,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         final snap = await widget.db
             .ref('booking_progress/$uid/$courseId/online_attendance')
             .get();
-        return countPresentOnlineAttendance(snap.value);
+        return countConsumedOnlineAttendance(snap.value);
       } catch (_) {
         return 0;
       }
@@ -5088,15 +5090,15 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
           }
 
           final onlineRaw = progressSnap.data?.value;
-          final presentRows = <Map<String, dynamic>>[];
+          final consumedRows = <Map<String, dynamic>>[];
           if (onlineRaw is Map) {
             onlineRaw.forEach((_, value) {
               if (value is! Map) return;
               final m = value
                   .map((k, v) => MapEntry(k.toString(), v))
                   .cast<String, dynamic>();
-              if (m['present'] != true) return;
-              presentRows.add(m);
+              if (!onlineAttendanceRecordConsumesCredit(m)) return;
+              consumedRows.add(m);
             });
           }
 
@@ -5107,7 +5109,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             return int.tryParse(raw?.toString() ?? '') ?? 0;
           }
 
-          presentRows.sort((a, b) => toTs(a).compareTo(toTs(b)));
+          consumedRows.sort((a, b) => toTs(a).compareTo(toTs(b)));
+
+          bool asBool(dynamic v) {
+            if (v is bool) return v;
+            final s = (v ?? '').toString().trim().toLowerCase();
+            return s == 'true' || s == '1' || s == 'yes';
+          }
 
           String formatWhen(Map<String, dynamic> m) {
             final dayKey = (m['dayKey'] ?? '').toString().trim();
@@ -5135,7 +5143,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
               var consumedCount = 0;
               var boundaryIndex = 0;
 
-              for (final entry in presentRows.asMap().entries) {
+              for (final entry in consumedRows.asMap().entries) {
                 final i = entry.key;
                 final m = entry.value;
 
@@ -5148,13 +5156,34 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                 final when = formatWhen(m);
                 final sessionNo = _asInt(m['sessionNo']);
                 final teacher = (m['teacherName'] ?? '').toString().trim();
+                final statusRaw = (m['status'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                final countedCredit = asBool(m['countedCredit']);
+                final hasPresentFlag = m.containsKey('present');
+                final present = asBool(m['present']) || statusRaw == 'present';
+                final absent =
+                    (!present && hasPresentFlag) || statusRaw == 'absent';
+
+                final statusLabel = countedCredit
+                    ? 'credit used'
+                    : (present ? 'present' : (absent ? 'absent' : 'recorded'));
+                final barColor = countedCredit
+                    ? const Color(0xFFB45309)
+                    : (present ? const Color(0xFF157A3D) : Colors.red);
+                final tileColor = countedCredit
+                    ? const Color(0xFFB45309).withValues(alpha: 0.08)
+                    : (present
+                          ? const Color(0xFF157A3D).withValues(alpha: 0.08)
+                          : Colors.red.withValues(alpha: 0.08));
 
                 attendanceTiles.add(
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF157A3D).withValues(alpha: 0.08),
+                        color: tileColor,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: AdminLearnersScreen.uiBorders,
@@ -5165,8 +5194,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           Container(
                             width: 6,
                             height: 58,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF157A3D),
+                            decoration: BoxDecoration(
+                              color: barColor,
                               borderRadius: BorderRadius.only(
                                 topLeft: Radius.circular(16),
                                 bottomLeft: Radius.circular(16),
@@ -5184,7 +5213,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '#${i + 1}  Session ${sessionNo <= 0 ? '-' : sessionNo} — present',
+                                    '#${i + 1}  Session ${sessionNo <= 0 ? '-' : sessionNo} — $statusLabel',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w900,
                                     ),
@@ -5228,15 +5257,15 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                   _miniCard(
                     child: Text(
                       totalSessions > 0
-                          ? 'Flexible consumed sessions: ${presentRows.length} / $totalSessions'
-                          : 'Flexible consumed sessions: ${presentRows.length}',
+                          ? 'Flexible consumed sessions: ${consumedRows.length} / $totalSessions'
+                          : 'Flexible consumed sessions: ${consumedRows.length}',
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  if (presentRows.isEmpty)
+                  if (consumedRows.isEmpty)
                     const _MiniState(
-                      text: 'No present attendance recorded yet.',
+                      text: 'No consumed attendance recorded yet.',
                     )
                   else
                     ...attendanceTiles,

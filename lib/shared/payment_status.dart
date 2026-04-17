@@ -89,6 +89,50 @@ int countPresentOnlineAttendance(dynamic onlineAttendance) {
   return present;
 }
 
+bool onlineAttendanceRecordConsumesCredit(Map<String, dynamic> record) {
+  bool asBool(dynamic v) {
+    if (v is bool) return v;
+    final s = (v ?? '').toString().trim().toLowerCase();
+    return s == 'true' || s == '1' || s == 'yes';
+  }
+
+  if (asBool(record['countedCredit'])) return true;
+
+  if (record.containsKey('present')) {
+    final v = record['present'];
+    if (v is bool) return true;
+
+    final parsed = (v ?? '').toString().trim().toLowerCase();
+    if (parsed == 'true' ||
+        parsed == 'false' ||
+        parsed == '1' ||
+        parsed == '0') {
+      return true;
+    }
+  }
+
+  final status = (record['status'] ?? '').toString().trim().toLowerCase();
+  if (status == 'present' || status == 'absent') return true;
+
+  return false;
+}
+
+int countConsumedOnlineAttendance(dynamic onlineAttendance) {
+  if (onlineAttendance is! Map) return 0;
+
+  int consumed = 0;
+  onlineAttendance.forEach((_, value) {
+    if (value is! Map) return;
+    final rec = value
+        .map((k, v) => MapEntry(k.toString(), v))
+        .cast<String, dynamic>();
+    if (onlineAttendanceRecordConsumesCredit(rec)) {
+      consumed += 1;
+    }
+  });
+  return consumed;
+}
+
 int normalizeReminderForSessions({
   required int sessionsPaidTotal,
   required int remindBeforeSession,

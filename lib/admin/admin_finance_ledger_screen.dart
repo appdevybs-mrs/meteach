@@ -14,16 +14,20 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
     'finance_ledger',
   );
 
-  final TextEditingController _titleCtrl = TextEditingController();
-  final TextEditingController _amountCtrl = TextEditingController();
-  final TextEditingController _noteCtrl = TextEditingController();
-  bool _saving = false;
+  static const List<Color> _cardPalette = [
+    Color(0xFFEAF2FF),
+    Color(0xFFE9F7F1),
+    Color(0xFFFFF2DF),
+    Color(0xFFFFE9EC),
+    Color(0xFFF1EEFF),
+    Color(0xFFEAF7FF),
+    Color(0xFFF6F5F2),
+    Color(0xFFEFF5D9),
+  ];
+  static const Color _defaultCardColor = Color(0xFFEAF2FF);
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
-    _amountCtrl.dispose();
-    _noteCtrl.dispose();
     super.dispose();
   }
 
@@ -57,39 +61,142 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  Future<void> _saveEntry() async {
-    final title = _titleCtrl.text.trim();
-    final amount = _asInt(_amountCtrl.text);
-    final note = _noteCtrl.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Title is required.')));
-      return;
-    }
+  static String _colorToHex(Color color) {
+    final rgb = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
+    return '#${rgb.toUpperCase()}';
+  }
 
-    setState(() => _saving = true);
-    try {
-      final ref = _ledgerRef.push();
-      await ref.set({
-        'title': title,
-        'amount': amount,
-        'note': note,
-        'createdAt': ServerValue.timestamp,
-        'updatedAt': ServerValue.timestamp,
-        'createdBy': 'admin',
-      });
-      if (!mounted) return;
-      _titleCtrl.clear();
-      _amountCtrl.clear();
-      _noteCtrl.clear();
-      FocusScope.of(context).unfocus();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ledger note saved.')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+  static Color _parseCardColor(dynamic raw) {
+    if (raw == null) return _defaultCardColor;
+    final text = raw.toString().trim();
+    if (text.isEmpty) return _defaultCardColor;
+    var cleaned = text.replaceFirst('#', '');
+    if (cleaned.length == 6) cleaned = 'FF$cleaned';
+    if (cleaned.length != 8) return _defaultCardColor;
+    final value = int.tryParse(cleaned, radix: 16);
+    if (value == null) return _defaultCardColor;
+    return Color(value);
+  }
+
+  static Color _onCardColor(Color bg) {
+    return bg.computeLuminance() > 0.58
+        ? const Color(0xFF1A2B48)
+        : Colors.white;
+  }
+
+  Future<void> _openAddEntryDialog() async {
+    final titleCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    var selectedColor = _defaultCardColor;
+    var saving = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        final insets = MediaQuery.of(dialogCtx).viewInsets;
+        return StatefulBuilder(
+          builder: (context, setD) {
+            return AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(bottom: insets.bottom),
+              child: AlertDialog(
+                title: const Text('Add ledger card'),
+                scrollable: true,
+                content: SizedBox(
+                  width: 430,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: titleCtrl,
+                        decoration: const InputDecoration(labelText: 'Title'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Amount'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: noteCtrl,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Note (optional)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Card color',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _cardPalette
+                            .map(
+                              (c) => _LedgerColorDot(
+                                color: c,
+                                selected:
+                                    c.toARGB32() == selectedColor.toARGB32(),
+                                onTap: () => setD(() => selectedColor = c),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: saving
+                        ? null
+                        : () => Navigator.of(dialogCtx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            final title = titleCtrl.text.trim();
+                            if (title.isEmpty) return;
+                            setD(() => saving = true);
+                            try {
+                              final ref = _ledgerRef.push();
+                              await ref.set({
+                                'title': title,
+                                'amount': _asInt(amountCtrl.text),
+                                'note': noteCtrl.text.trim(),
+                                'cardColor': _colorToHex(selectedColor),
+                                'createdAt': ServerValue.timestamp,
+                                'updatedAt': ServerValue.timestamp,
+                                'createdBy': 'admin',
+                              });
+                              if (dialogCtx.mounted) {
+                                Navigator.of(dialogCtx).pop();
+                              }
+                            } finally {
+                              if (dialogCtx.mounted) setD(() => saving = false);
+                            }
+                          },
+                    icon: const Icon(Icons.add_card_rounded),
+                    label: Text(saving ? 'Saving...' : 'Add card'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    titleCtrl.dispose();
+    amountCtrl.dispose();
+    noteCtrl.dispose();
   }
 
   Future<void> _editEntry({
@@ -105,57 +212,81 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
     final noteCtrl = TextEditingController(
       text: (row['note'] ?? '').toString().trim(),
     );
+    var selectedColor = _parseCardColor(row['cardColor']);
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) {
         final insets = MediaQuery.of(dialogCtx).viewInsets;
-        return AnimatedPadding(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.only(bottom: insets.bottom),
-          child: AlertDialog(
-            title: const Text('Edit ledger note'),
-            scrollable: true,
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(labelText: 'Title'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Amount'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: noteCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Note (optional)',
+        return StatefulBuilder(
+          builder: (context, setD) => AnimatedPadding(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: EdgeInsets.only(bottom: insets.bottom),
+            child: AlertDialog(
+              title: const Text('Edit ledger card'),
+              scrollable: true,
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(labelText: 'Title'),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: amountCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Amount'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: noteCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Note (optional)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Card color',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _cardPalette
+                          .map(
+                            (c) => _LedgerColorDot(
+                              color: c,
+                              selected:
+                                  c.toARGB32() == selectedColor.toARGB32(),
+                              onTap: () => setD(() => selectedColor = c),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
               ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (titleCtrl.text.trim().isEmpty) return;
+                    Navigator.of(dialogCtx).pop(true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogCtx).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (titleCtrl.text.trim().isEmpty) return;
-                  Navigator.of(dialogCtx).pop(true);
-                },
-                child: const Text('Save'),
-              ),
-            ],
           ),
         );
       },
@@ -167,8 +298,34 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
       'title': titleCtrl.text.trim(),
       'amount': _asInt(amountCtrl.text),
       'note': noteCtrl.text.trim(),
+      'cardColor': _colorToHex(selectedColor),
       'updatedAt': ServerValue.timestamp,
     });
+
+    titleCtrl.dispose();
+    amountCtrl.dispose();
+    noteCtrl.dispose();
+  }
+
+  Future<void> _openNoteDialog({
+    required String title,
+    required String note,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: Text(title.isEmpty ? 'Ledger note' : title),
+          content: Text(note.isEmpty ? 'No note for this card.' : note),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _deleteEntry(String entryId) async {
@@ -211,6 +368,14 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Add ledger card',
+            onPressed: _openAddEntryDialog,
+            icon: const Icon(Icons.add_card_rounded),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: StreamBuilder<DatabaseEvent>(
         stream: _ledgerRef.orderByChild('createdAt').limitToLast(5000).onValue,
@@ -229,132 +394,240 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
             (a, b) => _asInt(b['createdAt']).compareTo(_asInt(a['createdAt'])),
           );
 
-          return ListView(
-            padding: EdgeInsets.fromLTRB(
-              12,
-              12,
-              12,
-              20 + MediaQuery.of(context).padding.bottom,
-            ),
-            children: [
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Quick note',
-                        style: TextStyle(
-                          color: Color(0xFF1A2B48),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _titleCtrl,
-                        decoration: const InputDecoration(labelText: 'Title'),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _amountCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Amount'),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _noteCtrl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Note (optional)',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed: _saving ? null : _saveEntry,
-                          icon: const Icon(Icons.save_rounded),
-                          label: Text(_saving ? 'Saving...' : 'Save note'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (rows.isEmpty)
-                const Card(
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final crossAxisCount = width < 560
+                  ? 2
+                  : width < 900
+                  ? 3
+                  : width < 1250
+                  ? 4
+                  : 5;
+
+              if (rows.isEmpty) {
+                return Center(
                   child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No notes yet.'),
-                  ),
-                )
-              else
-                ...rows.map((row) {
-                  final entryId = (row['entryId'] ?? '').toString().trim();
-                  final title = (row['title'] ?? '').toString().trim();
-                  final amount = _asInt(row['amount']);
-                  final note = (row['note'] ?? '').toString().trim();
-                  final date = _fmtDate(_asInt(row['createdAt']));
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(16),
                     child: Card(
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         side: BorderSide(
                           color: Colors.black.withValues(alpha: 0.08),
                         ),
                       ),
-                      child: ListTile(
-                        title: Text(
-                          title.isEmpty ? '(No title)' : title,
-                          style: const TextStyle(
-                            color: Color(0xFF1A2B48),
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${_money(amount)} · $date${note.isEmpty ? '' : '\n$note'}',
-                          style: const TextStyle(
-                            color: Color(0xFF1A2B48),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        isThreeLine: note.isNotEmpty,
-                        trailing: Wrap(
-                          spacing: 4,
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              tooltip: 'Edit',
-                              onPressed: entryId.isEmpty
-                                  ? null
-                                  : () =>
-                                        _editEntry(entryId: entryId, row: row),
-                              icon: const Icon(Icons.edit_rounded),
+                            const Text(
+                              'No ledger cards yet.',
+                              style: TextStyle(
+                                color: Color(0xFF1A2B48),
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                            IconButton(
-                              tooltip: 'Delete',
-                              onPressed: entryId.isEmpty
-                                  ? null
-                                  : () => _deleteEntry(entryId),
-                              icon: const Icon(Icons.delete_outline_rounded),
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                              onPressed: _openAddEntryDialog,
+                              icon: const Icon(Icons.add_card_rounded),
+                              label: const Text('Add first card'),
                             ),
                           ],
                         ),
                       ),
                     ),
+                  ),
+                );
+              }
+
+              return GridView.builder(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  12,
+                  12,
+                  20 + MediaQuery.of(context).padding.bottom,
+                ),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1.06,
+                ),
+                itemCount: rows.length,
+                itemBuilder: (context, i) {
+                  final row = rows[i];
+                  final entryId = (row['entryId'] ?? '').toString().trim();
+                  final title = (row['title'] ?? '').toString().trim();
+                  final amount = _asInt(row['amount']);
+                  final note = (row['note'] ?? '').toString().trim();
+                  final date = _fmtDate(_asInt(row['createdAt']));
+                  final bg = _parseCardColor(row['cardColor']);
+                  final fg = _onCardColor(bg);
+                  final border = fg.withValues(alpha: 0.24);
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: bg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: border),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title.isEmpty ? '(No title)' : title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: fg,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                    height: 1.1,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: note.isEmpty ? 'No note' : 'Open note',
+                                onPressed: () =>
+                                    _openNoteDialog(title: title, note: note),
+                                icon: Text(
+                                  '!',
+                                  style: TextStyle(
+                                    color: fg,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 28,
+                                  minHeight: 28,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _money(amount),
+                            style: TextStyle(
+                              color: fg,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            date,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: fg.withValues(alpha: 0.86),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11.8,
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  note.isEmpty ? 'No note' : 'Has note',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: fg.withValues(alpha: 0.78),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Edit card',
+                                onPressed: entryId.isEmpty
+                                    ? null
+                                    : () => _editEntry(
+                                        entryId: entryId,
+                                        row: row,
+                                      ),
+                                icon: Icon(Icons.edit_rounded, color: fg),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              IconButton(
+                                tooltip: 'Delete card',
+                                onPressed: entryId.isEmpty
+                                    ? null
+                                    : () => _deleteEntry(entryId),
+                                icon: Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: fg.withValues(alpha: 0.92),
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   );
-                }),
-            ],
+                },
+              );
+            },
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openAddEntryDialog,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add card'),
+      ),
+    );
+  }
+}
+
+class _LedgerColorDot extends StatelessWidget {
+  const _LedgerColorDot({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? const Color(0xFF1A2B48) : Colors.black26,
+            width: selected ? 2.2 : 1,
+          ),
+        ),
+        child: selected
+            ? const Icon(
+                Icons.check_rounded,
+                size: 16,
+                color: Color(0xFF1A2B48),
+              )
+            : null,
       ),
     );
   }

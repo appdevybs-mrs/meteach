@@ -42,6 +42,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   final ScrollController _rowsScrollMain = ScrollController();
   final ScrollController _rowsScrollFrozen = ScrollController();
   bool _syncingRowsScroll = false;
+  bool _showNameSearch = false;
+  final TextEditingController _nameSearchCtrl = TextEditingController();
+  String _nameSearchQuery = '';
 
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
   static const String _teacherFilterAll = '__all__';
@@ -57,6 +60,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   @override
   void initState() {
     super.initState();
+    _nameSearchCtrl.addListener(() {
+      final q = _nameSearchCtrl.text.trim().toLowerCase();
+      if (q == _nameSearchQuery) return;
+      setState(() => _nameSearchQuery = q);
+    });
     _rowsScrollMain.addListener(() {
       if (_syncingRowsScroll || !_rowsScrollFrozen.hasClients) return;
       _syncingRowsScroll = true;
@@ -83,9 +91,29 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   @override
   void dispose() {
+    _nameSearchCtrl.dispose();
     _rowsScrollMain.dispose();
     _rowsScrollFrozen.dispose();
     super.dispose();
+  }
+
+  String _learnerNameFromPayment(Map<String, dynamic> p) {
+    final n1 = (p['learner_name'] ?? '').toString().trim();
+    if (n1.isNotEmpty) return n1;
+    final n2 = (p['learnerName'] ?? '').toString().trim();
+    if (n2.isNotEmpty) return n2;
+    final n3 = (p['name'] ?? '').toString().trim();
+    if (n3.isNotEmpty) return n3;
+    return '';
+  }
+
+  void _toggleNameSearch() {
+    setState(() {
+      _showNameSearch = !_showNameSearch;
+      if (!_showNameSearch) {
+        _nameSearchCtrl.clear();
+      }
+    });
   }
 
   void _toast(String msg) {
@@ -1338,6 +1366,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           );
         }
 
+        if (_nameSearchQuery.isNotEmpty) {
+          filtered = filtered.where((p) {
+            final name = _learnerNameFromPayment(p).toLowerCase();
+            final serial = (p['learner_serial'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
+            return name.contains(_nameSearchQuery) ||
+                serial.contains(_nameSearchQuery);
+          });
+        }
+
         final visible = filtered.toList();
 
         final monthCounters = <String, int>{};
@@ -1378,17 +1418,55 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             iconTheme: const IconThemeData(
               color: AdminPaymentsScreen.primaryBlue,
             ),
-            title: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-              child: Text(
-                'Payments',
-                style: TextStyle(
-                  color: AdminPaymentsScreen.primaryBlue,
-                  fontWeight: FontWeight.w900,
-                ),
+            title: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: _showNameSearch
+                    ? TextField(
+                        key: const ValueKey('payments-search-field'),
+                        controller: _nameSearchCtrl,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        style: const TextStyle(
+                          color: AdminPaymentsScreen.primaryBlue,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: 'Search learner name',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: _nameSearchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  onPressed: () => _nameSearchCtrl.clear(),
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      )
+                    : const Text(
+                        'Payments',
+                        key: ValueKey('payments-title'),
+                        style: TextStyle(
+                          color: AdminPaymentsScreen.primaryBlue,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
               ),
             ),
             actions: [
+              IconButton(
+                tooltip: _showNameSearch ? 'Close search' : 'Search learner',
+                icon: Icon(
+                  _showNameSearch ? Icons.close_rounded : Icons.search_rounded,
+                  color: AdminPaymentsScreen.primaryBlue,
+                ),
+                onPressed: _toggleNameSearch,
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Center(child: todayPill),
@@ -2287,8 +2365,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           }
                           keys.sort();
 
-                          if (keys.isEmpty)
+                          if (keys.isEmpty) {
                             return const _MiniHint('Learner has no courses.');
+                          }
 
                           pickedCourseKey ??= keys.first;
 
