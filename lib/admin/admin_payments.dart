@@ -1418,8 +1418,16 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             iconTheme: const IconThemeData(
               color: AdminPaymentsScreen.primaryBlue,
             ),
+            titleSpacing: _showNameSearch
+                ? 8
+                : NavigationToolbar.kMiddleSpacing,
             title: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              padding: EdgeInsets.fromLTRB(
+                _showNameSearch ? 0 : 2,
+                4,
+                _showNameSearch ? 4 : 2,
+                4,
+              ),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 180),
                 child: _showNameSearch
@@ -1434,15 +1442,29 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         ),
                         decoration: InputDecoration(
                           isDense: true,
-                          hintText: 'Search learner name',
+                          hintText: 'Search learner name or serial',
+                          filled: true,
+                          fillColor: const Color(0xFFF7F9FC),
                           prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: _nameSearchQuery.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'Clear search',
-                                  onPressed: () => _nameSearchCtrl.clear(),
+                          suffixIcon: SizedBox(
+                            width: _nameSearchQuery.isEmpty ? 44 : 84,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (_nameSearchQuery.isNotEmpty)
+                                  IconButton(
+                                    tooltip: 'Clear search',
+                                    onPressed: () => _nameSearchCtrl.clear(),
+                                    icon: const Icon(Icons.backspace_outlined),
+                                  ),
+                                IconButton(
+                                  tooltip: 'Close search',
+                                  onPressed: _toggleNameSearch,
                                   icon: const Icon(Icons.close_rounded),
                                 ),
+                              ],
+                            ),
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -1458,38 +1480,41 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       ),
               ),
             ),
-            actions: [
-              IconButton(
-                tooltip: _showNameSearch ? 'Close search' : 'Search learner',
-                icon: Icon(
-                  _showNameSearch ? Icons.close_rounded : Icons.search_rounded,
-                  color: AdminPaymentsScreen.primaryBlue,
-                ),
-                onPressed: _toggleNameSearch,
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Center(child: todayPill),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Backup / Export',
-                icon: const Icon(
-                  Icons.download_rounded,
-                  color: AdminPaymentsScreen.primaryBlue,
-                ),
-                onPressed: () => _openExportDialog(all: all, months: months),
-              ),
-              IconButton(
-                tooltip: 'Add payment',
-                icon: const Icon(
-                  Icons.add_card_rounded,
-                  color: AdminPaymentsScreen.actionOrange,
-                ),
-                onPressed: () => _openAddPaymentDialog(),
-              ),
-              const SizedBox(width: 6),
-            ],
+            actions: _showNameSearch
+                ? const <Widget>[]
+                : [
+                    IconButton(
+                      tooltip: 'Search learner',
+                      icon: const Icon(
+                        Icons.search_rounded,
+                        color: AdminPaymentsScreen.primaryBlue,
+                      ),
+                      onPressed: _toggleNameSearch,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Center(child: todayPill),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Backup / Export',
+                      icon: const Icon(
+                        Icons.download_rounded,
+                        color: AdminPaymentsScreen.primaryBlue,
+                      ),
+                      onPressed: () =>
+                          _openExportDialog(all: all, months: months),
+                    ),
+                    IconButton(
+                      tooltip: 'Add payment',
+                      icon: const Icon(
+                        Icons.add_card_rounded,
+                        color: AdminPaymentsScreen.actionOrange,
+                      ),
+                      onPressed: () => _openAddPaymentDialog(),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
           ),
           body: adminWebBodyFrame(
             context: context,

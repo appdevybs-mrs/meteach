@@ -1873,45 +1873,164 @@ class _TeacherFinanceDetailsScreenState
     }
   }
 
-  Future<void> _addManualPayment(Map<String, dynamic> learnerRow) async {
+  Future<void> _startOldWaitingSetup(Map<String, dynamic> learnerRow) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.history_rounded),
+                title: const Text('Use previous payment'),
+                subtitle: const Text('Pick old date/fee then set left amount'),
+                onTap: () => Navigator.of(sheetCtx).pop('history'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_note_rounded),
+                title: const Text('Skip and enter manually'),
+                subtitle: const Text('Type fee, method, date, note, and left'),
+                onTap: () => Navigator.of(sheetCtx).pop('manual'),
+              ),
+              const SizedBox(height: 6),
+            ],
+          ),
+        );
+      },
+    );
+    if (choice == null) return;
+    await _addManualPayment(learnerRow, forceManual: choice == 'manual');
+  }
+
+  Future<void> _addManualPayment(
+    Map<String, dynamic> learnerRow, {
+    bool forceManual = false,
+  }) async {
     final uid = (learnerRow['uid'] ?? '').toString().trim();
     if (uid.isEmpty) return;
+    final learnerSerial =
+        (learnerRow['learner_serial'] ?? learnerRow['serial'] ?? '')
+            .toString()
+            .trim();
+    final learnerNameNorm = _learnerNameFrom(learnerRow).trim().toLowerCase();
 
-    final historySnap = await widget.paymentsRef
-        .orderByChild('uid')
-        .equalTo(uid)
-        .get();
     final history = <Map<String, dynamic>>[];
-    final historyRaw = historySnap.value;
-    if (historyRaw is Map) {
-      historyRaw.forEach((k, v) {
-        if (v is! Map) return;
-        final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-        m['paymentId'] = k.toString();
-        history.add(m.cast<String, dynamic>());
-      });
+    if (!forceManual) {
+      try {
+        final historySnap = await widget.paymentsRef
+            .orderByChild('uid')
+            .equalTo(uid)
+            .get();
+        final historyRaw = historySnap.value;
+        if (historyRaw is Map) {
+          historyRaw.forEach((k, v) {
+            if (v is! Map) return;
+            final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+            m['paymentId'] = k.toString();
+            history.add(m.cast<String, dynamic>());
+          });
+        }
+
+        if (history.isEmpty) {
+          final fallbackSnap = await widget.paymentsRef.get();
+          final fallbackRaw = fallbackSnap.value;
+          if (fallbackRaw is Map) {
+            final dedupe = <String>{};
+            fallbackRaw.forEach((k, v) {
+              if (v is! Map) return;
+              final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+              final pid = k.toString();
+              final rowUid = (m['uid'] ?? '').toString().trim();
+              if (rowUid == uid) {
+                if (dedupe.add(pid)) {
+                  m['paymentId'] = pid;
+                  history.add(m.cast<String, dynamic>());
+                }
+                return;
+              }
+
+              if (learnerSerial.isNotEmpty) {
+                final rowSerial = (m['learner_serial'] ?? '').toString().trim();
+                if (rowSerial == learnerSerial) {
+                  if (dedupe.add(pid)) {
+                    m['paymentId'] = pid;
+                    history.add(m.cast<String, dynamic>());
+                  }
+                  return;
+                }
+              }
+
+              if (learnerNameNorm.isNotEmpty) {
+                final rowName = (m['learner_name'] ?? m['learnerName'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                if (rowName == learnerNameNorm) {
+                  if (dedupe.add(pid)) {
+                    m['paymentId'] = pid;
+                    history.add(m.cast<String, dynamic>());
+                  }
+                }
+              }
+            });
+          }
+        }
+
+        history.sort(
+          (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
+        );
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load previous payments.')),
+        );
+        return;
+      }
+
+      if (history.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No previous payments found for this learner.'),
+          ),
+        );
+        return;
+      }
     }
-    history.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
-    if (history.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No previous payments found for this learner.'),
-        ),
-      );
-      return;
-    }
+
     if (!mounted) return;
 
-    String sourcePaymentId = (history.first['paymentId'] ?? '').toString();
-    Map<String, dynamic> sourcePayment = history.first;
+    const manualSourceId = '__manual__';
+    String sourcePaymentId = forceManual
+        ? manualSourceId
+        : (history.isEmpty
+              ? manualSourceId
+              : (history.first['paymentId'] ?? '').toString());
+    Map<String, dynamic>? sourcePayment = history.isEmpty
+        ? null
+        : history.first;
 
-    final amountCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    String method = _AdminFinanceScreenState._normalizeMethod(
-      sourcePayment['financeMethod'] ?? sourcePayment['method'],
+    final originalFeeCtrl = TextEditingController(
+      text: sourcePayment == null
+          ? ''
+          : _asInt(sourcePayment['amount']).toString(),
     );
+    final leftCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    String method = sourcePayment == null
+        ? 'cash'
+        : _AdminFinanceScreenState._normalizeMethod(
+            sourcePayment['financeMethod'] ?? sourcePayment['method'],
+          );
     DateTime selectedDate = DateTime.now();
+    if (sourcePayment != null && !forceManual) {
+      final srcDate = _asInt(sourcePayment['paidAt']);
+      if (srcDate > 0) {
+        selectedDate = DateTime.fromMillisecondsSinceEpoch(srcDate);
+      }
+    }
     String dateLabel(DateTime d) {
       String two(int n) => n.toString().padLeft(2, '0');
       return '${d.year}-${two(d.month)}-${two(d.day)}';
@@ -1955,78 +2074,98 @@ class _TeacherFinanceDetailsScreenState
                           decoration: const InputDecoration(
                             labelText: 'Old payment source',
                           ),
-                          items: history.map((p) {
-                            final pid = (p['paymentId'] ?? '')
-                                .toString()
-                                .trim();
-                            final amount = _asInt(p['amount']);
-                            final paidAt = _fmtDateMs(_asInt(p['paidAt']));
-                            final code = (p['course_code'] ?? '')
-                                .toString()
-                                .trim();
-                            final title = (p['course_title'] ?? '')
-                                .toString()
-                                .trim();
-                            final course = code.isNotEmpty
-                                ? code
-                                : (title.isNotEmpty ? title : 'No course');
-                            return DropdownMenuItem<String>(
-                              value: pid,
-                              child: Text(
-                                '$paidAt · ${widget.money(amount)} · $course',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            );
-                          }).toList(),
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: manualSourceId,
+                              child: Text('Skip history (manual entry)'),
+                            ),
+                            ...history.map((p) {
+                              final pid = (p['paymentId'] ?? '')
+                                  .toString()
+                                  .trim();
+                              final amount = _asInt(p['amount']);
+                              final paidAt = _fmtDateMs(_asInt(p['paidAt']));
+                              final code = (p['course_code'] ?? '')
+                                  .toString()
+                                  .trim();
+                              final title = (p['course_title'] ?? '')
+                                  .toString()
+                                  .trim();
+                              final course = code.isNotEmpty
+                                  ? code
+                                  : (title.isNotEmpty ? title : 'No course');
+                              return DropdownMenuItem<String>(
+                                value: pid,
+                                child: Text(
+                                  '$paidAt · ${widget.money(amount)} · $course',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }),
+                          ],
                           onChanged: (v) {
                             if (v == null) return;
-                            final selected = history.firstWhere(
-                              (p) => (p['paymentId'] ?? '').toString() == v,
-                              orElse: () => history.first,
-                            );
+                            Map<String, dynamic>? selected;
+                            if (v != manualSourceId && history.isNotEmpty) {
+                              selected = history.firstWhere(
+                                (p) => (p['paymentId'] ?? '').toString() == v,
+                                orElse: () => history.first,
+                              );
+                            }
                             setD(() {
                               sourcePaymentId = v;
                               sourcePayment = selected;
-                              method =
-                                  _AdminFinanceScreenState._normalizeMethod(
-                                    selected['financeMethod'] ??
-                                        selected['method'],
-                                  );
+                              if (selected != null) {
+                                originalFeeCtrl.text = _asInt(
+                                  selected['amount'],
+                                ).toString();
+                                method =
+                                    _AdminFinanceScreenState._normalizeMethod(
+                                      selected['financeMethod'] ??
+                                          selected['method'],
+                                    );
+                                final srcDate = _asInt(selected['paidAt']);
+                                if (srcDate > 0) {
+                                  selectedDate =
+                                      DateTime.fromMillisecondsSinceEpoch(
+                                        srcDate,
+                                      );
+                                }
+                              } else {
+                                originalFeeCtrl.text = '';
+                                method = 'cash';
+                              }
                             });
                           },
                         ),
                         const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8EED8),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: const Color(
-                                0xFFD49B33,
-                              ).withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Text(
-                            'Original fee: ${widget.money(_asInt(sourcePayment['amount']))}',
-                            style: const TextStyle(
-                              color: Color(0xFF8A5A00),
-                              fontWeight: FontWeight.w900,
-                            ),
+                        TextField(
+                          controller: originalFeeCtrl,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.next,
+                          readOnly: sourcePayment != null,
+                          decoration: InputDecoration(
+                            labelText: sourcePayment != null
+                                ? 'Original fee (from selected source)'
+                                : 'Fee',
+                            hintText: sourcePayment != null
+                                ? null
+                                : 'Type original fee in DA',
+                            filled: sourcePayment != null,
+                            fillColor: sourcePayment != null
+                                ? const Color(0xFFF8EED8)
+                                : null,
+                            border: const OutlineInputBorder(),
                           ),
                         ),
                         const SizedBox(height: 10),
                         TextField(
-                          controller: amountCtrl,
+                          controller: leftCtrl,
                           keyboardType: TextInputType.number,
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
-                            labelText: 'Remaining amount',
-                            hintText: 'Type the leftover amount in DA',
+                            labelText: 'Left amount',
+                            hintText: 'This amount is used for teacher %',
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -2094,8 +2233,10 @@ class _TeacherFinanceDetailsScreenState
                 ),
                 FilledButton(
                   onPressed: () {
-                    final amt = int.tryParse(amountCtrl.text.trim()) ?? 0;
-                    if (amt <= 0) return;
+                    final original =
+                        int.tryParse(originalFeeCtrl.text.trim()) ?? 0;
+                    final left = int.tryParse(leftCtrl.text.trim()) ?? 0;
+                    if (original <= 0 || left <= 0) return;
                     Navigator.of(dialogCtx).pop(true);
                   },
                   child: const Text('Save'),
@@ -2108,8 +2249,10 @@ class _TeacherFinanceDetailsScreenState
     );
 
     if (ok != true) return;
-    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    final amount = int.tryParse(leftCtrl.text.trim()) ?? 0;
     if (amount <= 0) return;
+    final originalAmount = int.tryParse(originalFeeCtrl.text.trim()) ?? 0;
+    if (originalAmount <= 0) return;
     final note = noteCtrl.text.trim();
     final paidAt = DateTime(
       selectedDate.year,
@@ -2119,18 +2262,23 @@ class _TeacherFinanceDetailsScreenState
       0,
       0,
     ).millisecondsSinceEpoch;
-    final sourceAmount = _asInt(sourcePayment['amount']);
-    final sourcePaidAt = _asInt(sourcePayment['paidAt']);
-    final sourceMethod = _AdminFinanceScreenState._normalizeMethod(
-      sourcePayment['financeMethod'] ?? sourcePayment['method'],
-    );
-    final sourceCourseId = (sourcePayment['course_id'] ?? '').toString().trim();
-    final sourceCourseTitle = (sourcePayment['course_title'] ?? '')
-        .toString()
-        .trim();
-    final sourceCourseCode = (sourcePayment['course_code'] ?? '')
-        .toString()
-        .trim();
+    final sourceAmount = originalAmount;
+    final src = sourcePayment;
+    final sourcePaidAt = src == null ? 0 : _asInt(src['paidAt']);
+    final sourceMethod = src == null
+        ? ''
+        : _AdminFinanceScreenState._normalizeMethod(
+            src['financeMethod'] ?? src['method'],
+          );
+    final sourceCourseId = src == null
+        ? ''
+        : (src['course_id'] ?? '').toString().trim();
+    final sourceCourseTitle = src == null
+        ? ''
+        : (src['course_title'] ?? '').toString().trim();
+    final sourceCourseCode = src == null
+        ? ''
+        : (src['course_code'] ?? '').toString().trim();
 
     final ref = widget.paymentsRef.push();
     await ref.set({
@@ -2152,13 +2300,18 @@ class _TeacherFinanceDetailsScreenState
       'paidAt': paidAt,
       'notes': note,
       'oldWaiting': true,
-      'oldWaitingSourcePaymentId': sourcePaymentId,
+      'oldWaitingSourcePaymentId': sourcePaymentId == manualSourceId
+          ? ''
+          : sourcePaymentId,
       'oldWaitingOriginalAmount': sourceAmount,
       'oldWaitingSourcePaidAt': sourcePaidAt,
       'oldWaitingSourceMethod': sourceMethod,
       'oldWaitingSourceCourseId': sourceCourseId,
       'oldWaitingSourceCourseTitle': sourceCourseTitle,
       'oldWaitingSourceCourseCode': sourceCourseCode,
+      'oldWaitingSourceMode': sourcePaymentId == manualSourceId
+          ? 'manual'
+          : 'history',
       'oldWaitingCreatedBy': 'admin',
       'oldWaitingCreatedAt': ServerValue.timestamp,
       'createdAt': ServerValue.timestamp,
@@ -2186,13 +2339,18 @@ class _TeacherFinanceDetailsScreenState
       'paidAt': paidAt,
       'notes': note,
       'oldWaiting': true,
-      'oldWaitingSourcePaymentId': sourcePaymentId,
+      'oldWaitingSourcePaymentId': sourcePaymentId == manualSourceId
+          ? ''
+          : sourcePaymentId,
       'oldWaitingOriginalAmount': sourceAmount,
       'oldWaitingSourcePaidAt': sourcePaidAt,
       'oldWaitingSourceMethod': sourceMethod,
       'oldWaitingSourceCourseId': sourceCourseId,
       'oldWaitingSourceCourseTitle': sourceCourseTitle,
       'oldWaitingSourceCourseCode': sourceCourseCode,
+      'oldWaitingSourceMode': sourcePaymentId == manualSourceId
+          ? 'manual'
+          : 'history',
       'oldWaitingCreatedBy': 'admin',
       'variantKey': 'inclass',
       'variantLabel': 'Inclass',
@@ -2640,6 +2798,9 @@ class _TeacherFinanceDetailsScreenState
                         ),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(14),
+                          onTap: isNoPayment
+                              ? () => _startOldWaitingSetup(row)
+                              : null,
                           onLongPress: editableOldWaiting
                               ? () => _editOldWaitingPayment(row)
                               : null,
@@ -3006,7 +3167,8 @@ class _TeacherFinanceDetailsScreenState
                                       _pulseIfMissing(
                                         missing: needsNoPaymentAction,
                                         child: InkWell(
-                                          onTap: () => _addManualPayment(row),
+                                          onTap: () =>
+                                              _startOldWaitingSetup(row),
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
