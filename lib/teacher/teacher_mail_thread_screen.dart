@@ -2359,49 +2359,64 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return Padding(
       padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            sender,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              color: scheme.onSurface,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            _fmtTime(m.createdAtMs),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              fontStyle: FontStyle.italic,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          if (receiptLevel > 0) ...[
-            const SizedBox(width: 6),
-            Icon(
-              receiptLevel == 2 ? Icons.done_all_rounded : Icons.done_rounded,
-              size: 15,
-              color: receiptLevel == 2
-                  ? scheme.primary
-                  : scheme.onSurfaceVariant,
-            ),
-            if (receiptLabel.isNotEmpty) ...[
-              const SizedBox(width: 4),
-              Text(
-                receiptLabel,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  color: receiptLevel == 2
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    sender,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: scheme.onSurface,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ],
+                const SizedBox(width: 6),
+                Text(
+                  _fmtTime(m.createdAtMs),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    fontStyle: FontStyle.italic,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                if (receiptLevel > 0) ...[
+                  const SizedBox(width: 6),
+                  Icon(
+                    receiptLevel == 2
+                        ? Icons.done_all_rounded
+                        : Icons.done_rounded,
+                    size: 15,
+                    color: receiptLevel == 2
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                  if (receiptLabel.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        receiptLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: receiptLevel == 2
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
           const SizedBox(width: 2),
           PopupMenuButton<String>(
             padding: EdgeInsets.zero,

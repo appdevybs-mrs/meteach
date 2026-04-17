@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../shared/admin_web_layout.dart';
+import '../shared/study_variant.dart';
 
 class AdminFinanceScreen extends StatefulWidget {
   const AdminFinanceScreen({super.key});
@@ -70,6 +71,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     if (p <= 0) return 100;
     if (p > 100) return 100;
     return p;
+  }
+
+  static int _pickerPercent(int v) {
+    if (v < 35) return 35;
+    if (v > 100) return 100;
+    return v;
   }
 
   static int _percentOf(int amount, int percent) {
@@ -337,42 +344,44 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   }
 
   Future<int?> _askTeacherPercent({required int initialPercent}) async {
-    final c = TextEditingController(text: initialPercent.toString());
+    int selected = _pickerPercent(initialPercent);
+    final options = List<int>.generate(66, (i) => i + 35);
     return showDialog<int>(
       context: context,
       builder: (dialogCtx) {
-        return AlertDialog(
-          title: const Text('Teacher percentage'),
-          content: TextField(
-            controller: c,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Teacher %',
-              hintText: '0-100',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final p = _asInt(c.text);
-                if (p < 0 || p > 100) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Percentage must be from 0 to 100.'),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.of(dialogCtx).pop(p);
-              },
-              child: const Text('Apply'),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (_, setD) {
+            return AlertDialog(
+              title: const Text('Teacher percentage'),
+              content: DropdownButtonFormField<int>(
+                initialValue: selected,
+                decoration: const InputDecoration(
+                  labelText: 'Teacher %',
+                  hintText: '35-100',
+                ),
+                items: options
+                    .map(
+                      (p) =>
+                          DropdownMenuItem<int>(value: p, child: Text('$p%')),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setD(() => selected = v);
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(selected),
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -414,8 +423,13 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     required _TeacherCardData card,
     required String targetStatus,
   }) async {
-    final p = await _askTeacherPercent(initialPercent: 100);
-    if (p == null) return;
+    int? p;
+    if (targetStatus == 'done') {
+      p = 100;
+    } else {
+      p = await _askTeacherPercent(initialPercent: 100);
+      if (p == null) return;
+    }
 
     for (final payment in card.payments) {
       await _pushPayment(
@@ -796,20 +810,6 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                     (a, b) => b.originalTotal.compareTo(a.originalTotal),
                   );
 
-                  final screenW = MediaQuery.of(context).size.width;
-                  const cardsSpacing = 12.0;
-                  const horizontalPadding = 24.0;
-                  final twoUpWidth =
-                      (screenW - horizontalPadding - cardsSpacing) / 2;
-                  final compactCardWidth = twoUpWidth < 150
-                      ? 150.0
-                      : (twoUpWidth > 250 ? 250.0 : twoUpWidth);
-                  final compactMode = screenW < 800;
-                  final teacherCardWidth = compactMode
-                      ? compactCardWidth
-                      : 250.0;
-                  final teacherCardHeight = compactMode ? 270.0 : 320.0;
-
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
                     children: [
@@ -844,16 +844,20 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         onTap: () => _openSchoolDetailsDialog(schoolRows),
                       ),
                       const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          for (final card in teacherCards)
-                            _TeacherSquareCard(
+                      if (teacherCards.isEmpty)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text('No teacher cards in this date range.'),
+                          ),
+                        )
+                      else
+                        ...teacherCards.map(
+                          (card) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _TeacherSquareCard(
                               data: card,
                               money: _money,
-                              width: teacherCardWidth,
-                              height: teacherCardHeight,
                               onBulkPushTbpaid: () => _bulkPushTeacher(
                                 card: card,
                                 targetStatus: 'tbpaid',
@@ -878,8 +882,8 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                 );
                               },
                             ),
-                        ],
-                      ),
+                          ),
+                        ),
                     ],
                   );
                 },
@@ -1010,38 +1014,114 @@ class _TeacherFinanceDetailsScreenState
     return p;
   }
 
+  String _variantKeyFrom(Map<String, dynamic> row) {
+    return normalizeVariantKey(
+      (row['variantKey'] ?? row['variant'] ?? row['deliveryKey'] ?? '')
+          .toString(),
+      fallback: 'inclass',
+    );
+  }
+
+  String _studyModeFrom(Map<String, dynamic> row) {
+    return normalizeStudyMode(
+      (row['studyMode'] ??
+              row['study_mode'] ??
+              row['privateStudyMode'] ??
+              row['private_study_mode'] ??
+              '')
+          .toString(),
+      variantKey: _variantKeyFrom(row),
+    );
+  }
+
+  _VariantVisual _variantVisualFrom(Map<String, dynamic> row) {
+    final variantKey = _variantKeyFrom(row);
+    final studyMode = _studyModeFrom(row);
+    final label = variantLabelWithStudyMode(
+      variantKey: variantKey,
+      studyMode: studyMode,
+    );
+
+    switch (variantKey) {
+      case 'private':
+        if (studyMode == 'online') {
+          return _VariantVisual(
+            label: label,
+            icon: Icons.videocam_rounded,
+            color: const Color(0xFF178F8B),
+          );
+        }
+        return _VariantVisual(
+          label: label,
+          icon: Icons.person_rounded,
+          color: const Color(0xFF178F8B),
+        );
+      case 'flexible':
+        return _VariantVisual(
+          label: label,
+          icon: Icons.schedule_rounded,
+          color: const Color(0xFFF0A526),
+        );
+      case 'recorded':
+        return _VariantVisual(
+          label: label,
+          icon: Icons.play_circle_fill_rounded,
+          color: const Color(0xFFD14B4B),
+        );
+      case 'inclass':
+      default:
+        return _VariantVisual(
+          label: label,
+          icon: Icons.school_rounded,
+          color: const Color(0xFF3666D8),
+        );
+    }
+  }
+
+  static int _pickerPercent(int v) {
+    if (v < 35) return 35;
+    if (v > 100) return 100;
+    return v;
+  }
+
   Future<int?> _askPercent(int initial) {
-    final c = TextEditingController(text: initial.toString());
+    int selected = _pickerPercent(initial);
+    final options = List<int>.generate(66, (i) => i + 35);
     return showDialog<int>(
       context: context,
       builder: (dialogCtx) {
-        return AlertDialog(
-          title: const Text('Teacher percentage'),
-          content: TextField(
-            controller: c,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Teacher % (0-100)'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final p = _asInt(c.text);
-                if (p < 0 || p > 100) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Percentage must be 0-100.')),
-                  );
-                  return;
-                }
-                Navigator.of(dialogCtx).pop(p);
-              },
-              child: const Text('Apply'),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (_, setD) {
+            return AlertDialog(
+              title: const Text('Teacher percentage'),
+              content: DropdownButtonFormField<int>(
+                initialValue: selected,
+                decoration: const InputDecoration(
+                  labelText: 'Teacher % (35-100)',
+                ),
+                items: options
+                    .map(
+                      (p) =>
+                          DropdownMenuItem<int>(value: p, child: Text('$p%')),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setD(() => selected = v);
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(selected),
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1055,9 +1135,43 @@ class _TeacherFinanceDetailsScreenState
     setState(() => row['financeMethod'] = method);
   }
 
-  Future<void> _pushRow(Map<String, dynamic> row, String targetStatus) async {
+  Future<void> _setTeacherPercent(Map<String, dynamic> row) async {
+    final paymentId = (row['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+
     final p = await _askPercent(_teacherPercentFrom(row));
     if (p == null) return;
+
+    final amount = _asInt(row['amount']);
+    final gross = amount;
+    final teacherNet = ((gross * p) / 100).round();
+    final schoolNet = gross - teacherNet;
+
+    await widget.paymentsRef.child(paymentId).update({
+      'financeTeacherPercent': p,
+      'financeTeacherGross': gross,
+      'financeTeacherNet': teacherNet,
+      'financeSchoolNet': schoolNet,
+      'financeUpdatedAt': ServerValue.timestamp,
+    });
+
+    if (!mounted) return;
+    setState(() {
+      row['financeTeacherPercent'] = p;
+      row['financeTeacherGross'] = gross;
+      row['financeTeacherNet'] = teacherNet;
+      row['financeSchoolNet'] = schoolNet;
+    });
+  }
+
+  Future<void> _pushRow(Map<String, dynamic> row, String targetStatus) async {
+    int? p;
+    if (targetStatus == 'done') {
+      p = 100;
+    } else {
+      p = await _askPercent(_teacherPercentFrom(row));
+      if (p == null) return;
+    }
     await widget.onPushPayment(
       payment: row,
       targetStatus: targetStatus,
@@ -1338,6 +1452,7 @@ class _TeacherFinanceDetailsScreenState
               final color = _statusColor(a);
               final method = _methodFrom(row);
               final percent = _teacherPercentFrom(row);
+              final variant = _variantVisualFrom(row);
               final methodLabel = method == 'cash'
                   ? '💵 CASH'
                   : method == 'ccp'
@@ -1375,15 +1490,44 @@ class _TeacherFinanceDetailsScreenState
                 child: ListTile(
                   onTap: () => _editPaymentStatus(row),
                   leading: CircleAvatar(
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    child: Icon(
-                      a.status == 'done'
-                          ? Icons.verified_rounded
-                          : a.status == 'tbpaid'
-                          ? Icons.pending_actions_rounded
-                          : Icons.call_split_rounded,
-                      size: 18,
-                      color: color,
+                    backgroundColor: Colors.transparent,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: color.withValues(alpha: 0.15),
+                          child: Icon(
+                            a.status == 'done'
+                                ? Icons.verified_rounded
+                                : a.status == 'tbpaid'
+                                ? Icons.pending_actions_rounded
+                                : Icons.call_split_rounded,
+                            size: 18,
+                            color: color,
+                          ),
+                        ),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: variant.color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Icon(
+                              variant.icon,
+                              size: 11,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   title: Text(
@@ -1393,11 +1537,103 @@ class _TeacherFinanceDetailsScreenState
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  subtitle: Text(
-                    'Amount: ${widget.money(amount)} · Date: $paidAt\nMethod: $methodLabel · Teacher %: $percent\n$statusText${hasPushed ? ' · PUSHED ${pushedStatus.toUpperCase()}' : ''}',
-                    style: const TextStyle(
-                      color: AdminFinanceScreen.primary,
-                      fontWeight: FontWeight.w700,
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Amount: ${widget.money(amount)} · Date: $paidAt',
+                          style: const TextStyle(
+                            color: AdminFinanceScreen.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'Method: $methodLabel',
+                              style: const TextStyle(
+                                color: AdminFinanceScreen.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: variant.color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: variant.color.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    variant.icon,
+                                    size: 13,
+                                    color: variant.color,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    variant.label,
+                                    style: TextStyle(
+                                      color: variant.color,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => _setTeacherPercent(row),
+                              borderRadius: BorderRadius.circular(999),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF3666D8,
+                                  ).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF3666D8,
+                                    ).withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Teacher %: $percent (tap)',
+                                  style: const TextStyle(
+                                    color: Color(0xFF3666D8),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$statusText${hasPushed ? ' · PUSHED ${pushedStatus.toUpperCase()}' : ''}',
+                          style: const TextStyle(
+                            color: AdminFinanceScreen.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   isThreeLine: true,
@@ -1413,6 +1649,9 @@ class _TeacherFinanceDetailsScreenState
                       }
                       if (v == 'method_unspecified') {
                         _setMethod(row, 'unspecified');
+                      }
+                      if (v == 'set_percent') {
+                        _setTeacherPercent(row);
                       }
                       if (v == 'push_current') {
                         if (alreadyPushedSame) {
@@ -1463,22 +1702,32 @@ class _TeacherFinanceDetailsScreenState
                         value: 'method_unspecified',
                         child: Text('Set method: ❔ Unspecified'),
                       ),
+                      const PopupMenuItem(
+                        value: 'set_percent',
+                        child: Text('Set teacher %'),
+                      ),
                       const PopupMenuDivider(),
                       PopupMenuItem(
                         value: 'push_current',
                         enabled: !alreadyPushedSame,
-                        child: Text('Push ${pushTarget.toUpperCase()} + %'),
+                        child: Text(
+                          pushTarget == 'done'
+                              ? 'Push DONE'
+                              : 'Push TBPAID + %',
+                        ),
                       ),
-                      PopupMenuItem(
-                        value: 'push_tbpaid',
-                        enabled: !alreadyPushedTbpaid,
-                        child: const Text('Push TBPAID + %'),
-                      ),
-                      PopupMenuItem(
-                        value: 'push_done',
-                        enabled: !alreadyPushedDone,
-                        child: const Text('Push DONE + %'),
-                      ),
+                      if (pushTarget == 'tbpaid')
+                        PopupMenuItem(
+                          value: 'push_done',
+                          enabled: !alreadyPushedDone,
+                          child: const Text('Push DONE'),
+                        )
+                      else
+                        PopupMenuItem(
+                          value: 'push_tbpaid',
+                          enabled: !alreadyPushedTbpaid,
+                          child: const Text('Push TBPAID + %'),
+                        ),
                     ],
                   ),
                 ),
@@ -1626,20 +1875,28 @@ class _FinancePill extends StatelessWidget {
     required this.icon,
     required this.text,
     this.strong = false,
+    this.bg,
+    this.fg,
+    this.border,
   });
 
   final IconData icon;
   final String text;
   final bool strong;
+  final Color? bg;
+  final Color? fg;
+  final Color? border;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: AdminFinanceScreen.appBg,
+        color: bg ?? AdminFinanceScreen.appBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        border: Border.all(
+          color: border ?? Colors.black.withValues(alpha: 0.06),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1647,14 +1904,14 @@ class _FinancePill extends StatelessWidget {
           Icon(
             icon,
             size: 16,
-            color: AdminFinanceScreen.primary.withValues(alpha: 0.85),
+            color: fg ?? AdminFinanceScreen.primary.withValues(alpha: 0.85),
           ),
           const SizedBox(width: 8),
           Text(
             text,
             style: TextStyle(
               fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
-              color: AdminFinanceScreen.primary.withValues(alpha: 0.92),
+              color: fg ?? AdminFinanceScreen.primary.withValues(alpha: 0.92),
               fontSize: 12.5,
             ),
           ),
@@ -1806,8 +2063,6 @@ class _TeacherSquareCard extends StatelessWidget {
   const _TeacherSquareCard({
     required this.data,
     required this.money,
-    required this.width,
-    required this.height,
     required this.onBulkPushTbpaid,
     required this.onBulkPushDone,
     required this.onTap,
@@ -1815,129 +2070,144 @@ class _TeacherSquareCard extends StatelessWidget {
 
   final _TeacherCardData data;
   final String Function(int amount) money;
-  final double width;
-  final double height;
   final VoidCallback onBulkPushTbpaid;
   final VoidCallback onBulkPushDone;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: InkWell(
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Card(
-          elevation: 0,
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: Colors.black.withValues(alpha: 0.07)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.07)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  data.teacherName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AdminFinanceScreen.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                    height: 1.05,
+                Expanded(
+                  child: Text(
+                    data.teacherName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AdminFinanceScreen.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      height: 1.05,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  money(data.originalTotal),
-                  style: const TextStyle(
-                    color: AdminFinanceScreen.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 24,
-                    height: 1.1,
-                  ),
+                FilledButton.tonalIcon(
+                  onPressed: onTap,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                  label: const Text('Open learners'),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Payout: ${money(data.payoutTotal)}',
-                  style: const TextStyle(
-                    color: AdminFinanceScreen.tbpaid,
-                    fontWeight: FontWeight.w800,
-                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _FinancePill(
+                  icon: Icons.account_balance_wallet_rounded,
+                  text: 'Original: ${money(data.originalTotal)}',
+                  strong: true,
                 ),
-                Text(
-                  'Waiting: ${money(data.waitingTotal)}',
-                  style: const TextStyle(
-                    color: AdminFinanceScreen.waiting,
-                    fontWeight: FontWeight.w800,
-                  ),
+                _FinancePill(
+                  icon: Icons.payments_rounded,
+                  text: 'Payout: ${money(data.payoutTotal)}',
+                  bg: AdminFinanceScreen.tbpaid.withValues(alpha: 0.08),
+                  fg: AdminFinanceScreen.tbpaid,
+                  border: AdminFinanceScreen.tbpaid.withValues(alpha: 0.22),
+                  strong: true,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Cash/CCP/Un: ${money(data.originalByMethod.cash)} / ${money(data.originalByMethod.ccp)} / ${money(data.originalByMethod.unspecified)}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AdminFinanceScreen.primary.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
+                _FinancePill(
+                  icon: Icons.schedule_send_rounded,
+                  text: 'Waiting: ${money(data.waitingTotal)}',
+                  bg: AdminFinanceScreen.waiting.withValues(alpha: 0.09),
+                  fg: const Color(0xFF8A5A00),
+                  border: AdminFinanceScreen.waiting.withValues(alpha: 0.26),
+                  strong: true,
                 ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: onBulkPushTbpaid,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AdminFinanceScreen.tbpaid,
-                          side: BorderSide(
-                            color: AdminFinanceScreen.tbpaid.withValues(
-                              alpha: 0.4,
-                            ),
-                          ),
-                        ),
-                        child: const Text('TBPAID'),
+                _FinancePill(
+                  icon: Icons.groups_rounded,
+                  text:
+                      '${data.learnersCount} learners · ${data.paymentsCount} payments',
+                  strong: true,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Original by method - Cash ${money(data.originalByMethod.cash)} · CCP ${money(data.originalByMethod.ccp)} · Un ${money(data.originalByMethod.unspecified)}',
+              style: TextStyle(
+                color: AdminFinanceScreen.primary.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+            Text(
+              'Waiting by method - Cash ${money(data.waitingByMethod.cash)} · CCP ${money(data.waitingByMethod.ccp)} · Un ${money(data.waitingByMethod.unspecified)}',
+              style: TextStyle(
+                color: AdminFinanceScreen.primary.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onBulkPushTbpaid,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AdminFinanceScreen.tbpaid,
+                      side: BorderSide(
+                        color: AdminFinanceScreen.tbpaid.withValues(alpha: 0.4),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: onBulkPushDone,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AdminFinanceScreen.done,
-                          side: BorderSide(
-                            color: AdminFinanceScreen.done.withValues(
-                              alpha: 0.4,
-                            ),
-                          ),
-                        ),
-                        child: const Text('DONE'),
+                    child: const Text('Push TBPAID + %'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onBulkPushDone,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AdminFinanceScreen.done,
+                      side: BorderSide(
+                        color: AdminFinanceScreen.done.withValues(alpha: 0.4),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${data.learnersCount} learners · ${data.paymentsCount} payments',
-                  style: TextStyle(
-                    color: AdminFinanceScreen.primary.withValues(alpha: 0.82),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    child: const Text('Push DONE'),
                   ),
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _VariantVisual {
+  const _VariantVisual({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
 }
 
 class _MethodTotals {
