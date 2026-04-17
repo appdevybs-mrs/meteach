@@ -51,14 +51,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   static const Color _orange = Color(0xFFEC740A);
 
   static Color _mineBubbleBg(BuildContext context, {bool isReport = false}) =>
-      isReport ? Colors.deepPurple.withValues(alpha: 0.90) : _navy;
+      isReport ? const Color(0xFF1F4E79) : _navy;
 
   static Color _mineText(BuildContext context) => Colors.white;
 
   static Color _theirsBubbleBg(BuildContext context, {bool isReport = false}) =>
-      isReport
-      ? Colors.deepPurple.withValues(alpha: 0.14)
-      : _orange.withValues(alpha: 0.80);
+      isReport ? const Color(0xFFE8F1FB) : _orange.withValues(alpha: 0.80);
 
   static Color _theirsText(BuildContext context) => _navyDark;
 
@@ -2289,7 +2287,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           color: isReport
               ? (mine
                     ? Colors.white.withValues(alpha: 0.18)
-                    : Colors.deepPurple.withValues(alpha: 0.20))
+                    : const Color(0xFF9DC0E1))
               : (mine
                     ? Colors.white.withValues(alpha: 0.08)
                     : _navy.withValues(alpha: 0.06)),
@@ -2312,16 +2310,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.20),
+                color: const Color(0xFFD7E6F7),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                border: Border.all(color: const Color(0xFF8BB1D8)),
               ),
               child: const Text(
                 'REPORT',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 10,
-                  color: Colors.white,
+                  color: Color(0xFF1B446B),
                 ),
               ),
             ),
@@ -3307,10 +3305,38 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
 
     return [
-      'Strengths: The learner $bLevel in behavior and $pLevel in progress, and ${strengths.join(', ')}.',
-      'Development: The learner ${dev.join(' ')}.',
+      'Strengths: Behavior is $bLevel and progress is $pLevel; the learner ${strengths.join(', ')}.',
+      'Development Focus: ${dev.join(' ')}.',
       'Recommendation: ${rec.join(' ')}.',
     ].join('\n');
+  }
+
+  List<String> _buildReportMessageLines({
+    required String courseLabel,
+    required String learnerName,
+    required int behaviorAvg,
+    required int progressAvg,
+    required int homeworkDone,
+    required int homeworkRedo,
+    required int homeworkAvgScore,
+    required String homeworkCommonGrade,
+    required String autoSummary,
+    required String teacherNote,
+  }) {
+    return [
+      '📋 Learner Progress Report',
+      'Course: $courseLabel',
+      'Learner: $learnerName',
+      '',
+      'Performance Snapshot',
+      '- Behavior: $behaviorAvg/5',
+      '- Progress: $progressAvg/5',
+      '- Homework: done $homeworkDone, redo $homeworkRedo, avg $homeworkAvgScore/100, grade $homeworkCommonGrade',
+      '',
+      autoSummary,
+      if (teacherNote.trim().isNotEmpty) '',
+      if (teacherNote.trim().isNotEmpty) 'Teacher note: ${teacherNote.trim()}',
+    ];
   }
 
   Future<Uint8List?> _renderWidgetToPng(
@@ -3578,18 +3604,20 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
           final courseLabel = fromThread.isNotEmpty
               ? fromThread
-              : (fromLearner.isNotEmpty ? fromLearner : courseKey);
+              : (fromLearner.isNotEmpty ? fromLearner : (courseKey ?? ''));
 
-          final summaryLines = <String>[
-            '📋 Report Card',
-            'Course: $courseLabel',
-            'Learner: $_peerNameShown',
-            'Behavior: $behaviorAvg/5 • Progress: $progressAvg/5',
-            'Homework: done $finalDone • redo $finalRedo • avg $finalAvgScore/100 • common $finalCommonGrade',
-            '',
-            autoSummary,
-            if (commentText.isNotEmpty) '\nTeacher comment: $commentText',
-          ];
+          final summaryLines = _buildReportMessageLines(
+            courseLabel: courseLabel,
+            learnerName: _peerNameShown,
+            behaviorAvg: behaviorAvg,
+            progressAvg: progressAvg,
+            homeworkDone: finalDone,
+            homeworkRedo: finalRedo,
+            homeworkAvgScore: finalAvgScore,
+            homeworkCommonGrade: finalCommonGrade,
+            autoSummary: autoSummary,
+            teacherNote: commentText,
+          );
 
           return PopScope(
             canPop: !sending,
@@ -3810,7 +3838,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                           homeworkCommonGrade: finalCommonGrade,
                           autoSummary: autoSummary,
                           commentText: commentText,
-                          reportId: 'PREVIEW',
                         ),
                       ),
                     ),
@@ -3954,19 +3981,18 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                 .ref('reports/${widget.peerUid}/$reportId')
                                 .update({'diagramUrl': url});
 
-                            final msgBody = [
-                              '📋 Report Card',
-                              'Course: $courseLabel',
-                              'Learner: $_peerNameShown',
-                              'Behavior: $behaviorAvg/5 • Progress: $progressAvg/5',
-                              'Homework: done $finalDone • redo $finalRedo • avg $finalAvgScore/100 • common $finalCommonGrade',
-                              '',
-                              autoSummary,
-                              if (commentText.isNotEmpty)
-                                '\nTeacher comment: $commentText',
-                              '',
-                              'Report ID: $reportId',
-                            ].join('\n');
+                            final msgBody = _buildReportMessageLines(
+                              courseLabel: courseLabel,
+                              learnerName: _peerNameShown,
+                              behaviorAvg: behaviorAvg,
+                              progressAvg: progressAvg,
+                              homeworkDone: finalDone,
+                              homeworkRedo: finalRedo,
+                              homeworkAvgScore: finalAvgScore,
+                              homeworkCommonGrade: finalCommonGrade,
+                              autoSummary: autoSummary,
+                              teacherNote: commentText,
+                            ).join('\n');
 
                             await _sendRawMessage(
                               body: msgBody,
@@ -4696,7 +4722,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
     required this.homeworkCommonGrade,
     required this.autoSummary,
     required this.commentText,
-    required this.reportId,
   });
 
   final String schoolTitle;
@@ -4718,7 +4743,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
 
   final String autoSummary;
   final String commentText;
-  final String reportId;
 
   String _fmtDate(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -4733,11 +4757,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
     return x;
   }
 
-  String _dots(int value) {
-    final v = value.clamp(1, 5);
-    return List.generate(5, (i) => i < v ? '●' : '○').join();
-  }
-
   List<Map<String, dynamic>> _capItems(
     List<Map<String, dynamic>> list,
     int max,
@@ -4746,30 +4765,85 @@ class _ReportCardDiagramV2 extends StatelessWidget {
     return list.take(max).toList();
   }
 
-  Widget _sectionTitle(String t) {
-    return Text(
-      t,
-      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-    );
-  }
-
-  Widget _kv(String k, String v) {
+  Widget _sectionTitle(
+    String t, {
+    required IconData icon,
+    required Color color,
+  }) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 6),
         Text(
-          '$k: ',
+          t,
           style: TextStyle(
-            color: Colors.black.withValues(alpha: 0.65),
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w900,
+            fontSize: 12,
+            color: color,
           ),
         ),
-        Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
       ],
     );
   }
 
-  Widget _itemLine(String label, int score) {
+  Widget _metricChip({
+    required String label,
+    required String value,
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foreground.withValues(alpha: 0.22)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                color: foreground.withValues(alpha: 0.80),
+                fontWeight: FontWeight.w800,
+                fontSize: 10,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: TextStyle(
+                color: foreground,
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scoreDots(int score, {required Color active}) {
+    final s = score.clamp(1, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        final on = i < s;
+        return Container(
+          width: 8,
+          height: 8,
+          margin: EdgeInsets.only(right: i == 4 ? 0 : 4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: on ? active : active.withValues(alpha: 0.20),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _itemLine(String label, int score, {required Color accent}) {
     final clean = label.trim().isEmpty ? 'Item' : label.trim();
     return Row(
       children: [
@@ -4778,20 +4852,29 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             clean,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+              color: Color(0xFF1E293B),
+            ),
           ),
         ),
         const SizedBox(width: 10),
-        Text(
-          _dots(score),
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
-        ),
+        _scoreDots(score, active: accent),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    const navy = Color(0xFF1F4E79);
+    const deepNavy = Color(0xFF163B5D);
+    const slate = Color(0xFF334155);
+    const amber = Color(0xFFE28B15);
+    const peach = Color(0xFFFFE7C5);
+    const sky = Color(0xFFDCEEFF);
+    const mint = Color(0xFFDDF6EA);
+
     const maxPerSection = 6;
     final courseLabel = courseKey;
     final bShown = _capItems(behaviorItems, maxPerSection);
@@ -4802,220 +4885,300 @@ class _ReportCardDiagramV2 extends StatelessWidget {
 
     return Container(
       width: 360,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFCFDFE),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF7FBFF), Color(0xFFFFFAF2)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDBE6F2)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: DefaultTextStyle(
-        style: const TextStyle(color: Colors.black),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Image.asset(
-                    'assets/images/ybs_logo.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Icon(Icons.school_rounded),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: DefaultTextStyle(
+          style: const TextStyle(color: Color(0xFF0F172A)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [deepNavy, navy],
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        schoolTitle,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Image.asset(
+                        'assets/images/ybs_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) =>
+                            const Icon(Icons.school_rounded),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            schoolTitle,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.86),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Learner Progress Report',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      learnerName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        color: Color(0xFF102A43),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Course: $courseLabel',
+                      style: const TextStyle(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      'Date: ${_fmtDate(createdAtMs)}',
+                      style: const TextStyle(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      'Teacher: $teacherName',
+                      style: const TextStyle(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _metricChip(
+                          label: 'Behavior',
+                          value: '$behaviorAvg/5',
+                          background: sky,
+                          foreground: navy,
+                        ),
+                        _metricChip(
+                          label: 'Progress',
+                          value: '$progressAvg/5',
+                          background: mint,
+                          foreground: const Color(0xFF1E6B4B),
+                        ),
+                        _metricChip(
+                          label: 'HW Done',
+                          value: '$homeworkDone',
+                          background: peach,
+                          foreground: const Color(0xFF905600),
+                        ),
+                        _metricChip(
+                          label: 'Redo',
+                          value: '$homeworkRedo',
+                          background: const Color(0xFFFCE7E7),
+                          foreground: const Color(0xFFA63434),
+                        ),
+                        _metricChip(
+                          label: 'Avg',
+                          value: '$homeworkAvgScore/100',
+                          background: const Color(0xFFE8F1FF),
+                          foreground: const Color(0xFF2A5B9C),
+                        ),
+                        _metricChip(
+                          label: 'Grade',
+                          value: homeworkCommonGrade,
+                          background: const Color(0xFFFFF0D5),
+                          foreground: amber,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF2F8FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFD1E4F7)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _sectionTitle(
+                                  'Behavior Indicators',
+                                  icon: Icons.school_rounded,
+                                  color: navy,
+                                ),
+                                const SizedBox(height: 8),
+                                for (final it in bShown)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 7),
+                                    child: _itemLine(
+                                      (it['label'] ?? '').toString(),
+                                      _clamp15(it['score']),
+                                      accent: navy,
+                                    ),
+                                  ),
+                                if (bMore > 0)
+                                  Text(
+                                    '+$bMore more behavior item(s)',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: navy.withValues(alpha: 0.70),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _sectionTitle(
+                                  'Progress Indicators',
+                                  icon: Icons.trending_up_rounded,
+                                  color: const Color(0xFF1E6B4B),
+                                ),
+                                const SizedBox(height: 8),
+                                for (final it in pShown)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 7),
+                                    child: _itemLine(
+                                      (it['label'] ?? '').toString(),
+                                      _clamp15(it['score']),
+                                      accent: const Color(0xFF1E6B4B),
+                                    ),
+                                  ),
+                                if (pMore > 0)
+                                  Text(
+                                    '+$pMore more progress item(s)',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(
+                                        0xFF1E6B4B,
+                                      ).withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _sectionTitle(
+                      'Auto Summary',
+                      icon: Icons.auto_awesome_rounded,
+                      color: navy,
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFDDE6F1)),
+                      ),
+                      child: Text(
+                        autoSummary,
                         style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                          color: Color(0xFF334155),
+                          fontSize: 11,
+                          height: 1.28,
+                          color: Color(0xFF1E293B),
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'Learner Progress Report',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          color: Color(0xFF0F172A),
-                        ),
+                    ),
+                    const SizedBox(height: 12),
+                    _sectionTitle(
+                      'Teacher Notes',
+                      icon: Icons.mode_comment_outlined,
+                      color: amber,
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8EC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFFD9A3)),
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Learner: $learnerName',
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-
-            // (we will pass the title into "courseKey" when calling this widget)
-            Text(
-              'Course: $courseLabel',
-              style: TextStyle(
-                color: const Color(0xFF475569),
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Text(
-              'Date: ${_fmtDate(createdAtMs)}',
-              style: TextStyle(
-                color: const Color(0xFF475569),
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Text(
-              'Teacher: $teacherName',
-              style: TextStyle(
-                color: const Color(0xFF475569),
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              children: [
-                _kv('Behavior', '$behaviorAvg/5'),
-                _kv('Progress', '$progressAvg/5'),
-                _kv('HW Done', '$homeworkDone'),
-                _kv('Redo', '$homeworkRedo'),
-                _kv('Avg', '$homeworkAvgScore/100'),
-                _kv('Grade', homeworkCommonGrade),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _sectionTitle('Behavior Indicators'),
-                      const SizedBox(height: 8),
-                      for (final it in bShown)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: _itemLine(
-                            (it['label'] ?? '').toString(),
-                            _clamp15(it['score']),
-                          ),
+                      child: Text(
+                        commentText.trim().isEmpty
+                            ? 'No teacher note added.'
+                            : commentText.trim(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.28,
+                          color: Color(0xFF3F2A04),
+                          fontWeight: FontWeight.w700,
                         ),
-                      if (bMore > 0)
-                        Text(
-                          '+$bMore more behavior item(s)',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black.withValues(alpha: 0.55),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _sectionTitle('Progress Indicators'),
-                      const SizedBox(height: 8),
-                      for (final it in pShown)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: _itemLine(
-                            (it['label'] ?? '').toString(),
-                            _clamp15(it['score']),
-                          ),
-                        ),
-                      if (pMore > 0)
-                        Text(
-                          '+$pMore more progress item(s)',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black.withValues(alpha: 0.55),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            _sectionTitle('Auto Summary'),
-            const SizedBox(height: 6),
-            Text(
-              autoSummary,
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.25,
-                color: Colors.black.withValues(alpha: 0.85),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _sectionTitle('Teacher Notes'),
-            const SizedBox(height: 6),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
-              ),
-              child: Text(
-                commentText.trim().isEmpty ? '—' : commentText.trim(),
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.25,
-                  color: Colors.black.withValues(alpha: 0.85),
-                  fontWeight: FontWeight.w700,
-                ),
-                maxLines: 6,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'Reference: $reportId',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black.withValues(alpha: 0.55),
+                        maxLines: 6,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

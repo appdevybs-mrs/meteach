@@ -55,7 +55,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     bool isReport = false,
     bool isHwEval = false,
   }) {
-    if (isReport) return Colors.deepPurple.withValues(alpha: 0.90);
+    if (isReport) return const Color(0xFF1F4E79);
     if (isHwEval) return Colors.teal.withValues(alpha: 0.90);
     return _navy;
   }
@@ -65,7 +65,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     bool isReport = false,
     bool isHwEval = false,
   }) {
-    if (isReport) return Colors.deepPurple.withValues(alpha: 0.14);
+    if (isReport) return const Color(0xFFE8F1FB);
     if (isHwEval) return Colors.teal.withValues(alpha: 0.18);
     return _orange.withValues(alpha: 0.80);
   }
@@ -1939,7 +1939,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           color: isReport
               ? (mine
                     ? Colors.white.withValues(alpha: 0.18)
-                    : Colors.deepPurple.withValues(alpha: 0.20))
+                    : const Color(0xFF9DC0E1))
               : isHwEval
               ? (mine
                     ? Colors.white.withValues(alpha: 0.18)
@@ -1966,16 +1966,16 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.20),
+                color: const Color(0xFFD7E6F7),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                border: Border.all(color: const Color(0xFF8BB1D8)),
               ),
               child: const Text(
                 'REPORT',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 10,
-                  color: Colors.white,
+                  color: Color(0xFF1B446B),
                 ),
               ),
             ),

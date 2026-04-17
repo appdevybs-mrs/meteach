@@ -455,6 +455,48 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     return net < 0 ? 0 : net;
   }
 
+  static int _teacherNetFromPayment(Map<String, dynamic> p) {
+    final pushed = _asInt(p['financePushedAt']) > 0;
+    if (!pushed) return 0;
+
+    final teacherLabel =
+        (p['teacherName'] ?? p['teacher_name'] ?? p['teacher'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final unlocked = p['financeTeacherShareUnlocked'] == true;
+    final schoolOnlyType =
+        teacherLabel == 'service' || teacherLabel == 'waiting';
+    if (schoolOnlyType && !unlocked) {
+      return 0;
+    }
+
+    final hasSavedTeacherNet =
+        p.containsKey('financeTeacherNet') && p['financeTeacherNet'] != null;
+    if (hasSavedTeacherNet) {
+      final saved = _asInt(p['financeTeacherNet']);
+      return saved < 0 ? 0 : saved;
+    }
+
+    var gross = _asInt(p['financeTeacherGross']);
+    if (gross <= 0) {
+      gross = _amountsFrom(p).payoutAmount;
+    }
+
+    final rawPercent = p['financeTeacherPercent'];
+    int percent;
+    if (rawPercent == null || rawPercent.toString().trim().isEmpty) {
+      percent = 100;
+    } else {
+      percent = _asInt(rawPercent);
+      if (percent < 0) percent = 0;
+      if (percent > 100) percent = 100;
+    }
+
+    final net = _percentOf(gross, percent);
+    return net < 0 ? 0 : net;
+  }
+
   void _openWaitingDetailsDialog(List<Map<String, dynamic>> rows) {
     showDialog<void>(
       context: context,
@@ -779,9 +821,10 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                           final method = _normalizeMethod(p['financeMethod']);
                           final alloc = _amountsFrom(p);
                           final schoolNet = _schoolNetFromPayment(p);
+                          final teacherNet = _teacherNetFromPayment(p);
 
                           original += amount;
-                          payout += alloc.payoutAmount;
+                          payout += teacherNet;
                           waiting += alloc.waitingAmount;
                           school += schoolNet;
 
@@ -793,7 +836,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                           payoutMethods = _addToMethodTotals(
                             current: payoutMethods,
                             method: method,
-                            amount: alloc.payoutAmount,
+                            amount: teacherNet,
                           );
                           waitingMethods = _addToMethodTotals(
                             current: waitingMethods,
@@ -1831,9 +1874,43 @@ class _TeacherFinanceDetailsScreenState
   }
 
   Future<void> _addManualPayment(Map<String, dynamic> learnerRow) async {
+    final uid = (learnerRow['uid'] ?? '').toString().trim();
+    if (uid.isEmpty) return;
+
+    final historySnap = await widget.paymentsRef
+        .orderByChild('uid')
+        .equalTo(uid)
+        .get();
+    final history = <Map<String, dynamic>>[];
+    final historyRaw = historySnap.value;
+    if (historyRaw is Map) {
+      historyRaw.forEach((k, v) {
+        if (v is! Map) return;
+        final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+        m['paymentId'] = k.toString();
+        history.add(m.cast<String, dynamic>());
+      });
+    }
+    history.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    if (history.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No previous payments found for this learner.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    String sourcePaymentId = (history.first['paymentId'] ?? '').toString();
+    Map<String, dynamic> sourcePayment = history.first;
+
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
-    String method = 'cash';
+    String method = _AdminFinanceScreenState._normalizeMethod(
+      sourcePayment['financeMethod'] ?? sourcePayment['method'],
+    );
     DateTime selectedDate = DateTime.now();
     String dateLabel(DateTime d) {
       String two(int n) => n.toString().padLeft(2, '0');
@@ -1858,7 +1935,7 @@ class _TeacherFinanceDetailsScreenState
           builder: (_, setD) {
             final maxDialogHeight = MediaQuery.of(dialogCtx).size.height * 0.78;
             return AlertDialog(
-              title: const Text('Add manual payment'),
+              title: const Text('Add old waiting amount'),
               insetPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 20,
@@ -1873,13 +1950,83 @@ class _TeacherFinanceDetailsScreenState
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        DropdownButtonFormField<String>(
+                          initialValue: sourcePaymentId,
+                          decoration: const InputDecoration(
+                            labelText: 'Old payment source',
+                          ),
+                          items: history.map((p) {
+                            final pid = (p['paymentId'] ?? '')
+                                .toString()
+                                .trim();
+                            final amount = _asInt(p['amount']);
+                            final paidAt = _fmtDateMs(_asInt(p['paidAt']));
+                            final code = (p['course_code'] ?? '')
+                                .toString()
+                                .trim();
+                            final title = (p['course_title'] ?? '')
+                                .toString()
+                                .trim();
+                            final course = code.isNotEmpty
+                                ? code
+                                : (title.isNotEmpty ? title : 'No course');
+                            return DropdownMenuItem<String>(
+                              value: pid,
+                              child: Text(
+                                '$paidAt · ${widget.money(amount)} · $course',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (v) {
+                            if (v == null) return;
+                            final selected = history.firstWhere(
+                              (p) => (p['paymentId'] ?? '').toString() == v,
+                              orElse: () => history.first,
+                            );
+                            setD(() {
+                              sourcePaymentId = v;
+                              sourcePayment = selected;
+                              method =
+                                  _AdminFinanceScreenState._normalizeMethod(
+                                    selected['financeMethod'] ??
+                                        selected['method'],
+                                  );
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8EED8),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFD49B33,
+                              ).withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Text(
+                            'Original fee: ${widget.money(_asInt(sourcePayment['amount']))}',
+                            style: const TextStyle(
+                              color: Color(0xFF8A5A00),
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         TextField(
                           controller: amountCtrl,
                           keyboardType: TextInputType.number,
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
-                            labelText: 'Fee',
-                            hintText: 'Enter amount in DA',
+                            labelText: 'Remaining amount',
+                            hintText: 'Type the leftover amount in DA',
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -1972,8 +2119,18 @@ class _TeacherFinanceDetailsScreenState
       0,
       0,
     ).millisecondsSinceEpoch;
-    final uid = (learnerRow['uid'] ?? '').toString().trim();
-    if (uid.isEmpty) return;
+    final sourceAmount = _asInt(sourcePayment['amount']);
+    final sourcePaidAt = _asInt(sourcePayment['paidAt']);
+    final sourceMethod = _AdminFinanceScreenState._normalizeMethod(
+      sourcePayment['financeMethod'] ?? sourcePayment['method'],
+    );
+    final sourceCourseId = (sourcePayment['course_id'] ?? '').toString().trim();
+    final sourceCourseTitle = (sourcePayment['course_title'] ?? '')
+        .toString()
+        .trim();
+    final sourceCourseCode = (sourcePayment['course_code'] ?? '')
+        .toString()
+        .trim();
 
     final ref = widget.paymentsRef.push();
     await ref.set({
@@ -1994,9 +2151,16 @@ class _TeacherFinanceDetailsScreenState
       'financePayoutStatus': 'tbpaid',
       'paidAt': paidAt,
       'notes': note,
-      'manualPayment': true,
-      'manualCreatedBy': 'admin',
-      'manualCreatedAt': ServerValue.timestamp,
+      'oldWaiting': true,
+      'oldWaitingSourcePaymentId': sourcePaymentId,
+      'oldWaitingOriginalAmount': sourceAmount,
+      'oldWaitingSourcePaidAt': sourcePaidAt,
+      'oldWaitingSourceMethod': sourceMethod,
+      'oldWaitingSourceCourseId': sourceCourseId,
+      'oldWaitingSourceCourseTitle': sourceCourseTitle,
+      'oldWaitingSourceCourseCode': sourceCourseCode,
+      'oldWaitingCreatedBy': 'admin',
+      'oldWaitingCreatedAt': ServerValue.timestamp,
       'createdAt': ServerValue.timestamp,
       'variantKey': 'inclass',
       'variantLabel': 'Inclass',
@@ -2021,8 +2185,15 @@ class _TeacherFinanceDetailsScreenState
       'financePayoutStatus': 'tbpaid',
       'paidAt': paidAt,
       'notes': note,
-      'manualPayment': true,
-      'manualCreatedBy': 'admin',
+      'oldWaiting': true,
+      'oldWaitingSourcePaymentId': sourcePaymentId,
+      'oldWaitingOriginalAmount': sourceAmount,
+      'oldWaitingSourcePaidAt': sourcePaidAt,
+      'oldWaitingSourceMethod': sourceMethod,
+      'oldWaitingSourceCourseId': sourceCourseId,
+      'oldWaitingSourceCourseTitle': sourceCourseTitle,
+      'oldWaitingSourceCourseCode': sourceCourseCode,
+      'oldWaitingCreatedBy': 'admin',
       'variantKey': 'inclass',
       'variantLabel': 'Inclass',
     };
@@ -2042,7 +2213,7 @@ class _TeacherFinanceDetailsScreenState
       final amount = _asInt(row['amount']);
       final a = _amountsFrom(row);
       originalTotal += amount;
-      payoutTotal += a.payoutAmount;
+      payoutTotal += _AdminFinanceScreenState._teacherNetFromPayment(row);
       waitingTotal += a.waitingAmount;
     }
 
@@ -2185,7 +2356,7 @@ class _TeacherFinanceDetailsScreenState
                           !isNoPayment && _isSchoolOnlyTeacherLabel(row);
                       final schoolOnlyLocked =
                           schoolOnlyType && _isEffectiveSchoolOnly(row);
-                      final isManualPayment = row['manualPayment'] == true;
+                      final isOldWaiting = row['oldWaiting'] == true;
                       final methodLabel = method == 'cash'
                           ? '💵 CASH'
                           : method == 'ccp'
@@ -2233,7 +2404,7 @@ class _TeacherFinanceDetailsScreenState
                         if (statusMissing) 'Status',
                         if (methodMissing) 'Method',
                         if (teacherMissing) 'Teacher %',
-                        if (needsNoPaymentAction) 'Add payment or Done',
+                        if (needsNoPaymentAction) 'Add old waiting or Done',
                       ];
 
                       String statusText;
@@ -2436,7 +2607,47 @@ class _TeacherFinanceDetailsScreenState
                                         ),
                                       ),
                                     ),
-                                  if (isManualPayment)
+                                  if (isOldWaiting)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFF0A526,
+                                        ).withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFFF0A526,
+                                          ).withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.history_rounded,
+                                            size: 13,
+                                            color: Color(0xFF8A5A00),
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Old waiting',
+                                            style: TextStyle(
+                                              color: Color(0xFF8A5A00),
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  if (!isOldWaiting &&
+                                      row['manualPayment'] == true)
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 8,
@@ -2600,7 +2811,7 @@ class _TeacherFinanceDetailsScreenState
                                             ),
                                           ),
                                           child: const Text(
-                                            'Add payment',
+                                            'Add old waiting',
                                             style: TextStyle(
                                               color: Color(0xFF3666D8),
                                               fontWeight: FontWeight.w800,
