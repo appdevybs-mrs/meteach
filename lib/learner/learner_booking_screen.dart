@@ -450,6 +450,187 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
+  int _weekdayFromShort(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return DateTime.monday;
+    }
+  }
+
+  String _busyKey(String teacherId, String dayKey) => '$teacherId|$dayKey';
+
+  bool _hasTimeOverlap({
+    required DateTime aStart,
+    required DateTime aEnd,
+    required DateTime bStart,
+    required DateTime bEnd,
+  }) {
+    return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
+  }
+
+  String _readClassTeacherUid(Map<String, dynamic> classData) {
+    final direct = [
+      classData['teacherUid'],
+      classData['teacher_uid'],
+      classData['teacherId'],
+      classData['teacher_id'],
+      classData['instructorUid'],
+      classData['instructor_uid'],
+    ];
+
+    for (final raw in direct) {
+      final s = (raw ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+
+    final current = classData['instructor_current'];
+    if (current is Map) {
+      final cm = current.map((k, v) => MapEntry(k.toString(), v));
+      final fromCurrent =
+          (cm['uid'] ?? cm['teacher_uid'] ?? cm['teacherId'] ?? cm['id'] ?? '')
+              .toString()
+              .trim();
+      if (fromCurrent.isNotEmpty) return fromCurrent;
+    }
+
+    return '';
+  }
+
+  Future<Map<String, List<_BusyRange>>>
+  _loadTeacherBusyRangesForWindow() async {
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+    final endOfWindow = startOfToday.add(Duration(days: daysAhead));
+
+    final out = <String, List<_BusyRange>>{};
+
+    try {
+      final snap = await _db.child('classes').get();
+      if (!snap.exists || snap.value is! Map) return out;
+
+      final root = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+
+      for (final entry in root.entries) {
+        final raw = entry.value;
+        if (raw is! Map) continue;
+
+        final cls = raw.map((k, v) => MapEntry(k.toString(), v));
+        final status = (cls['status'] ?? '').toString().trim().toLowerCase();
+        if (status != 'active') continue;
+
+        final teacherId = _readClassTeacherUid(cls);
+        if (teacherId.isEmpty) continue;
+
+        final schedule = cls['schedule'];
+        if (schedule is! Map) continue;
+        final sm = schedule.map((k, v) => MapEntry(k.toString(), v));
+
+        final firstRaw = (sm['first_session_date'] ?? '').toString().trim();
+        final firstDate = DateTime.tryParse(firstRaw);
+        final firstDay = firstDate == null
+            ? startOfToday
+            : DateTime(firstDate.year, firstDate.month, firstDate.day);
+
+        final sessionsRaw = sm['sessions'];
+        final rows = <Map<String, dynamic>>[];
+        if (sessionsRaw is List) {
+          for (final item in sessionsRaw) {
+            if (item is! Map) continue;
+            rows.add(item.map((k, v) => MapEntry(k.toString(), v)));
+          }
+        } else if (sessionsRaw is Map) {
+          for (final item in sessionsRaw.values) {
+            if (item is! Map) continue;
+            rows.add(item.map((k, v) => MapEntry(k.toString(), v)));
+          }
+        }
+        if (rows.isEmpty) continue;
+
+        for (int i = 0; i < daysAhead; i++) {
+          final day = startOfToday.add(Duration(days: i));
+          if (day.isBefore(firstDay)) continue;
+
+          final dayKey = _dateKey(day);
+          for (final row in rows) {
+            final weekday = _weekdayFromShort((row['day'] ?? '').toString());
+            if (weekday != day.weekday) continue;
+
+            final hm = (row['start_time'] ?? '').toString().trim().split(':');
+            if (hm.length != 2) continue;
+
+            final h = int.tryParse(hm[0]);
+            final m = int.tryParse(hm[1]);
+            if (h == null || m == null) continue;
+            if (h < 0 || h > 23 || m < 0 || m > 59) continue;
+
+            final start = DateTime(day.year, day.month, day.day, h, m);
+            if (!start.isBefore(endOfWindow)) continue;
+
+            final duration = _toInt(row['duration_min'], fallback: 60);
+            final safeDuration = duration > 0 ? duration : 60;
+            final end = start.add(Duration(minutes: safeDuration));
+
+            final key = _busyKey(teacherId, dayKey);
+            out
+                .putIfAbsent(key, () => <_BusyRange>[])
+                .add(_BusyRange(start: start, end: end));
+          }
+        }
+      }
+    } catch (_) {}
+
+    return out;
+  }
+
+  bool _hasClassConflict(
+    Map<String, List<_BusyRange>> busyByTeacherDay,
+    String teacherId,
+    DateTime slotStart,
+    int slotDurationMinutes,
+  ) {
+    final dayKey = _dateKey(slotStart);
+    final busy = busyByTeacherDay[_busyKey(teacherId, dayKey)] ?? const [];
+    if (busy.isEmpty) return false;
+
+    final slotDuration = slotDurationMinutes > 0 ? slotDurationMinutes : 60;
+    final slotEnd = slotStart.add(Duration(minutes: slotDuration));
+    for (final b in busy) {
+      if (_hasTimeOverlap(
+        aStart: slotStart,
+        aEnd: slotEnd,
+        bStart: b.start,
+        bEnd: b.end,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _openExternalUrl(String url) async {
     final u = url.trim();
     if (u.isEmpty) {
@@ -1117,6 +1298,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       final root = (snap.value as Map).map(
         (k, vv) => MapEntry(k.toString(), vv),
       );
+      final busyByTeacherDay = await _loadTeacherBusyRangesForWindow();
       final List<_TeacherAvail> teachers = [];
 
       for (final entry in root.entries) {
@@ -1225,6 +1407,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             final start = _parseSlotStart(dayKey, hhmm);
             if (start == null) continue;
             if (start.isBefore(now.add(const Duration(minutes: 1)))) continue;
+            if (_hasClassConflict(
+              busyByTeacherDay,
+              t.teacherId,
+              start,
+              t.durationMinutes,
+            )) {
+              continue;
+            }
 
             final slotKey = _slotSummaryKey(dayKey, hhmm, t.teacherId);
             final summ = slotSummary[slotKey];
@@ -1283,6 +1473,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     if (_isBookingLockedForNewBooking(slot)) {
       _toast('Booking closes 24 hours before class.');
+      return;
+    }
+
+    final latestBusyByTeacherDay = await _loadTeacherBusyRangesForWindow();
+    if (_hasClassConflict(
+      latestBusyByTeacherDay,
+      slot.teacherId,
+      slot.start,
+      slot.durationMinutes,
+    )) {
+      _toast(
+        'This teacher has an in-class session at this time. Please pick another slot.',
+      );
+      await _generateSlots(cid);
       return;
     }
 
@@ -4584,6 +4788,13 @@ class _Slot {
     final cap = maxLearnersPerSlot <= 0 ? 6 : maxLearnersPerSlot;
     return bookedCount >= cap;
   }
+}
+
+class _BusyRange {
+  final DateTime start;
+  final DateTime end;
+
+  const _BusyRange({required this.start, required this.end});
 }
 
 class _MyBooking {

@@ -120,6 +120,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool? _openFilter; // null = all, true=open only, false=closed only
   bool _waitingStatusOnly = false;
   String _teacherFilterUid = 'all';
+  String _courseFilterId = 'all';
   bool _emptyClassesOnly = false;
   bool _showClassesSearch = false;
 
@@ -1209,6 +1210,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         .trim()
         .toLowerCase();
     return instructor == expectedName;
+  }
+
+  bool _matchesCourseFilter(Map<String, dynamic> cls) {
+    if (_courseFilterId == 'all') return true;
+    final courseId = (cls['course_id'] ?? '').toString().trim();
+    return courseId == _courseFilterId;
   }
 
   bool _matchesEmptyClassesFilter(Map<String, dynamic> cls) {
@@ -2805,6 +2812,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Future<void> _openClassesFiltersSheet() async {
     final teacherIds = _teachers.map((t) => (t['uid'] ?? '').trim()).toSet();
+    final courseIds = _courses
+        .map((c) => (c['id'] ?? '').toString().trim())
+        .toSet();
     var dayValue = _dayFilter;
     var statusValue = _openFilter == null
         ? 'all'
@@ -2812,6 +2822,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (_waitingStatusOnly) statusValue = 'waiting';
     var teacherValue = teacherIds.contains(_teacherFilterUid)
         ? _teacherFilterUid
+        : 'all';
+    var courseValue = courseIds.contains(_courseFilterId)
+        ? _courseFilterId
         : 'all';
     var emptyOnlyValue = _emptyClassesOnly;
 
@@ -2916,6 +2929,41 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         setSheetState(() => teacherValue = v);
                       },
                     ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: courseValue,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Course',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All courses'),
+                        ),
+                        ..._courses.map((c) {
+                          final id = (c['id'] ?? '').toString().trim();
+                          final title = (c['title'] ?? '').toString().trim();
+                          final level = (c['level'] ?? '').toString().trim();
+                          final labelBase = [
+                            if (level.isNotEmpty) level,
+                            if (title.isNotEmpty) title,
+                          ].join(' - ');
+                          final label = labelBase.isEmpty
+                              ? id
+                              : '$labelBase (${id.isEmpty ? '-' : id})';
+                          return DropdownMenuItem(
+                            value: id,
+                            child: Text(label),
+                          );
+                        }),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setSheetState(() => courseValue = v);
+                      },
+                    ),
                     const SizedBox(height: 6),
                     SwitchListTile(
                       dense: true,
@@ -2933,6 +2981,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                               dayValue = 'All';
                               statusValue = 'all';
                               teacherValue = 'all';
+                              courseValue = 'all';
                               emptyOnlyValue = false;
                             });
                           },
@@ -2949,6 +2998,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             setState(() {
                               _dayFilter = dayValue;
                               _teacherFilterUid = teacherValue;
+                              _courseFilterId = courseValue;
                               _emptyClassesOnly = emptyOnlyValue;
                               if (statusValue == 'waiting') {
                                 _waitingStatusOnly = true;
@@ -2980,62 +3030,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
-  Widget _buildTopFilters() {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: _showClassesSearch ? 'Hide search' : 'Search classes',
-          onPressed: () {
-            setState(() {
-              if (_showClassesSearch) {
-                _searchCtrl.clear();
-                _searchQuery = '';
-              }
-              _showClassesSearch = !_showClassesSearch;
-            });
-          },
-          icon: const Icon(Icons.search_rounded),
-        ),
-        if (_showClassesSearch) ...[
-          const SizedBox(width: 6),
-          Expanded(
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: 'Search (ID / course / instructor / learner)',
-                border: const OutlineInputBorder(),
-                suffixIcon: _searchCtrl.text.trim().isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      ),
-              ),
-            ),
-          ),
-        ],
-        const SizedBox(width: 4),
-        IconButton(
-          tooltip: 'Filters',
-          onPressed: _openClassesFiltersSheet,
-          icon: const Icon(Icons.filter_alt_rounded),
-        ),
-      ],
-    );
-  }
-
   Widget _buildClassesList() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildTopFilters(),
-        const SizedBox(height: 12),
         Expanded(
           child: FutureBuilder<DataSnapshot>(
             future: _classesFuture,
@@ -3073,6 +3071,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   .where(_matchesOpenFilter)
                   .where(_matchesWaitingStatusFilter)
                   .where(_matchesTeacherFilter)
+                  .where(_matchesCourseFilter)
                   .where(_matchesEmptyClassesFilter)
                   .toList();
 
@@ -4938,6 +4937,59 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
+  void _toggleClassesSearch() {
+    setState(() {
+      if (_showClassesSearch) {
+        _searchCtrl.clear();
+        _searchQuery = '';
+      }
+      _showClassesSearch = !_showClassesSearch;
+    });
+  }
+
+  Widget _buildClassesAppBarTitle() {
+    if (!_showClassesSearch) return const Text('Classes');
+
+    return TextField(
+      controller: _searchCtrl,
+      autofocus: true,
+      onChanged: (_) => setState(() {}),
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: 'Search ID / course / learner',
+        border: InputBorder.none,
+        suffixIcon: _searchCtrl.text.trim().isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: () {
+                  _searchCtrl.clear();
+                  setState(() => _searchQuery = '');
+                },
+              ),
+      ),
+    );
+  }
+
+  List<Widget> _buildClassesAppBarActions() {
+    return [
+      IconButton(
+        tooltip: _showClassesSearch ? 'Hide search' : 'Search classes',
+        onPressed: _toggleClassesSearch,
+        icon: Icon(
+          _showClassesSearch ? Icons.close_rounded : Icons.search_rounded,
+        ),
+      ),
+      IconButton(
+        tooltip: 'Filters',
+        onPressed: _openClassesFiltersSheet,
+        icon: const Icon(Icons.filter_alt_rounded),
+      ),
+    ];
+  }
+
   // -------------------- Build --------------------
 
   @override
@@ -4959,8 +5011,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           length: 3,
           child: Scaffold(
             appBar: AppBar(
-              title: const Text('Classes'),
-              actions: [const SizedBox.shrink()],
+              title: _buildClassesAppBarTitle(),
+              actions: _buildClassesAppBarActions(),
               bottom: TabBar(
                 tabs: [
                   const Tab(text: 'Classes'),

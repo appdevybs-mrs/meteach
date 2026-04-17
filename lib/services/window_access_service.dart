@@ -107,6 +107,10 @@ class WindowAccessService {
   WindowAccessService._();
 
   static final WindowAccessService instance = WindowAccessService._();
+  static const int _guardOpenCooldownMs = 700;
+
+  final Set<String> _guardInFlight = <String>{};
+  final Map<String, int> _guardLastAttemptMs = <String, int>{};
 
   DatabaseReference get _root =>
       FirebaseDatabase.instance.ref('appConfig/window_access');
@@ -682,13 +686,30 @@ class WindowAccessService {
     required String windowKey,
     required VoidCallback onAllowed,
   }) async {
-    final enabled = await isWindowEnabled(role: role, windowKey: windowKey);
-    if (!context.mounted) return;
-
-    if (!enabled) {
-      await showWindowMaintenanceDialog(context);
+    final guardKey = '$role::$windowKey';
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final lastAttemptMs = _guardLastAttemptMs[guardKey];
+    if (lastAttemptMs != null && nowMs - lastAttemptMs < _guardOpenCooldownMs) {
       return;
     }
-    onAllowed();
+    if (_guardInFlight.contains(guardKey)) {
+      return;
+    }
+
+    _guardLastAttemptMs[guardKey] = nowMs;
+    _guardInFlight.add(guardKey);
+
+    try {
+      final enabled = await isWindowEnabled(role: role, windowKey: windowKey);
+      if (!context.mounted) return;
+
+      if (!enabled) {
+        await showWindowMaintenanceDialog(context);
+        return;
+      }
+      onAllowed();
+    } finally {
+      _guardInFlight.remove(guardKey);
+    }
   }
 }

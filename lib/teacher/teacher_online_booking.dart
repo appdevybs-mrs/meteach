@@ -69,6 +69,16 @@ class _TeacherOnlineBookingScreenState
     'sun': <int>{},
   };
 
+  final Map<String, Set<int>> _classBlockedWeekSlots = {
+    'mon': <int>{},
+    'tue': <int>{},
+    'wed': <int>{},
+    'thu': <int>{},
+    'fri': <int>{},
+    'sat': <int>{},
+    'sun': <int>{},
+  };
+
   @override
   void initState() {
     super.initState();
@@ -162,6 +172,14 @@ class _TeacherOnlineBookingScreenState
     return sum;
   }
 
+  int _totalWeeklyBlockedSlots() {
+    int sum = 0;
+    for (final dk in dayKeys) {
+      sum += (_classBlockedWeekSlots[dk] ?? const <int>{}).length;
+    }
+    return sum;
+  }
+
   int _selectedCoursesCount() => selectedCourseIds.length;
   String _selectedCoursesLabel() {
     final count = selectedCourseIds.length;
@@ -197,10 +215,181 @@ class _TeacherOnlineBookingScreenState
     await _loadMyName();
     await _loadTeacherSettings();
     await _loadMyCourses();
+    await _loadClassBlockedWeekSlots();
     await _loadSelectedCoursesAndSharedSchedule();
 
     if (!mounted) return;
     setState(() => loading = false);
+  }
+
+  int _weekdayFromShort(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return DateTime.monday;
+    }
+  }
+
+  String _dayKeyFromWeekday(int weekday) {
+    switch (weekday) {
+      case DateTime.monday:
+        return 'mon';
+      case DateTime.tuesday:
+        return 'tue';
+      case DateTime.wednesday:
+        return 'wed';
+      case DateTime.thursday:
+        return 'thu';
+      case DateTime.friday:
+        return 'fri';
+      case DateTime.saturday:
+        return 'sat';
+      default:
+        return 'sun';
+    }
+  }
+
+  String _readClassTeacherUid(Map<String, dynamic> classData) {
+    final current = classData['instructor_current'];
+    if (current is Map) {
+      final m = current.map((k, v) => MapEntry(k.toString(), v));
+      final uid =
+          (m['uid'] ?? m['teacher_uid'] ?? m['teacherId'] ?? m['id'] ?? '')
+              .toString()
+              .trim();
+      if (uid.isNotEmpty) return uid;
+    }
+
+    final direct = [
+      classData['teacherUid'],
+      classData['teacher_uid'],
+      classData['teacherId'],
+      classData['teacher_id'],
+      classData['instructorUid'],
+      classData['instructor_uid'],
+    ];
+    for (final raw in direct) {
+      final s = (raw ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return '';
+  }
+
+  void _stripBlockedSlotsFromWeekSelection() {
+    for (final dk in dayKeys) {
+      final blocked = _classBlockedWeekSlots[dk] ?? const <int>{};
+      if (blocked.isEmpty) continue;
+      final current = weekSlots[dk] ?? <int>{};
+      weekSlots[dk] = current.where((m) => !blocked.contains(m)).toSet();
+    }
+  }
+
+  Future<void> _loadClassBlockedWeekSlots() async {
+    final blocked = <String, Set<int>>{
+      'mon': <int>{},
+      'tue': <int>{},
+      'wed': <int>{},
+      'thu': <int>{},
+      'fri': <int>{},
+      'sat': <int>{},
+      'sun': <int>{},
+    };
+
+    try {
+      final snap = await _db.child('classes').get();
+      if (snap.exists && snap.value is Map) {
+        final root = (snap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+
+        for (final entry in root.entries) {
+          final raw = entry.value;
+          if (raw is! Map) continue;
+
+          final cls = raw.map((k, v) => MapEntry(k.toString(), v));
+          final status = (cls['status'] ?? '').toString().trim().toLowerCase();
+          if (status != 'active') continue;
+
+          final teacherUid = _readClassTeacherUid(cls);
+          if (teacherUid != myUid) continue;
+
+          final schedule = cls['schedule'];
+          if (schedule is! Map) continue;
+          final sm = schedule.map((k, v) => MapEntry(k.toString(), v));
+
+          final sessionsRaw = sm['sessions'];
+          final rows = <Map<String, dynamic>>[];
+          if (sessionsRaw is List) {
+            for (final item in sessionsRaw) {
+              if (item is! Map) continue;
+              rows.add(item.map((k, v) => MapEntry(k.toString(), v)));
+            }
+          } else if (sessionsRaw is Map) {
+            for (final item in sessionsRaw.values) {
+              if (item is! Map) continue;
+              rows.add(item.map((k, v) => MapEntry(k.toString(), v)));
+            }
+          }
+
+          for (final row in rows) {
+            final weekday = _weekdayFromShort((row['day'] ?? '').toString());
+            final dayKey = _dayKeyFromWeekday(weekday);
+            final startRaw = (row['start_time'] ?? '').toString().trim();
+            final hm = startRaw.split(':');
+            if (hm.length != 2) continue;
+
+            final h = int.tryParse(hm[0]);
+            final m = int.tryParse(hm[1]);
+            if (h == null || m == null) continue;
+            if (h < 0 || h > 23 || m < 0 || m > 59) continue;
+
+            final duration = _toInt(row['duration_min'], fallback: 60);
+            final safeDuration = duration > 0 ? duration : 60;
+
+            final classStartMin = h * 60 + m;
+            final classEndMin = classStartMin + safeDuration;
+
+            for (int slotHour = 0; slotHour < 24; slotHour++) {
+              final slotStart = slotHour * 60;
+              final slotEnd = slotStart + 60;
+              final overlaps =
+                  classStartMin < slotEnd && slotStart < classEndMin;
+              if (overlaps) {
+                blocked[dayKey]!.add(slotStart);
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    for (final dk in dayKeys) {
+      _classBlockedWeekSlots[dk] = blocked[dk] ?? <int>{};
+    }
+    _stripBlockedSlotsFromWeekSelection();
   }
 
   Future<void> _loadMyName() async {
@@ -446,6 +635,8 @@ class _TeacherOnlineBookingScreenState
         }
       }
 
+      _stripBlockedSlotsFromWeekSelection();
+
       setState(() {});
     } catch (e) {
       _toast('Failed loading availability: $e');
@@ -572,7 +763,10 @@ class _TeacherOnlineBookingScreenState
 
     final payloadWeek = <String, dynamic>{};
     for (final dk in dayKeys) {
-      final slots = (weekSlots[dk] ?? <int>{}).toList()..sort();
+      final blocked = _classBlockedWeekSlots[dk] ?? const <int>{};
+      final slots =
+          (weekSlots[dk] ?? <int>{}).where((m) => !blocked.contains(m)).toList()
+            ..sort();
       payloadWeek[dk] = slots.map((m) => _fmt(_minutesToTime(m))).toList();
     }
 
@@ -659,6 +853,8 @@ class _TeacherOnlineBookingScreenState
     }
 
     final local = <int>{...(weekSlots[dayKey] ?? <int>{})};
+    final blocked = _classBlockedWeekSlots[dayKey] ?? const <int>{};
+    local.removeWhere((m) => blocked.contains(m));
 
     const splitHour = 13;
     final morningHours = _hoursInRange(startHour, splitHour);
@@ -674,6 +870,7 @@ class _TeacherOnlineBookingScreenState
           builder: (ctx, setModal) {
             void toggleHour(int h) {
               final startM = h * 60;
+              if (blocked.contains(startM)) return;
               if (local.contains(startM)) {
                 local.remove(startM);
               } else {
@@ -709,10 +906,13 @@ class _TeacherOnlineBookingScreenState
                         children: hours.map((h) {
                           final startM = h * 60;
                           final isOn = local.contains(startM);
+                          final isBlocked = blocked.contains(startM);
 
                           return InkWell(
                             borderRadius: BorderRadius.circular(12),
-                            onTap: () => setModal(() => toggleHour(h)),
+                            onTap: isBlocked
+                                ? null
+                                : () => setModal(() => toggleHour(h)),
                             child: Container(
                               width: 118,
                               margin: const EdgeInsets.only(right: 8),
@@ -721,12 +921,16 @@ class _TeacherOnlineBookingScreenState
                                 vertical: 8,
                               ),
                               decoration: BoxDecoration(
-                                color: isOn
+                                color: isBlocked
+                                    ? Colors.red.withValues(alpha: 0.08)
+                                    : isOn
                                     ? p.accent.withValues(alpha: 0.10)
                                     : p.soft.withValues(alpha: 0.45),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: isOn
+                                  color: isBlocked
+                                      ? Colors.red.withValues(alpha: 0.35)
+                                      : isOn
                                       ? p.accent.withValues(alpha: 0.35)
                                       : p.border.withValues(alpha: 0.9),
                                 ),
@@ -737,20 +941,29 @@ class _TeacherOnlineBookingScreenState
                                     value: isOn,
                                     activeColor: p.accent,
                                     visualDensity: VisualDensity.compact,
-                                    onChanged: (_) =>
-                                        setModal(() => toggleHour(h)),
+                                    onChanged: isBlocked
+                                        ? null
+                                        : (_) => setModal(() => toggleHour(h)),
                                   ),
                                   Expanded(
                                     child: Text(
                                       '${_two(h)}-${_two(h + 1)}',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w900,
-                                        color: isOn ? p.accent : p.primary,
+                                        color: isBlocked
+                                            ? Colors.red.shade700
+                                            : (isOn ? p.accent : p.primary),
                                         fontSize: 12,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                  if (isBlocked)
+                                    const Icon(
+                                      Icons.lock_rounded,
+                                      color: Color(0xFFD32F2F),
+                                      size: 16,
+                                    ),
                                 ],
                               ),
                             ),
@@ -798,7 +1011,10 @@ class _TeacherOnlineBookingScreenState
                             onPressed: () {
                               final all = <int>{};
                               for (int h = startHour; h < endHour; h++) {
-                                all.add(h * 60);
+                                final minute = h * 60;
+                                if (!blocked.contains(minute)) {
+                                  all.add(minute);
+                                }
                               }
                               setModal(() {
                                 local
@@ -867,7 +1083,9 @@ class _TeacherOnlineBookingScreenState
                         ),
                         onPressed: () {
                           setState(() {
-                            weekSlots[dayKey] = <int>{...local};
+                            weekSlots[dayKey] = local
+                                .where((m) => !blocked.contains(m))
+                                .toSet();
                           });
                           Navigator.of(ctx).pop();
                         },
@@ -899,8 +1117,8 @@ class _TeacherOnlineBookingScreenState
   @override
   Widget build(BuildContext context) {
     final weeklySlots = _totalWeeklySlots();
+    final blockedSlots = _totalWeeklyBlockedSlots();
     final selectedCount = _selectedCoursesCount();
-
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1127,6 +1345,14 @@ class _TeacherOnlineBookingScreenState
                               ? null
                               : (dk, label) => _openDayEditor(dk, label),
                         ),
+                        if (blockedSlots > 0) ...[
+                          const SizedBox(height: 8),
+                          _InfoBox(
+                            palette: p,
+                            text:
+                                '$blockedSlots weekly hour${blockedSlots == 1 ? '' : 's'} locked by in-class schedule.',
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         ...List.generate(7, (i) {
                           final dk = dayKeys[i];

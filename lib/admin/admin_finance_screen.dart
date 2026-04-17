@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -762,7 +764,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                   );
 
                   return ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      12,
+                      12,
+                      20 + MediaQuery.of(context).padding.bottom + 20,
+                    ),
                     children: [
                       _FilterHeader(
                         fromLabel: _fromDate == null
@@ -874,12 +881,24 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
 class _TeacherFinanceDetailsScreenState
     extends State<_TeacherFinanceDetailsScreen> {
   late List<Map<String, dynamic>> _rows;
+  Timer? _pulseTimer;
+  bool _pulseOn = true;
 
   @override
   void initState() {
     super.initState();
     _rows = List<Map<String, dynamic>>.from(widget.initialPayments)
       ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    _pulseTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      if (!mounted) return;
+      setState(() => _pulseOn = !_pulseOn);
+    });
+  }
+
+  @override
+  void dispose() {
+    _pulseTimer?.cancel();
+    super.dispose();
   }
 
   static int _asInt(dynamic v) {
@@ -957,6 +976,14 @@ class _TeacherFinanceDetailsScreenState
   int _teacherPercentFrom(Map<String, dynamic> row) {
     final p = _asInt(row['financeTeacherPercent']);
     if (p <= 0) return 100;
+    if (p > 100) return 100;
+    return p;
+  }
+
+  int _initialTeacherPercentForPicker(Map<String, dynamic> row) {
+    final p = _asInt(row['financeTeacherPercent']);
+    if (p <= 0) return 50;
+    if (p < 35) return 35;
     if (p > 100) return 100;
     return p;
   }
@@ -1082,11 +1109,91 @@ class _TeacherFinanceDetailsScreenState
     setState(() => row['financeMethod'] = method);
   }
 
+  Future<void> _pickMethod(Map<String, dynamic> row) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Text('💵'),
+                title: const Text('Cash'),
+                onTap: () => Navigator.of(sheetCtx).pop('cash'),
+              ),
+              ListTile(
+                leading: const Text('🏤'),
+                title: const Text('CCP'),
+                onTap: () => Navigator.of(sheetCtx).pop('ccp'),
+              ),
+              ListTile(
+                leading: const Text('❔'),
+                title: const Text('Unspecified'),
+                onTap: () => Navigator.of(sheetCtx).pop('unspecified'),
+              ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected == null) return;
+    await _setMethod(row, selected);
+  }
+
+  bool _isMethodSet(Map<String, dynamic> row) {
+    final raw = (row['financeMethod'] ?? row['method'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return raw.isNotEmpty;
+  }
+
+  bool _isTeacherPercentSet(Map<String, dynamic> row) {
+    final alloc = _amountsFrom(row);
+    if (alloc.payoutAmount <= 0) return true;
+    final p = _asInt(row['financeTeacherPercent']);
+    return p >= 35 && p <= 100;
+  }
+
+  bool _isStatusSet(Map<String, dynamic> row, {required bool isNoPayment}) {
+    if (isNoPayment) {
+      return (row['financePayoutStatus'] ?? '').toString().trim().isNotEmpty;
+    }
+    final statusRaw = (row['financePayoutStatus'] ?? '').toString().trim();
+    if (statusRaw.isEmpty) return false;
+    final status = _normalizeStatus(statusRaw);
+    if (status != 'split') return true;
+    final amount = _asInt(row['amount']);
+    final paid = _asInt(row['financeSplitPaidAmount']);
+    final waiting = _asInt(row['financeSplitWaitingAmount']);
+    return paid >= 0 && waiting >= 0 && paid + waiting == amount;
+  }
+
+  Widget _pulseIfMissing({required bool missing, required Widget child}) {
+    final active = missing;
+    final scale = active ? (_pulseOn ? 1.045 : 0.96) : 1.0;
+    final opacity = active ? (_pulseOn ? 1.0 : 0.72) : 1.0;
+    return AnimatedScale(
+      scale: scale,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOut,
+      child: AnimatedOpacity(
+        opacity: opacity,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeInOut,
+        child: child,
+      ),
+    );
+  }
+
   Future<void> _setTeacherPercent(Map<String, dynamic> row) async {
     final paymentId = (row['paymentId'] ?? '').toString().trim();
     if (paymentId.isEmpty) return;
 
-    final p = await _askPercent(_teacherPercentFrom(row));
+    final p = await _askPercent(_initialTeacherPercentForPicker(row));
     if (p == null) return;
 
     final alloc = _amountsFrom(row);
@@ -1134,16 +1241,20 @@ class _TeacherFinanceDetailsScreenState
         ? 'done'
         : 'tbpaid';
     final amount = _asInt(row['amount']);
+    final existingSplitPaid = _asInt(row['financeSplitPaidAmount']);
+    final existingSplitWaiting = _asInt(row['financeSplitWaitingAmount']);
+    final defaultSplitPaid = amount ~/ 2;
+    final defaultSplitWaiting = amount - defaultSplitPaid;
 
     final paidCtrl = TextEditingController(
-      text: _asInt(row['financeSplitPaidAmount']) > 0
-          ? _asInt(row['financeSplitPaidAmount']).toString()
-          : amount.toString(),
+      text: existingSplitPaid > 0
+          ? existingSplitPaid.toString()
+          : defaultSplitPaid.toString(),
     );
     final waitingCtrl = TextEditingController(
-      text: _asInt(row['financeSplitWaitingAmount']) > 0
-          ? _asInt(row['financeSplitWaitingAmount']).toString()
-          : '0',
+      text: existingSplitWaiting > 0
+          ? existingSplitWaiting.toString()
+          : defaultSplitWaiting.toString(),
     );
 
     final result = await showDialog<Map<String, dynamic>>(
@@ -1180,7 +1291,15 @@ class _TeacherFinanceDetailsScreenState
                             label: const Text('Split'),
                             selected: status == 'split',
                             selectedColor: const Color(0xFFFFEDD9),
-                            onSelected: (_) => setD(() => status = 'split'),
+                            onSelected: (_) => setD(() {
+                              status = 'split';
+                              if (existingSplitPaid <= 0 &&
+                                  existingSplitWaiting <= 0) {
+                                paidCtrl.text = defaultSplitPaid.toString();
+                                waitingCtrl.text = defaultSplitWaiting
+                                    .toString();
+                              }
+                            }),
                           ),
                         ],
                       ),
@@ -1313,11 +1432,29 @@ class _TeacherFinanceDetailsScreenState
 
   bool _isNoPaymentRow(Map<String, dynamic> row) => row['isNoPayment'] == true;
 
-  Map<String, Map<String, String>> _classLearnersForTeacher(dynamic raw) {
-    final out = <String, Map<String, String>>{};
+  String _courseIdFromRow(Map<String, dynamic> row) {
+    return (row['course_id'] ?? row['courseId'] ?? '').toString().trim();
+  }
+
+  String _sessionKey({required String uid, required String courseId}) {
+    return '${uid.trim()}|${courseId.trim()}';
+  }
+
+  String _doneMarkKey(Map<String, dynamic> row) {
+    final uid = (row['uid'] ?? '').toString().trim();
+    final courseId = _courseIdFromRow(row);
+    if (uid.isEmpty) return '';
+    if (courseId.isEmpty) return uid;
+    return '${uid}__$courseId';
+  }
+
+  List<Map<String, String>> _teacherClassRoster(dynamic raw) {
+    final out = <Map<String, String>>[];
+    final seen = <String>{};
     if (raw is! Map) return out;
     final classes = Map<dynamic, dynamic>.from(raw);
     for (final e in classes.entries) {
+      final classId = e.key.toString().trim();
       final clsRaw = e.value;
       if (clsRaw is! Map) continue;
       final cls = Map<dynamic, dynamic>.from(clsRaw);
@@ -1339,6 +1476,10 @@ class _TeacherFinanceDetailsScreenState
           instName.toLowerCase() == widget.teacherName.trim().toLowerCase();
       if (!matchByUid && !matchByName) continue;
 
+      final courseId = (cls['course_id'] ?? '').toString().trim();
+      final courseTitle = (cls['course_title'] ?? '').toString().trim();
+      final courseCode = (cls['course_code'] ?? '').toString().trim();
+
       final learnersRaw = cls['learners'];
       if (learnersRaw is! Map) continue;
       final learners = Map<dynamic, dynamic>.from(learnersRaw);
@@ -1355,7 +1496,101 @@ class _TeacherFinanceDetailsScreenState
           if (n.isNotEmpty) name = n;
           if (s.isNotEmpty) serial = s;
         }
-        out[uid] = {'uid': uid, 'name': name, 'serial': serial};
+        final dedupe = '$uid|$courseId|$classId';
+        if (seen.contains(dedupe)) continue;
+        seen.add(dedupe);
+        out.add({
+          'uid': uid,
+          'name': name,
+          'serial': serial,
+          'class_id': classId,
+          'course_id': courseId,
+          'course_title': courseTitle,
+          'course_code': courseCode,
+        });
+      }
+    }
+    return out;
+  }
+
+  Map<String, _SessionCounts> _attendanceCountsByLearnerCourse(dynamic raw) {
+    final out = <String, _SessionCounts>{};
+    if (raw is! Map) return out;
+    final classes = Map<dynamic, dynamic>.from(raw);
+    final teacherId = widget.teacherId.trim();
+    final teacherName = widget.teacherName.trim().toLowerCase();
+
+    for (final e in classes.entries) {
+      final clsRaw = e.value;
+      if (clsRaw is! Map) continue;
+      final cls = Map<dynamic, dynamic>.from(clsRaw);
+
+      String instUid = '';
+      final instCur = cls['instructor_current'];
+      if (instCur is Map) {
+        instUid = (instCur['uid'] ?? '').toString().trim();
+      }
+      final instName = (cls['instructor'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final classMatchByUid =
+          teacherId.isNotEmpty && instUid.isNotEmpty && instUid == teacherId;
+      final classMatchByName =
+          teacherId.isEmpty &&
+          teacherName.isNotEmpty &&
+          instUid.isEmpty &&
+          instName == teacherName;
+      if (!classMatchByUid && !classMatchByName) continue;
+
+      final courseId = (cls['course_id'] ?? '').toString().trim();
+      if (courseId.isEmpty) continue;
+
+      final attendanceRaw = cls['attendance'];
+      if (attendanceRaw is! Map) continue;
+      final attendance = Map<dynamic, dynamic>.from(attendanceRaw);
+      for (final recEntry in attendance.entries) {
+        final recRaw = recEntry.value;
+        if (recRaw is! Map) continue;
+        final rec = Map<dynamic, dynamic>.from(recRaw);
+
+        final recTeacherUid = (rec['teacherUid'] ?? '').toString().trim();
+        final recTeacherName = (rec['teacherName'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        final taughtByTeacher = teacherId.isNotEmpty
+            ? (recTeacherUid.isEmpty
+                  ? classMatchByUid
+                  : recTeacherUid == teacherId)
+            : (recTeacherName.isNotEmpty
+                  ? recTeacherName == teacherName
+                  : classMatchByName);
+        if (!taughtByTeacher) continue;
+
+        final present = (rec['present'] is Map)
+            ? Map<dynamic, dynamic>.from(rec['present'] as Map)
+            : <dynamic, dynamic>{};
+        final absent = (rec['absent'] is Map)
+            ? Map<dynamic, dynamic>.from(rec['absent'] as Map)
+            : <dynamic, dynamic>{};
+        final allUids = <String>{
+          ...present.keys.map((k) => k.toString().trim()),
+          ...absent.keys.map((k) => k.toString().trim()),
+        }..removeWhere((x) => x.isEmpty);
+
+        for (final uid in allUids) {
+          final key = _sessionKey(uid: uid, courseId: courseId);
+          final cur = out[key] ?? const _SessionCounts();
+          out[key] = _SessionCounts(held: cur.held + 1, present: cur.present);
+        }
+
+        for (final uid in present.keys.map((k) => k.toString().trim())) {
+          if (uid.isEmpty) continue;
+          final key = _sessionKey(uid: uid, courseId: courseId);
+          final cur = out[key] ?? const _SessionCounts();
+          out[key] = _SessionCounts(held: cur.held, present: cur.present + 1);
+        }
       }
     }
     return out;
@@ -1366,11 +1601,11 @@ class _TeacherFinanceDetailsScreenState
     if (raw is! Map) return out;
     final m = Map<dynamic, dynamic>.from(raw);
     for (final e in m.entries) {
-      final uid = e.key.toString().trim();
-      if (uid.isEmpty) continue;
+      final markKey = e.key.toString().trim();
+      if (markKey.isEmpty) continue;
       final v = e.value;
       if (v == true) {
-        out.add(uid);
+        out.add(markKey);
         continue;
       }
       if (v is Map) {
@@ -1378,7 +1613,7 @@ class _TeacherFinanceDetailsScreenState
         final done =
             (mm['done'] == true) ||
             (mm['status'] ?? '').toString().trim().toLowerCase() == 'done';
-        if (done) out.add(uid);
+        if (done) out.add(markKey);
       }
     }
     return out;
@@ -1387,13 +1622,17 @@ class _TeacherFinanceDetailsScreenState
   Future<void> _setManualDone(Map<String, dynamic> row, bool done) async {
     final uid = (row['uid'] ?? '').toString().trim();
     if (uid.isEmpty) return;
+    final markKey = _doneMarkKey(row);
+    if (markKey.isEmpty) return;
     final markRef = widget.financeDoneRef
         .child(widget.teacherScopeKey)
-        .child(uid);
+        .child(markKey);
     if (done) {
       await markRef.set({
         'done': true,
         'status': 'done',
+        'uid': uid,
+        'course_id': _courseIdFromRow(row),
         'learnerName': _learnerNameFrom(row),
         'learnerSerial': (row['learner_serial'] ?? row['serial'] ?? '')
             .toString()
@@ -1486,6 +1725,9 @@ class _TeacherFinanceDetailsScreenState
               .trim(),
       'teacherId': widget.teacherId,
       'teacherName': widget.teacherName,
+      'course_id': _courseIdFromRow(learnerRow),
+      'course_title': (learnerRow['course_title'] ?? '').toString().trim(),
+      'course_code': (learnerRow['course_code'] ?? '').toString().trim(),
       'amount': amount,
       'method': method,
       'financeMethod': method,
@@ -1506,6 +1748,9 @@ class _TeacherFinanceDetailsScreenState
               .trim(),
       'teacherId': widget.teacherId,
       'teacherName': widget.teacherName,
+      'course_id': _courseIdFromRow(learnerRow),
+      'course_title': (learnerRow['course_title'] ?? '').toString().trim(),
+      'course_code': (learnerRow['course_code'] ?? '').toString().trim(),
       'amount': amount,
       'method': method,
       'financeMethod': method,
@@ -1552,28 +1797,52 @@ class _TeacherFinanceDetailsScreenState
       body: StreamBuilder<DatabaseEvent>(
         stream: widget.classesRef.onValue,
         builder: (context, classSnap) {
-          final classLearners = _classLearnersForTeacher(
+          final classRoster = _teacherClassRoster(
+            classSnap.data?.snapshot.value,
+          );
+          final attendanceCounts = _attendanceCountsByLearnerCourse(
             classSnap.data?.snapshot.value,
           );
           return StreamBuilder<DatabaseEvent>(
             stream: widget.financeDoneRef.child(widget.teacherScopeKey).onValue,
             builder: (context, doneSnap) {
               final manualDone = _manualDoneKeys(doneSnap.data?.snapshot.value);
-              final paymentLearnerUids = <String>{};
+              final paymentLearnerCourse = <String>{};
               for (final r in _rows) {
                 final uid = (r['uid'] ?? '').toString().trim();
-                if (uid.isNotEmpty) paymentLearnerUids.add(uid);
+                final courseId = _courseIdFromRow(r);
+                if (uid.isNotEmpty && courseId.isNotEmpty) {
+                  paymentLearnerCourse.add(
+                    _sessionKey(uid: uid, courseId: courseId),
+                  );
+                }
               }
 
               final noPaymentRows = <Map<String, dynamic>>[];
-              for (final e in classLearners.entries) {
-                if (paymentLearnerUids.contains(e.key)) continue;
-                noPaymentRows.add({
+              for (final e in classRoster) {
+                final uid = (e['uid'] ?? '').toString().trim();
+                final courseId = (e['course_id'] ?? '').toString().trim();
+                if (uid.isEmpty || courseId.isEmpty) continue;
+                if (paymentLearnerCourse.contains(
+                  _sessionKey(uid: uid, courseId: courseId),
+                )) {
+                  continue;
+                }
+                final row = <String, dynamic>{
                   'isNoPayment': true,
-                  'uid': e.key,
-                  'learner_name': e.value['name'] ?? 'Unnamed learner',
-                  'learner_serial': e.value['serial'] ?? '',
-                  'financePayoutStatus': manualDone.contains(e.key)
+                  'uid': uid,
+                  'learner_name': e['name'] ?? 'Unnamed learner',
+                  'learner_serial': e['serial'] ?? '',
+                  'class_id': e['class_id'] ?? '',
+                  'course_id': courseId,
+                  'course_title': e['course_title'] ?? '',
+                  'course_code': e['course_code'] ?? '',
+                };
+                final markKey = _doneMarkKey(row);
+                noPaymentRows.add({
+                  ...row,
+                  'financePayoutStatus':
+                      manualDone.contains(markKey) || manualDone.contains(uid)
                       ? 'done'
                       : 'tbpaid',
                 });
@@ -1591,7 +1860,12 @@ class _TeacherFinanceDetailsScreenState
                     });
 
               return ListView(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  12,
+                  12,
+                  20 + MediaQuery.of(context).padding.bottom + 20,
+                ),
                 children: [
                   Wrap(
                     spacing: 8,
@@ -1650,16 +1924,54 @@ class _TeacherFinanceDetailsScreenState
                           .toString()
                           .trim()
                           .toLowerCase();
+                      final uid = (row['uid'] ?? '').toString().trim();
+                      final markKey = _doneMarkKey(row);
+                      final manualDoneMarked =
+                          manualDone.contains(markKey) ||
+                          manualDone.contains(uid);
+                      final courseId = _courseIdFromRow(row);
+                      final courseCode = (row['course_code'] ?? '')
+                          .toString()
+                          .trim();
+                      final courseTitle = (row['course_title'] ?? '')
+                          .toString()
+                          .trim();
+                      final courseLabel = courseTitle.isNotEmpty
+                          ? (courseCode.isNotEmpty
+                                ? '$courseCode · $courseTitle'
+                                : courseTitle)
+                          : (courseId.isEmpty ? '' : 'Course: $courseId');
+                      final sess = (uid.isEmpty || courseId.isEmpty)
+                          ? const _SessionCounts()
+                          : (attendanceCounts[_sessionKey(
+                                  uid: uid,
+                                  courseId: courseId,
+                                )] ??
+                                const _SessionCounts());
+
+                      final methodMissing = !isNoPayment && !_isMethodSet(row);
+                      final teacherMissing =
+                          !isNoPayment && !_isTeacherPercentSet(row);
+                      final statusMissing =
+                          !isNoPayment &&
+                          !_isStatusSet(row, isNoPayment: false);
+                      final needsNoPaymentAction =
+                          isNoPayment && !manualDoneMarked;
+                      final missingLabels = <String>[
+                        if (statusMissing) 'Status',
+                        if (methodMissing) 'Method',
+                        if (teacherMissing) 'Teacher %',
+                        if (needsNoPaymentAction) 'Add payment or Done',
+                      ];
 
                       String statusText;
                       if (isNoPayment) {
-                        statusText =
-                            manualDone.contains((row['uid'] ?? '').toString())
+                        statusText = manualDoneMarked
                             ? 'DONE (manual, no payment record)'
                             : 'NO PAYMENT RECORD';
                       } else if (a.status == 'split') {
                         statusText =
-                            'Split (${(a.splitPaidStatus ?? 'tbpaid').toUpperCase()}: ${widget.money(a.payoutAmount)} · WAITING: ${widget.money(a.waitingAmount)})';
+                            'SPLIT ${(a.splitPaidStatus ?? 'tbpaid').toUpperCase()} ${widget.money(a.payoutAmount)} · WAITING ${widget.money(a.waitingAmount)}';
                       } else {
                         statusText = a.status.toUpperCase();
                       }
@@ -1673,129 +1985,189 @@ class _TeacherFinanceDetailsScreenState
                             color: color.withValues(alpha: 0.35),
                           ),
                         ),
-                        child: ListTile(
-                          onTap: isNoPayment
-                              ? null
-                              : () => _editPaymentStatus(row),
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.transparent,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: color.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  child: Icon(
-                                    a.status == 'done'
-                                        ? Icons.verified_rounded
-                                        : a.status == 'tbpaid'
-                                        ? Icons.pending_actions_rounded
-                                        : Icons.call_split_rounded,
-                                    size: 18,
-                                    color: color,
-                                  ),
-                                ),
-                                Positioned(
-                                  right: -2,
-                                  bottom: -2,
-                                  child: Container(
-                                    width: 18,
-                                    height: 18,
-                                    decoration: BoxDecoration(
-                                      color: variant.color,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 1.5,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _pulseIfMissing(
+                                    missing:
+                                        statusMissing || needsNoPaymentAction,
+                                    child: InkWell(
+                                      onTap: isNoPayment
+                                          ? () => _setManualDone(
+                                              row,
+                                              !manualDoneMarked,
+                                            )
+                                          : () => _editPaymentStatus(row),
+                                      customBorder: const CircleBorder(),
+                                      child: CircleAvatar(
+                                        backgroundColor: Colors.transparent,
+                                        child: Stack(
+                                          clipBehavior: Clip.none,
+                                          children: [
+                                            CircleAvatar(
+                                              backgroundColor: color.withValues(
+                                                alpha: 0.15,
+                                              ),
+                                              child: Icon(
+                                                a.status == 'done'
+                                                    ? Icons.verified_rounded
+                                                    : a.status == 'tbpaid'
+                                                    ? Icons
+                                                          .pending_actions_rounded
+                                                    : Icons.call_split_rounded,
+                                                size: 18,
+                                                color: color,
+                                              ),
+                                            ),
+                                            Positioned(
+                                              right: -2,
+                                              bottom: -2,
+                                              child: Container(
+                                                width: 18,
+                                                height: 18,
+                                                decoration: BoxDecoration(
+                                                  color: variant.color,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 1.5,
+                                                  ),
+                                                ),
+                                                child: Icon(
+                                                  variant.icon,
+                                                  size: 11,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                    child: Icon(
-                                      variant.icon,
-                                      size: 11,
-                                      color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          learner,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AdminFinanceScreen.primary,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        Text(
+                                          isNoPayment
+                                              ? 'No payment yet'
+                                              : paidAt,
+                                          style: TextStyle(
+                                            color: AdminFinanceScreen.primary
+                                                .withValues(alpha: 0.72),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11.5,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          title: Text(
-                            learner,
-                            style: const TextStyle(
-                              color: AdminFinanceScreen.primary,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  isNoPayment
-                                      ? 'No payment yet · Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}'
-                                      : 'Amount: ${widget.money(amount)} · Date: $paidAt',
-                                  style: const TextStyle(
-                                    color: AdminFinanceScreen.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
+                                  if (!isNoPayment)
                                     Text(
-                                      isNoPayment
-                                          ? 'Method: —'
-                                          : 'Method: $methodLabel',
+                                      widget.money(amount),
                                       style: const TextStyle(
                                         color: AdminFinanceScreen.primary,
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 13,
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: variant.color.withValues(
-                                          alpha: 0.12,
-                                        ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                isNoPayment
+                                    ? 'No payment yet · Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}'
+                                    : 'Serial: ${(row['learner_serial'] ?? '').toString().trim().isEmpty ? '—' : (row['learner_serial'] ?? '').toString().trim()}',
+                                style: const TextStyle(
+                                  color: AdminFinanceScreen.primary,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                              if (courseLabel.isNotEmpty)
+                                Text(
+                                  courseLabel,
+                                  style: TextStyle(
+                                    color: AdminFinanceScreen.primary
+                                        .withValues(alpha: 0.78),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              if (courseId.isNotEmpty)
+                                Text(
+                                  'Sessions with teacher: ${sess.held} · Present: ${sess.present}',
+                                  style: TextStyle(
+                                    color: AdminFinanceScreen.primary
+                                        .withValues(alpha: 0.78),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  if (!isNoPayment)
+                                    _pulseIfMissing(
+                                      missing: methodMissing,
+                                      child: InkWell(
+                                        onTap: () => _pickMethod(row),
                                         borderRadius: BorderRadius.circular(
                                           999,
                                         ),
-                                        border: Border.all(
-                                          color: variant.color.withValues(
-                                            alpha: 0.35,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF1A2B48,
+                                            ).withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: const Color(
+                                                0xFF1A2B48,
+                                              ).withValues(alpha: 0.2),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Method: $methodLabel',
+                                            style: const TextStyle(
+                                              color: AdminFinanceScreen.primary,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11.5,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            variant.icon,
-                                            size: 13,
-                                            color: variant.color,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            variant.label,
-                                            style: TextStyle(
-                                              color: variant.color,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                     ),
-                                    if (!isNoPayment)
-                                      InkWell(
+                                  if (!isNoPayment)
+                                    _pulseIfMissing(
+                                      missing: teacherMissing,
+                                      child: InkWell(
                                         onTap: () => _setTeacherPercent(row),
                                         borderRadius: BorderRadius.circular(
                                           999,
@@ -1819,95 +2191,111 @@ class _TeacherFinanceDetailsScreenState
                                             ),
                                           ),
                                           child: Text(
-                                            'Teacher %: $percent (tap)',
+                                            'Teacher %: $percent',
                                             style: const TextStyle(
                                               color: Color(0xFF3666D8),
                                               fontWeight: FontWeight.w800,
-                                              fontSize: 12,
+                                              fontSize: 11.5,
                                             ),
                                           ),
                                         ),
                                       ),
-                                  ],
+                                    ),
+                                  if (isNoPayment)
+                                    _pulseIfMissing(
+                                      missing: needsNoPaymentAction,
+                                      child: InkWell(
+                                        onTap: () => _addManualPayment(row),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF3666D8,
+                                            ).withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: const Color(
+                                                0xFF3666D8,
+                                              ).withValues(alpha: 0.3),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Add payment',
+                                            style: TextStyle(
+                                              color: Color(0xFF3666D8),
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  if (isNoPayment)
+                                    InkWell(
+                                      onTap: () => _setManualDone(
+                                        row,
+                                        !manualDoneMarked,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AdminFinanceScreen.done
+                                              .withValues(alpha: 0.11),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: AdminFinanceScreen.done
+                                                .withValues(alpha: 0.28),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          manualDoneMarked
+                                              ? 'Unmark done'
+                                              : 'Mark done',
+                                          style: const TextStyle(
+                                            color: AdminFinanceScreen.done,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$statusText${hasPushed ? ' · SYNC ${pushedStatus.toUpperCase()}' : ''}',
+                                style: const TextStyle(
+                                  color: AdminFinanceScreen.primary,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11.5,
                                 ),
-                                const SizedBox(height: 2),
+                              ),
+                              if (missingLabels.isNotEmpty) ...[
+                                const SizedBox(height: 4),
                                 Text(
-                                  '$statusText${hasPushed ? ' · PUSHED ${pushedStatus.toUpperCase()}' : ''}',
-                                  style: const TextStyle(
-                                    color: AdminFinanceScreen.primary,
-                                    fontWeight: FontWeight.w700,
+                                  'Missing: ${missingLabels.join(', ')}',
+                                  style: TextStyle(
+                                    color: const Color(0xFFD14B4B),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                          isThreeLine: true,
-                          trailing: PopupMenuButton<String>(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(Icons.more_horiz_rounded),
-                            onSelected: (v) {
-                              if (v == 'add_payment') {
-                                _addManualPayment(row);
-                              }
-                              if (v == 'mark_done_manual') {
-                                _setManualDone(row, true);
-                              }
-                              if (v == 'unmark_done_manual') {
-                                _setManualDone(row, false);
-                              }
-                              if (v == 'method_cash') {
-                                _setMethod(row, 'cash');
-                              }
-                              if (v == 'method_ccp') {
-                                _setMethod(row, 'ccp');
-                              }
-                              if (v == 'method_unspecified') {
-                                _setMethod(row, 'unspecified');
-                              }
-                              if (v == 'set_percent') {
-                                _setTeacherPercent(row);
-                              }
-                            },
-                            itemBuilder: (_) {
-                              if (isNoPayment) {
-                                final uid = (row['uid'] ?? '')
-                                    .toString()
-                                    .trim();
-                                final markedDone = manualDone.contains(uid);
-                                return [
-                                  const PopupMenuItem(
-                                    value: 'add_payment',
-                                    child: Text('Add payment'),
-                                  ),
-                                  PopupMenuItem(
-                                    value: markedDone
-                                        ? 'unmark_done_manual'
-                                        : 'mark_done_manual',
-                                    child: Text(
-                                      markedDone ? 'Unmark done' : 'Mark done',
-                                    ),
-                                  ),
-                                ];
-                              }
-                              return [
-                                const PopupMenuItem(
-                                  value: 'method_cash',
-                                  child: Text('Set method: 💵 Cash'),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'method_ccp',
-                                  child: Text('Set method: 🏤 CCP'),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'method_unspecified',
-                                  child: Text('Set method: ❔ Unspecified'),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'set_percent',
-                                  child: Text('Set teacher %'),
-                                ),
-                              ];
-                            },
+                            ],
                           ),
                         ),
                       );
@@ -2025,6 +2413,13 @@ class _FinanceAmounts {
   final String? splitPaidStatus;
   final int payoutAmount;
   final int waitingAmount;
+}
+
+class _SessionCounts {
+  const _SessionCounts({this.held = 0, this.present = 0});
+
+  final int held;
+  final int present;
 }
 
 class _TeacherCardData {
