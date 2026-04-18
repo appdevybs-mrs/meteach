@@ -32,6 +32,7 @@ import '../shared/payment_status.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
+import '../services/notification_counter_service.dart';
 import '../services/reminder_consistency_service.dart';
 import 'admin_certificates.dart';
 import 'admin_admin_todos_screen.dart';
@@ -2130,36 +2131,10 @@ class _PriorityAlertsDashCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: ref.onValue,
       builder: (context, snap) {
-        int unseen = 0;
-        int today = 0;
         final root = snap.data?.snapshot.value;
-
-        if (root is Map) {
-          root.forEach((_, userNode) {
-            if (userNode is! Map) return;
-            final alerts = Map<dynamic, dynamic>.from(userNode);
-            alerts.forEach((_, rawAlert) {
-              if (rawAlert is! Map) return;
-              final m = rawAlert.map((k, v) => MapEntry(k.toString(), v));
-              final status = (m['status'] ?? '')
-                  .toString()
-                  .trim()
-                  .toLowerCase();
-              final seenAt = _toInt(m['seenAtMs']);
-              if (status != 'seen' && seenAt <= 0) unseen += 1;
-
-              final createdAt = _toInt(m['createdAtMs']);
-              if (createdAt > 0) {
-                final d = DateTime.fromMillisecondsSinceEpoch(createdAt);
-                if (d.year == now.year &&
-                    d.month == now.month &&
-                    d.day == now.day) {
-                  today += 1;
-                }
-              }
-            });
-          });
-        }
+        final counts = NotificationCounterService.flashAlertCounts(root, now);
+        final unseen = counts.unseen;
+        final today = counts.today;
 
         final subtitle = unseen == 0
             ? 'No unseen alerts'
@@ -3403,11 +3378,10 @@ class _StaffMailDashCard extends StatelessWidget {
         final root = snap.data?.snapshot.value;
         if (root is Map) {
           threads = root.length;
-          root.forEach((_, threadVal) {
-            if (threadVal is! Map) return;
-            final m = threadVal.map((k, v) => MapEntry(k.toString(), v));
-            unread += _toInt(m['unreadCount']);
-          });
+          unread = NotificationCounterService.mailUnread(
+            root,
+            excludeHomework: true,
+          );
         }
 
         final subtitle = threads == 0

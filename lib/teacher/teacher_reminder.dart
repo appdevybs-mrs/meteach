@@ -5,8 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/push_error_logger.dart';
-import '../services/push_client.dart';
+import '../services/push_dispatch_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
@@ -132,28 +131,24 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
           ? '$teacherLabel completed: ${r.title}'
           : '$teacherLabel opened: ${r.title}';
 
-      await PushClient.sendToTopic(
-        topic: 'admins',
-        eventId: 'teacher_reminder_${_uid ?? ''}_${reminderId}_$action',
+      await PushDispatchService.dispatchAdminTopic(
+        intent: PushIntent.reminder,
         title: title,
         message: message,
+        context: const PushDispatchContext(
+          screen: 'teacher/teacher_reminder',
+          action: 'notify_admins_on_reminder_update',
+        ),
+        eventParts: ['teacher_reminder', _uid ?? '', reminderId, action],
+        route: 'teacher_reminders',
         data: {
-          'type': 'reminder',
           'action': action,
           'reminderId': reminderId,
           'teacherUid': _uid ?? '',
           'title': r.title,
         },
       );
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'teacher/teacher_reminder',
-        action: 'notify_admins_on_reminder_update',
-        error: e,
-        stackTrace: st,
-        topic: 'admins',
-        eventId: 'teacher_reminder_${_uid ?? ''}_${reminderId}_$action',
-      );
+    } catch (e) {
       _snack('Admin notify failed: $e');
     } finally {
       _notifying.remove(key);
@@ -698,7 +693,6 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     if (_uid == null) {
       return Scaffold(
         backgroundColor: p.appBg,

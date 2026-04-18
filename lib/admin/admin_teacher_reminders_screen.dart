@@ -8,11 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
-import '../services/push_error_logger.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/reminder_consistency_service.dart';
 import '../shared/human_error.dart';
-
-import '../services/push_client.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 
@@ -66,17 +64,6 @@ class _AdminTeacherRemindersScreenState
   void _snack(String msg) {
     if (!mounted) return;
     AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
-  }
-
-  Future<String?> _getTeacherFcmToken(String teacherUid) async {
-    try {
-      final snap = await _db.ref('fcm_tokens/$teacherUid/token').get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
   }
 
   String _normalizeUrl(String raw) {
@@ -304,7 +291,6 @@ class _AdminTeacherRemindersScreenState
     );
 
     try {
-      final token = await _getTeacherFcmToken(teacherUid);
       final pushRef = ref.child('push');
 
       await pushRef.update({
@@ -313,76 +299,28 @@ class _AdminTeacherRemindersScreenState
         'error': null,
       });
 
-      if (token != null && token.isNotEmpty) {
-        try {
-          await PushClient.sendToToken(
-            token: token,
-            targetUid: teacherUid,
-            eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
-            title: created.title.trim(),
-            message: created.description.trim().isEmpty
-                ? 'You have a new reminder'
-                : created.description.trim(),
-            data: {
-              'type': 'reminder',
-              'route': 'teacher_reminders',
-              'teacherUid': teacherUid,
-            },
-          );
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/admin_teacher_reminders',
-            action: 'teacher_reminder_push_token_fallback_topic',
-            error: e,
-            stackTrace: st,
-            targetUid: teacherUid,
-            token: token,
-            eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
-          );
-          await PushClient.sendToTopic(
-            topic: 'user_$teacherUid',
-            eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
-            title: created.title.trim(),
-            message: created.description.trim().isEmpty
-                ? 'You have a new reminder'
-                : created.description.trim(),
-            data: {
-              'type': 'reminder',
-              'route': 'teacher_reminders',
-              'teacherUid': teacherUid,
-            },
-          );
-        }
-      } else {
-        await PushClient.sendToTopic(
-          topic: 'user_$teacherUid',
-          eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
-          title: created.title.trim(),
-          message: created.description.trim().isEmpty
-              ? 'You have a new reminder'
-              : created.description.trim(),
-          data: {
-            'type': 'reminder',
-            'route': 'teacher_reminders',
-            'teacherUid': teacherUid,
-          },
-        );
-      }
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.reminder,
+        targetUid: teacherUid,
+        title: created.title.trim(),
+        message: created.description.trim().isEmpty
+            ? 'You have a new reminder'
+            : created.description.trim(),
+        context: const PushDispatchContext(
+          screen: 'admin/admin_teacher_reminders',
+          action: 'teacher_reminder_push',
+        ),
+        eventParts: ['teacher', teacherUid, ref.key ?? ''],
+        data: {'teacherUid': teacherUid},
+        route: 'teacher_reminders',
+      );
 
       await pushRef.update({
         'sentAt': ServerValue.timestamp,
         'status': 'sent',
         'error': null,
       });
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'admin/admin_teacher_reminders',
-        action: 'teacher_reminder_push_final_failure',
-        error: e,
-        stackTrace: st,
-        targetUid: teacherUid,
-        eventId: 'teacher_reminder_${teacherUid}_${ref.key ?? ''}',
-      );
+    } catch (e) {
       await ref.child('push').update({
         'status': 'error',
         'error': e.toString(),
@@ -405,13 +343,7 @@ class _AdminTeacherRemindersScreenState
           teacherUid: widget.teacherUid!.trim(),
           created: created,
         );
-
-        final token = await _getTeacherFcmToken(widget.teacherUid!.trim());
-        if (token == null) {
-          _snack('Reminder saved ✅ but teacher has no FCM token');
-        } else {
-          _snack('Reminder added ✅');
-        }
+        _snack('Reminder added ✅');
       } catch (e) {
         _snack(
           toHumanError(
@@ -453,12 +385,9 @@ class _AdminTeacherRemindersScreenState
 
     int successCount = 0;
     int failedCount = 0;
-    int noPushCount = 0;
 
     for (final teacher in selectedTeachers) {
       try {
-        final token = await _getTeacherFcmToken(teacher.uid);
-
         await _saveReminderForTeacher(
           teacherUid: teacher.uid,
           created: _TeacherReminderDraft(
@@ -475,8 +404,6 @@ class _AdminTeacherRemindersScreenState
             teacherPhone2: teacher.phone2,
           ),
         );
-
-        if (token == null) noPushCount++;
         successCount++;
       } catch (_) {
         failedCount++;
@@ -484,19 +411,9 @@ class _AdminTeacherRemindersScreenState
     }
 
     if (failedCount == 0) {
-      if (noPushCount > 0) {
-        _snack(
-          'Reminder sent to $successCount teacher(s) ✅ '
-          '($noPushCount without push token)',
-        );
-      } else {
-        _snack('Reminder sent to $successCount teacher(s) ✅');
-      }
+      _snack('Reminder sent to $successCount teacher(s) ✅');
     } else {
-      _snack(
-        'Done: $successCount sent, $failedCount failed'
-        '${noPushCount > 0 ? ' ($noPushCount without push token)' : ''}',
-      );
+      _snack('Done: $successCount sent, $failedCount failed');
     }
   }
 

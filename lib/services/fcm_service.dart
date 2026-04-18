@@ -27,7 +27,10 @@ import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail.dart';
 import '../teacher/teacher_mail_thread_screen.dart';
+import 'audit_action_keys.dart';
+import 'audit_log_service.dart';
 import 'mail_thread_by_id_screen.dart'; // safe fallback only
+import 'push_dispatch_service.dart';
 import 'route_state.dart';
 
 @pragma('vm:entry-point')
@@ -173,7 +176,62 @@ class FCMService {
         'platform': kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'other'),
         'updatedAt': ServerValue.timestamp,
       });
+      await PushDispatchService.syncCurrentDeviceTokenV2(token);
     } catch (_) {}
+  }
+
+  Future<void> _logTapFailure({
+    required String action,
+    required String summary,
+    Map<String, dynamic>? payload,
+    Object? error,
+    StackTrace? stackTrace,
+  }) async {
+    final uid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+    await AuditLogService.logFailure(
+      actionKey: AuditActionKeys.systemPushFailed,
+      domain: AuditDomain.push,
+      summary: summary,
+      actor: AuditActor(uid: uid, role: 'system', name: 'FCMService'),
+      target: AuditTarget(type: 'notification_tap', id: action),
+      context: {
+        'tapAction': action,
+        'type': (payload?['type'] ?? '').toString(),
+        'route': (payload?['route'] ?? '').toString(),
+        'eventId': (payload?['eventId'] ?? '').toString(),
+      },
+      errorMessage: error?.toString(),
+      meta: {
+        if (stackTrace != null)
+          'stackTop': stackTrace.toString().split('\n').first,
+      },
+      labels: const ['source:fcm_tap'],
+      keywords: [
+        action,
+        (payload?['type'] ?? '').toString(),
+        (payload?['eventId'] ?? '').toString(),
+      ],
+    );
+  }
+
+  bool _validateActionPayload(String action, Map<String, dynamic> data) {
+    if (action == 'mail') {
+      final threadId = (data['threadId'] ?? '').toString().trim();
+      return threadId.isNotEmpty;
+    }
+    if (action == 'admin_todo') {
+      return true;
+    }
+    if (action == 'job_application') {
+      return true;
+    }
+    if (action == 'booking' || action == 'payment' || action == 'reminder') {
+      return true;
+    }
+    if (action == 'recorded_comment' || action == 'flash_message') {
+      return true;
+    }
+    return false;
   }
 
   Future<void> _ensureLocalInit() async {
@@ -751,9 +809,25 @@ class FCMService {
     Map<String, dynamic> data;
     try {
       final decoded = jsonDecode(payload);
-      if (decoded is! Map) return;
+      if (decoded is! Map) {
+        Future<void>(() async {
+          await _logTapFailure(
+            action: 'decode_payload',
+            summary: 'Push tap ignored: payload is not an object.',
+          );
+        });
+        return;
+      }
       data = Map<String, dynamic>.from(decoded);
-    } catch (_) {
+    } catch (e, st) {
+      Future<void>(() async {
+        await _logTapFailure(
+          action: 'decode_payload',
+          summary: 'Push tap ignored: payload decode failed.',
+          error: e,
+          stackTrace: st,
+        );
+      });
       return;
     }
 
@@ -770,6 +844,29 @@ class FCMService {
     }
 
     final action = _payloadAction(data);
+    if (action.isEmpty) {
+      Future<void>(() async {
+        await _logTapFailure(
+          action: 'resolve_action',
+          summary: 'Push tap ignored: unknown action.',
+          payload: data,
+        );
+      });
+      return;
+    }
+    if (!_validateActionPayload(action, data)) {
+      Future<void>(() async {
+        await _logTapFailure(
+          action: 'validate_payload',
+          summary: 'Push tap payload incomplete. Falling back safely.',
+          payload: data,
+        );
+      });
+      Future<void>(() async {
+        await _openMessageCenterByRole();
+      });
+      return;
+    }
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final eventId = _eventIdFromData(data);
@@ -781,36 +878,47 @@ class FCMService {
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (action == 'mail') {
-        await _openMailNotificationByRole(data);
-        return;
-      }
-      if (action == 'reminder') {
-        await _openReminderByRole(data);
-        return;
-      }
-      if (action == 'admin_todo') {
-        await _openAdminTodoByRole(data);
-        return;
-      }
-      if (action == 'booking') {
-        await _openBookingByRole(data);
-        return;
-      }
-      if (action == 'payment') {
-        await _openPaymentByRole(data);
-        return;
-      }
-      if (action == 'recorded_comment') {
-        await _openRecordedCommentByRole(data);
-        return;
-      }
-      if (action == 'job_application') {
-        await _openJobApplicationsByRole();
-        return;
-      }
-      if (action == 'flash_message') {
-        await _openFlashAlertByRole();
+      try {
+        if (action == 'mail') {
+          await _openMailNotificationByRole(data);
+          return;
+        }
+        if (action == 'reminder') {
+          await _openReminderByRole(data);
+          return;
+        }
+        if (action == 'admin_todo') {
+          await _openAdminTodoByRole(data);
+          return;
+        }
+        if (action == 'booking') {
+          await _openBookingByRole(data);
+          return;
+        }
+        if (action == 'payment') {
+          await _openPaymentByRole(data);
+          return;
+        }
+        if (action == 'recorded_comment') {
+          await _openRecordedCommentByRole(data);
+          return;
+        }
+        if (action == 'job_application') {
+          await _openJobApplicationsByRole();
+          return;
+        }
+        if (action == 'flash_message') {
+          await _openFlashAlertByRole();
+        }
+      } catch (e, st) {
+        await _logTapFailure(
+          action: 'route_open',
+          summary: 'Push tap route open failed. Falling back safely.',
+          payload: data,
+          error: e,
+          stackTrace: st,
+        );
+        await _openMessageCenterByRole();
       }
     });
   }

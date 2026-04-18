@@ -12,12 +12,10 @@ import 'package:video_player/video_player.dart';
 import 'dart:async';
 import '../services/backend_api.dart';
 import '../services/mail_consistency_service.dart';
-import '../services/push_error_logger.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/route_state.dart'; // ✅ ADD THIS
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
-
-import '../services/push_client.dart';
 import '../shared/app_feedback.dart';
 
 class MailUploadClient {
@@ -213,17 +211,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         setState(() => _subject = (m['subject'] ?? '').toString().trim());
       }
     } catch (_) {}
-  }
-
-  Future<String?> _getFcmToken(String uid) async {
-    try {
-      final snap = await _db.ref('fcm_tokens/$uid/token').get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
   }
 
   Future<void> _markRead() async {
@@ -896,66 +883,19 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       // ✅ 5) push notify (don’t block UI)
       unawaited(() async {
         try {
-          final token = await _getFcmToken(widget.peerUid);
-          final eventId = 'mail_${widget.threadId}_$now';
-          final topic = 'user_${widget.peerUid}';
-          final payload = {
-            'type': 'mail',
-            'route': 'mail_thread',
-            'threadId': widget.threadId,
-            'peerUid': _meUid,
-          };
-          if (token != null) {
-            try {
-              await PushClient.sendToToken(
-                token: token,
-                targetUid: widget.peerUid,
-                eventId: eventId,
-                title: _subject.isEmpty ? 'New mail' : _subject,
-                message: preview80.isEmpty
-                    ? 'You received new mail'
-                    : preview80,
-                data: payload,
-              );
-            } catch (e, st) {
-              await PushErrorLogger.logFailure(
-                screen: 'admin/mail_topic_thread',
-                action: 'mail_push_token_fallback_topic',
-                error: e,
-                stackTrace: st,
-                targetUid: widget.peerUid,
-                token: token,
-                eventId: eventId,
-              );
-              await PushClient.sendToTopic(
-                topic: topic,
-                eventId: eventId,
-                title: _subject.isEmpty ? 'New mail' : _subject,
-                message: preview80.isEmpty
-                    ? 'You received new mail'
-                    : preview80,
-                data: payload,
-              );
-            }
-          } else {
-            await PushClient.sendToTopic(
-              topic: topic,
-              eventId: eventId,
-              title: _subject.isEmpty ? 'New mail' : _subject,
-              message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: payload,
-            );
-          }
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/mail_topic_thread',
-            action: 'mail_push_final_failure',
-            error: e,
-            stackTrace: st,
+          await PushDispatchService.dispatchMailToUser(
             targetUid: widget.peerUid,
-            eventId: 'mail_${widget.threadId}_$now',
+            threadId: widget.threadId,
+            peerUid: _meUid,
+            title: _subject,
+            preview: preview80,
+            nowMs: now,
+            context: const PushDispatchContext(
+              screen: 'admin/mail_topic_thread',
+              action: 'mail_push',
+            ),
           );
-        }
+        } catch (_) {}
       }());
     } catch (e) {
       // ✅ restore input on failure

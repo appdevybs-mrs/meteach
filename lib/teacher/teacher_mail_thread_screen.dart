@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/route_state.dart';
-import '../services/push_error_logger.dart';
-import '../services/push_client.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../utils/io_delete.dart';
@@ -516,17 +515,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _loadingLearnerCourses = false;
         _loadedLearnerCourses = true;
       });
-    }
-  }
-
-  Future<String?> _getFcmToken(String uid) async {
-    try {
-      final snap = await _db.ref('fcm_tokens/$uid/token').get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
     }
   }
 
@@ -1054,66 +1042,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (sendPush) {
       unawaited(() async {
         try {
-          final token = await _getFcmToken(widget.peerUid);
-          final eventId = 'mail_${widget.threadId}_$now';
-          final topic = 'user_${widget.peerUid}';
-          final payload = {
-            'type': 'mail',
-            'route': 'mail_thread',
-            'threadId': widget.threadId,
-            'peerUid': _meUid,
-          };
-          if (token != null) {
-            try {
-              await PushClient.sendToToken(
-                token: token,
-                targetUid: widget.peerUid,
-                eventId: eventId,
-                title: widget.subject.isEmpty ? 'New mail' : widget.subject,
-                message: preview80.isEmpty
-                    ? 'You received new mail'
-                    : preview80,
-                data: payload,
-              );
-            } catch (e, st) {
-              await PushErrorLogger.logFailure(
-                screen: 'teacher/teacher_mail_thread',
-                action: 'mail_push_token_fallback_topic',
-                error: e,
-                stackTrace: st,
-                targetUid: widget.peerUid,
-                token: token,
-                eventId: eventId,
-              );
-              await PushClient.sendToTopic(
-                topic: topic,
-                eventId: eventId,
-                title: widget.subject.isEmpty ? 'New mail' : widget.subject,
-                message: preview80.isEmpty
-                    ? 'You received new mail'
-                    : preview80,
-                data: payload,
-              );
-            }
-          } else {
-            await PushClient.sendToTopic(
-              topic: topic,
-              eventId: eventId,
-              title: widget.subject.isEmpty ? 'New mail' : widget.subject,
-              message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: payload,
-            );
-          }
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'teacher/teacher_mail_thread',
-            action: 'mail_push_final_failure',
-            error: e,
-            stackTrace: st,
+          await PushDispatchService.dispatchMailToUser(
             targetUid: widget.peerUid,
-            eventId: 'mail_${widget.threadId}_$now',
+            threadId: widget.threadId,
+            peerUid: _meUid,
+            title: widget.subject,
+            preview: preview80,
+            nowMs: now,
+            context: const PushDispatchContext(
+              screen: 'teacher/teacher_mail_thread',
+              action: 'mail_push',
+            ),
           );
-        }
+        } catch (_) {}
       }());
     }
   }

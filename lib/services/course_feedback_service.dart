@@ -1,7 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 
-import 'push_client.dart';
-import 'push_error_logger.dart';
+import 'push_dispatch_service.dart';
 
 class CourseReviewItem {
   CourseReviewItem({
@@ -146,20 +145,6 @@ class CourseFeedbackService {
         .replaceAll(RegExp(r'^_+|_+$'), '');
   }
 
-  static Future<String?> _userToken(String uid) async {
-    final safeUid = uid.trim();
-    if (safeUid.isEmpty) return null;
-    try {
-      final snap = await _db.child('fcm_tokens/$safeUid/token').get();
-      if (!snap.exists || snap.value == null) return null;
-      final token = snap.value.toString().trim();
-      if (token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
-  }
-
   static Future<bool> _isLearnerActor(String uid) async {
     final safeUid = uid.trim();
     if (safeUid.isEmpty) return false;
@@ -212,51 +197,6 @@ class CourseFeedbackService {
     return out;
   }
 
-  static Future<void> _sendRecordedCommentToTeacher({
-    required String teacherUid,
-    required String title,
-    required String body,
-    required String eventId,
-    required Map<String, dynamic> data,
-  }) async {
-    final safeTeacherUid = teacherUid.trim();
-    if (safeTeacherUid.isEmpty) return;
-
-    final token = await _userToken(safeTeacherUid);
-    if (token != null && token.isNotEmpty) {
-      try {
-        await PushClient.sendToToken(
-          token: token,
-          targetUid: safeTeacherUid,
-          eventId: eventId,
-          title: title,
-          message: body,
-          data: data,
-        );
-        return;
-      } catch (e, st) {
-        await PushErrorLogger.logFailure(
-          screen: 'services/course_feedback_service',
-          action: 'recorded_comment_teacher_token_fallback_topic',
-          error: e,
-          stackTrace: st,
-          targetUid: safeTeacherUid,
-          token: token,
-          eventId: eventId,
-          extra: {'topic': 'user_$safeTeacherUid'},
-        );
-      }
-    }
-
-    await PushClient.sendToTopic(
-      topic: 'user_$safeTeacherUid',
-      eventId: eventId,
-      title: title,
-      message: body,
-      data: data,
-    );
-  }
-
   static Future<void> _notifyRecordedCommentImmediately({
     required String courseId,
     required String lessonId,
@@ -284,8 +224,6 @@ class CourseFeedbackService {
     final body = '$safeActorName commented: $shortText';
 
     final baseData = <String, dynamic>{
-      'type': 'recorded_comment',
-      'route': 'recorded_comment',
       'priority': 'high',
       'courseId': courseId,
       'lessonId': lessonId,
@@ -300,23 +238,19 @@ class CourseFeedbackService {
     final adminEventId =
         'recorded_comment_${safeCourseId}_${safeLessonId}_${safeCommentId}_admins';
     try {
-      await PushClient.sendToTopic(
-        topic: 'admins',
-        eventId: adminEventId,
+      await PushDispatchService.dispatchAdminTopic(
+        intent: PushIntent.recordedComment,
         title: title,
         message: body,
+        context: const PushDispatchContext(
+          screen: 'services/course_feedback_service',
+          action: 'recorded_comment_admin_topic',
+        ),
+        eventParts: [adminEventId],
+        route: 'recorded_comment',
         data: baseData,
       );
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'services/course_feedback_service',
-        action: 'recorded_comment_admin_topic',
-        error: e,
-        stackTrace: st,
-        topic: 'admins',
-        eventId: adminEventId,
-      );
-    }
+    } catch (_) {}
 
     for (final teacherUid in teachers) {
       if (teacherUid.trim().isEmpty || teacherUid.trim() == actorUid.trim()) {
@@ -326,23 +260,20 @@ class CourseFeedbackService {
       final teacherEventId =
           'recorded_comment_${safeCourseId}_${safeLessonId}_${safeCommentId}_${_sanitizeEventPart(teacherUid)}';
       try {
-        await _sendRecordedCommentToTeacher(
-          teacherUid: teacherUid,
+        await PushDispatchService.dispatchToUser(
+          intent: PushIntent.recordedComment,
+          targetUid: teacherUid,
           title: title,
-          body: body,
-          eventId: teacherEventId,
+          message: body,
+          context: const PushDispatchContext(
+            screen: 'services/course_feedback_service',
+            action: 'recorded_comment_teacher_push',
+          ),
+          eventParts: [teacherEventId],
+          route: 'recorded_comment',
           data: <String, dynamic>{...baseData, 'teacherUid': teacherUid},
         );
-      } catch (e, st) {
-        await PushErrorLogger.logFailure(
-          screen: 'services/course_feedback_service',
-          action: 'recorded_comment_teacher_final_failure',
-          error: e,
-          stackTrace: st,
-          targetUid: teacherUid,
-          eventId: teacherEventId,
-        );
-      }
+      } catch (_) {}
     }
   }
 
@@ -572,16 +503,7 @@ class CourseFeedbackService {
         actorName: identity['displayName'] ?? 'Learner',
         text: text,
       );
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'services/course_feedback_service',
-        action: 'recorded_comment_notify_unhandled',
-        error: e,
-        stackTrace: st,
-        eventId:
-            'recorded_comment_${_sanitizeEventPart(courseId)}_${_sanitizeEventPart(lessonId)}_${_sanitizeEventPart(commentId)}',
-      );
-    }
+    } catch (_) {}
   }
 
   static Future<void> addLessonReply({

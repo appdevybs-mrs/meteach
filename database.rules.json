@@ -412,6 +412,21 @@
       }
     },
 
+    "fcm_tokens_v2": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$deviceId": {
+          ".write": "auth != null && auth.uid == $uid",
+          "token": { ".validate": "newData.isString() && newData.val().length > 0" },
+          "platform": { ".validate": "!newData.exists() || newData.isString()" },
+          "updatedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+          "lastSeenAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+          "appVersion": { ".validate": "!newData.exists() || newData.isString()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
     "push_events": {
       ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
       ".write": false
@@ -502,7 +517,7 @@
           ".write": "auth != null && auth.uid == $uid",
 
           "eventId": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 120" },
-          "type": { ".validate": "newData.isString() && (newData.val() == 'message' || newData.val() == 'reminder' || newData.val() == 'admin_todo' || newData.val() == 'mail' || newData.val() == 'booking' || newData.val() == 'payment' || newData.val() == 'session' || newData.val() == 'coach' || newData.val() == 'recorded_comment' || newData.val() == 'job_application')" },
+          "type": { ".validate": "newData.isString() && (newData.val() == 'message' || newData.val() == 'reminder' || newData.val() == 'admin_todo' || newData.val() == 'mail' || newData.val() == 'flash_message' || newData.val() == 'booking' || newData.val() == 'payment' || newData.val() == 'session' || newData.val() == 'coach' || newData.val() == 'recorded_comment' || newData.val() == 'job_application')" },
           "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
           "body": { ".validate": "newData.isString() && newData.val().length <= 500" },
           "status": { ".validate": "newData.isString() && (newData.val() == 'sent' || newData.val() == 'opened' || newData.val() == 'failed')" },

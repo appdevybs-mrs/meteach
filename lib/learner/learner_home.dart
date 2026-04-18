@@ -29,6 +29,7 @@ import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 import '../shared/window_access_dialogs.dart';
+import '../services/notification_counter_service.dart';
 import '../services/window_access_service.dart';
 
 class LearnerHome extends StatefulWidget {
@@ -5009,17 +5010,8 @@ class _RemindersHomeCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
       builder: (context, snap) {
-        int unread = 0;
-
         final v = snap.data?.snapshot.value;
-        if (v is Map) {
-          v.forEach((_, vv) {
-            if (vv is! Map) return;
-            final m = vv.map((k, v) => MapEntry(k.toString(), v));
-            final readAt = m['readAt'];
-            if (readAt == null) unread += 1;
-          });
-        }
+        final unread = NotificationCounterService.reminderCounts(v).newCount;
 
         final subtitle = unread == 0 ? 'All caught up ✅' : '$unread unread';
 
@@ -5159,18 +5151,8 @@ class _LearnerMailHomeCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
       builder: (context, snap) {
-        int unread = 0;
-
         final v = snap.data?.snapshot.value;
-        if (v is Map) {
-          for (final vv in v.values) {
-            if (vv is! Map) continue;
-            final m = vv.map((k, x) => MapEntry(k.toString(), x));
-            final dynamic n = m['unreadCount'];
-            final count = (n is num) ? n.toInt() : int.tryParse('$n') ?? 0;
-            unread += count;
-          }
-        }
+        final unread = NotificationCounterService.mailUnread(v);
 
         final subtitle = unread == 0 ? 'No unread ✅' : '$unread unread';
 

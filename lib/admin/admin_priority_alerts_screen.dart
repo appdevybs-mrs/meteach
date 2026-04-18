@@ -2,8 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
-import '../services/push_error_logger.dart';
-import '../services/push_client.dart';
+import '../services/push_dispatch_service.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
@@ -201,30 +200,12 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     return blob.contains(search);
   }
 
-  Future<String?> _getFcmToken(String uid) async {
-    try {
-      final snap = await _db.ref('fcm_tokens/$uid/token').get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _createAlert({
     required _RecipientLite target,
     required _AlertDraft draft,
     String resentFromId = '',
   }) async {
     final ref = _db.ref('flash_messages/${target.uid}').push();
-    final payload = {
-      'type': 'flash_message',
-      'route': 'flash_messages',
-      'targetUid': target.uid,
-      'alertId': ref.key ?? '',
-    };
-
     await ref.set({
       'title': draft.title,
       'message': draft.message,
@@ -241,56 +222,20 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     });
 
     try {
-      final token = await _getFcmToken(target.uid);
-      final eventId = 'flash_${target.uid}_${ref.key ?? ''}';
-      final topic = 'user_${target.uid}';
-      if (token != null) {
-        try {
-          await PushClient.sendToToken(
-            token: token,
-            targetUid: target.uid,
-            eventId: eventId,
-            title: 'Priority alert',
-            message: draft.title,
-            data: payload,
-          );
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/admin_priority_alerts',
-            action: 'priority_alert_push_token_fallback_topic',
-            error: e,
-            stackTrace: st,
-            targetUid: target.uid,
-            token: token,
-            eventId: eventId,
-          );
-          await PushClient.sendToTopic(
-            topic: topic,
-            eventId: eventId,
-            title: 'Priority alert',
-            message: draft.title,
-            data: payload,
-          );
-        }
-      } else {
-        await PushClient.sendToTopic(
-          topic: topic,
-          eventId: eventId,
-          title: 'Priority alert',
-          message: draft.title,
-          data: payload,
-        );
-      }
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'admin/admin_priority_alerts',
-        action: 'priority_alert_push_final_failure',
-        error: e,
-        stackTrace: st,
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.flashMessage,
         targetUid: target.uid,
-        eventId: 'flash_${target.uid}_${ref.key ?? ''}',
+        title: 'Priority alert',
+        message: draft.title,
+        context: const PushDispatchContext(
+          screen: 'admin/admin_priority_alerts',
+          action: 'priority_alert_push',
+        ),
+        eventParts: ['flash', target.uid, ref.key ?? ''],
+        data: {'targetUid': target.uid, 'alertId': ref.key ?? ''},
+        route: 'flash_messages',
       );
-    }
+    } catch (_) {}
   }
 
   Future<void> _openSendFlow(List<_RecipientLite> recipients) async {

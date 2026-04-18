@@ -13,8 +13,7 @@ import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
 import '../services/mail_consistency_service.dart';
-import '../services/push_error_logger.dart';
-import '../services/push_client.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/route_state.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
@@ -249,19 +248,6 @@ class _AdminTeacherMailThreadScreenState
       context,
       SnackBar(content: Text(humanizeUiMessage(msg))),
     );
-  }
-
-  Future<String?> _getFcmToken(String uid) async {
-    try {
-      final snap = await FirebaseDatabase.instance
-          .ref('fcm_tokens/$uid/token')
-          .get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
   }
 
   Future<void> _loadOrInitThread() async {
@@ -625,66 +611,19 @@ class _AdminTeacherMailThreadScreenState
       // notify teacher (do not block UI)
       unawaited(() async {
         try {
-          final token = await _getFcmToken(widget.teacherUid);
-          final eventId = 'mail_${_threadId}_$now';
-          final topic = 'user_${widget.teacherUid}';
-          final payload = {
-            'type': 'mail',
-            'route': 'mail_thread',
-            'threadId': _threadId,
-            'peerUid': _meUid,
-          };
-          if (token != null) {
-            try {
-              await PushClient.sendToToken(
-                token: token,
-                targetUid: widget.teacherUid,
-                eventId: eventId,
-                title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
-                message: preview80.isEmpty
-                    ? 'You received new mail'
-                    : preview80,
-                data: payload,
-              );
-            } catch (e, st) {
-              await PushErrorLogger.logFailure(
-                screen: 'admin/admin_teacher_mail_thread',
-                action: 'mail_push_token_fallback_topic',
-                error: e,
-                stackTrace: st,
-                targetUid: widget.teacherUid,
-                token: token,
-                eventId: eventId,
-              );
-              await PushClient.sendToTopic(
-                topic: topic,
-                eventId: eventId,
-                title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
-                message: preview80.isEmpty
-                    ? 'You received new mail'
-                    : preview80,
-                data: payload,
-              );
-            }
-          } else {
-            await PushClient.sendToTopic(
-              topic: topic,
-              eventId: eventId,
-              title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
-              message: preview80.isEmpty ? 'You received new mail' : preview80,
-              data: payload,
-            );
-          }
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/admin_teacher_mail_thread',
-            action: 'mail_push_final_failure',
-            error: e,
-            stackTrace: st,
+          await PushDispatchService.dispatchMailToUser(
             targetUid: widget.teacherUid,
-            eventId: 'mail_${_threadId}_$now',
+            threadId: _threadId,
+            peerUid: _meUid,
+            title: _subject,
+            preview: preview80,
+            nowMs: now,
+            context: const PushDispatchContext(
+              screen: 'admin/admin_teacher_mail_thread',
+              action: 'mail_push',
+            ),
           );
-        }
+        } catch (_) {}
       }());
     } catch (e) {
       // ✅ restore user input if failed

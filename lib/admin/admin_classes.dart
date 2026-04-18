@@ -39,8 +39,7 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
-import '../services/push_client.dart';
-import '../services/push_error_logger.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/reminder_consistency_service.dart';
 import 'admin_learner_mail_topics_screen.dart';
 import 'admin_learners.dart';
@@ -182,19 +181,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
-  Future<String?> _getLearnerFcmToken(String learnerUid) async {
-    try {
-      final snap = await FirebaseDatabase.instance
-          .ref('fcm_tokens/$learnerUid/token')
-          .get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _sendLearnerQuickReminder({
     required String uid,
     required _QuickLearnerReminder type,
@@ -250,55 +236,26 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       return;
     }
 
-    final token = await _getLearnerFcmToken(uid);
-
     await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
 
     try {
-      final payload = {
-        'type': 'reminder',
-        'route': 'learner',
-        'learnerUid': uid,
-        'kind': type.name,
-        'reminderId': reminderRef.key,
-      };
-      if (token != null && token.isNotEmpty) {
-        try {
-          await PushClient.sendToToken(
-            token: token,
-            targetUid: uid,
-            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
-            title: title,
-            message: message,
-            data: payload,
-          );
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/admin_classes',
-            action: 'learner_reminder_push_token_fallback_topic',
-            error: e,
-            stackTrace: st,
-            targetUid: uid,
-            token: token,
-            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
-          );
-          await PushClient.sendToTopic(
-            topic: 'user_$uid',
-            eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
-            title: title,
-            message: message,
-            data: payload,
-          );
-        }
-      } else {
-        await PushClient.sendToTopic(
-          topic: 'user_$uid',
-          eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
-          title: title,
-          message: message,
-          data: payload,
-        );
-      }
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.reminder,
+        targetUid: uid,
+        title: title,
+        message: message,
+        context: const PushDispatchContext(
+          screen: 'admin/admin_classes',
+          action: 'learner_reminder_push',
+        ),
+        eventParts: ['learner', uid, reminderRef.key ?? ''],
+        data: {
+          'learnerUid': uid,
+          'kind': type.name,
+          'reminderId': reminderRef.key,
+        },
+        route: 'learner',
+      );
 
       await reminderRef.update({
         'status': 'new',
@@ -308,15 +265,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
       if (!mounted) return;
       _notify('Reminder saved & push sent ✅');
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'admin/admin_classes',
-        action: 'learner_reminder_push_final_failure',
-        error: e,
-        stackTrace: st,
-        targetUid: uid,
-        eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
-      );
+    } catch (e) {
       await reminderRef.update({'status': 'new', 'push/error': e.toString()});
 
       if (!mounted) return;

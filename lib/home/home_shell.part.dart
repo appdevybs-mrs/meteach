@@ -470,36 +470,29 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
     final safeAppId = _sanitizeEventPart(appId);
     if (safeAppId.isEmpty) return;
 
-    final eventId = 'job_application_$safeAppId';
     final title = isGuest ? 'New guest job application' : 'New job application';
     final body = isGuest
         ? 'A new guest candidate submitted a job application.'
         : 'A new platform user submitted a job application.';
 
     try {
-      await PushClient.sendToTopic(
-        topic: 'admins',
-        eventId: eventId,
+      await PushDispatchService.dispatchAdminTopic(
+        intent: PushIntent.jobApplication,
         title: title,
         message: body,
+        context: const PushDispatchContext(
+          screen: 'home/job_application_screen',
+          action: 'notify_admins_job_application',
+        ),
+        eventParts: ['job_application', safeAppId],
+        route: 'job_applications',
         data: {
-          'type': 'job_application',
-          'route': 'job_applications',
           'priority': 'high',
           'appId': appId,
           'isGuest': isGuest ? '1' : '0',
         },
       );
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'home/job_application_screen',
-        action: 'notify_admins_job_application',
-        error: e,
-        stackTrace: st,
-        topic: 'admins',
-        eventId: eventId,
-      );
-    }
+    } catch (_) {}
   }
 
   Future<void> _submit() async {

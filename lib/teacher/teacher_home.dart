@@ -27,6 +27,7 @@ import 'teacher_shared_files_screen.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
 import 'teacher_my_platform_screen.dart';
+import '../services/notification_counter_service.dart';
 import '../services/window_access_service.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
@@ -701,36 +702,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   int _countNotDoneReminders(dynamic snapshotValue) {
-    if (snapshotValue is! Map) return 0;
-    int count = 0;
-
-    snapshotValue.forEach((k, v) {
-      if (v is Map) {
-        final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-        final status = (m['status'] ?? 'new').toString().toLowerCase().trim();
-        if (status != 'done') count += 1;
-      }
-    });
-
-    return count;
+    return NotificationCounterService.reminderCounts(
+      snapshotValue,
+    ).pendingCount;
   }
 
   int _countUnreadMail(dynamic snapshotValue) {
-    if (snapshotValue is! Map) return 0;
-    int total = 0;
-
-    snapshotValue.forEach((k, v) {
-      if (v is! Map) return;
-      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-      if (m['deletedAt'] != null) return;
-      if (_isHomeworkThreadMeta(m)) return;
-
-      final unread = _toInt(m['unreadCount'] ?? m['unread']);
-      total += unread;
-    });
-
-    return total;
+    return NotificationCounterService.mailUnread(
+      snapshotValue,
+      excludeHomework: true,
+    );
   }
 
   bool _isHomeworkThreadMeta(Map<String, dynamic> m) {

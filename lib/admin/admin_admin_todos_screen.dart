@@ -2,8 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
-import '../services/push_error_logger.dart';
-import '../services/push_client.dart';
+import '../services/push_dispatch_service.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
@@ -219,80 +218,29 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
     return dueAt < nowMs;
   }
 
-  Future<String?> _getFcmToken(String uid) async {
-    try {
-      final snap = await _db.ref('fcm_tokens/$uid/token').get();
-      final token = snap.value?.toString().trim();
-      if (token == null || token.isEmpty) return null;
-      return token;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _notifyAssigneeOnCreate({
     required _AdminLite assignee,
     required String todoId,
     required _TodoDraft draft,
   }) async {
     try {
-      final token = await _getFcmToken(assignee.uid);
-      final eventId = 'admin_todo_create_${todoId}_${assignee.uid}';
-      final topic = 'user_${assignee.uid}';
-      final payload = {
-        'type': 'admin_todo',
-        'route': 'admin_todos',
-        'todoId': todoId,
-        'assigneeUid': assignee.uid,
-        'createdByUid': _myUid ?? '',
-      };
-      if (token != null) {
-        try {
-          await PushClient.sendToToken(
-            token: token,
-            targetUid: assignee.uid,
-            eventId: eventId,
-            title: 'New admin TODO',
-            message: draft.title,
-            data: payload,
-          );
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/admin_admin_todos',
-            action: 'todo_create_push_token_fallback_topic',
-            error: e,
-            stackTrace: st,
-            targetUid: assignee.uid,
-            token: token,
-            eventId: eventId,
-          );
-          await PushClient.sendToTopic(
-            topic: topic,
-            eventId: eventId,
-            title: 'New admin TODO',
-            message: draft.title,
-            data: payload,
-          );
-        }
-      } else {
-        await PushClient.sendToTopic(
-          topic: topic,
-          eventId: eventId,
-          title: 'New admin TODO',
-          message: draft.title,
-          data: payload,
-        );
-      }
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'admin/admin_admin_todos',
-        action: 'todo_create_push_final_failure',
-        error: e,
-        stackTrace: st,
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.adminTodo,
         targetUid: assignee.uid,
-        eventId: 'admin_todo_create_${todoId}_${assignee.uid}',
+        title: 'New admin TODO',
+        message: draft.title,
+        context: const PushDispatchContext(
+          screen: 'admin/admin_admin_todos',
+          action: 'todo_create_push',
+        ),
+        eventParts: ['create', todoId, assignee.uid],
+        data: {
+          'todoId': todoId,
+          'assigneeUid': assignee.uid,
+          'createdByUid': _myUid ?? '',
+        },
       );
-    }
+    } catch (_) {}
   }
 
   Future<void> _notifyCreatorOnUpdate({
@@ -305,66 +253,26 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
     if (creatorUid.isEmpty || creatorUid == myUid) return;
 
     try {
-      final token = await _getFcmToken(creatorUid);
       final title = action == 'done' ? 'TODO completed' : 'TODO seen';
       final body = '$_myName: ${todo.title.trim()}';
-      final eventId = 'admin_todo_update_${todoId}_$action';
-      final topic = 'user_$creatorUid';
-      final payload = {
-        'type': 'admin_todo',
-        'route': 'admin_todos',
-        'todoId': todoId,
-        'assigneeUid': myUid,
-        'createdByUid': creatorUid,
-        'action': action,
-      };
-      if (token != null) {
-        try {
-          await PushClient.sendToToken(
-            token: token,
-            targetUid: creatorUid,
-            eventId: eventId,
-            title: title,
-            message: body,
-            data: payload,
-          );
-        } catch (e, st) {
-          await PushErrorLogger.logFailure(
-            screen: 'admin/admin_admin_todos',
-            action: 'todo_update_push_token_fallback_topic',
-            error: e,
-            stackTrace: st,
-            targetUid: creatorUid,
-            token: token,
-            eventId: eventId,
-          );
-          await PushClient.sendToTopic(
-            topic: topic,
-            eventId: eventId,
-            title: title,
-            message: body,
-            data: payload,
-          );
-        }
-      } else {
-        await PushClient.sendToTopic(
-          topic: topic,
-          eventId: eventId,
-          title: title,
-          message: body,
-          data: payload,
-        );
-      }
-    } catch (e, st) {
-      await PushErrorLogger.logFailure(
-        screen: 'admin/admin_admin_todos',
-        action: 'todo_update_push_final_failure',
-        error: e,
-        stackTrace: st,
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.adminTodo,
         targetUid: creatorUid,
-        eventId: 'admin_todo_update_${todoId}_$action',
+        title: title,
+        message: body,
+        context: const PushDispatchContext(
+          screen: 'admin/admin_admin_todos',
+          action: 'todo_update_push',
+        ),
+        eventParts: ['update', todoId, action],
+        data: {
+          'todoId': todoId,
+          'assigneeUid': myUid,
+          'createdByUid': creatorUid,
+          'action': action,
+        },
       );
-    }
+    } catch (_) {}
   }
 
   Future<void> _markSeenIfNeeded(String todoId, _AdminTodo todo) async {

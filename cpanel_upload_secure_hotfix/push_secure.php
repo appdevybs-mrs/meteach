@@ -28,6 +28,8 @@ function is_allowed_push_type(string $type): bool
         'flash_message' => true,
         'booking' => true,
         'payment' => true,
+        'recorded_comment' => true,
+        'job_application' => true,
         'session' => true,
         'coach' => true,
     ];
@@ -43,7 +45,7 @@ function is_allowed_push_type_for_role(string $type, string $role): bool
     }
 
     if ($safeRole === 'learner') {
-        return ($type === 'mail' || $type === 'booking');
+        return ($type === 'mail' || $type === 'booking' || $type === 'recorded_comment' || $type === 'job_application');
     }
 
     return false;
@@ -296,6 +298,18 @@ try {
 
     if ($targetValue === 'admins') {
         save_push_inbox_for_admin_topic($db, $eventId, $title, $message, $type, $safeData);
+    }
+
+    if (preg_match('/^user_([A-Za-z0-9_\-]{6,128})$/', $targetValue, $m) === 1) {
+        $topicUid = trim((string) ($m[1] ?? ''));
+        if ($topicUid !== '') {
+            save_push_inbox($db, $topicUid, $eventId, $title, $message, $type, $safeData);
+        }
+    }
+
+    $targetUid = trim((string) ($safeData['targetUid'] ?? ''));
+    if ($targetUid !== '' && preg_match('/^[A-Za-z0-9_\-]{6,128}$/', $targetUid)) {
+        save_push_inbox($db, $targetUid, $eventId, $title, $message, $type, $safeData);
     }
 
     json_response(['success' => true, 'eventId' => $eventId]);
