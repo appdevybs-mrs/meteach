@@ -65,6 +65,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
   DatabaseReference get _gamesRef => _db.child('games');
 
+  String _normalizeLabel(String raw) {
+    var cleaned = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'[!?]+$'), '').trim();
+    if (cleaned.isEmpty) return '';
+    if (cleaned == cleaned.toLowerCase()) {
+      return '${cleaned[0].toUpperCase()}${cleaned.substring(1)}';
+    }
+    return cleaned;
+  }
+
+  String _labelKey(String raw) => _normalizeLabel(raw).toLowerCase();
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -298,7 +310,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   }
 
   List<String> _extractAllKnownTags(dynamic gamesValue) {
-    final out = <String>{};
+    final out = <String, String>{};
 
     if (gamesValue is! Map) return [];
 
@@ -313,28 +325,31 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
       if (tags is List) {
         for (final item in tags) {
-          final v = item.toString().trim();
-          if (v.isNotEmpty) out.add(v);
+          final v = _normalizeLabel(item.toString());
+          final key = _labelKey(v);
+          if (v.isNotEmpty && key.isNotEmpty) out.putIfAbsent(key, () => v);
         }
       } else if (tags is Map) {
         final tagMap = Map<dynamic, dynamic>.from(tags);
         for (final item in tagMap.values) {
-          final v = item.toString().trim();
-          if (v.isNotEmpty) out.add(v);
+          final v = _normalizeLabel(item.toString());
+          final key = _labelKey(v);
+          if (v.isNotEmpty && key.isNotEmpty) out.putIfAbsent(key, () => v);
         }
       } else if (tags is String) {
-        final v = tags.trim();
-        if (v.isNotEmpty) out.add(v);
+        final v = _normalizeLabel(tags);
+        final key = _labelKey(v);
+        if (v.isNotEmpty && key.isNotEmpty) out.putIfAbsent(key, () => v);
       }
     }
 
-    final list = out.toList();
+    final list = out.values.toList();
     list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
 
   List<String> _extractAllCategories(dynamic gamesValue) {
-    final out = <String>{};
+    final out = <String, String>{};
 
     if (gamesValue is! Map) return [];
 
@@ -345,11 +360,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       if (value is! Map) continue;
 
       final game = Map<String, dynamic>.from(value);
-      final category = (game['category'] ?? '').toString().trim();
-      if (category.isNotEmpty) out.add(category);
+      final category = _normalizeLabel((game['category'] ?? '').toString());
+      final key = _labelKey(category);
+      if (category.isNotEmpty && key.isNotEmpty) {
+        out.putIfAbsent(key, () => category);
+      }
     }
 
-    final list = out.toList();
+    final list = out.values.toList();
     list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
@@ -654,23 +672,26 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final tagInputController = TextEditingController();
 
     final selectedTags = <String>{
-      ...knownTags.where((e) => e.trim().isNotEmpty).map((e) => e.trim()),
+      ...knownTags
+          .map(_normalizeLabel)
+          .where((e) => e.isNotEmpty)
+          .map((e) => e.trim()),
     };
 
     final existingTagsValue = existingGame?['tags'];
     if (existingTagsValue is List) {
       for (final item in existingTagsValue) {
-        final v = item.toString().trim();
+        final v = _normalizeLabel(item.toString());
         if (v.isNotEmpty) selectedTags.add(v);
       }
     } else if (existingTagsValue is Map) {
       final tagMap = Map<dynamic, dynamic>.from(existingTagsValue);
       for (final item in tagMap.values) {
-        final v = item.toString().trim();
+        final v = _normalizeLabel(item.toString());
         if (v.isNotEmpty) selectedTags.add(v);
       }
     } else if (existingTagsValue is String) {
-      final v = existingTagsValue.trim();
+      final v = _normalizeLabel(existingTagsValue);
       if (v.isNotEmpty) selectedTags.add(v);
     }
 
@@ -706,12 +727,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         return StatefulBuilder(
           builder: (context, setLocalState) {
             void addTag(String raw) {
-              final tag = raw.trim();
+              final tag = _normalizeLabel(raw);
               if (tag.isEmpty) return;
 
+              final existing = selectedTags.firstWhere(
+                (e) => _labelKey(e) == _labelKey(tag),
+                orElse: () => '',
+              );
+              final finalTag = existing.isNotEmpty ? existing : tag;
+
               setLocalState(() {
-                selectedTags.add(tag);
-                chosenTags.add(tag);
+                selectedTags.add(finalTag);
+                chosenTags.add(finalTag);
                 tagInputController.clear();
               });
             }
@@ -881,7 +908,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final name = nameController.text.trim();
               final description = descriptionController.text.trim();
               final rules = rulesController.text.trim();
-              final category = categoryController.text.trim();
+              final category = _normalizeLabel(categoryController.text);
               final level = levelController.text.trim();
               final teacherNotes = teacherNotesController.text.trim();
               final link = uploadedUrl.trim();
@@ -947,8 +974,13 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final tagsToSave =
                   chosenTags
-                      .map((e) => e.trim())
+                      .map(_normalizeLabel)
                       .where((e) => e.isNotEmpty)
+                      .fold<Map<String, String>>({}, (acc, e) {
+                        acc.putIfAbsent(_labelKey(e), () => e);
+                        return acc;
+                      })
+                      .values
                       .toList()
                     ..sort(
                       (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
@@ -1592,26 +1624,29 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   }
 
   List<String> _tagsFromGame(Map<String, dynamic> game) {
-    final out = <String>[];
+    final out = <String, String>{};
     final tags = game['tags'];
 
     if (tags is List) {
       for (final item in tags) {
-        final v = item.toString().trim();
-        if (v.isNotEmpty) out.add(v);
+        final v = _normalizeLabel(item.toString());
+        final key = _labelKey(v);
+        if (v.isNotEmpty && key.isNotEmpty) out.putIfAbsent(key, () => v);
       }
     } else if (tags is Map) {
       final tagMap = Map<dynamic, dynamic>.from(tags);
       for (final item in tagMap.values) {
-        final v = item.toString().trim();
-        if (v.isNotEmpty) out.add(v);
+        final v = _normalizeLabel(item.toString());
+        final key = _labelKey(v);
+        if (v.isNotEmpty && key.isNotEmpty) out.putIfAbsent(key, () => v);
       }
     } else if (tags is String) {
-      final v = tags.trim();
-      if (v.isNotEmpty) out.add(v);
+      final v = _normalizeLabel(tags);
+      final key = _labelKey(v);
+      if (v.isNotEmpty && key.isNotEmpty) out.putIfAbsent(key, () => v);
     }
 
-    return out;
+    return out.values.toList();
   }
 
   Color _statusColor(String status) {
@@ -1683,7 +1718,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final link = (game['link'] ?? '').toString().trim();
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
     final ownerName = _teacherName(game);
-    final category = (game['category'] ?? '').toString().trim();
+    final category = _normalizeLabel((game['category'] ?? '').toString());
     final level = (game['level'] ?? '').toString().trim();
     final status = (game['status'] ?? 'ready').toString().trim();
     final teacherNotes = (game['teacherNotes'] ?? '').toString().trim();
@@ -2112,7 +2147,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
           .toString()
           .toLowerCase()
           .trim();
-      final category = (game['category'] ?? '').toString().toLowerCase().trim();
+      final categoryKey = _labelKey((game['category'] ?? '').toString());
       final level = (game['level'] ?? '').toString().toLowerCase().trim();
       final status = (game['status'] ?? 'ready')
           .toString()
@@ -2124,7 +2159,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
           _searchQuery.isEmpty ||
           name.contains(_searchQuery) ||
           description.contains(_searchQuery) ||
-          category.contains(_searchQuery) ||
+          categoryKey.contains(_searchQuery) ||
           level.contains(_searchQuery) ||
           tags.contains(_searchQuery);
 
@@ -2132,7 +2167,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
           _statusFilter == 'all' || status == _statusFilter.toLowerCase();
 
       final matchesCategory =
-          _categoryFilter == 'all' || category == _categoryFilter.toLowerCase();
+          _categoryFilter == 'all' || categoryKey == _labelKey(_categoryFilter);
 
       return matchesSearch && matchesStatus && matchesCategory;
     }).toList();

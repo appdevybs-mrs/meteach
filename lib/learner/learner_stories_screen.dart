@@ -7,6 +7,7 @@ import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/profile_avatar.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
@@ -19,7 +20,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   final DatabaseReference _storiesRef = FirebaseDatabase.instance.ref(
     'stories',
   );
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, String> _teacherPhotoCache = {};
+  final Map<String, Future<String>> _teacherPhotoPending = {};
 
   String _searchQuery = '';
   String _genreFilter = 'all';
@@ -184,6 +188,41 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     if (email.isNotEmpty) return email;
 
     return 'Teacher';
+  }
+
+  String _teacherUid(Map<String, dynamic> story) {
+    return (story['teacherUid'] ?? '').toString().trim();
+  }
+
+  Future<String> _teacherPhotoUrl(String teacherUid) {
+    final uid = teacherUid.trim();
+    if (uid.isEmpty) return Future.value('');
+
+    final cached = _teacherPhotoCache[uid];
+    if (cached != null) return Future.value(cached);
+
+    final pending = _teacherPhotoPending[uid];
+    if (pending != null) return pending;
+
+    final future = () async {
+      try {
+        final snap = await _db.child('users/$uid').get();
+        String photo = '';
+        if (snap.value is Map) {
+          photo = ProfileAvatar.resolvePhotoFromMap(snap.value as Map);
+        }
+        _teacherPhotoCache[uid] = photo;
+        return photo;
+      } catch (_) {
+        _teacherPhotoCache[uid] = '';
+        return '';
+      } finally {
+        _teacherPhotoPending.remove(uid);
+      }
+    }();
+
+    _teacherPhotoPending[uid] = future;
+    return future;
   }
 
   bool _hasWatch(Map<String, dynamic> story) =>
@@ -384,6 +423,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final authorSource = (story['authorSource'] ?? '').toString().trim();
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final teacher = _teacherName(story);
+    final teacherUid = _teacherUid(story);
+    final teacherPhotoFuture = _teacherPhotoUrl(teacherUid);
     final tags = _tagsFromStory(story);
     final opens = _storyStat(story, 'opens');
     final listens = _storyStat(story, 'listens');
@@ -463,12 +504,34 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'By $teacher',
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w700,
-                  ),
+                FutureBuilder<String>(
+                  future: teacherPhotoFuture,
+                  initialData: _teacherPhotoCache[teacherUid] ?? '',
+                  builder: (context, photoSnap) {
+                    final photoUrl = (photoSnap.data ?? '').trim();
+                    return Row(
+                      children: [
+                        ProfileAvatar(
+                          name: teacher,
+                          photoUrl: photoUrl,
+                          radius: 16,
+                          fallbackBg: p.soft,
+                          fallbackFg: p.primary,
+                          borderColor: p.border.withValues(alpha: 0.9),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'By $teacher',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.65),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -943,10 +1006,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final level = (story['level'] ?? '').toString().trim();
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final teacher = _teacherName(story);
-    final opens = _storyStat(story, 'opens');
-    final listens = _storyStat(story, 'listens');
-    final views = _storyStat(story, 'views');
-    final plays = _storyStat(story, 'plays');
 
     return SizedBox(
       width: 210,
@@ -1033,6 +1092,33 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                           ),
                         ),
                       ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Material(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _showStoryDetails(story),
+                          child: const SizedBox(
+                            width: 30,
+                            height: 30,
+                            child: Center(
+                              child: Text(
+                                '!',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 Expanded(
@@ -1070,22 +1156,19 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                           children: [
                             if (genre.isNotEmpty) _smallTag(p, genre),
                             if (level.isNotEmpty) _smallTag(p, level),
-                            if (hasRead) _smallTag(p, 'Read', isAccent: true),
-                            if (hasListen)
-                              _smallTag(p, 'Listen', isAccent: true),
-                            if (hasWatch) _smallTag(p, 'Watch', isAccent: true),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            _smallTag(p, 'Opens $opens'),
-                            _smallTag(p, 'Listens $listens'),
-                            _smallTag(p, 'Views $views'),
-                            _smallTag(p, 'Plays $plays'),
-                          ],
+                        const Spacer(),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'Tap ! for details',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.52),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -1134,7 +1217,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 332,
+          height: 314,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: stories.length,

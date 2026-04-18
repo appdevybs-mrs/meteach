@@ -440,55 +440,56 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           : picked.myName.trim();
 
       if (picked.mode == _LearnerComposeMode.single) {
-        if (picked.sendToAllAdmins == true) {
-          final admins = picked.adminUids;
-          if (admins.isEmpty) {
-            _snack('No admins found.');
-            return;
-          }
+        final selectedUids = picked.receiverUids ?? const <String>[];
+        final targets = selectedUids
+            .map((u) => u.trim())
+            .where((u) => u.isNotEmpty && u != meUid)
+            .toSet()
+            .toList();
 
-          int sent = 0;
-          for (final aUid in admins) {
-            if (aUid.trim().isEmpty) continue;
-            if (aUid.trim() == meUid) continue;
-
-            await create1to1(
-              toUid: aUid.trim(),
-              toName: picked.adminNameByUid[aUid] ?? 'Admin',
-              myName: myName,
-            );
-            sent++;
-          }
-
-          _snack('Created $sent admin topic(s) ✅');
+        if (targets.isEmpty) {
+          _snack('Pick at least one receiver.');
           return;
         }
 
-        final toUid = picked.receiverUid?.trim() ?? '';
-        final toName = picked.receiverName?.trim() ?? '';
-        if (toUid.isEmpty) {
-          _snack('Pick a receiver.');
-          return;
-        }
+        String? firstThreadId;
+        String? firstUid;
+        String firstName = '';
+        int sent = 0;
 
-        final threadId = await create1to1(
-          toUid: toUid,
-          toName: toName.isEmpty ? 'User' : toName,
-          myName: myName,
-        );
+        for (final toUid in targets) {
+          final toName = (picked.nameByUid[toUid] ?? '').trim();
+
+          final threadId = await create1to1(
+            toUid: toUid,
+            toName: toName.isEmpty ? 'User' : toName,
+            myName: myName,
+          );
+
+          firstThreadId ??= threadId;
+          firstUid ??= toUid;
+          if (firstName.isEmpty) {
+            firstName = toName.isEmpty ? 'User' : toName;
+          }
+          sent++;
+        }
 
         if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            settings: RouteSettings(name: '/mail/thread/$threadId'),
-            builder: (_) => LearnerMailThreadScreen(
-              threadId: threadId,
-              peerUid: toUid,
-              peerName: toName.isEmpty ? 'User' : toName,
-              subject: subject,
+        if (sent == 1 && firstThreadId != null && firstUid != null) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              settings: RouteSettings(name: '/mail/thread/$firstThreadId'),
+              builder: (_) => LearnerMailThreadScreen(
+                threadId: firstThreadId!,
+                peerUid: firstUid!,
+                peerName: firstName,
+                subject: subject,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          _snack('Created $sent topic(s) ✅');
+        }
         return;
       }
 
@@ -925,7 +926,7 @@ enum _MailListFilter { all, homework, other }
 
 enum _LearnerComposeMode { single, classGroup }
 
-enum _LearnerRecipientType { adminAll, admin, teacher, classmate }
+enum _LearnerRecipientType { admin, teacher, classmate }
 
 class _LearnerRecipientRow {
   _LearnerRecipientRow({
@@ -950,11 +951,7 @@ class _LearnerComposeResult {
     required this.mode,
     required this.subject,
     required this.myName,
-    required this.receiverUid,
-    required this.receiverName,
-    required this.sendToAllAdmins,
-    required this.adminUids,
-    required this.adminNameByUid,
+    required this.receiverUids,
     required this.classId,
     required this.classmateUidsByClass,
     required this.nameByUid,
@@ -964,12 +961,7 @@ class _LearnerComposeResult {
   final String subject;
   final String myName;
 
-  final String? receiverUid;
-  final String? receiverName;
-
-  final bool sendToAllAdmins;
-  final List<String> adminUids;
-  final Map<String, String> adminNameByUid;
+  final List<String>? receiverUids;
 
   final String? classId;
   final Map<String, List<String>> classmateUidsByClass;
@@ -996,14 +988,13 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
   _LearnerComposeMode _mode = _LearnerComposeMode.single;
 
   List<_LearnerRecipientRow> _recipients = [];
-  _LearnerRecipientRow? _picked;
+  final Set<String> _pickedRecipientUids = <String>{};
 
   List<_LearnerClassRow> _classes = [];
   _LearnerClassRow? _pickedClass;
 
   final Map<String, String> _nameByUid = {};
-  final List<String> _adminUids = [];
-  final Map<String, String> _adminNameByUid = {};
+  final Set<String> _teacherUids = <String>{};
   final Map<String, List<String>> _classmateUidsByClass = {};
 
   @override
@@ -1036,8 +1027,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
   }
 
   IconData _recipientIcon(_LearnerRecipientType t) {
-    if (t == _LearnerRecipientType.adminAll ||
-        t == _LearnerRecipientType.admin) {
+    if (t == _LearnerRecipientType.admin) {
       return Icons.admin_panel_settings_rounded;
     }
     if (t == _LearnerRecipientType.teacher) {
@@ -1047,15 +1037,13 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
   }
 
   String _recipientSubtitle(_LearnerRecipientType t) {
-    if (t == _LearnerRecipientType.adminAll) return 'School administration';
     if (t == _LearnerRecipientType.admin) return 'Administration';
     if (t == _LearnerRecipientType.teacher) return 'Teacher';
     return 'Classmate';
   }
 
   Color _recipientTint(_LearnerRecipientType t) {
-    if (t == _LearnerRecipientType.adminAll ||
-        t == _LearnerRecipientType.admin) {
+    if (t == _LearnerRecipientType.admin) {
       return Colors.deepPurple;
     }
     if (t == _LearnerRecipientType.teacher) {
@@ -1082,6 +1070,10 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
 
       final usersSnap = await widget.db.child('users').get();
       final usersVal = usersSnap.value;
+      final adminRecipients = <_LearnerRecipientRow>[];
+      final teacherRecipients = <_LearnerRecipientRow>[];
+
+      _teacherUids.clear();
 
       if (usersVal is Map) {
         usersVal.forEach((uid, vv) {
@@ -1103,8 +1095,27 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           _nameByUid[u] = display;
 
           if (role == 'admin') {
-            _adminUids.add(u);
-            _adminNameByUid[u] = display;
+            if (u == widget.meUid) return;
+            adminRecipients.add(
+              _LearnerRecipientRow(
+                uid: u,
+                name: display,
+                type: _LearnerRecipientType.admin,
+              ),
+            );
+            return;
+          }
+
+          if (role == 'teacher') {
+            if (u == widget.meUid) return;
+            _teacherUids.add(u);
+            teacherRecipients.add(
+              _LearnerRecipientRow(
+                uid: u,
+                name: display,
+                type: _LearnerRecipientType.teacher,
+              ),
+            );
           }
         });
       }
@@ -1112,7 +1123,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
       final classesSnap = await widget.db.child('classes').get();
       final classesVal = classesSnap.value;
 
-      final teachers = <String>{};
       final classmates = <String>{};
       final myClasses = <_LearnerClassRow>[];
 
@@ -1141,13 +1151,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
             ),
           );
 
-          final cur = c['instructor_current'];
-          if (cur is Map) {
-            final curM = cur.map((k, v) => MapEntry(k.toString(), v));
-            final tUid = (curM['uid'] ?? '').toString().trim();
-            if (tUid.isNotEmpty && tUid != widget.meUid) teachers.add(tUid);
-          }
-
           final classmateList = <String>[];
           if (learners is Map) {
             learners.forEach((u, _) {
@@ -1168,23 +1171,8 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
 
       final all = <_LearnerRecipientRow>[];
 
-      all.add(
-        _LearnerRecipientRow(
-          uid: '__ADMINS__',
-          name: 'Administration (all)',
-          type: _LearnerRecipientType.adminAll,
-        ),
-      );
-
-      for (final tUid in teachers) {
-        all.add(
-          _LearnerRecipientRow(
-            uid: tUid,
-            name: _nameByUid[tUid] ?? 'Teacher',
-            type: _LearnerRecipientType.teacher,
-          ),
-        );
-      }
+      all.addAll(adminRecipients);
+      all.addAll(teacherRecipients);
 
       for (final cUid in classmates) {
         all.add(
@@ -1197,10 +1185,9 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
       }
 
       int rank(_LearnerRecipientType t) {
-        if (t == _LearnerRecipientType.adminAll) return 0;
+        if (t == _LearnerRecipientType.admin) return 0;
         if (t == _LearnerRecipientType.teacher) return 1;
-        if (t == _LearnerRecipientType.admin) return 2;
-        return 3;
+        return 2;
       }
 
       all.sort((a, b) {
@@ -1214,7 +1201,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
         _classes = myClasses;
         _pickedClass = myClasses.isNotEmpty ? myClasses.first : null;
         _recipients = all;
-        _picked = all.isNotEmpty ? all.first : null;
+        _pickedRecipientUids.clear();
         _loading = false;
       });
     } catch (_) {
@@ -1228,28 +1215,10 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
     if (subject.isEmpty) return;
 
     if (_mode == _LearnerComposeMode.single) {
-      final r = _picked;
-      if (r == null) return;
-
-      if (r.type == _LearnerRecipientType.adminAll) {
-        Navigator.pop(
-          context,
-          _LearnerComposeResult(
-            mode: _LearnerComposeMode.single,
-            subject: subject,
-            myName: _myName,
-            receiverUid: null,
-            receiverName: null,
-            sendToAllAdmins: true,
-            adminUids: _adminUids,
-            adminNameByUid: _adminNameByUid,
-            classId: null,
-            classmateUidsByClass: _classmateUidsByClass,
-            nameByUid: _nameByUid,
-          ),
-        );
-        return;
-      }
+      final selected = _recipients
+          .where((r) => _pickedRecipientUids.contains(r.uid))
+          .toList();
+      if (selected.isEmpty) return;
 
       Navigator.pop(
         context,
@@ -1257,11 +1226,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           mode: _LearnerComposeMode.single,
           subject: subject,
           myName: _myName,
-          receiverUid: r.uid,
-          receiverName: r.name,
-          sendToAllAdmins: false,
-          adminUids: _adminUids,
-          adminNameByUid: _adminNameByUid,
+          receiverUids: selected.map((e) => e.uid).toList(),
           classId: null,
           classmateUidsByClass: _classmateUidsByClass,
           nameByUid: _nameByUid,
@@ -1279,11 +1244,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
         mode: _LearnerComposeMode.classGroup,
         subject: subject,
         myName: _myName,
-        receiverUid: null,
-        receiverName: null,
-        sendToAllAdmins: false,
-        adminUids: _adminUids,
-        adminNameByUid: _adminNameByUid,
+        receiverUids: null,
         classId: c.classId,
         classmateUidsByClass: _classmateUidsByClass,
         nameByUid: _nameByUid,
@@ -1445,32 +1406,91 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 ),
                 const SizedBox(height: 12),
                 if (_mode == _LearnerComposeMode.single)
-                  DropdownButtonFormField<_LearnerRecipientRow>(
-                    initialValue: _picked,
-                    isExpanded: true,
-                    items: _recipients.map((r) {
-                      return DropdownMenuItem<_LearnerRecipientRow>(
-                        value: r,
-                        child: _buildRecipientItem(r),
-                      );
-                    }).toList(),
-                    selectedItemBuilder: (_) {
-                      return _recipients.map((r) {
-                        return Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '${r.name} • ${_recipientSubtitle(r.type)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.14),
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Send to',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_recipients.isEmpty)
+                          const Text('No recipients found.')
+                        else ...[
+                          Row(
+                            children: [
+                              TextButton(
+                                onPressed: _teacherUids.isEmpty
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _pickedRecipientUids.addAll(
+                                            _teacherUids,
+                                          );
+                                        });
+                                      },
+                                child: const Text('All teachers'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _pickedRecipientUids.clear();
+                                  });
+                                },
+                                child: const Text('Clear'),
+                              ),
+                            ],
                           ),
-                        );
-                      }).toList();
-                    },
-                    onChanged: (v) => setState(() => _picked = v),
-                    decoration: const InputDecoration(
-                      labelText: 'Send to',
-                      border: OutlineInputBorder(),
+                          const SizedBox(height: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _recipients.length,
+                              itemBuilder: (context, index) {
+                                final r = _recipients[index];
+                                final checked = _pickedRecipientUids.contains(
+                                  r.uid,
+                                );
+                                return CheckboxListTile(
+                                  value: checked,
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  title: _buildRecipientItem(r),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      if (v == true) {
+                                        _pickedRecipientUids.add(r.uid);
+                                      } else {
+                                        _pickedRecipientUids.remove(r.uid);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_pickedRecipientUids.length} selected',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              color: Colors.black.withValues(alpha: 0.55),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   )
                 else

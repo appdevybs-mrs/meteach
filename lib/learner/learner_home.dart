@@ -5834,7 +5834,6 @@ class _LearnerDrawer extends StatelessWidget {
                     palette: palette,
                     icon: Icons.auto_stories_rounded,
                     title: 'Stories',
-                    subtitle: 'Read, listen, and watch stories',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenStories();
@@ -5865,7 +5864,6 @@ class _LearnerDrawer extends StatelessWidget {
                     palette: palette,
                     icon: Icons.psychology_alt_rounded,
                     title: 'Study Coach',
-                    subtitle: 'Set goals, reminders, and track progress',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenStudyCoach();
@@ -5908,7 +5906,6 @@ class _LearnerDrawer extends StatelessWidget {
                     palette: palette,
                     icon: Icons.palette_rounded,
                     title: 'Theme Settings',
-                    subtitle: 'Choose your app look',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenThemeSettings();

@@ -31,9 +31,9 @@ class _HomeShellState extends State<HomeShell> {
       body: SafeArea(
         child: IndexedStack(index: mode.index, children: _pages),
       ),
-      floatingActionButton: _PulsingLoginFab(
-        onPressed: () => _openLogin(context),
-      ),
+      floatingActionButton: mode == AppMode.jobs
+          ? null
+          : _PulsingLoginFab(onPressed: () => _openLogin(context)),
       bottomNavigationBar: NavigationBar(
         selectedIndex: mode.index,
         onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/profile_avatar.dart';
 
 class LearnerGamesScreen extends StatefulWidget {
   const LearnerGamesScreen({super.key});
@@ -14,13 +15,63 @@ class LearnerGamesScreen extends StatefulWidget {
 
 class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   final DatabaseReference _gamesRef = FirebaseDatabase.instance.ref('games');
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, String> _teacherPhotoCache = {};
+  final Map<String, Future<String>> _teacherPhotoPending = {};
 
   String _searchQuery = '';
   String _selectedTag = 'All';
 
   static const Color _funOrange = Color(0xFFF98D28);
   static const Color _funOrangeDark = Color(0xFFE67612);
+
+  String _normalizeLabel(String raw) {
+    var cleaned = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'[!?]+$'), '').trim();
+    if (cleaned.isEmpty) return '';
+    if (cleaned == cleaned.toLowerCase()) {
+      return '${cleaned[0].toUpperCase()}${cleaned.substring(1)}';
+    }
+    return cleaned;
+  }
+
+  String _labelKey(String raw) => _normalizeLabel(raw).toLowerCase();
+
+  String _teacherUid(Map<String, dynamic> game) {
+    return (game['teacherUid'] ?? '').toString().trim();
+  }
+
+  Future<String> _teacherPhotoUrl(String teacherUid) {
+    final uid = teacherUid.trim();
+    if (uid.isEmpty) return Future.value('');
+
+    final cached = _teacherPhotoCache[uid];
+    if (cached != null) return Future.value(cached);
+
+    final pending = _teacherPhotoPending[uid];
+    if (pending != null) return pending;
+
+    final future = () async {
+      try {
+        final snap = await _db.child('users/$uid').get();
+        String photo = '';
+        if (snap.value is Map) {
+          photo = ProfileAvatar.resolvePhotoFromMap(snap.value as Map);
+        }
+        _teacherPhotoCache[uid] = photo;
+        return photo;
+      } catch (_) {
+        _teacherPhotoCache[uid] = '';
+        return '';
+      } finally {
+        _teacherPhotoPending.remove(uid);
+      }
+    }();
+
+    _teacherPhotoPending[uid] = future;
+    return future;
+  }
 
   String _gameId(Map<String, dynamic> game) {
     return (game['gameId'] ?? game['gameUid'] ?? game['id'] ?? '')
@@ -89,12 +140,13 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final rules = (game['rules'] ?? '').toString().trim();
     final tags = _tagsFromGame(game);
     final ownerName = _teacherName(game);
+    final ownerUid = _teacherUid(game);
+    final ownerPhotoFuture = _teacherPhotoUrl(ownerUid);
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
-    final category = (game['category'] ?? '').toString().trim();
+    final category = _normalizeLabel((game['category'] ?? '').toString());
     final level = (game['level'] ?? '').toString().trim();
     final durationMinutes = _toInt(game['durationMinutes']);
     final opens = _gameStat(game, 'opens');
-    final listens = _gameStat(game, 'listens');
     final views = _gameStat(game, 'views');
     final plays = _gameStat(game, 'plays');
 
@@ -148,14 +200,35 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'By: $ownerName',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withValues(
-                        alpha: 0.72,
-                      ),
-                    ),
+                  FutureBuilder<String>(
+                    future: ownerPhotoFuture,
+                    initialData: _teacherPhotoCache[ownerUid] ?? '',
+                    builder: (context, photoSnap) {
+                      final photoUrl = (photoSnap.data ?? '').trim();
+                      return Row(
+                        children: [
+                          ProfileAvatar(
+                            name: ownerName,
+                            photoUrl: photoUrl,
+                            radius: 16,
+                            fallbackBg: cs.primary.withValues(alpha: 0.12),
+                            fallbackFg: cs.primary,
+                            borderColor: cs.primary.withValues(alpha: 0.18),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'By: $ownerName',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: theme.textTheme.bodyMedium?.color
+                                    ?.withValues(alpha: 0.72),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                   if (category.isNotEmpty ||
                       level.isNotEmpty ||
@@ -195,11 +268,6 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                         context: context,
                         icon: Icons.open_in_new_rounded,
                         label: 'Opens $opens',
-                      ),
-                      _buildDetailChip(
-                        context: context,
-                        icon: Icons.headphones_rounded,
-                        label: 'Listens $listens',
                       ),
                       _buildDetailChip(
                         context: context,
@@ -324,47 +392,52 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
   List<String> _tagsFromGame(Map<String, dynamic> game) {
     final out = <String>[];
+    final seen = <String>{};
     final tags = game['tags'];
 
     if (tags is List) {
       for (final item in tags) {
-        final v = item.toString().trim();
-        if (v.isNotEmpty) out.add(v);
+        final v = _normalizeLabel(item.toString());
+        final key = _labelKey(v);
+        if (v.isNotEmpty && seen.add(key)) out.add(v);
       }
     } else if (tags is Map) {
       final tagMap = Map<dynamic, dynamic>.from(tags);
       for (final item in tagMap.values) {
-        final v = item.toString().trim();
-        if (v.isNotEmpty) out.add(v);
+        final v = _normalizeLabel(item.toString());
+        final key = _labelKey(v);
+        if (v.isNotEmpty && seen.add(key)) out.add(v);
       }
     } else if (tags is String) {
-      final v = tags.trim();
-      if (v.isNotEmpty) out.add(v);
+      final v = _normalizeLabel(tags);
+      final key = _labelKey(v);
+      if (v.isNotEmpty && seen.add(key)) out.add(v);
     }
 
     return out;
   }
 
   String _categoryFromGame(Map<String, dynamic> game) {
-    final category = (game['category'] ?? '').toString().trim();
+    final category = _normalizeLabel((game['category'] ?? '').toString());
     if (category.isEmpty) return 'Other';
     return category;
   }
 
   List<String> _allTags(List<MapEntry<String, Map<String, dynamic>>> items) {
-    final set = <String>{};
+    final byKey = <String, String>{};
 
     for (final item in items) {
       final tags = _tagsFromGame(item.value);
       for (final tag in tags) {
-        final clean = tag.trim();
-        if (clean.isNotEmpty) {
-          set.add(clean);
+        final clean = _normalizeLabel(tag);
+        final key = _labelKey(clean);
+        if (clean.isNotEmpty && key.isNotEmpty) {
+          byKey.putIfAbsent(key, () => clean);
         }
       }
     }
 
-    final list = set.toList()
+    final list = byKey.values.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     return ['All', ...list];
@@ -639,7 +712,6 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final name = (game['name'] ?? '').toString().trim();
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
     final opens = _gameStat(game, 'opens');
-    final listens = _gameStat(game, 'listens');
     final views = _gameStat(game, 'views');
     final plays = _gameStat(game, 'plays');
 
@@ -712,7 +784,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Opens $opens  Listens $listens  Views $views  Plays $plays',
+                  'Opens $opens  Views $views  Plays $plays',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

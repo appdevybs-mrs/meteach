@@ -8,6 +8,7 @@ import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
+import '../shared/ybs_busy_logo.dart';
 
 class LearnerStudyCoachScreen extends StatefulWidget {
   const LearnerStudyCoachScreen({super.key});
@@ -24,11 +25,19 @@ enum _CoachSpeed { slow, standard, fast }
 enum _CoachSection { vocabulary, grammar, speaking }
 
 class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
+  static const List<String> _studyCoachBusyMessages = <String>[
+    'Your Study Coach is busy preparing your next study mission.',
+    'Coach is polishing new word challenges for you.',
+    'Your next language quest is loading. Stay tuned!',
+  ];
+
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final TextEditingController _typedAnswerController = TextEditingController();
   final PageController _deckController = PageController(viewportFraction: 0.9);
 
   bool _loading = true;
+  bool _noStudyPlan = false;
+  String _busyMissionMessage = _studyCoachBusyMessages.first;
   String? _error;
 
   final List<_CourseBundle> _courseBundles = <_CourseBundle>[];
@@ -95,9 +104,16 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     }
   }
 
+  String _nextBusyMessage() {
+    return _studyCoachBusyMessages[Random().nextInt(
+      _studyCoachBusyMessages.length,
+    )];
+  }
+
   Future<void> _loadVocabByAssignedCourses() async {
     setState(() {
       _loading = true;
+      _noStudyPlan = false;
       _error = null;
       _courseBundles.clear();
       _speakingTopics.clear();
@@ -116,7 +132,13 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
 
       final userCoursesSnap = await _db.child('users/$uid/courses').get();
       if (!userCoursesSnap.exists || userCoursesSnap.value is! Map) {
-        throw Exception('No assigned courses found.');
+        if (!mounted) return;
+        setState(() {
+          _noStudyPlan = true;
+          _busyMissionMessage = _nextBusyMessage();
+          _error = null;
+        });
+        return;
       }
 
       final raw = Map<dynamic, dynamic>.from(userCoursesSnap.value as Map);
@@ -203,12 +225,19 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
       }
 
       if (bundles.isEmpty && speaking.isEmpty) {
-        throw Exception('No Study Coach content is available yet.');
+        if (!mounted) return;
+        setState(() {
+          _noStudyPlan = true;
+          _busyMissionMessage = _nextBusyMessage();
+          _error = null;
+        });
+        return;
       }
 
       speaking.sort((a, b) {
-        if (a.updatedAt != b.updatedAt)
+        if (a.updatedAt != b.updatedAt) {
           return b.updatedAt.compareTo(a.updatedAt);
+        }
         return a.topic.toLowerCase().compareTo(b.topic.toLowerCase());
       });
 
@@ -220,6 +249,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
         _speakingTopics
           ..clear()
           ..addAll(speaking);
+        _noStudyPlan = false;
         _selectedCourse = _courseBundles.isEmpty ? null : _courseBundles.first;
         if (_courseBundles.isEmpty && _speakingTopics.isNotEmpty) {
           _section = _CoachSection.speaking;
@@ -228,6 +258,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _noStudyPlan = false;
         _error = e.toString();
       });
     } finally {
@@ -1602,6 +1633,8 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
                     ? _ErrorView(message: _error!)
+                    : _noStudyPlan
+                    ? _StudyCoachBusyView(message: _busyMissionMessage)
                     : !showSpeaking && selected == null
                     ? const _ErrorView(
                         message: 'No course vocabulary is available.',
@@ -1691,6 +1724,54 @@ class _ErrorView extends StatelessWidget {
                   message,
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudyCoachBusyView extends StatelessWidget {
+  const _StudyCoachBusyView({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = appThemeController.palette;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _CoachPanel(
+          palette: p,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                YbsBusyLogo(size: 72, color: p.primary),
+                const SizedBox(height: 12),
+                Text(
+                  'Your Study Coach is busy',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: p.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: p.text.withValues(alpha: 0.86),
+                    height: 1.3,
+                  ),
                 ),
               ],
             ),
