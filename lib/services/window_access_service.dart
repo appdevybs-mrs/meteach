@@ -53,6 +53,7 @@ class AppWindowKeys {
   static const adminCourses = 'courses';
   static const adminVocabLists = 'vocab_lists';
   static const adminCourseReviews = 'course_reviews';
+  static const adminMail = 'mail';
   static const adminOnlineBooking = 'online_booking';
   static const adminReminders = 'reminders';
   static const adminPriorityAlerts = 'priority_alerts';
@@ -429,6 +430,14 @@ class WindowAccessService {
       labelEn: 'Course Reviews',
       labelAr: 'مراجعات الدورات',
       tab: 'Operations',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminMail,
+      labelEn: 'Mail',
+      labelAr: 'البريد',
+      tab: 'Communication',
       canClose: true,
     ),
     AppWindowDefinition(

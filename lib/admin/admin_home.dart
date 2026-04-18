@@ -454,6 +454,19 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminStaff,
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          ),
+        ),
+      ),
+      card(
+        'Admin Mail',
+        'Central inbox hub',
+        _AdminMailDashCard(
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminMail,
             () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
             ),
@@ -693,6 +706,19 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          ),
+        ),
+      ),
+      card(
+        'Admin Mail',
+        'Central inbox hub',
+        _AdminMailDashCard(
+          isReceptionistStyle: true,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminMail,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
+            ),
           ),
         ),
       ),
@@ -3394,6 +3420,65 @@ class _StaffMailDashCard extends StatelessWidget {
           tags: ['Unread $unread', 'Threads $threads'],
           icon: Icons.badge_rounded,
           color: AdminHome.accentAmber,
+          badgeCount: unread,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+class _AdminMailDashCard extends StatelessWidget {
+  const _AdminMailDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final meUid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    if (meUid.isEmpty) {
+      return _DashCard(
+        title: 'Admin Mail',
+        subtitle: 'Central inbox hub',
+        tags: const ['Unread 0', 'Threads 0'],
+        icon: Icons.mail_rounded,
+        color: AdminHome.accentSky,
+        isReceptionistStyle: isReceptionistStyle,
+        onTap: onTap,
+      );
+    }
+
+    final ref = FirebaseDatabase.instance.ref('mail_index/$meUid');
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int threads = 0;
+        int unread = 0;
+
+        final root = snap.data?.snapshot.value;
+        if (root is Map) {
+          threads = root.length;
+          unread = NotificationCounterService.mailUnread(
+            root,
+            excludeHomework: false,
+          );
+        }
+
+        final subtitle = threads == 0
+            ? 'Central inbox hub'
+            : 'Unread $unread • Threads $threads';
+
+        return _DashCard(
+          title: 'Admin Mail',
+          subtitle: subtitle,
+          tags: ['Unread $unread', 'Threads $threads'],
+          icon: Icons.mail_rounded,
+          color: AdminHome.accentSky,
           badgeCount: unread,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,

@@ -500,13 +500,6 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
     if (_submitting) return;
 
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_cvPdf == null) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Please upload your CV as a PDF.')),
-      );
-      return;
-    }
 
     final expected = (_captchaA + _captchaB).toString();
     if (_captchaCtrl.text.trim() != expected) {
@@ -537,23 +530,35 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
       }
     }
 
+    if (_cvPdf == null) {
+      final okWithoutCv = await _confirmSubmitWithoutCv();
+      if (!okWithoutCv) return;
+    }
+
     setState(() => _submitting = true);
 
     try {
-      final cvUrl = await _uploadCv(_cvPdf!);
+      String? cvUrl;
+      final cvFile = _cvPdf;
+      if (cvFile != null) {
+        cvUrl = await _uploadCv(cvFile);
+      }
 
       final ref = FirebaseDatabase.instance.ref('job_applications').push();
-      await ref.set({
+      final payload = <String, dynamic>{
         'full_name': _fullNameCtrl.text.trim(),
         'phone': _phoneCtrl.text.trim(),
         'email': _emailCtrl.text.trim().toLowerCase(),
         'position': _positionCtrl.text.trim(),
-        'cv_pdf_url': cvUrl,
         'status': 'new',
         'submittedByUid': currentUser?.uid ?? '',
         'isGuest': isGuest,
         'createdAt': ServerValue.timestamp,
-      });
+      };
+      if (cvUrl != null && cvUrl.trim().isNotEmpty) {
+        payload['cv_pdf_url'] = cvUrl.trim();
+      }
+      await ref.set(payload);
 
       await _notifyAdminsJobApplication(appId: ref.key ?? '', isGuest: isGuest);
 
@@ -573,6 +578,30 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<bool> _confirmSubmitWithoutCv() async {
+    final answer = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Submit without CV? | إرسال بدون سيرة ذاتية؟'),
+        content: const Text(
+          'You are about to send your application without attaching a CV PDF. Continue?\n\n'
+          'أنت على وشك إرسال طلبك بدون إرفاق ملف السيرة الذاتية PDF. هل تريد المتابعة؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel | إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Send anyway | إرسال على أي حال'),
+          ),
+        ],
+      ),
+    );
+    return answer ?? false;
   }
 
   @override
@@ -659,8 +688,8 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
             label: Text(
               _cvPdf == null
                   ? _fieldLabel(
-                      'Upload CV (PDF)',
-                      'رفع السيرة الذاتية (PDF)',
+                      'Upload CV (PDF) - Optional',
+                      'رفع السيرة الذاتية (PDF) - اختياري',
                       isGuestViewer,
                     )
                   : 'CV selected: ${_cvPdf!.name}',

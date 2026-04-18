@@ -815,7 +815,7 @@
       ".indexOn": ["stage", "status", "priority", "createdAt", "email", "phone"],
 
       "$appId": {
-        ".write": "(!data.exists() && newData.hasChildren(['full_name','phone','email','position','cv_pdf_url','status','isGuest','submittedByUid','createdAt']) && newData.child('status').val() == 'new' && (!newData.child('stage').exists() || newData.child('stage').val() == 'new') && (!newData.child('priority').exists() || newData.child('priority').val() == 'medium')) || (auth != null && root.child('admins').child(auth.uid).exists())",
+        ".write": "(!data.exists() && newData.hasChildren(['full_name','phone','email','position','status','isGuest','submittedByUid','createdAt']) && newData.child('status').val() == 'new' && (!newData.child('stage').exists() || newData.child('stage').val() == 'new') && (!newData.child('priority').exists() || newData.child('priority').val() == 'medium')) || (auth != null && root.child('admins').child(auth.uid).exists())",
 
         "full_name": {
           ".validate": "newData.isString() && newData.val().length > 1 && newData.val().length <= 120 && newData.val().matches(/^.*\\S.*$/)"
@@ -830,7 +830,7 @@
           ".validate": "newData.isString() && newData.val().length > 1 && newData.val().length <= 120 && newData.val().matches(/^.*\\S.*$/)"
         },
         "cv_pdf_url": {
-          ".validate": "newData.isString() && newData.val().matches(/^https?:\\/\\/.+/)"
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^https?:\\/\\/.+/))"
         },
 
         "status": {

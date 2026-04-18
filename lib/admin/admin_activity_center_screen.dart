@@ -135,7 +135,7 @@ class _AdminActivityCenterScreenState extends State<AdminActivityCenterScreen> {
 
   Widget _chip(String text, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
@@ -145,312 +145,431 @@ class _AdminActivityCenterScreenState extends State<AdminActivityCenterScreen> {
         text,
         style: TextStyle(
           color: color,
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
       ),
     );
   }
 
+  void _resetFilters() {
+    setState(() {
+      _query = '';
+      _role = 'all';
+      _domain = 'all';
+      _result = 'all';
+      _action = 'all';
+      _failuresOnly = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Activity Center')),
-      body: adminWebBodyFrame(
-        context: context,
-        maxWidth: 1500,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-          child: Column(
-            children: [
-              StreamBuilder<DatabaseEvent>(
-                stream: _logsRef
-                    .orderByChild('ts')
-                    .limitToLast(_window)
-                    .onValue,
-                builder: (context, snap) {
-                  final all = _parse(snap.data?.snapshot.value);
-                  final list = _filtered(all);
+      body: SafeArea(
+        top: false,
+        child: adminWebBodyFrame(
+          context: context,
+          maxWidth: 1500,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            child: Column(
+              children: [
+                StreamBuilder<DatabaseEvent>(
+                  stream: _logsRef
+                      .orderByChild('ts')
+                      .limitToLast(_window)
+                      .onValue,
+                  builder: (context, snap) {
+                    final all = _parse(snap.data?.snapshot.value);
+                    final list = _filtered(all);
 
-                  final actionSet =
-                      all
-                          .map((e) => e.actionKey)
-                          .where((e) => e.trim().isNotEmpty)
-                          .toSet()
-                          .toList()
-                        ..sort();
-                  final domainSet =
-                      all
-                          .map((e) => e.domain.toLowerCase())
-                          .where((e) => e.trim().isNotEmpty)
-                          .toSet()
-                          .toList()
-                        ..sort();
+                    final actionSet =
+                        all
+                            .map((e) => e.actionKey)
+                            .where((e) => e.trim().isNotEmpty)
+                            .toSet()
+                            .toList()
+                          ..sort();
+                    final domainSet =
+                        all
+                            .map((e) => e.domain.toLowerCase())
+                            .where((e) => e.trim().isNotEmpty)
+                            .toSet()
+                            .toList()
+                          ..sort();
 
-                  return Expanded(
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outline.withValues(alpha: 0.2),
+                    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+                    return Expanded(
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outline.withValues(alpha: 0.2),
+                              ),
                             ),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      onChanged: (v) =>
-                                          setState(() => _query = v),
-                                      decoration: const InputDecoration(
-                                        prefixIcon: Icon(Icons.search_rounded),
-                                        hintText:
-                                            'Search by keyword, learner, teacher, action, label',
-                                        border: OutlineInputBorder(),
-                                        isDense: true,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  FilterChip(
-                                    selected: _failuresOnly,
-                                    label: const Text('Failures only'),
-                                    onSelected: (v) =>
-                                        setState(() => _failuresOnly = v),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: [
-                                  _drop(
-                                    title: 'Role',
-                                    value: _role,
-                                    items: const [
-                                      'all',
-                                      'admin',
-                                      'teacher',
-                                      'learner',
-                                      'system',
-                                    ],
-                                    onChanged: (v) => setState(() => _role = v),
-                                  ),
-                                  _drop(
-                                    title: 'Domain',
-                                    value: _domain,
-                                    items: ['all', ...domainSet],
-                                    onChanged: (v) =>
-                                        setState(() => _domain = v),
-                                  ),
-                                  _drop(
-                                    title: 'Result',
-                                    value: _result,
-                                    items: const [
-                                      'all',
-                                      'success',
-                                      'failed',
-                                      'denied',
-                                    ],
-                                    onChanged: (v) =>
-                                        setState(() => _result = v),
-                                  ),
-                                  _drop(
-                                    title: 'Action',
-                                    value: _action,
-                                    items: ['all', ...actionSet],
-                                    onChanged: (v) =>
-                                        setState(() => _action = v),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Showing ${list.length} / ${all.length}',
-                                  ),
-                                  const Spacer(),
-                                  TextButton.icon(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
-                                    icon: const Icon(
-                                      Icons.notifications_active,
-                                    ),
-                                    label: const Text('Back to dashboard'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Expanded(
-                          child: list.isEmpty
-                              ? const Center(
-                                  child: Text('No activity logs found.'),
-                                )
-                              : ListView.separated(
-                                  itemCount: list.length,
-                                  separatorBuilder: (context, index) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (_, i) {
-                                    final e = list[i];
-                                    final isFailure =
-                                        e.result.toLowerCase() != 'success';
-                                    final accent = isFailure
-                                        ? const Color(0xFFDC2626)
-                                        : const Color(0xFF0E7490);
-                                    return Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).cardColor,
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: accent.withValues(alpha: 0.25),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        onChanged: (v) =>
+                                            setState(() => _query = v),
+                                        decoration: const InputDecoration(
+                                          prefixIcon: Icon(
+                                            Icons.search_rounded,
+                                          ),
+                                          hintText:
+                                              'Search keyword, learner, teacher, action, label',
+                                          border: OutlineInputBorder(),
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 10,
+                                          ),
                                         ),
                                       ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  e.summary.isEmpty
-                                                      ? e.actionKey
-                                                      : e.summary,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    FilterChip(
+                                      visualDensity: VisualDensity.compact,
+                                      selected: _failuresOnly,
+                                      label: const Text('Failures only'),
+                                      onSelected: (v) =>
+                                          setState(() => _failuresOnly = v),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    TextButton(
+                                      onPressed: _resetFilters,
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      child: const Text('Reset'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    _drop(
+                                      title: 'Role',
+                                      value: _role,
+                                      items: const [
+                                        'all',
+                                        'admin',
+                                        'teacher',
+                                        'learner',
+                                        'system',
+                                      ],
+                                      onChanged: (v) =>
+                                          setState(() => _role = v),
+                                    ),
+                                    _drop(
+                                      title: 'Domain',
+                                      value: _domain,
+                                      items: ['all', ...domainSet],
+                                      onChanged: (v) =>
+                                          setState(() => _domain = v),
+                                    ),
+                                    _drop(
+                                      title: 'Result',
+                                      value: _result,
+                                      items: const [
+                                        'all',
+                                        'success',
+                                        'failed',
+                                        'denied',
+                                      ],
+                                      onChanged: (v) =>
+                                          setState(() => _result = v),
+                                    ),
+                                    _drop(
+                                      title: 'Action',
+                                      value: _action,
+                                      items: ['all', ...actionSet],
+                                      onChanged: (v) =>
+                                          setState(() => _action = v),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Showing ${list.length} / ${all.length}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(),
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.notifications_active,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Back to dashboard'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: list.isEmpty
+                                ? const Center(
+                                    child: Text('No activity logs found.'),
+                                  )
+                                : ListView.separated(
+                                    padding: EdgeInsets.only(
+                                      bottom: bottomInset + 96,
+                                    ),
+                                    itemCount: list.length,
+                                    separatorBuilder: (context, index) =>
+                                        const SizedBox(height: 6),
+                                    itemBuilder: (_, i) {
+                                      final e = list[i];
+                                      final isFailure =
+                                          e.result.toLowerCase() != 'success';
+                                      final accent = isFailure
+                                          ? const Color(0xFFDC2626)
+                                          : const Color(0xFF0E7490);
+                                      final muted = Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.66);
+                                      final actorBits = <String>[
+                                        if (e.actorRole.isNotEmpty) e.actorRole,
+                                        if (e.actorName.isNotEmpty) e.actorName,
+                                      ];
+                                      final meta = <String>[
+                                        _fmt(e.ts),
+                                        if (e.actionKey.isNotEmpty)
+                                          'action ${e.actionKey}',
+                                        if (actorBits.isNotEmpty)
+                                          'actor ${actorBits.join(' / ')}',
+                                        if (e.targetName.isNotEmpty)
+                                          'target ${e.targetName}',
+                                        e.eventId,
+                                      ].join('  •  ');
+                                      return Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context).cardColor,
+                                          borderRadius: BorderRadius.circular(
+                                            9,
+                                          ),
+                                          border: Border.all(
+                                            color: accent.withValues(
+                                              alpha: 0.22,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    e.summary.isEmpty
+                                                        ? e.actionKey
+                                                        : e.summary,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 13,
+                                                    ),
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                   ),
                                                 ),
-                                              ),
-                                              _chip(e.result, accent),
-                                              const SizedBox(width: 6),
-                                              _chip(
-                                                e.domain,
-                                                const Color(0xFF334155),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Wrap(
-                                            spacing: 8,
-                                            runSpacing: 8,
-                                            children: [
-                                              _chip(
-                                                'Action ${e.actionKey}',
-                                                accent,
-                                              ),
-                                              if (e.actorRole.isNotEmpty)
+                                                const SizedBox(width: 6),
+                                                _chip(e.result, accent),
+                                                const SizedBox(width: 4),
                                                 _chip(
-                                                  'Actor ${e.actorRole}',
-                                                  const Color(0xFF2563EB),
+                                                  e.domain,
+                                                  const Color(0xFF334155),
                                                 ),
-                                              if (e.actorName.isNotEmpty)
-                                                _chip(
-                                                  e.actorName,
-                                                  const Color(0xFF0F766E),
-                                                ),
-                                              if (e.targetName.isNotEmpty)
-                                                _chip(
-                                                  e.targetName,
-                                                  const Color(0xFF7C2D12),
-                                                ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Time: ${_fmt(e.ts)}  •  Event: ${e.eventId}',
-                                            style: TextStyle(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.6,
-                                              ),
+                                              ],
                                             ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Align(
-                                            alignment: Alignment.centerRight,
-                                            child: TextButton(
-                                              onPressed: () => _showRaw(e),
-                                              child: const Text('View details'),
+                                            const SizedBox(height: 3),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    meta,
+                                                    style: TextStyle(
+                                                      color: muted,
+                                                      fontSize: 11,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                TextButton(
+                                                  onPressed: () => _showRaw(e),
+                                                  style: TextButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 0,
+                                                        ),
+                                                  ),
+                                                  child: const Text('Details'),
+                                                ),
+                                              ],
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final stacked = c.maxWidth < 780;
+                    if (stacked) {
+                      return Column(
+                        children: [
+                          StreamBuilder<DatabaseEvent>(
+                            stream: _pushEventsRef.onValue,
+                            builder: (context, snap) {
+                              int total = 0;
+                              int failed = 0;
+                              final raw = snap.data?.snapshot.value;
+                              if (raw is Map) {
+                                final m = Map<dynamic, dynamic>.from(raw);
+                                total = m.length;
+                                for (final v in m.values) {
+                                  if (v is! Map) continue;
+                                  final x = v.map(
+                                    (k, vv) => MapEntry(k.toString(), vv),
+                                  );
+                                  if (_safe(x['status']).toLowerCase() ==
+                                      'failed') {
+                                    failed += 1;
+                                  }
+                                }
+                              }
+                              return _legacyTile(
+                                title: 'Legacy Push Events',
+                                value: '$total total • $failed failed',
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          StreamBuilder<DatabaseEvent>(
+                            stream: _pushErrorsRef.onValue,
+                            builder: (context, snap) {
+                              int total = 0;
+                              final raw = snap.data?.snapshot.value;
+                              if (raw is Map) {
+                                final m = Map<dynamic, dynamic>.from(raw);
+                                for (final bucket in m.values) {
+                                  if (bucket is Map) {
+                                    total += bucket.length;
+                                  }
+                                }
+                              }
+                              return _legacyTile(
+                                title: 'Legacy Push Client Errors',
+                                value: '$total records',
+                              );
+                            },
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: StreamBuilder<DatabaseEvent>(
+                            stream: _pushEventsRef.onValue,
+                            builder: (context, snap) {
+                              int total = 0;
+                              int failed = 0;
+                              final raw = snap.data?.snapshot.value;
+                              if (raw is Map) {
+                                final m = Map<dynamic, dynamic>.from(raw);
+                                total = m.length;
+                                for (final v in m.values) {
+                                  if (v is! Map) continue;
+                                  final x = v.map(
+                                    (k, vv) => MapEntry(k.toString(), vv),
+                                  );
+                                  if (_safe(x['status']).toLowerCase() ==
+                                      'failed') {
+                                    failed += 1;
+                                  }
+                                }
+                              }
+                              return _legacyTile(
+                                title: 'Legacy Push Events',
+                                value: '$total total • $failed failed',
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: StreamBuilder<DatabaseEvent>(
+                            stream: _pushErrorsRef.onValue,
+                            builder: (context, snap) {
+                              int total = 0;
+                              final raw = snap.data?.snapshot.value;
+                              if (raw is Map) {
+                                final m = Map<dynamic, dynamic>.from(raw);
+                                for (final bucket in m.values) {
+                                  if (bucket is Map) {
+                                    total += bucket.length;
+                                  }
+                                }
+                              }
+                              return _legacyTile(
+                                title: 'Legacy Push Client Errors',
+                                value: '$total records',
+                              );
+                            },
+                          ),
                         ),
                       ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: StreamBuilder<DatabaseEvent>(
-                      stream: _pushEventsRef.onValue,
-                      builder: (context, snap) {
-                        int total = 0;
-                        int failed = 0;
-                        final raw = snap.data?.snapshot.value;
-                        if (raw is Map) {
-                          final m = Map<dynamic, dynamic>.from(raw);
-                          total = m.length;
-                          for (final v in m.values) {
-                            if (v is! Map) continue;
-                            final x = v.map(
-                              (k, vv) => MapEntry(k.toString(), vv),
-                            );
-                            if (_safe(x['status']).toLowerCase() == 'failed') {
-                              failed += 1;
-                            }
-                          }
-                        }
-                        return _legacyTile(
-                          title: 'Legacy Push Events',
-                          value: '$total total • $failed failed',
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: StreamBuilder<DatabaseEvent>(
-                      stream: _pushErrorsRef.onValue,
-                      builder: (context, snap) {
-                        int total = 0;
-                        final raw = snap.data?.snapshot.value;
-                        if (raw is Map) {
-                          final m = Map<dynamic, dynamic>.from(raw);
-                          for (final bucket in m.values) {
-                            if (bucket is Map) {
-                              total += bucket.length;
-                            }
-                          }
-                        }
-                        return _legacyTile(
-                          title: 'Legacy Push Client Errors',
-                          value: '$total records',
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -459,10 +578,10 @@ class _AdminActivityCenterScreenState extends State<AdminActivityCenterScreen> {
 
   Widget _legacyTile({required String title, required String value}) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
         ),
@@ -497,13 +616,17 @@ class _AdminActivityCenterScreenState extends State<AdminActivityCenterScreen> {
     final deduped = items.where((x) => x.trim().isNotEmpty).toSet().toList();
     if (!deduped.contains(value)) deduped.insert(0, value);
     return SizedBox(
-      width: 240,
+      width: 180,
       child: DropdownButtonFormField<String>(
         initialValue: value,
         decoration: InputDecoration(
           labelText: title,
           border: const OutlineInputBorder(),
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
         ),
         items: deduped
             .map((x) => DropdownMenuItem(value: x, child: Text(x)))
