@@ -745,7 +745,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
               border: Border.all(color: Colors.orange.shade200),
             ),
             child: Text(
-              'PDF download is disabled by administration.',
+              'Your certificate PDF is on its way. Please check back shortly.',
               style: TextStyle(
                 color: Colors.orange.shade800,
                 fontWeight: FontWeight.w700,
