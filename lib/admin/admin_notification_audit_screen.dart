@@ -113,50 +113,59 @@ class AdminNotificationAuditScreen extends StatelessWidget {
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  Widget _metricCard({
+  Widget _statChip({
     required BuildContext context,
-    required String title,
+    required String label,
+    required String shortLabel,
     required String value,
     required IconData icon,
     required Color color,
+    required bool compactLabel,
   }) {
     final cs = Theme.of(context).colorScheme;
+    final title = compactLabel ? shortLabel : label;
     return Container(
+      constraints: const BoxConstraints(minWidth: 124),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
       ),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(9, 7, 10, 7),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 24,
+            height: 24,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: color, size: 19),
+            child: Icon(icon, color: color, size: 15),
           ),
-          const SizedBox(width: 10),
-          Expanded(
+          const SizedBox(width: 7),
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
+                    fontSize: 11,
                     color: Theme.of(context).textTheme.bodySmall?.color,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 1),
                 Text(
                   value,
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 18,
+                    fontSize: 17,
                     color: cs.primary,
                   ),
                 ),
@@ -170,198 +179,287 @@ class AdminNotificationAuditScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Scaffold(
       appBar: AppBar(title: const Text('Notification Audit')),
-      body: adminWebBodyFrame(
-        context: context,
-        maxWidth: 1320,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-          child: Column(
-            children: [
-              StreamBuilder<DatabaseEvent>(
-                stream: _eventsRef.onValue,
-                builder: (context, snap) {
-                  final stats = _buildEventStats(snap.data?.snapshot.value);
-                  return Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Push Events Total',
-                          value: '${stats.total}',
-                          icon: Icons.notifications_active_rounded,
-                          color: const Color(0xFF2563EB),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Sent',
-                          value: '${stats.sent}',
-                          icon: Icons.check_circle_rounded,
-                          color: const Color(0xFF059669),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Failed',
-                          value: '${stats.failed}',
-                          icon: Icons.error_rounded,
-                          color: const Color(0xFFDC2626),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Pending',
-                          value: '${stats.pending}',
-                          icon: Icons.schedule_rounded,
-                          color: const Color(0xFFD97706),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Recorded Comments',
-                          value: '${stats.recordedComment}',
-                          icon: Icons.video_library_rounded,
-                          color: const Color(0xFF7C3AED),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Job Applications',
-                          value: '${stats.jobApplication}',
-                          icon: Icons.work_history_rounded,
-                          color: const Color(0xFF0E7490),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 260,
-                        child: _metricCard(
-                          context: context,
-                          title: 'Events (24h)',
-                          value: '${stats.last24h}',
-                          icon: Icons.query_stats_rounded,
-                          color: const Color(0xFF4338CA),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 14),
-              Expanded(
-                child: StreamBuilder<DatabaseEvent>(
-                  stream: _errorsRef.onValue,
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: adminWebBodyFrame(
+          context: context,
+          maxWidth: 1320,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(
+              children: [
+                StreamBuilder<DatabaseEvent>(
+                  stream: _eventsRef.onValue,
                   builder: (context, snap) {
-                    final stats = _buildErrorStats(snap.data?.snapshot.value);
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outline.withValues(alpha: 0.2),
-                        ),
+                    final stats = _buildEventStats(snap.data?.snapshot.value);
+                    final chips = <_StatChipData>[
+                      _StatChipData(
+                        label: 'Push Events Total',
+                        shortLabel: 'Total',
+                        value: '${stats.total}',
+                        icon: Icons.notifications_active_rounded,
+                        color: const Color(0xFF2563EB),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                      _StatChipData(
+                        label: 'Sent',
+                        shortLabel: 'Sent',
+                        value: '${stats.sent}',
+                        icon: Icons.check_circle_rounded,
+                        color: const Color(0xFF059669),
+                      ),
+                      _StatChipData(
+                        label: 'Failed',
+                        shortLabel: 'Failed',
+                        value: '${stats.failed}',
+                        icon: Icons.error_rounded,
+                        color: const Color(0xFFDC2626),
+                      ),
+                      _StatChipData(
+                        label: 'Pending',
+                        shortLabel: 'Pending',
+                        value: '${stats.pending}',
+                        icon: Icons.schedule_rounded,
+                        color: const Color(0xFFD97706),
+                      ),
+                      _StatChipData(
+                        label: 'Recorded Comments',
+                        shortLabel: 'Recorded',
+                        value: '${stats.recordedComment}',
+                        icon: Icons.video_library_rounded,
+                        color: const Color(0xFF7C3AED),
+                      ),
+                      _StatChipData(
+                        label: 'Job Applications',
+                        shortLabel: 'Jobs',
+                        value: '${stats.jobApplication}',
+                        icon: Icons.work_history_rounded,
+                        color: const Color(0xFF0E7490),
+                      ),
+                      _StatChipData(
+                        label: 'Events (24h)',
+                        shortLabel: '24h',
+                        value: '${stats.last24h}',
+                        icon: Icons.query_stats_rounded,
+                        color: const Color(0xFF4338CA),
+                      ),
+                    ];
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isPhone = constraints.maxWidth < 760;
+                        final useShortLabel = constraints.maxWidth < 420;
+                        if (isPhone) {
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            padding: EdgeInsets.zero,
                             child: Row(
                               children: [
-                                const Icon(Icons.bug_report_rounded),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Push Error Logs',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w900),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  'Total ${stats.total} • Last 24h ${stats.last24h}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.black54,
+                                for (var i = 0; i < chips.length; i++) ...[
+                                  if (i > 0) const SizedBox(width: 8),
+                                  _statChip(
+                                    context: context,
+                                    label: chips[i].label,
+                                    shortLabel: chips[i].shortLabel,
+                                    value: chips[i].value,
+                                    icon: chips[i].icon,
+                                    color: chips[i].color,
+                                    compactLabel: useShortLabel,
                                   ),
-                                ),
+                                ],
                               ],
                             ),
-                          ),
-                          const Divider(height: 1),
-                          Expanded(
-                            child: stats.latest.isEmpty
-                                ? const Center(
-                                    child: Text('No push failures logged yet.'),
-                                  )
-                                : ListView.separated(
-                                    itemCount: stats.latest.length > 40
-                                        ? 40
-                                        : stats.latest.length,
-                                    separatorBuilder: (_, _) =>
-                                        const Divider(height: 1),
-                                    itemBuilder: (context, index) {
-                                      final item = stats.latest[index];
-                                      return ListTile(
-                                        leading: const Icon(
-                                          Icons.error_outline_rounded,
-                                          color: Color(0xFFDC2626),
-                                        ),
-                                        title: Text(
-                                          item.action.isEmpty
-                                              ? 'push_failure'
-                                              : item.action,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          '${item.screen}\n${item.message}',
-                                          maxLines: 3,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        trailing: SizedBox(
-                                          width: 180,
-                                          child: Text(
-                                            '${_fmtDateTime(item.createdAt)}\n${item.eventId}',
-                                            textAlign: TextAlign.right,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.black54,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
+                          );
+                        }
+                        final chipWidth = constraints.maxWidth < 1040
+                            ? 170.0
+                            : 182.0;
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: chips
+                              .map(
+                                (chip) => SizedBox(
+                                  width: chipWidth,
+                                  child: _statChip(
+                                    context: context,
+                                    label: chip.label,
+                                    shortLabel: chip.shortLabel,
+                                    value: chip.value,
+                                    icon: chip.icon,
+                                    color: chip.color,
+                                    compactLabel: false,
                                   ),
-                          ),
-                        ],
-                      ),
+                                ),
+                              )
+                              .toList(),
+                        );
+                      },
                     );
                   },
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                Expanded(
+                  child: StreamBuilder<DatabaseEvent>(
+                    stream: _errorsRef.onValue,
+                    builder: (context, snap) {
+                      final stats = _buildErrorStats(snap.data?.snapshot.value);
+                      final isCompact = MediaQuery.sizeOf(context).width < 700;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                isCompact ? 10 : 14,
+                                isCompact ? 10 : 12,
+                                isCompact ? 10 : 14,
+                                8,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.bug_report_rounded,
+                                    size: isCompact ? 18 : 22,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Push Error Logs',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: isCompact ? 16 : null,
+                                          ),
+                                    ),
+                                  ),
+                                  Flexible(
+                                    child: Text(
+                                      'Total ${stats.total} • Last 24h ${stats.last24h}',
+                                      textAlign: TextAlign.right,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: isCompact ? 12 : 13,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 1),
+                            Expanded(
+                              child: stats.latest.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        'No push failures logged yet.',
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      padding: EdgeInsets.only(
+                                        bottom: bottomInset + 12,
+                                      ),
+                                      itemCount: stats.latest.length > 40
+                                          ? 40
+                                          : stats.latest.length,
+                                      separatorBuilder: (_, _) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (context, index) {
+                                        final item = stats.latest[index];
+                                        return ListTile(
+                                          dense: isCompact,
+                                          visualDensity: isCompact
+                                              ? const VisualDensity(
+                                                  horizontal: -1,
+                                                  vertical: -1.3,
+                                                )
+                                              : VisualDensity.compact,
+                                          leading: Icon(
+                                            Icons.error_outline_rounded,
+                                            color: const Color(0xFFDC2626),
+                                            size: isCompact ? 20 : 24,
+                                          ),
+                                          title: Text(
+                                            item.action.isEmpty
+                                                ? 'push_failure'
+                                                : item.action,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: isCompact ? 13 : 14,
+                                            ),
+                                          ),
+                                          subtitle: Text(
+                                            '${item.screen}\n${item.message}',
+                                            maxLines: isCompact ? 2 : 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: isCompact ? 12 : 13,
+                                            ),
+                                          ),
+                                          trailing: SizedBox(
+                                            width: isCompact ? 136 : 180,
+                                            child: Text(
+                                              '${_fmtDateTime(item.createdAt)}\n${item.eventId}',
+                                              textAlign: TextAlign.right,
+                                              style: TextStyle(
+                                                fontSize: isCompact ? 11 : 12,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _StatChipData {
+  const _StatChipData({
+    required this.label,
+    required this.shortLabel,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final String shortLabel;
+  final String value;
+  final IconData icon;
+  final Color color;
 }
 
 class _PushEventStats {
