@@ -8,9 +8,34 @@ import 'package:printing/printing.dart';
 import '../models/certificate_model.dart';
 
 class CertificatePdfService {
+  static const int _templateRasterDpi = 300;
+
   String _fmtDate(DateTime d) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  Future<pw.MemoryImage?> _loadPdfTemplate(String assetPath) async {
+    try {
+      final pdfBytes = await rootBundle.load(assetPath);
+      await for (final page in Printing.raster(
+        pdfBytes.buffer.asUint8List(),
+        pages: const [0],
+        dpi: _templateRasterDpi.toDouble(),
+      )) {
+        final rasterBytes = await page.toPng();
+        return pw.MemoryImage(rasterBytes);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<pw.MemoryImage?> _loadPngTemplate(String assetPath) async {
+    try {
+      final bytes = await rootBundle.load(assetPath);
+      return pw.MemoryImage(bytes.buffer.asUint8List());
+    } catch (_) {}
+    return null;
   }
 
   Future<Uint8List> generateCertificatePdfBytes(Certificate cert) async {
@@ -19,34 +44,19 @@ class CertificatePdfService {
     pw.Font? playfairRegular;
     pw.Font? playfairBold;
     final isExam = cert.examCourse == 'exam';
-    try {
-      if (isExam) {
-        final examPdfBytes = await rootBundle.load(
-          'assets/images/digital_cert_exam.pdf',
-        );
-        await for (final page in Printing.raster(
-          examPdfBytes.buffer.asUint8List(),
-          pages: const [0],
-          dpi: 144,
-        )) {
-          final rasterBytes = await page.toPng();
-          template = pw.MemoryImage(rasterBytes);
-          break;
-        }
-      } else {
-        final bytes = await rootBundle.load(
-          'assets/images/DigitalCertificate.png',
-        );
-        template = pw.MemoryImage(bytes.buffer.asUint8List());
-      }
-    } catch (_) {}
+    if (isExam) {
+      template = await _loadPdfTemplate('assets/images/digital_cert_exam.pdf');
+      template ??= await _loadPngTemplate(
+        'assets/images/digital_cert_exam.png',
+      );
+    } else {
+      template = await _loadPdfTemplate('assets/images/DigitalCertificate.pdf');
+      template ??= await _loadPngTemplate(
+        'assets/images/DigitalCertificate.png',
+      );
+    }
     if (template == null) {
-      try {
-        final bytes = await rootBundle.load(
-          'assets/images/DigitalCertificate.png',
-        );
-        template = pw.MemoryImage(bytes.buffer.asUint8List());
-      } catch (_) {}
+      template = await _loadPngTemplate('assets/images/DigitalCertificate.png');
     }
     try {
       final bytes = await rootBundle.load(
