@@ -711,6 +711,27 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
+  Future<List<String>> _getAdminUids() async {
+    try {
+      final snap = await _db.child('admins').get();
+      if (!snap.exists || snap.value is! Map) return <String>[];
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      final adminUids = <String>{};
+      raw.forEach((key, _) {
+        final uid = key.toString().trim();
+        if (uid.isNotEmpty) {
+          adminUids.add(uid);
+        }
+      });
+
+      final out = adminUids.toList()..sort();
+      return out;
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
   Future<void> _sendBookingNotifications(_Slot slot) async {
     try {
       final learnerName = await _getMyFullName();
@@ -724,26 +745,64 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       final adminBody =
           '$learnerName booked Session $sessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time} with ${slot.teacherName}.';
 
-      await PushClient.sendToTopic(
-        topic: 'admins',
-        eventId:
-            'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo',
-        title: adminTitle,
-        message: adminBody,
-        data: {
-          'type': 'booking',
-          'targetRole': 'admin',
-          'courseId': slot.courseId,
-          'courseTitle': safeCourseTitle,
-          'teacherId': slot.teacherId,
-          'teacherName': slot.teacherName,
-          'learnerUid': myUid,
-          'learnerName': learnerName,
-          'dayKey': slot.dayKey,
-          'time': slot.time,
-          'sessionNo': sessionNo.toString(),
-        },
-      );
+      final adminEventId =
+          'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo';
+      final adminData = {
+        'type': 'booking',
+        'targetRole': 'admin',
+        'courseId': slot.courseId,
+        'courseTitle': safeCourseTitle,
+        'teacherId': slot.teacherId,
+        'teacherName': slot.teacherName,
+        'learnerUid': myUid,
+        'learnerName': learnerName,
+        'dayKey': slot.dayKey,
+        'time': slot.time,
+        'sessionNo': sessionNo.toString(),
+      };
+
+      try {
+        await PushClient.sendToTopic(
+          topic: 'admins',
+          eventId: adminEventId,
+          title: adminTitle,
+          message: adminBody,
+          data: adminData,
+        );
+      } catch (e, st) {
+        await PushErrorLogger.logFailure(
+          screen: 'learner/learner_booking',
+          action: 'booking_admin_push_topic_fallback_user_topics',
+          error: e,
+          stackTrace: st,
+          topic: 'admins',
+          eventId: adminEventId,
+        );
+
+        final adminUids = await _getAdminUids();
+        for (final adminUid in adminUids) {
+          final adminUserTopic = 'user_$adminUid';
+          try {
+            await PushClient.sendToTopic(
+              topic: adminUserTopic,
+              eventId: adminEventId,
+              title: adminTitle,
+              message: adminBody,
+              data: {...adminData, 'targetUid': adminUid},
+            );
+          } catch (fallbackError, fallbackSt) {
+            await PushErrorLogger.logFailure(
+              screen: 'learner/learner_booking',
+              action: 'booking_admin_push_user_topic_failed',
+              error: fallbackError,
+              stackTrace: fallbackSt,
+              targetUid: adminUid,
+              topic: adminUserTopic,
+              eventId: adminEventId,
+            );
+          }
+        }
+      }
 
       final teacherToken = await _getUserToken(slot.teacherId);
       final teacherTitle = 'New class booking';
