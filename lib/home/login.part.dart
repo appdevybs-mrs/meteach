@@ -12,7 +12,7 @@ class LoginScreen extends StatelessWidget {
           child: Column(
             children: [
               SimpleTopBar(
-                title: 'Login',
+                title: 'Welcome',
                 right: IconButton(
                   tooltip: 'Back',
                   onPressed: () => Navigator.of(context).pop(),
@@ -684,21 +684,21 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           child: Column(
             children: [
               Container(
-                width: 130,
-                height: 130,
+                width: 112,
+                height: 112,
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Brand.uiBorder),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 18,
-                      offset: const Offset(0, 10),
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 14,
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 child: Image.asset(
                   'assets/images/ybs_logo.png',
                   fit: BoxFit.contain,
@@ -709,19 +709,28 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
-                'Sign in',
+                'Sign in to your account',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w900,
                   color: Brand.primaryBlue,
                 ),
               ),
               const SizedBox(height: 6),
+              Text(
+                'Use your school email and password.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Brand.mainText.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
             ],
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 16),
         TextField(
           controller: emailCtrl,
           enabled: !loading,

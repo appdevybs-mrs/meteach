@@ -149,8 +149,6 @@ class JobsHome extends StatefulWidget {
 }
 
 class _JobsHomeState extends State<JobsHome> {
-  bool _showApplyForm = false;
-  final ScrollController _scrollCtrl = ScrollController();
   Timer? _descTimer;
   int _descIndex = 0;
 
@@ -172,7 +170,6 @@ class _JobsHomeState extends State<JobsHome> {
   @override
   void dispose() {
     _descTimer?.cancel();
-    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -184,7 +181,6 @@ class _JobsHomeState extends State<JobsHome> {
           const SimpleTopBar(title: 'Jobs'),
           Expanded(
             child: ListView(
-              controller: _scrollCtrl,
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
               children: [
                 CardShell(
@@ -207,52 +203,11 @@ class _JobsHomeState extends State<JobsHome> {
                           height: 1.4,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () {
-                            final next = !_showApplyForm;
-                            setState(() => _showApplyForm = next);
-                            if (next) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (!mounted || !_scrollCtrl.hasClients) return;
-                                final target =
-                                    _scrollCtrl.position.maxScrollExtent;
-                                _scrollCtrl.animateTo(
-                                  target,
-                                  duration: const Duration(milliseconds: 320),
-                                  curve: Curves.easeOutCubic,
-                                );
-                              });
-                            }
-                          },
-                          icon: Icon(
-                            _showApplyForm
-                                ? Icons.expand_less_rounded
-                                : Icons.send_rounded,
-                          ),
-                          label: Text(
-                            _showApplyForm
-                                ? 'Hide Application Form'
-                                : 'Apply Now',
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
-                if (_showApplyForm) ...[
-                  const SizedBox(height: 12),
-                  CardShell(
-                    child: JobApplicationScreen(
-                      onSubmitted: () {
-                        if (!mounted) return;
-                        setState(() => _showApplyForm = false);
-                      },
-                    ),
-                  ),
-                ],
+                const SizedBox(height: 12),
+                const CardShell(child: JobApplicationScreen()),
               ],
             ),
           ),
@@ -688,8 +643,8 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
             label: Text(
               _cvPdf == null
                   ? _fieldLabel(
-                      'Upload CV (PDF) - Optional',
-                      'رفع السيرة الذاتية (PDF) - اختياري',
+                      'CV PDF (opt)',
+                      'CV PDF (اختياري)',
                       isGuestViewer,
                     )
                   : 'CV selected: ${_cvPdf!.name}',
@@ -726,6 +681,10 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Brand.actionOrange,
+                foregroundColor: Colors.white,
+              ),
               onPressed: _submitting ? null : _submit,
               icon: _submitting
                   ? const SizedBox(
@@ -737,11 +696,7 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
               label: Text(
                 _submitting
                     ? 'Submitting...'
-                    : _fieldLabel(
-                        'Submit Application',
-                        'إرسال الطلب',
-                        isGuestViewer,
-                      ),
+                    : _fieldLabel('Submit', 'إرسال', isGuestViewer),
               ),
             ),
           ),
