@@ -9,6 +9,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
+import '../services/mail_consistency_service.dart';
 
 class LearnerHomeworkScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2...
@@ -120,6 +121,16 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework/autoMailMsgKey';
     // Multi-location update (thread + message + my index)
     final learnerName = await _myDisplayName();
+    final learnerRole = await MailConsistencyService.resolveUserRole(
+      FirebaseDatabase.instance,
+      _uid,
+      seedRole: 'learner',
+    );
+    final teacherRole = await MailConsistencyService.resolveUserRole(
+      FirebaseDatabase.instance,
+      teacherUid,
+      seedRole: 'teacher',
+    );
 
     final Map<String, dynamic> updates = {
       // thread meta
@@ -161,11 +172,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_index/$_uid/$threadId/unreadCount': 0,
       'mail_index/$_uid/$threadId/updatedAt': now,
       'mail_index/$_uid/$threadId/type': 'homework',
+      'mail_index/$_uid/$threadId/peerRole': teacherRole,
       'mail_index/$_uid/$threadId/homeworkRef':
           'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
 
       // my read state (optional but consistent)
       'mail_state/$_uid/$threadId/lastReadAt': now,
+      'mail_state/$_uid/$threadId/lastDeliveredAt': now,
+      'mail_state/$teacherUid/$threadId/lastDeliveredAt': now,
       'mail_index/$teacherUid/$threadId/peerUid': _uid,
       'mail_index/$teacherUid/$threadId/peerName': learnerName.isEmpty
           ? 'Learner'
@@ -176,6 +190,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           : body,
       'mail_index/$teacherUid/$threadId/updatedAt': now,
       'mail_index/$teacherUid/$threadId/type': 'homework',
+      'mail_index/$teacherUid/$threadId/peerRole': learnerRole,
       'mail_index/$teacherUid/$threadId/homeworkRef':
           'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
       'mail_index/$teacherUid/$threadId/deletedAt': null,
@@ -183,6 +198,21 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     };
 
     await _db.update(updates);
+
+    await MailConsistencyService.verifyMailWriteOnce(
+      db: FirebaseDatabase.instance,
+      threadId: threadId,
+      senderUid: _uid,
+      receiverUid: teacherUid,
+      senderName: learnerName.isEmpty ? 'Learner' : learnerName,
+      receiverName: teacherName.isEmpty ? 'Teacher' : teacherName,
+      senderRole: learnerRole,
+      receiverRole: teacherRole,
+      subject: subject,
+      lastMessage: body.length > 60 ? body.substring(0, 60) : body,
+      now: now,
+      type: 'homework',
+    );
 
     await AuditLogService.logSuccess(
       actionKey: AuditActionKeys.learnerHomeworkSubmit,

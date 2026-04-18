@@ -132,31 +132,45 @@ class _AdminLearnerMailTopicsScreenState
       final threadId = _threadsRef.push().key!;
       await _threadsRef.child(threadId).set({
         'subject': subject,
+        'type': 'mail',
         'createdAt': now,
         'updatedAt': now,
         'lastMessage': '',
+        'participants': {_meUid: true, widget.learnerUid: true},
       });
 
       // ✅ update admin index
       await _db.ref('mail_index/$_meUid/$threadId').set({
         'subject': subject,
+        'type': 'mail',
         'updatedAt': now,
         'lastMessage': '',
         'unreadCount': 0,
         'peerUid': widget.learnerUid,
         'peerName': widget.learnerName,
+        'peerRole': 'learner',
         'deletedAt': null,
       });
 
       // ✅ update learner index (so learner sees the new topic in inbox)
       await _db.ref('mail_index/${widget.learnerUid}/$threadId').set({
         'subject': subject,
+        'type': 'mail',
         'updatedAt': now,
         'lastMessage': '',
         'unreadCount': 0,
         'peerUid': _meUid,
         'peerName': _meName.isEmpty ? 'Admin' : _meName,
+        'peerRole': 'admin',
         'deletedAt': null,
+      });
+
+      await _db.ref('mail_state/$_meUid/$threadId').update({
+        'lastReadAt': now,
+        'lastDeliveredAt': now,
+      });
+      await _db.ref('mail_state/${widget.learnerUid}/$threadId').update({
+        'lastDeliveredAt': now,
       });
 
       if (!mounted) return;
@@ -178,7 +192,6 @@ class _AdminLearnerMailTopicsScreenState
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
         title: Text(

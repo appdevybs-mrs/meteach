@@ -19,6 +19,7 @@ import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
 import '../services/push_error_logger.dart';
+import '../services/reminder_consistency_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../services/backend_api.dart';
@@ -948,22 +949,37 @@ class _LearnersListState extends State<_LearnersList>
 
     final admin = FirebaseAuth.instance.currentUser;
     final reminderRef = FirebaseDatabase.instance.ref('reminders/$uid').push();
+    const senderRole = 'admin';
+    const targetRole = 'learner';
 
     try {
-      await reminderRef.set({
-        'kind': type.name,
-        'title': title,
-        'description': message,
-        'attachment_name': '',
-        'attachment_url': '',
-        'createdAt': ServerValue.timestamp,
-        'createdByUid': admin?.uid ?? '',
-        'teacher': {'name': 'Admin', 'email': admin?.email ?? ''},
-        'status': 'queued',
-        'readAt': null,
-        'doneAt': null,
-        'push': {'attemptedAt': null, 'sentAt': null, 'error': null},
-      });
+      await reminderRef.set(
+        ReminderConsistencyService.buildReminderPayload(
+          targetUid: uid,
+          targetRole: targetRole,
+          senderUid: admin?.uid ?? '',
+          senderRole: senderRole,
+          title: title,
+          description: message,
+          kind: type.name,
+          dueAtMs: null,
+          attachmentUrl: '',
+          attachmentName: '',
+          legacyTarget: {
+            'uid': uid,
+            'name': learner.fullName,
+            'email': learner.email,
+            'role': 'learner',
+          },
+        ),
+      );
+      await ReminderConsistencyService.verifyReminderOnce(
+        reminderRef: reminderRef,
+        targetUid: uid,
+        targetRole: targetRole,
+        senderUid: admin?.uid ?? '',
+        senderRole: senderRole,
+      );
     } catch (e) {
       if (!mounted) return;
       _toast('RTDB write failed: $e');
@@ -1021,7 +1037,7 @@ class _LearnersListState extends State<_LearnersList>
       }
 
       await reminderRef.update({
-        'status': 'push_sent',
+        'status': 'new',
         'push/sentAt': ServerValue.timestamp,
         'push/error': null,
       });
@@ -1047,10 +1063,7 @@ class _LearnersListState extends State<_LearnersList>
         targetUid: uid,
         eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
       );
-      await reminderRef.update({
-        'status': 'push_error',
-        'push/error': e.toString(),
-      });
+      await reminderRef.update({'status': 'new', 'push/error': e.toString()});
 
       await AuditLogService.logFailure(
         actionKey: AuditActionKeys.adminReminderSend,

@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../services/mail_consistency_service.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
@@ -3879,6 +3880,7 @@ Future<void> _sendPaymentReceiptMail({
       'unreadCount': 0,
       'peerUid': learnerUid,
       'peerName': learnerName,
+      'peerRole': 'learner',
       'deletedAt': null,
     });
 
@@ -3889,6 +3891,7 @@ Future<void> _sendPaymentReceiptMail({
       'unreadCount': 0,
       'peerUid': meUid,
       'peerName': meName.isEmpty ? 'Admin' : meName,
+      'peerRole': 'admin',
       'deletedAt': null,
     });
   }
@@ -3920,6 +3923,7 @@ Future<void> _sendPaymentReceiptMail({
     'unreadCount': 0,
     'peerUid': learnerUid,
     'peerName': learnerName,
+    'peerRole': 'learner',
     'deletedAt': null,
   });
 
@@ -3935,10 +3939,32 @@ Future<void> _sendPaymentReceiptMail({
     m['unreadCount'] = oldUnread + 1;
     m['peerUid'] = meUid;
     m['peerName'] = meName.isEmpty ? 'Admin' : meName;
+    m['peerRole'] = 'admin';
     m['deletedAt'] = null;
 
     return Transaction.success(m);
   });
 
-  await stateRef.child(meUid).child(threadId).update({'lastReadAt': now});
+  await stateRef.child(meUid).child(threadId).update({
+    'lastReadAt': now,
+    'lastDeliveredAt': now,
+  });
+  await stateRef.child(learnerUid).child(threadId).update({
+    'lastDeliveredAt': now,
+  });
+
+  await MailConsistencyService.verifyMailWriteOnce(
+    db: db,
+    threadId: threadId,
+    senderUid: meUid,
+    receiverUid: learnerUid,
+    senderName: meName.isEmpty ? 'Admin' : meName,
+    receiverName: learnerName,
+    senderRole: 'admin',
+    receiverRole: 'learner',
+    subject: subject,
+    lastMessage: preview80,
+    now: now,
+    type: 'mail',
+  );
 }

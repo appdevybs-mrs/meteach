@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+import '../services/mail_consistency_service.dart';
 import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/teacher_web_layout.dart';
@@ -510,6 +511,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
     final msgRef = _db.ref('mail_messages/$threadId').push();
     final preview = _previewFromMessage(firstMessage);
+    final myRole = await MailConsistencyService.resolveUserRole(
+      _db,
+      _meUid,
+      seedRole: 'teacher',
+    );
+    final peerRole = await MailConsistencyService.resolveUserRole(_db, toUid);
 
     final updates = <String, dynamic>{
       'mail_threads/$threadId': {
@@ -538,6 +545,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         'unreadCount': 0,
         'peerUid': toUid,
         'peerName': toName,
+        'peerRole': peerRole,
         'deletedAt': null,
       },
       'mail_index/$toUid/$threadId': {
@@ -548,11 +556,31 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         'unreadCount': 1,
         'peerUid': _meUid,
         'peerName': teacherName,
+        'peerRole': myRole,
         'deletedAt': null,
       },
+      'mail_state/$_meUid/$threadId': {
+        'lastReadAt': now,
+        'lastDeliveredAt': now,
+      },
+      'mail_state/$toUid/$threadId/lastDeliveredAt': now,
     };
 
     await _db.ref().update(updates);
+    await MailConsistencyService.verifyMailWriteOnce(
+      db: _db,
+      threadId: threadId,
+      senderUid: _meUid,
+      receiverUid: toUid,
+      senderName: teacherName,
+      receiverName: toName,
+      senderRole: myRole,
+      receiverRole: peerRole,
+      subject: subject,
+      lastMessage: preview,
+      now: now,
+      type: 'mail',
+    );
     return threadId;
   }
 

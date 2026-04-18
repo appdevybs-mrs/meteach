@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:async';
 import '../services/backend_api.dart';
+import '../services/mail_consistency_service.dart';
 import '../services/push_error_logger.dart';
 import '../services/route_state.dart'; // ✅ ADD THIS
 import '../shared/admin_web_layout.dart';
@@ -803,28 +804,81 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       final msgRef = _msgsRef.push();
+      final msgKey = msgRef.key!;
 
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
       final preview80 = preview.length > 80
           ? preview.substring(0, 80)
           : preview;
 
-      // ✅ 1) write message
-      await msgRef.set({
-        'fromUid': _meUid,
-        'body': bodyBackup,
-        'toUids': {widget.peerUid: true},
-        'ccUids': {},
-        'bccUids': {},
-        'attachments': attachmentsBackup,
-        'createdAt': now,
-        'deletedFor': {},
-      });
+      final myRole = await MailConsistencyService.resolveUserRole(
+        _db,
+        _meUid,
+        seedRole: 'admin',
+      );
+      final peerRole = await MailConsistencyService.resolveUserRole(
+        _db,
+        widget.peerUid,
+      );
 
-      // ✅ 2) update thread meta
-      await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
+      final root = _db.ref();
+      final updates = <String, dynamic>{
+        'mail_messages/${widget.threadId}/$msgKey': {
+          'fromUid': _meUid,
+          'body': bodyBackup,
+          'toUids': {widget.peerUid: true},
+          'ccUids': {},
+          'bccUids': {},
+          'attachments': attachmentsBackup,
+          'createdAt': now,
+          'deletedFor': {},
+        },
+        'mail_threads/${widget.threadId}/updatedAt': now,
+        'mail_threads/${widget.threadId}/lastMessage': preview80,
+        'mail_threads/${widget.threadId}/participants/$_meUid': true,
+        'mail_threads/${widget.threadId}/participants/${widget.peerUid}': true,
+        'mail_index/$_meUid/${widget.threadId}/subject': _subject,
+        'mail_index/$_meUid/${widget.threadId}/type': 'mail',
+        'mail_index/$_meUid/${widget.threadId}/updatedAt': now,
+        'mail_index/$_meUid/${widget.threadId}/lastMessage': preview80,
+        'mail_index/$_meUid/${widget.threadId}/unreadCount': 0,
+        'mail_index/$_meUid/${widget.threadId}/peerUid': widget.peerUid,
+        'mail_index/$_meUid/${widget.threadId}/peerName': widget.peerName,
+        'mail_index/$_meUid/${widget.threadId}/peerRole': peerRole,
+        'mail_index/$_meUid/${widget.threadId}/deletedAt': null,
+        'mail_index/${widget.peerUid}/${widget.threadId}/subject': _subject,
+        'mail_index/${widget.peerUid}/${widget.threadId}/type': 'mail',
+        'mail_index/${widget.peerUid}/${widget.threadId}/updatedAt': now,
+        'mail_index/${widget.peerUid}/${widget.threadId}/lastMessage':
+            preview80,
+        'mail_index/${widget.peerUid}/${widget.threadId}/peerUid': _meUid,
+        'mail_index/${widget.peerUid}/${widget.threadId}/peerName': _meName,
+        'mail_index/${widget.peerUid}/${widget.threadId}/peerRole': myRole,
+        'mail_index/${widget.peerUid}/${widget.threadId}/deletedAt': null,
+        'mail_index/${widget.peerUid}/${widget.threadId}/unreadCount':
+            ServerValue.increment(1),
+        'mail_state/$_meUid/${widget.threadId}/lastReadAt': now,
+        'mail_state/$_meUid/${widget.threadId}/lastDeliveredAt': now,
+        'mail_state/${widget.peerUid}/${widget.threadId}/lastDeliveredAt': now,
+      };
 
-      // ✅ 3) update BOTH indexes (no unreadCount read needed)
+      await root.update(updates);
+
+      await MailConsistencyService.verifyMailWriteOnce(
+        db: _db,
+        threadId: widget.threadId,
+        senderUid: _meUid,
+        receiverUid: widget.peerUid,
+        senderName: _meName,
+        receiverName: widget.peerName,
+        senderRole: myRole,
+        receiverRole: peerRole,
+        subject: _subject,
+        lastMessage: preview80,
+        now: now,
+        type: 'mail',
+      );
+
       await _indexRef.child(_meUid).child(widget.threadId).update({
         'subject': _subject,
         'updatedAt': now,
@@ -832,30 +886,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         'unreadCount': 0,
         'peerUid': widget.peerUid,
         'peerName': widget.peerName,
+        'peerRole': peerRole,
         'deletedAt': null,
       });
-
-      // ✅ Increment peer unread using transaction (fast + safe)
-      await _indexRef
-          .child(widget.peerUid)
-          .child(widget.threadId)
-          .runTransaction((cur) {
-            final m =
-                (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-            final oldUnread = (m['unreadCount'] is num)
-                ? (m['unreadCount'] as num).toInt()
-                : 0;
-
-            m['subject'] = _subject;
-            m['updatedAt'] = now;
-            m['lastMessage'] = preview80;
-            m['unreadCount'] = oldUnread + 1;
-            m['peerUid'] = _meUid;
-            m['peerName'] = _meName;
-            m['deletedAt'] = null;
-
-            return Transaction.success(m);
-          });
 
       // ✅ 4) mark read for me (don’t block UI if slow)
       unawaited(_markRead());

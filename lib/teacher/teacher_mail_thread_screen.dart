@@ -22,6 +22,7 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
+import '../services/mail_consistency_service.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
@@ -953,6 +954,15 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
 
     final root = _db.ref();
+    final myRole = await MailConsistencyService.resolveUserRole(
+      _db,
+      _meUid,
+      seedRole: 'teacher',
+    );
+    final peerRole = await MailConsistencyService.resolveUserRole(
+      _db,
+      widget.peerUid,
+    );
     final updates = <String, dynamic>{
       'mail_messages/${widget.threadId}/$msgKey': payload,
     };
@@ -972,6 +982,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       updates['$senderIndexPath/unreadCount'] = 0;
       updates['$senderIndexPath/peerUid'] = widget.peerUid;
       updates['$senderIndexPath/peerName'] = _peerNameShown;
+      updates['$senderIndexPath/peerRole'] = peerRole;
       updates['$senderIndexPath/deletedAt'] = null;
 
       final peerIndexPath = 'mail_index/${widget.peerUid}/${widget.threadId}';
@@ -980,13 +991,34 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       updates['$peerIndexPath/lastMessage'] = preview80;
       updates['$peerIndexPath/peerUid'] = _meUid;
       updates['$peerIndexPath/peerName'] = _meDisplayName;
+      updates['$peerIndexPath/peerRole'] = myRole;
       updates['$peerIndexPath/deletedAt'] = null;
       updates['$peerIndexPath/unreadCount'] = ServerValue.increment(1);
 
       updates['mail_state/$_meUid/${widget.threadId}/lastReadAt'] = now;
+      updates['mail_state/$_meUid/${widget.threadId}/lastDeliveredAt'] = now;
+      updates['mail_state/${widget.peerUid}/${widget.threadId}/lastDeliveredAt'] =
+          now;
     }
 
     await root.update(updates);
+
+    if (updateThreadPreview) {
+      await MailConsistencyService.verifyMailWriteOnce(
+        db: _db,
+        threadId: widget.threadId,
+        senderUid: _meUid,
+        receiverUid: widget.peerUid,
+        senderName: _meDisplayName,
+        receiverName: _peerNameShown,
+        senderRole: myRole,
+        receiverRole: peerRole,
+        subject: widget.subject,
+        lastMessage: preview80,
+        now: now,
+        type: 'mail',
+      );
+    }
 
     if (updateThreadPreview) {
       await AuditLogService.logSuccess(

@@ -414,6 +414,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'mail_index/$meUid/$threadId/unreadCount': 0,
           'mail_index/$meUid/$threadId/peerUid': toUid,
           'mail_index/$meUid/$threadId/peerName': toName,
+          'mail_index/$meUid/$threadId/peerRole': 'unknown',
           'mail_index/$meUid/$threadId/deletedAt': null,
 
           'mail_index/$toUid/$threadId/subject': subject,
@@ -423,7 +424,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'mail_index/$toUid/$threadId/unreadCount': 1,
           'mail_index/$toUid/$threadId/peerUid': meUid,
           'mail_index/$toUid/$threadId/peerName': myName,
+          'mail_index/$toUid/$threadId/peerRole': 'learner',
           'mail_index/$toUid/$threadId/deletedAt': null,
+          'mail_state/$meUid/$threadId/lastReadAt': now,
+          'mail_state/$meUid/$threadId/lastDeliveredAt': now,
+          'mail_state/$toUid/$threadId/lastDeliveredAt': now,
         };
 
         await _db.update(updates);
@@ -526,7 +531,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   Widget build(BuildContext context) {
     final uid = _meUid;
     final ref = _db.child('mail_index/$uid');
-
 
     return Scaffold(
       backgroundColor: Colors.white,

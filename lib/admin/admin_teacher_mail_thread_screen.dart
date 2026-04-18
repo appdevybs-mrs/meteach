@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../services/mail_consistency_service.dart';
 import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../services/route_state.dart';
@@ -304,6 +305,7 @@ class _AdminTeacherMailThreadScreenState
         'unreadCount': 0,
         'peerUid': widget.teacherUid,
         'peerName': teacherName.isEmpty ? 'Teacher' : teacherName,
+        'peerRole': 'teacher',
         'deletedAt': null,
       });
     } catch (_) {}
@@ -529,24 +531,80 @@ class _AdminTeacherMailThreadScreenState
 
       final now = DateTime.now().millisecondsSinceEpoch;
       final msgRef = _msgsRef.push();
+      final msgKey = msgRef.key!;
 
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
       final preview80 = preview.length > 80
           ? preview.substring(0, 80)
           : preview;
 
-      await msgRef.set({
-        'fromUid': _meUid,
-        'body': bodyBackup,
-        'toUids': {widget.teacherUid: true},
-        'ccUids': {},
-        'bccUids': {},
-        'attachments': attachmentsBackup,
-        'createdAt': now,
-        'deletedFor': {},
-      });
+      final myRole = await MailConsistencyService.resolveUserRole(
+        _db,
+        _meUid,
+        seedRole: 'admin',
+      );
+      final peerRole = await MailConsistencyService.resolveUserRole(
+        _db,
+        widget.teacherUid,
+        seedRole: 'teacher',
+      );
 
-      await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
+      final root = _db.ref();
+      final updates = <String, dynamic>{
+        'mail_messages/$_threadId/$msgKey': {
+          'fromUid': _meUid,
+          'body': bodyBackup,
+          'toUids': {widget.teacherUid: true},
+          'ccUids': {},
+          'bccUids': {},
+          'attachments': attachmentsBackup,
+          'createdAt': now,
+          'deletedFor': {},
+        },
+        'mail_threads/$_threadId/updatedAt': now,
+        'mail_threads/$_threadId/lastMessage': preview80,
+        'mail_threads/$_threadId/participants/$_meUid': true,
+        'mail_threads/$_threadId/participants/${widget.teacherUid}': true,
+        'mail_index/$_meUid/$_threadId/subject': _subject,
+        'mail_index/$_meUid/$_threadId/type': 'mail',
+        'mail_index/$_meUid/$_threadId/updatedAt': now,
+        'mail_index/$_meUid/$_threadId/lastMessage': preview80,
+        'mail_index/$_meUid/$_threadId/unreadCount': 0,
+        'mail_index/$_meUid/$_threadId/peerUid': widget.teacherUid,
+        'mail_index/$_meUid/$_threadId/peerName': _teacherDisplayName(),
+        'mail_index/$_meUid/$_threadId/peerRole': peerRole,
+        'mail_index/$_meUid/$_threadId/deletedAt': null,
+        'mail_index/${widget.teacherUid}/$_threadId/subject': _subject,
+        'mail_index/${widget.teacherUid}/$_threadId/type': 'mail',
+        'mail_index/${widget.teacherUid}/$_threadId/updatedAt': now,
+        'mail_index/${widget.teacherUid}/$_threadId/lastMessage': preview80,
+        'mail_index/${widget.teacherUid}/$_threadId/peerUid': _meUid,
+        'mail_index/${widget.teacherUid}/$_threadId/peerName': _meName,
+        'mail_index/${widget.teacherUid}/$_threadId/peerRole': myRole,
+        'mail_index/${widget.teacherUid}/$_threadId/deletedAt': null,
+        'mail_index/${widget.teacherUid}/$_threadId/unreadCount':
+            ServerValue.increment(1),
+        'mail_state/$_meUid/$_threadId/lastReadAt': now,
+        'mail_state/$_meUid/$_threadId/lastDeliveredAt': now,
+        'mail_state/${widget.teacherUid}/$_threadId/lastDeliveredAt': now,
+      };
+
+      await root.update(updates);
+
+      await MailConsistencyService.verifyMailWriteOnce(
+        db: _db,
+        threadId: _threadId,
+        senderUid: _meUid,
+        receiverUid: widget.teacherUid,
+        senderName: _meName,
+        receiverName: _teacherDisplayName(),
+        senderRole: myRole,
+        receiverRole: peerRole,
+        subject: _subject,
+        lastMessage: preview80,
+        now: now,
+        type: 'mail',
+      );
 
       final teacherName = _teacherDisplayName();
 
@@ -558,27 +616,8 @@ class _AdminTeacherMailThreadScreenState
         'unreadCount': 0,
         'peerUid': widget.teacherUid,
         'peerName': teacherName.isEmpty ? 'Teacher' : teacherName,
+        'peerRole': peerRole,
         'deletedAt': null,
-      });
-
-      // For teacher: unread + 1 (transaction avoids race)
-      await _indexRef.child(widget.teacherUid).child(_threadId).runTransaction((
-        cur,
-      ) {
-        final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-        final oldUnread = (m['unreadCount'] is num)
-            ? (m['unreadCount'] as num).toInt()
-            : 0;
-
-        m['subject'] = _subject;
-        m['updatedAt'] = now;
-        m['lastMessage'] = preview80;
-        m['unreadCount'] = oldUnread + 1;
-        m['peerUid'] = _meUid;
-        m['peerName'] = _meName;
-        m['deletedAt'] = null;
-
-        return Transaction.success(m);
       });
 
       unawaited(_markRead());

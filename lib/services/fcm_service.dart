@@ -14,7 +14,7 @@ import '../admin/admin_mail_inbox_screen.dart';
 import '../admin/admin_payments.dart';
 import '../admin/admin_priority_alerts_screen.dart';
 import '../admin/admin_teacher_reminders_screen.dart';
-import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
+import '../admin/mail_topic_thread_screen.dart';
 import '../admin/admin_admin_todos_screen.dart';
 import '../admin/admin_job_applications_screen.dart';
 import '../learner/learner_booking_screen.dart';
@@ -23,7 +23,6 @@ import '../learner/learner_mail_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../main.dart'; // appNavigatorKey + messengerKey
-import '../shared/app_feedback.dart';
 import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail.dart';
@@ -502,25 +501,21 @@ class FCMService {
     }
 
     if (role == 'admin') {
-      final teacher = await _fetchAdminTeacherMap(peerUid);
-      if (teacher == null) {
-        final toastCtx = appNavigatorKey.currentContext;
-        if (toastCtx != null && toastCtx.mounted) {
-          AppToast.show(
-            toastCtx,
-            'Could not load mail user.',
-            type: AppToastType.error,
-          );
-        }
+      final userMap = await _fetchAdminTeacherMap(peerUid);
+      if (userMap == null) {
+        nav.push(
+          MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
+        );
         return;
       }
 
       nav.push(
         MaterialPageRoute(
           settings: RouteSettings(name: targetName),
-          builder: (_) => AdminTeacherMailThreadScreen(
-            teacherUid: peerUid,
-            teacher: teacher,
+          builder: (_) => MailTopicThreadScreen(
+            threadId: threadId,
+            peerUid: peerUid,
+            peerName: peerName.isEmpty ? 'User' : peerName,
           ),
         ),
       );

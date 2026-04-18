@@ -103,8 +103,13 @@ class _MailThreadByIdScreenState extends State<MailThreadByIdScreen> {
       }
 
       // 3) Mark read
+      final now = DateTime.now().millisecondsSinceEpoch;
       await _db.ref('mail_index/${me.uid}/${widget.threadId}').update({
         'unreadCount': 0,
+      });
+      await _db.ref('mail_state/${me.uid}/${widget.threadId}').update({
+        'lastReadAt': now,
+        'lastDeliveredAt': now,
       });
 
       if (!mounted) return;

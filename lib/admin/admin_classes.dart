@@ -41,6 +41,7 @@ import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 import '../services/push_client.dart';
 import '../services/push_error_logger.dart';
+import '../services/reminder_consistency_service.dart';
 import 'admin_learner_mail_topics_screen.dart';
 import 'admin_learners.dart';
 
@@ -217,22 +218,32 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     final admin = FirebaseAuth.instance.currentUser;
     final reminderRef = FirebaseDatabase.instance.ref('reminders/$uid').push();
+    const senderRole = 'admin';
+    const targetRole = 'learner';
 
     try {
-      await reminderRef.set({
-        'kind': type.name,
-        'title': title,
-        'description': message,
-        'attachment_name': '',
-        'attachment_url': '',
-        'createdAt': ServerValue.timestamp,
-        'createdByUid': admin?.uid ?? '',
-        'teacher': {'name': 'Admin', 'email': admin?.email ?? ''},
-        'status': 'queued',
-        'readAt': null,
-        'doneAt': null,
-        'push': {'attemptedAt': null, 'sentAt': null, 'error': null},
-      });
+      await reminderRef.set(
+        ReminderConsistencyService.buildReminderPayload(
+          targetUid: uid,
+          targetRole: targetRole,
+          senderUid: admin?.uid ?? '',
+          senderRole: senderRole,
+          title: title,
+          description: message,
+          kind: type.name,
+          dueAtMs: null,
+          attachmentUrl: '',
+          attachmentName: '',
+          legacyTarget: {'uid': uid, 'name': '', 'role': 'learner'},
+        ),
+      );
+      await ReminderConsistencyService.verifyReminderOnce(
+        reminderRef: reminderRef,
+        targetUid: uid,
+        targetRole: targetRole,
+        senderUid: admin?.uid ?? '',
+        senderRole: senderRole,
+      );
     } catch (e) {
       if (!mounted) return;
       _notify('RTDB write failed: $e', error: true);
@@ -290,7 +301,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
 
       await reminderRef.update({
-        'status': 'push_sent',
+        'status': 'new',
         'push/sentAt': ServerValue.timestamp,
         'push/error': null,
       });
@@ -306,10 +317,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         targetUid: uid,
         eventId: 'learner_reminder_${uid}_${reminderRef.key ?? ''}',
       );
-      await reminderRef.update({
-        'status': 'push_error',
-        'push/error': e.toString(),
-      });
+      await reminderRef.update({'status': 'new', 'push/error': e.toString()});
 
       if (!mounted) return;
       _notify('Reminder saved but push failed', error: true);

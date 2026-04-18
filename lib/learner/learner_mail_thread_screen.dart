@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
+import '../services/mail_consistency_service.dart';
 import '../services/push_error_logger.dart';
 import '../services/push_client.dart';
 import '../services/route_state.dart';
@@ -769,6 +770,15 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       final senderIndexPath = 'mail_index/$_meUid/${widget.threadId}';
       final teacherIndexPath =
           'mail_index/${widget.peerUid}/${widget.threadId}';
+      final myRole = await MailConsistencyService.resolveUserRole(
+        _db,
+        _meUid,
+        seedRole: 'learner',
+      );
+      final peerRole = await MailConsistencyService.resolveUserRole(
+        _db,
+        widget.peerUid,
+      );
 
       final updates = <String, dynamic>{
         'mail_messages/${widget.threadId}/$msgKey': payload,
@@ -783,18 +793,36 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         '$senderIndexPath/unreadCount': 0,
         '$senderIndexPath/peerUid': widget.peerUid,
         '$senderIndexPath/peerName': _peerNameShown,
+        '$senderIndexPath/peerRole': peerRole,
         '$senderIndexPath/deletedAt': null,
         '$teacherIndexPath/subject': widget.subject,
         '$teacherIndexPath/updatedAt': now,
         '$teacherIndexPath/lastMessage': preview80,
         '$teacherIndexPath/peerUid': _meUid,
         '$teacherIndexPath/peerName': _meDisplayName,
+        '$teacherIndexPath/peerRole': myRole,
         '$teacherIndexPath/deletedAt': null,
         '$teacherIndexPath/unreadCount': ServerValue.increment(1),
         'mail_state/$_meUid/${widget.threadId}/lastReadAt': now,
+        'mail_state/$_meUid/${widget.threadId}/lastDeliveredAt': now,
+        'mail_state/${widget.peerUid}/${widget.threadId}/lastDeliveredAt': now,
       };
 
       await root.update(updates);
+      await MailConsistencyService.verifyMailWriteOnce(
+        db: _db,
+        threadId: widget.threadId,
+        senderUid: _meUid,
+        receiverUid: widget.peerUid,
+        senderName: _meDisplayName,
+        receiverName: _peerNameShown,
+        senderRole: myRole,
+        receiverRole: peerRole,
+        subject: widget.subject,
+        lastMessage: preview80,
+        now: now,
+        type: 'mail',
+      );
       await _markHomeworkSubmittedIfNeeded();
 
       unawaited(_markRead());

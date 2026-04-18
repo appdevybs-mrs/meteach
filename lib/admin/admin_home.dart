@@ -11,6 +11,7 @@ import 'admin_wages_screen.dart';
 import 'admin_payments.dart';
 import 'admin_courses.dart';
 import 'admin_learners.dart';
+import 'admin_mail_inbox_screen.dart';
 import 'admin_staff.dart';
 import 'admin_file_manager.dart';
 import 'admin_teacher_reminders_screen.dart';
@@ -31,6 +32,7 @@ import '../shared/payment_status.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
+import '../services/reminder_consistency_service.dart';
 import 'admin_certificates.dart';
 import 'admin_admin_todos_screen.dart';
 import 'admin_course_reviews_screen.dart';
@@ -451,9 +453,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminStaff,
-            () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
+            ),
           ),
         ),
       ),
@@ -1124,16 +1126,15 @@ class _AdminTodoHomeCard extends StatelessWidget {
               val.forEach((_, raw) {
                 if (raw is! Map) return;
                 final m = raw.map((k, v) => MapEntry(k.toString(), v));
-                final status = (m['status'] ?? 'new')
-                    .toString()
-                    .trim()
-                    .toLowerCase();
+                final status = ReminderConsistencyService.normalizeStatus(
+                  m['status'],
+                );
                 final dueAt = _toInt(m['dueAt']);
                 final isOverdue = status != 'done' && dueAt > 0 && dueAt < now;
 
                 if (status == 'done') {
                   doneCount++;
-                } else if (status == 'seen' || status == 'read') {
+                } else if (status == 'read') {
                   seenCount++;
                 } else {
                   newCount++;
@@ -3328,13 +3329,12 @@ class _RemindersDashCard extends StatelessWidget {
             remindersMap.forEach((_, reminderVal) {
               if (reminderVal is! Map) return;
               final m = reminderVal.map((k, v) => MapEntry(k.toString(), v));
-              final status = (m['status'] ?? 'new')
-                  .toString()
-                  .trim()
-                  .toLowerCase();
+              final status = ReminderConsistencyService.normalizeStatus(
+                m['status'],
+              );
               if (status == 'done') {
                 done += 1;
-              } else if (status == 'read' || status == 'seen') {
+              } else if (status == 'read') {
                 seen += 1;
               } else {
                 undone += 1;

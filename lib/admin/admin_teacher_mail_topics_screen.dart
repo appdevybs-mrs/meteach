@@ -170,6 +170,7 @@ class _AdminTeacherMailTopicsScreenState
         'unreadCount': 0,
         'peerUid': widget.teacherUid,
         'peerName': teacherName,
+        'peerRole': 'teacher',
         'deletedAt': null,
       });
 
@@ -182,7 +183,16 @@ class _AdminTeacherMailTopicsScreenState
         'unreadCount': 0,
         'peerUid': _meUid,
         'peerName': myName,
+        'peerRole': 'admin',
         'deletedAt': null,
+      });
+
+      await _db.ref('mail_state/$_meUid/$threadId').update({
+        'lastReadAt': now,
+        'lastDeliveredAt': now,
+      });
+      await _db.ref('mail_state/${widget.teacherUid}/$threadId').update({
+        'lastDeliveredAt': now,
       });
 
       // 4) open the new topic thread
@@ -204,7 +214,6 @@ class _AdminTeacherMailTopicsScreenState
   @override
   Widget build(BuildContext context) {
     final teacherName = _teacherDisplayName();
-
 
     return Scaffold(
       appBar: AppBar(

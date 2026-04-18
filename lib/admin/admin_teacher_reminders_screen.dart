@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
 import '../services/push_error_logger.dart';
+import '../services/reminder_consistency_service.dart';
 import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
@@ -48,6 +49,7 @@ class _AdminTeacherRemindersScreenState
 
   String _search = '';
   _ReminderStatusFilter _statusFilter = _ReminderStatusFilter.all;
+  _ReminderTargetFilter _targetFilter = _ReminderTargetFilter.all;
 
   @override
   void initState() {
@@ -240,7 +242,8 @@ class _AdminTeacherRemindersScreenState
                 r.teacherEmail.toLowerCase().contains(s) ||
                 r.teacherSerial.toLowerCase().contains(s);
 
-      final status = r.status.toLowerCase().trim();
+      final status = ReminderConsistencyService.normalizeStatus(r.status);
+      final targetRole = ReminderConsistencyService.normalizeRole(r.targetRole);
 
       final matchesStatus = switch (_statusFilter) {
         _ReminderStatusFilter.all => true,
@@ -249,7 +252,16 @@ class _AdminTeacherRemindersScreenState
         _ReminderStatusFilter.doneOnly => status == 'done',
       };
 
-      return matchesSearch && matchesStatus;
+      final matchesTarget = switch (_targetFilter) {
+        _ReminderTargetFilter.all => true,
+        _ReminderTargetFilter.learners => targetRole == 'learner',
+        _ReminderTargetFilter.staffTeachers =>
+          targetRole == 'teacher' ||
+              targetRole == 'staff' ||
+              targetRole == 'admin',
+      };
+
+      return matchesSearch && matchesStatus && matchesTarget;
     }).toList();
   }
 
@@ -258,33 +270,38 @@ class _AdminTeacherRemindersScreenState
     required _TeacherReminderDraft created,
   }) async {
     final ref = _db.ref('reminders/$teacherUid').push();
+    final admin = FirebaseAuth.instance.currentUser;
 
-    await ref.set({
-      'title': created.title.trim(),
-      'description': created.description.trim(),
-      'dueAt': created.dueAtMs,
-      'attachment_url': created.attachmentUrl?.trim() ?? '',
-      'attachment_name': created.attachmentName?.trim() ?? '',
-      'createdAt': ServerValue.timestamp,
-      'status': 'new',
-      'readAt': null,
-      'doneAt': null,
-      'push': {
-        'status': 'pending',
-        'attemptedAt': null,
-        'sentAt': null,
-        'error': null,
-      },
-      'teacher': {
-        'uid': teacherUid,
-        'name': (created.teacherName ?? '').trim(),
-        'email': (created.teacherEmail ?? '').trim(),
-        'serial': (created.teacherSerial ?? '').trim(),
-        'role': (created.teacherRole ?? '').trim(),
-        'phone1': (created.teacherPhone1 ?? '').trim(),
-        'phone2': (created.teacherPhone2 ?? '').trim(),
-      },
-    });
+    await ref.set(
+      ReminderConsistencyService.buildReminderPayload(
+        targetUid: teacherUid,
+        targetRole: 'teacher',
+        senderUid: admin?.uid ?? '',
+        senderRole: 'admin',
+        title: created.title.trim(),
+        description: created.description.trim(),
+        kind: 'teacher',
+        dueAtMs: created.dueAtMs,
+        attachmentUrl: created.attachmentUrl?.trim() ?? '',
+        attachmentName: created.attachmentName?.trim() ?? '',
+        legacyTarget: {
+          'uid': teacherUid,
+          'name': (created.teacherName ?? '').trim(),
+          'email': (created.teacherEmail ?? '').trim(),
+          'serial': (created.teacherSerial ?? '').trim(),
+          'role': (created.teacherRole ?? '').trim(),
+          'phone1': (created.teacherPhone1 ?? '').trim(),
+          'phone2': (created.teacherPhone2 ?? '').trim(),
+        },
+      ),
+    );
+    await ReminderConsistencyService.verifyReminderOnce(
+      reminderRef: ref,
+      targetUid: teacherUid,
+      targetRole: 'teacher',
+      senderUid: admin?.uid ?? '',
+      senderRole: 'admin',
+    );
 
     try {
       final token = await _getTeacherFcmToken(teacherUid);
@@ -803,6 +820,46 @@ class _AdminTeacherRemindersScreenState
               ],
             ),
           ),
+          if (!_isSingleTeacherMode) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  ChoiceChip(
+                    label: const Text('All targets'),
+                    selected: _targetFilter == _ReminderTargetFilter.all,
+                    onSelected: (_) {
+                      setState(() => _targetFilter = _ReminderTargetFilter.all);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Learners'),
+                    selected: _targetFilter == _ReminderTargetFilter.learners,
+                    onSelected: (_) {
+                      setState(
+                        () => _targetFilter = _ReminderTargetFilter.learners,
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Staff/Teachers'),
+                    selected:
+                        _targetFilter == _ReminderTargetFilter.staffTeachers,
+                    onSelected: (_) {
+                      setState(
+                        () =>
+                            _targetFilter = _ReminderTargetFilter.staffTeachers,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1013,6 +1070,8 @@ class _AdminTeacherRemindersScreenState
 
 enum _ReminderStatusFilter { all, newOnly, readOnly, doneOnly }
 
+enum _ReminderTargetFilter { all, learners, staffTeachers }
+
 class _TeacherTarget {
   _TeacherTarget({
     required this.uid,
@@ -1067,6 +1126,10 @@ class TeacherReminder {
     required this.teacherRole,
     required this.teacherPhone1,
     required this.teacherPhone2,
+    required this.targetUid,
+    required this.targetRole,
+    required this.senderUid,
+    required this.senderRole,
   });
 
   final String title;
@@ -1087,6 +1150,10 @@ class TeacherReminder {
   final String teacherRole;
   final String teacherPhone1;
   final String teacherPhone2;
+  final String targetUid;
+  final String targetRole;
+  final String senderUid;
+  final String senderRole;
 
   factory TeacherReminder.fromMap(Map<String, dynamic> m) {
     int? parseInt(dynamic v) {
@@ -1099,6 +1166,12 @@ class TeacherReminder {
     final teacherMap = (m['teacher'] is Map)
         ? (m['teacher'] as Map).map((k, v) => MapEntry(k.toString(), v))
         : <String, dynamic>{};
+    final targetMap = (m['target'] is Map)
+        ? (m['target'] as Map).map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final senderMap = (m['sender'] is Map)
+        ? (m['sender'] as Map).map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
 
     return TeacherReminder(
       title: (m['title'] ?? '').toString(),
@@ -1107,7 +1180,7 @@ class TeacherReminder {
       attachmentUrl: (m['attachment_url'] ?? '').toString(),
       attachmentName: (m['attachment_name'] ?? '').toString(),
       createdAtMs: parseInt(m['createdAt']),
-      status: (m['status'] ?? 'new').toString(),
+      status: ReminderConsistencyService.normalizeStatus(m['status']),
       readAtMs: parseInt(m['readAt']),
       doneAtMs: parseInt(m['doneAt']),
       teacherUid: (teacherMap['uid'] ?? '').toString(),
@@ -1117,6 +1190,10 @@ class TeacherReminder {
       teacherRole: (teacherMap['role'] ?? '').toString(),
       teacherPhone1: (teacherMap['phone1'] ?? '').toString(),
       teacherPhone2: (teacherMap['phone2'] ?? '').toString(),
+      targetUid: (targetMap['uid'] ?? '').toString(),
+      targetRole: ReminderConsistencyService.normalizeRole(targetMap['role']),
+      senderUid: (senderMap['uid'] ?? m['createdByUid'] ?? '').toString(),
+      senderRole: ReminderConsistencyService.normalizeRole(senderMap['role']),
     );
   }
 }
