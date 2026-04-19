@@ -44,6 +44,19 @@ final GlobalKey<ScaffoldMessengerState> messengerKey =
 /// App-level navigator access for notification deep-links.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
+String _formatCompactCountdown(int totalSeconds) {
+  final total = totalSeconds.clamp(0, 864000);
+  final days = total ~/ 86400;
+  final hours = (total % 86400) ~/ 3600;
+  final minutes = (total % 3600) ~/ 60;
+  final seconds = total % 60;
+
+  if (days > 0) return '${days}d:${hours}h:${minutes}m';
+  if (hours > 0) return '${hours}h:${minutes}m';
+  if (minutes > 0) return '${minutes}m:${seconds}s';
+  return '${seconds}s';
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -857,6 +870,9 @@ class _JoinOnlineCircleEntryButtonState
   bool _prefetching = true;
   int _activeIndex = 0;
   String _openCirclesSignature = '';
+  final Map<String, String> _teacherPhotoCache = <String, String>{};
+  final Map<String, Future<String>> _teacherPhotoLoads =
+      <String, Future<String>>{};
 
   @override
   void initState() {
@@ -883,6 +899,98 @@ class _JoinOnlineCircleEntryButtonState
   }
 
   static String _safe(dynamic v) => (v ?? '').toString().trim();
+
+  static bool _isSafeUid(String uid) {
+    final v = uid.trim();
+    if (v.length < 8) return false;
+    if (v.contains('/') ||
+        v.contains('.') ||
+        v.contains('#') ||
+        v.contains(r'$') ||
+        v.contains('[') ||
+        v.contains(']')) {
+      return false;
+    }
+    return true;
+  }
+
+  String _resolvePhotoFromProfile(dynamic raw) {
+    if (raw is! Map) return '';
+    return ProfileAvatar.resolvePhotoFromMap(Map<dynamic, dynamic>.from(raw));
+  }
+
+  Future<String> _resolveTeacherPhoto(
+    String teacherUid, {
+    String fallbackUrl = '',
+  }) {
+    final uid = teacherUid.trim();
+    final fallback = fallbackUrl.trim();
+    if (!_isSafeUid(uid)) {
+      return Future<String>.value(fallback);
+    }
+    if (_teacherPhotoCache.containsKey(uid)) {
+      return Future<String>.value(_teacherPhotoCache[uid] ?? fallback);
+    }
+    final inFlight = _teacherPhotoLoads[uid];
+    if (inFlight != null) return inFlight;
+
+    final future = () async {
+      try {
+        final userSnap = await FirebaseDatabase.instance
+            .ref('users/$uid')
+            .get();
+        final fromUser = _resolvePhotoFromProfile(userSnap.value);
+        if (fromUser.isNotEmpty) {
+          _teacherPhotoCache[uid] = fromUser;
+          return fromUser;
+        }
+
+        final websiteSnap = await FirebaseDatabase.instance
+            .ref('website/teachers/$uid/profile')
+            .get();
+        final fromWebsite = _resolvePhotoFromProfile(websiteSnap.value);
+        final resolved = fromWebsite.isNotEmpty ? fromWebsite : fallback;
+        _teacherPhotoCache[uid] = resolved;
+        return resolved;
+      } catch (_) {
+        _teacherPhotoCache[uid] = fallback;
+        return fallback;
+      } finally {
+        _teacherPhotoLoads.remove(uid);
+      }
+    }();
+
+    _teacherPhotoLoads[uid] = future;
+    return future;
+  }
+
+  Widget _liveTeacherAvatar({
+    required _OnlineCircle circle,
+    required String teacherName,
+    required double radius,
+    required Color fallbackBg,
+    required Color fallbackFg,
+    Color? borderColor,
+  }) {
+    return FutureBuilder<String>(
+      future: _resolveTeacherPhoto(
+        circle.teacherUid,
+        fallbackUrl: circle.teacherProfilePhoto,
+      ),
+      initialData: circle.teacherProfilePhoto,
+      builder: (context, snapshot) {
+        final photoUrl = (snapshot.data ?? circle.teacherProfilePhoto).trim();
+        return ProfileAvatar(
+          name: teacherName,
+          photoUrl: photoUrl,
+          radius: radius,
+          fallbackBg: fallbackBg,
+          fallbackFg: fallbackFg,
+          borderColor: borderColor,
+        );
+      },
+    );
+  }
 
   List<_OnlineCircle> _parseCircles(dynamic value) {
     if (value is! Map) return [];
@@ -982,10 +1090,7 @@ class _JoinOnlineCircleEntryButtonState
 
     final diff = start.difference(now);
     final total = diff.inSeconds.clamp(0, 864000);
-    final h = total ~/ 3600;
-    final m = (total % 3600) ~/ 60;
-    final s = total % 60;
-    return 'Starts in ${_two(h)}:${_two(m)}:${_two(s)}';
+    return 'Starts in ${_formatCompactCountdown(total)}';
   }
 
   Widget _circleHeroImage({
@@ -994,9 +1099,8 @@ class _JoinOnlineCircleEntryButtonState
   }) {
     final imageUrl = circle.circleImageUrl.trim();
 
-    Widget child;
-    if (imageUrl.isEmpty) {
-      child = Container(
+    Widget fallbackImage({bool broken = false}) {
+      return Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -1007,32 +1111,53 @@ class _JoinOnlineCircleEntryButtonState
             ],
           ),
         ),
-        child: const Center(
-          child: Icon(Icons.groups_rounded, color: Colors.white, size: 52),
+        child: Center(
+          child: Icon(
+            broken ? Icons.broken_image_outlined : Icons.groups_rounded,
+            color: Colors.white,
+            size: broken ? 42 : 52,
+          ),
         ),
+      );
+    }
+
+    Widget liveTeacherImage(String photoUrl) {
+      final liveUrl = photoUrl.trim();
+      if (liveUrl.isEmpty) return fallbackImage();
+      return Image.network(
+        liveUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallbackImage(broken: true),
+      );
+    }
+
+    Widget child;
+    if (imageUrl.isEmpty) {
+      child = FutureBuilder<String>(
+        future: _resolveTeacherPhoto(
+          circle.teacherUid,
+          fallbackUrl: circle.teacherProfilePhoto,
+        ),
+        initialData: circle.teacherProfilePhoto,
+        builder: (context, snapshot) {
+          return liveTeacherImage(snapshot.data ?? circle.teacherProfilePhoto);
+        },
       );
     } else {
       child = Image.network(
         imageUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Brand.primaryBlue.withValues(alpha: 0.96),
-                Brand.actionOrange.withValues(alpha: 0.88),
-              ],
-            ),
+        errorBuilder: (_, _, _) => FutureBuilder<String>(
+          future: _resolveTeacherPhoto(
+            circle.teacherUid,
+            fallbackUrl: circle.teacherProfilePhoto,
           ),
-          child: const Center(
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: Colors.white,
-              size: 42,
-            ),
-          ),
+          initialData: circle.teacherProfilePhoto,
+          builder: (context, snapshot) {
+            return liveTeacherImage(
+              snapshot.data ?? circle.teacherProfilePhoto,
+            );
+          },
         ),
       );
     }
@@ -1135,9 +1260,9 @@ class _JoinOnlineCircleEntryButtonState
                       bottom: 12,
                       child: Row(
                         children: [
-                          ProfileAvatar(
-                            name: teacherName,
-                            photoUrl: circle.teacherProfilePhoto,
+                          _liveTeacherAvatar(
+                            circle: circle,
+                            teacherName: teacherName,
                             radius: 16,
                             fallbackBg: Colors.white.withValues(alpha: 0.28),
                             fallbackFg: Colors.white,
@@ -1262,167 +1387,176 @@ class _JoinOnlineCircleEntryButtonState
             ],
           ),
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ProfileAvatar(
-                name: teacherName,
-                photoUrl: circle.teacherProfilePhoto,
-                radius: 34,
-                fallbackBg: Brand.primaryBlue,
-                fallbackFg: Colors.white,
-                borderColor: Colors.white,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                circle.topic,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Brand.primaryBlue,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _liveTeacherAvatar(
+                  circle: circle,
+                  teacherName: teacherName,
+                  radius: 34,
+                  fallbackBg: Brand.primaryBlue,
+                  fallbackFg: Colors.white,
+                  borderColor: Colors.white,
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'with $teacherName',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Brand.mainText.withValues(alpha: 0.76),
+                const SizedBox(height: 14),
+                Text(
+                  circle.topic,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Brand.primaryBlue,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  _PrettyChip(
-                    icon: Icons.schedule_rounded,
-                    label: _formatTimeOnly(circle.timeMs),
+                const SizedBox(height: 6),
+                Text(
+                  'with $teacherName',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Brand.mainText.withValues(alpha: 0.76),
                   ),
-                  _PrettyChip(
-                    icon: Icons.timer_outlined,
-                    label: '${circle.durationMinutes} min',
-                  ),
-                  _PrettyChip(
-                    icon: Icons.info_outline_rounded,
-                    label: circle.status.isEmpty ? 'open' : circle.status,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Brand.appBg,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Brand.uiBorder),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
                   children: [
-                    _DetailRow(
-                      icon: Icons.calendar_today_rounded,
-                      label: 'Date & time',
-                      value: _formatDateTime(circle.timeMs),
+                    _PrettyChip(
+                      icon: Icons.schedule_rounded,
+                      label: _formatTimeOnly(circle.timeMs),
                     ),
-                    const SizedBox(height: 10),
-                    const _DetailRow(
-                      icon: Icons.access_time_filled_rounded,
-                      label: 'Join rule',
-                      value:
-                          'Users can join from 5 minutes before start until the circle duration ends.',
+                    _PrettyChip(
+                      icon: Icons.timer_outlined,
+                      label: '${circle.durationMinutes} min',
                     ),
-                    if (circle.description.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      _DetailRow(
-                        icon: Icons.notes_rounded,
-                        label: 'Description',
-                        value: circle.description,
-                      ),
-                    ],
+                    _PrettyChip(
+                      icon: Icons.info_outline_rounded,
+                      label: circle.status.isEmpty ? 'open' : circle.status,
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              StreamBuilder<int>(
-                stream: Stream.periodic(const Duration(seconds: 1), (x) => x),
-                initialData: 0,
-                builder: (context, _) {
-                  final now = DateTime.now();
-                  final joinState = circle.joinStateAt(now);
-                  final start = DateTime.fromMillisecondsSinceEpoch(
-                    circle.timeMs,
-                  );
-                  final openFrom = start.subtract(const Duration(minutes: 5));
-                  final openUntil = start.add(
-                    Duration(
-                      minutes: circle.durationMinutes <= 0
-                          ? 60
-                          : circle.durationMinutes,
-                    ),
-                  );
-                  final joinLabel = joinButtonLabelForWindow(
-                    openFrom: openFrom,
-                    openUntil: openUntil,
-                    hasMeetLink: circle.meetingUrl.trim().isNotEmpty,
-                    now: now,
-                    actionLabel: 'Join',
-                    closedLabel: 'Join closed',
-                  );
-
-                  return Column(
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Brand.appBg,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Brand.uiBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _CircleJoinStatusBanner(state: joinState, circle: circle),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: const Text('Close'),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: joinState.canJoin
-                                  ? () async {
-                                      Navigator.of(context).pop();
-                                      await _joinCircle(circle);
-                                    }
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Brand.primaryBlue,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              icon: const Icon(Icons.video_call_rounded),
-                              label: Text(joinLabel),
-                            ),
-                          ),
-                        ],
+                      _DetailRow(
+                        icon: Icons.calendar_today_rounded,
+                        label: 'Date & time',
+                        value: _formatDateTime(circle.timeMs),
                       ),
+                      const SizedBox(height: 10),
+                      const _DetailRow(
+                        icon: Icons.access_time_filled_rounded,
+                        label: 'Join rule',
+                        value:
+                            'Users can join from 5 minutes before start until the circle duration ends.',
+                      ),
+                      if (circle.description.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _DetailRow(
+                          icon: Icons.notes_rounded,
+                          label: 'Description',
+                          value: circle.description,
+                        ),
+                      ],
                     ],
-                  );
-                },
-              ),
-            ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                StreamBuilder<int>(
+                  stream: Stream.periodic(const Duration(seconds: 1), (x) => x),
+                  initialData: 0,
+                  builder: (context, _) {
+                    final now = DateTime.now();
+                    final joinState = circle.joinStateAt(now);
+                    final start = DateTime.fromMillisecondsSinceEpoch(
+                      circle.timeMs,
+                    );
+                    final openFrom = start.subtract(const Duration(minutes: 5));
+                    final openUntil = start.add(
+                      Duration(
+                        minutes: circle.durationMinutes <= 0
+                            ? 60
+                            : circle.durationMinutes,
+                      ),
+                    );
+                    final joinLabel = joinButtonLabelForWindow(
+                      openFrom: openFrom,
+                      openUntil: openUntil,
+                      hasMeetLink: circle.meetingUrl.trim().isNotEmpty,
+                      now: now,
+                      actionLabel: 'Join',
+                      closedLabel: 'Join closed',
+                    );
+
+                    return Column(
+                      children: [
+                        _CircleJoinStatusBanner(
+                          state: joinState,
+                          circle: circle,
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                child: const Text('Close'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: joinState.canJoin
+                                    ? () async {
+                                        Navigator.of(context).pop();
+                                        await _joinCircle(circle);
+                                      }
+                                    : null,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Brand.primaryBlue,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.video_call_rounded),
+                                label: Text(joinLabel),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1806,9 +1940,11 @@ class _OnlineCircle {
     );
 
     if (now.isBefore(openFrom)) {
-      return const _CircleJoinState(
+      final diff = start.difference(now);
+      final total = diff.inSeconds.clamp(0, 864000);
+      return _CircleJoinState(
         canJoin: false,
-        message: 'This class is not open yet.',
+        message: 'Live in: ${_formatCompactCountdown(total)}',
       );
     }
 

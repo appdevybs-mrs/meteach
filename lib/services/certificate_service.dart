@@ -22,6 +22,7 @@ class CertificateService {
   static const String _recordedCertificatesPath = 'recorded_certificates';
   static const String _cvnIndexPath = 'certificate_cvn_index';
   static const String _prefix = 'DZ01SB';
+  static final RegExp _cvnUnsafeChars = RegExp(r'[^A-Z0-9]');
   static final Uri _downloadPingUrl = BackendApi.uri(
     'certificate_download_ping.php',
   );
@@ -31,6 +32,36 @@ class CertificateService {
   DatabaseReference get _certificatesRef => _db.ref(_certificatesPath);
   DatabaseReference get _usersRef => _db.ref(_usersPath);
   DatabaseReference get _cvnIndexRef => _db.ref(_cvnIndexPath);
+
+  static String normalizeCvnInput(String value) {
+    return value.trim().toUpperCase().replaceAll(_cvnUnsafeChars, '');
+  }
+
+  static String formatCvnInput(String value) {
+    final normalized = normalizeCvnInput(value);
+    if (normalized.isEmpty) return '';
+
+    final prefixLength = normalized.length < _prefix.length
+        ? normalized.length
+        : _prefix.length;
+    final prefix = normalized.substring(0, prefixLength);
+    if (normalized.length <= _prefix.length) return prefix;
+
+    final remainder = normalized.substring(_prefix.length);
+    final secondSegmentLength = remainder.startsWith('R') ? 5 : 4;
+    final secondLength = remainder.length < secondSegmentLength
+        ? remainder.length
+        : secondSegmentLength;
+    final secondSegment = remainder.substring(0, secondLength);
+    if (remainder.length <= secondSegmentLength) {
+      return '$prefix-$secondSegment';
+    }
+
+    final lastRemainder = remainder.substring(secondSegment.length);
+    final lastLength = lastRemainder.length < 5 ? lastRemainder.length : 5;
+    final lastSegment = lastRemainder.substring(0, lastLength);
+    return '$prefix-$secondSegment-$lastSegment';
+  }
 
   String _cvnFromKey(String key, {required int nowMs}) {
     final year = DateTime.fromMillisecondsSinceEpoch(nowMs).year;
@@ -275,34 +306,45 @@ class CertificateService {
 
   Future<Certificate?> getCertificateByCVN(String cvn) async {
     try {
-      final snapshot = await _certificatesRef
-          .orderByChild('cvn')
-          .equalTo(cvn)
-          .get();
+      final raw = cvn.trim();
+      final formatted = formatCvnInput(raw);
+      final candidates = <String>{
+        if (formatted.isNotEmpty) formatted,
+        if (raw.isNotEmpty) raw,
+      };
 
-      if (snapshot.value != null && snapshot.value is Map) {
-        final map = snapshot.value as Map;
-        if (map.isNotEmpty) {
-          final firstKey = map.keys.first.toString();
-          final firstValue = map.values.first;
-          if (firstValue is Map) {
-            return Certificate.fromMap(firstValue, key: firstKey);
+      for (final candidate in candidates) {
+        final snapshot = await _certificatesRef
+            .orderByChild('cvn')
+            .equalTo(candidate)
+            .get();
+
+        if (snapshot.value != null && snapshot.value is Map) {
+          final map = snapshot.value as Map;
+          if (map.isNotEmpty) {
+            final firstKey = map.keys.first.toString();
+            final firstValue = map.values.first;
+            if (firstValue is Map) {
+              return Certificate.fromMap(firstValue, key: firstKey);
+            }
           }
         }
       }
 
-      final idxSnap = await _cvnIndexRef.child(cvn).get();
-      if (idxSnap.exists && idxSnap.value is Map) {
-        final idx = Map<String, dynamic>.from(idxSnap.value as Map);
-        final learnerUid = (idx['learnerUid'] ?? '').toString().trim();
-        final certId = (idx['certId'] ?? '').toString().trim();
-        if (learnerUid.isNotEmpty && certId.isNotEmpty) {
-          final rec = await getRecordedCertificateByPath(
-            learnerUid: learnerUid,
-            certId: certId,
-          );
-          if (rec != null) {
-            return rec.certificate;
+      for (final candidate in candidates) {
+        final idxSnap = await _cvnIndexRef.child(candidate).get();
+        if (idxSnap.exists && idxSnap.value is Map) {
+          final idx = Map<String, dynamic>.from(idxSnap.value as Map);
+          final learnerUid = (idx['learnerUid'] ?? '').toString().trim();
+          final certId = (idx['certId'] ?? '').toString().trim();
+          if (learnerUid.isNotEmpty && certId.isNotEmpty) {
+            final rec = await getRecordedCertificateByPath(
+              learnerUid: learnerUid,
+              certId: certId,
+            );
+            if (rec != null) {
+              return rec.certificate;
+            }
           }
         }
       }

@@ -128,6 +128,7 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
       final email = (m['email'] ?? '').toString().trim();
       final serial = (m['serial'] ?? '').toString().trim();
       final status = (m['status'] ?? 'active').toString().trim();
+      final learnerAssignment = _learnerAssignmentLabel(m);
 
       out.add(
         _RecipientLite(
@@ -137,12 +138,73 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
           email: email,
           serial: serial,
           status: status,
+          learnerAssignment: learnerAssignment,
         ),
       );
     });
 
     out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return out;
+  }
+
+  String _learnerAssignmentLabel(Map<String, dynamic> userMap) {
+    final courses = userMap['courses'];
+    if (courses is! Map) return '';
+
+    final classLabels = <String>[];
+    final courseLabels = <String>[];
+
+    courses.forEach((_, rawCourse) {
+      if (rawCourse is! Map) return;
+      final course = rawCourse.map((k, v) => MapEntry(k.toString(), v));
+
+      final courseTitle = (course['title'] ?? course['name'] ?? '')
+          .toString()
+          .trim();
+      final courseLevel = (course['level'] ?? '').toString().trim();
+      final classMap = course['class'];
+
+      if (classMap is Map) {
+        final linkedClass = classMap.map((k, v) => MapEntry(k.toString(), v));
+        final classTitle = (linkedClass['course_title'] ?? '')
+            .toString()
+            .trim();
+        final classLevel = (linkedClass['course_level'] ?? '')
+            .toString()
+            .trim();
+        final classLabel = _joinDisplayParts(classLevel, classTitle);
+        if (classLabel.isNotEmpty && !classLabels.contains(classLabel)) {
+          classLabels.add(classLabel);
+        }
+      }
+
+      final courseLabel = _joinDisplayParts(courseLevel, courseTitle);
+      if (courseLabel.isNotEmpty && !courseLabels.contains(courseLabel)) {
+        courseLabels.add(courseLabel);
+      }
+    });
+
+    if (classLabels.isNotEmpty) {
+      final first = classLabels.first;
+      final extra = classLabels.length - 1;
+      return extra > 0 ? 'Class: $first +$extra more' : 'Class: $first';
+    }
+
+    if (courseLabels.isNotEmpty) {
+      final first = courseLabels.first;
+      final extra = courseLabels.length - 1;
+      return extra > 0 ? 'Course: $first +$extra more' : 'Course: $first';
+    }
+
+    return '';
+  }
+
+  String _joinDisplayParts(String first, String second) {
+    final a = first.trim();
+    final b = second.trim();
+    if (a.isEmpty) return b;
+    if (b.isEmpty) return a;
+    return '$a $b';
   }
 
   List<_FlashAlertRow> _parseAlerts(dynamic raw) {
@@ -279,6 +341,7 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
       email: a.targetEmail,
       serial: '',
       status: 'active',
+      learnerAssignment: '',
     );
     final draft = _AlertDraft(title: a.title, message: a.message);
 
@@ -555,6 +618,7 @@ class _RecipientLite {
     required this.email,
     required this.serial,
     required this.status,
+    required this.learnerAssignment,
   });
 
   final String uid;
@@ -563,6 +627,7 @@ class _RecipientLite {
   final String email;
   final String serial;
   final String status;
+  final String learnerAssignment;
 }
 
 class _AlertDraft {
@@ -781,6 +846,11 @@ class _RecipientPickerDialogState extends State<_RecipientPickerDialog> {
                       itemCount: filtered.length,
                       itemBuilder: (_, i) {
                         final r = filtered[i];
+                        final subtitle = r.role == 'learner'
+                            ? (r.learnerAssignment.isNotEmpty
+                                  ? r.learnerAssignment
+                                  : '${r.role.toUpperCase()}${r.email.isEmpty ? '' : ' • ${r.email}'}')
+                            : '${r.role.toUpperCase()}${r.email.isEmpty ? '' : ' • ${r.email}'}';
                         return CheckboxListTile(
                           value: _selected.contains(r.uid),
                           controlAffinity: ListTileControlAffinity.leading,
@@ -798,7 +868,7 @@ class _RecipientPickerDialogState extends State<_RecipientPickerDialog> {
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: Text(
-                            '${r.role.toUpperCase()}${r.email.isEmpty ? '' : ' • ${r.email}'}',
+                            subtitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),

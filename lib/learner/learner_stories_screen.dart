@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
@@ -449,6 +451,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
               20,
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (thumbnail.isNotEmpty)
@@ -1121,57 +1124,44 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     ),
                   ],
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title.isEmpty ? 'Story' : title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.primary,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                            height: 1.15,
-                          ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title.isEmpty ? 'Story' : title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          height: 1.15,
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          teacher,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.text.withValues(alpha: 0.62),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11,
-                          ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        teacher,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.text.withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            if (genre.isNotEmpty) _smallTag(p, genre),
-                            if (level.isNotEmpty) _smallTag(p, level),
-                          ],
-                        ),
-                        const Spacer(),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            'Tap ! for details',
-                            style: TextStyle(
-                              color: p.text.withValues(alpha: 0.52),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          if (genre.isNotEmpty) _smallTag(p, genre),
+                          if (level.isNotEmpty) _smallTag(p, level),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1188,46 +1178,12 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }) {
     final p = palette;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 2, right: 2),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-              Text(
-                '${stories.length}',
-                style: TextStyle(
-                  color: p.text.withValues(alpha: 0.60),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 314,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: stories.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              return _buildStoryCard(stories[index]);
-            },
-          ),
-        ),
-      ],
+    return _AutoScrollingStoryShelf(
+      title: title,
+      count: stories.length,
+      palette: p,
+      itemCount: stories.length,
+      itemBuilder: (context, index) => _buildStoryCard(stories[index]),
     );
   }
 
@@ -1478,6 +1434,144 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _AutoScrollingStoryShelf extends StatefulWidget {
+  const _AutoScrollingStoryShelf({
+    required this.title,
+    required this.count,
+    required this.palette,
+    required this.itemCount,
+    required this.itemBuilder,
+  });
+
+  final String title;
+  final int count;
+  final _StoriesPalette palette;
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+
+  @override
+  State<_AutoScrollingStoryShelf> createState() =>
+      _AutoScrollingStoryShelfState();
+}
+
+class _AutoScrollingStoryShelfState extends State<_AutoScrollingStoryShelf> {
+  final ScrollController _controller = ScrollController();
+  Timer? _autoScrollTimer;
+  Timer? _resumeTimer;
+  bool _scrollForward = true;
+  bool _isPaused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAutoScroll();
+  }
+
+  @override
+  void dispose() {
+    _autoScrollTimer?.cancel();
+    _resumeTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _startAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 35), (_) {
+      if (!mounted ||
+          _isPaused ||
+          !_controller.hasClients ||
+          widget.itemCount < 2) {
+        return;
+      }
+
+      final position = _controller.position;
+      if (position.maxScrollExtent <= 0) return;
+
+      final min = position.minScrollExtent;
+      final max = position.maxScrollExtent;
+      final nextOffset = position.pixels + (_scrollForward ? 0.9 : -0.9);
+
+      if (nextOffset >= max) {
+        _scrollForward = false;
+        _controller.jumpTo(max);
+        return;
+      }
+
+      if (nextOffset <= min) {
+        _scrollForward = true;
+        _controller.jumpTo(min);
+        return;
+      }
+
+      _controller.jumpTo(nextOffset);
+    });
+  }
+
+  void _pauseAutoScroll() {
+    _resumeTimer?.cancel();
+    _isPaused = true;
+  }
+
+  void _resumeAutoScrollSoon() {
+    _resumeTimer?.cancel();
+    _resumeTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) _isPaused = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.palette;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, right: 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              Text(
+                '${widget.count}',
+                style: TextStyle(
+                  color: p.text.withValues(alpha: 0.60),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 236,
+          child: Listener(
+            onPointerDown: (_) => _pauseAutoScroll(),
+            onPointerUp: (_) => _resumeAutoScrollSoon(),
+            onPointerCancel: (_) => _resumeAutoScrollSoon(),
+            child: ListView.separated(
+              controller: _controller,
+              scrollDirection: Axis.horizontal,
+              itemCount: widget.itemCount,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: widget.itemBuilder,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

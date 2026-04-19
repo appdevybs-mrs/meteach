@@ -1,12 +1,27 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart';
+
+class _CvnInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final formatted = CertificateService.formatCvnInput(newValue.text);
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class VerifyCertificateScreen extends StatefulWidget {
   const VerifyCertificateScreen({super.key});
@@ -400,6 +415,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
             const SizedBox(height: 20),
             TextField(
               controller: _cvnController,
+              inputFormatters: [_CvnInputFormatter()],
               decoration: InputDecoration(
                 hintText: 'e.g., DZ01SB-2026-00001',
                 prefixIcon: const Icon(Icons.badge),
@@ -415,6 +431,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
                   borderSide: BorderSide(color: _primaryBlue, width: 2),
                 ),
               ),
+              textCapitalization: TextCapitalization.characters,
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _step1Lookup(),
             ),

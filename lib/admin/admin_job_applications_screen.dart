@@ -364,7 +364,7 @@ class _AdminJobApplicationsScreenState
     try {
       return await showDialog<String>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: Text(title),
           content: TextField(
             controller: ctrl,
@@ -373,14 +373,14 @@ class _AdminJobApplicationsScreenState
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
+              onPressed: () => Navigator.of(dialogContext).pop(null),
               child: const Text('Cancel'),
             ),
             FilledButton(
               onPressed: () {
                 final text = ctrl.text.trim();
                 if (requiredText && text.isEmpty) return;
-                Navigator.of(context).pop(text);
+                Navigator.of(dialogContext).pop(text);
               },
               child: const Text('Save'),
             ),
@@ -463,8 +463,8 @@ class _AdminJobApplicationsScreenState
     try {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => StatefulBuilder(
-          builder: (context, setInnerState) => AlertDialog(
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (innerContext, setInnerState) => AlertDialog(
             title: const Text('Interview result'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -492,11 +492,11 @@ class _AdminJobApplicationsScreenState
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
                 child: const Text('Save'),
               ),
             ],
@@ -568,18 +568,18 @@ class _AdminJobApplicationsScreenState
     final ok =
         await showDialog<bool>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: const Text('Delete application?'),
             content: Text(
               'Delete ${item.fullName.isEmpty ? item.id : item.fullName}?',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
                 style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 child: const Text('Delete'),
               ),
@@ -783,6 +783,21 @@ class _AdminJobApplicationsScreenState
         await _delete(item);
         break;
     }
+  }
+
+  void _handleOverflowActionDeferred(String action, _JobApplicationItem item) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      try {
+        await _handleOverflowAction(action, item);
+      } catch (e) {
+        if (!mounted) return;
+        AppToast.fromSnackBar(
+          context,
+          SnackBar(content: Text(toHumanError(e))),
+        );
+      }
+    });
   }
 
   String _fmtDate(int ms) {
@@ -1270,18 +1285,8 @@ class _AdminJobApplicationsScreenState
                                     PopupMenuButton<String>(
                                       tooltip: 'Actions',
                                       icon: const Icon(Icons.more_vert_rounded),
-                                      onSelected: (v) async {
-                                        try {
-                                          await _handleOverflowAction(v, item);
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          AppToast.fromSnackBar(
-                                            this.context,
-                                            SnackBar(
-                                              content: Text(toHumanError(e)),
-                                            ),
-                                          );
-                                        }
+                                      onSelected: (v) {
+                                        _handleOverflowActionDeferred(v, item);
                                       },
                                       itemBuilder: (_) => const [
                                         PopupMenuItem(
