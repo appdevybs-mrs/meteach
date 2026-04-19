@@ -73,13 +73,45 @@
 
     "website": {
       ".read": true,
-      ".write": "auth != null",
+      ".write": false,
+      "migrations": {
+        "$migrationKey": {
+          ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+        }
+      },
+      "admin": {
+        "$uid": {
+          ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists() && auth.uid == $uid"
+        }
+      },
+      "learners": {
+        "$uid": {
+          "profile": {
+            ".read": true,
+            ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())"
+          },
+          "uploads": {
+            ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())"
+          },
+          "gallery": {
+            ".read": true,
+            ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+          }
+        }
+      },
       "teachers": {
         ".read": true,
         "$uid": {
           "profile": {
             ".read": true,
-            ".write": "auth != null && auth.uid == $uid"
+            ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())"
+          },
+          "uploads": {
+            ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())"
           }
         }
       }
@@ -108,21 +140,21 @@
 
     "users_deleted": {
       "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
       }
     },
 
     "users_blocked": {
       "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
       }
     },
 
     "blocked_emails": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
     },
 
     "courses": {

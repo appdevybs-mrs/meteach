@@ -254,7 +254,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       final AndroidWebViewController androidController =
           controller.platform as AndroidWebViewController;
 
-      AndroidWebViewController.enableDebugging(true);
+      AndroidWebViewController.enableDebugging(kDebugMode);
       androidController.setMediaPlaybackRequiresUserGesture(false);
     }
 

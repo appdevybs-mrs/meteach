@@ -79,13 +79,8 @@ class BackendApi {
     _debug(
       'withAuthQuery path=${original.path} uid=${user.uid} tokenLen=${token.length}',
     );
-    return original.replace(
-      queryParameters: {
-        ...original.queryParameters,
-        'auth_token': token,
-        'auth_uid': user.uid,
-      },
-    );
+    // Keep auth out of URLs so tokens do not leak via logs/history.
+    return original;
   }
 
   static Future<String> authToken() async {

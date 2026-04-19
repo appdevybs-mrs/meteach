@@ -386,7 +386,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
               const intent = AndroidIntent(
                 action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
-                data: 'package:com.dreamenglish.academy.dream_english_academy',
+                data: 'package:com.yourbridgeschool.dreamenglish',
               );
               await intent.launch();
             },
