@@ -33,6 +33,18 @@ class _AdminJobApplicationsScreenState
   String _priorityFilter = 'all';
   bool _filtersExpanded = false;
 
+  Future<T?> _showSettledRootDialog<T>({required WidgetBuilder builder}) async {
+    await WidgetsBinding.instance.endOfFrame;
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    if (!mounted) return null;
+
+    return showDialog<T>(
+      context: context,
+      useRootNavigator: true,
+      builder: builder,
+    );
+  }
+
   static const List<MapEntry<String, String>> _stageChoices = [
     MapEntry('new', 'New'),
     MapEntry('called_reached', 'Called (Reached)'),
@@ -355,41 +367,104 @@ class _AdminJobApplicationsScreenState
     await _ref.child(item.id).update(updates);
   }
 
+  Future<void> _updateTimelineNote(
+    _JobApplicationItem item,
+    _TimelineEvent event,
+    String note,
+  ) async {
+    await _ref.child(item.id).child('timeline').child(event.id).update({
+      'payload/note': note,
+      'at': ServerValue.timestamp,
+      'byUid': _adminUid,
+      'byName': _adminName,
+    });
+    await _ref.child(item.id).update({
+      'updatedAt': ServerValue.timestamp,
+      'updatedBy': _adminUid,
+    });
+  }
+
+  Future<void> _clearTimelineNote(
+    _JobApplicationItem item,
+    _TimelineEvent event,
+  ) async {
+    await _ref.child(item.id).child('timeline').child(event.id).update({
+      'payload/note': null,
+      'at': ServerValue.timestamp,
+      'byUid': _adminUid,
+      'byName': _adminName,
+    });
+    await _ref.child(item.id).update({
+      'updatedAt': ServerValue.timestamp,
+      'updatedBy': _adminUid,
+    });
+  }
+
   Future<String?> _promptText({
     required String title,
     required String hint,
     bool requiredText = false,
+    String initialValue = '',
   }) async {
-    final ctrl = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(title),
-          content: TextField(
-            controller: ctrl,
-            maxLines: 3,
-            decoration: InputDecoration(hintText: hint),
+    return _showSettledRootDialog<String>(
+      builder: (dialogContext) => _JobApplicationTextPromptDialog(
+        title: title,
+        hint: hint,
+        requiredText: requiredText,
+        initialValue: initialValue,
+      ),
+    );
+  }
+
+  Future<void> _editTimelineNote(
+    _JobApplicationItem item,
+    _TimelineEvent event,
+  ) async {
+    final currentNote = (event.payload['note'] ?? '').toString().trim();
+    final nextNote = await _promptText(
+      title: 'Edit note',
+      hint: 'Update note',
+      requiredText: true,
+      initialValue: currentNote,
+    );
+    if (!mounted || nextNote == null || nextNote == currentNote) return;
+    await _updateTimelineNote(item, event, nextNote);
+  }
+
+  Future<void> _deleteTimelineNote(
+    _JobApplicationItem item,
+    _TimelineEvent event,
+  ) async {
+    final ok =
+        await _showSettledRootDialog<bool>(
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Delete note?'),
+            content: const Text(
+              'This removes the note text and keeps the timeline event.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  FocusScope.of(dialogContext).unfocus();
+                  Navigator.of(dialogContext, rootNavigator: true).pop(false);
+                },
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  FocusScope.of(dialogContext).unfocus();
+                  Navigator.of(dialogContext, rootNavigator: true).pop(true);
+                },
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final text = ctrl.text.trim();
-                if (requiredText && text.isEmpty) return;
-                Navigator.of(dialogContext).pop(text);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      ctrl.dispose();
-    }
+        ) ??
+        false;
+    if (!ok) return;
+
+    await _clearTimelineNote(item, event);
   }
 
   Future<int?> _pickInterviewAtMs() async {
@@ -458,62 +533,20 @@ class _AdminJobApplicationsScreenState
   }
 
   Future<void> _markInterviewDone(_JobApplicationItem item) async {
-    String result = 'pass';
-    final noteCtrl = TextEditingController();
-    try {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (innerContext, setInnerState) => AlertDialog(
-            title: const Text('Interview result'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: result,
-                  decoration: const InputDecoration(labelText: 'Result'),
-                  items: const [
-                    DropdownMenuItem(value: 'pass', child: Text('Pass')),
-                    DropdownMenuItem(value: 'fail', child: Text('Fail')),
-                    DropdownMenuItem(value: 'hold', child: Text('Hold')),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setInnerState(() => result = v);
-                  },
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: noteCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(hintText: 'Optional note'),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('Save'),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (ok != true || !mounted) return;
-      final note = noteCtrl.text.trim();
-      await _appendTimelineEvent(
-        item,
-        type: 'interview_done',
-        stage: 'interview_done',
-        payload: {'result': result, if (note.isNotEmpty) 'note': note},
-      );
-    } finally {
-      noteCtrl.dispose();
-    }
+    final outcome = await _showSettledRootDialog<_InterviewResultDialogValue>(
+      builder: (dialogContext) => const _InterviewResultDialog(),
+    );
+    if (outcome == null || !mounted) return;
+
+    await _appendTimelineEvent(
+      item,
+      type: 'interview_done',
+      stage: 'interview_done',
+      payload: {
+        'result': outcome.result,
+        if (outcome.note.isNotEmpty) 'note': outcome.note,
+      },
+    );
   }
 
   Future<void> _reject(_JobApplicationItem item) async {
@@ -566,8 +599,7 @@ class _AdminJobApplicationsScreenState
 
   Future<void> _delete(_JobApplicationItem item) async {
     final ok =
-        await showDialog<bool>(
-          context: context,
+        await _showSettledRootDialog<bool>(
           builder: (dialogContext) => AlertDialog(
             title: const Text('Delete application?'),
             content: Text(
@@ -575,11 +607,17 @@ class _AdminJobApplicationsScreenState
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
+                onPressed: () {
+                  FocusScope.of(dialogContext).unfocus();
+                  Navigator.of(dialogContext, rootNavigator: true).pop(false);
+                },
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
+                onPressed: () {
+                  FocusScope.of(dialogContext).unfocus();
+                  Navigator.of(dialogContext, rootNavigator: true).pop(true);
+                },
                 style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 child: const Text('Delete'),
               ),
@@ -1515,6 +1553,7 @@ class _AdminJobApplicationsScreenState
                                               : (event.byUid.isNotEmpty
                                                     ? event.byUid
                                                     : 'Admin');
+                                          final hasNote = note.isNotEmpty;
 
                                           return ListTile(
                                             dense: true,
@@ -1525,6 +1564,45 @@ class _AdminJobApplicationsScreenState
                                             subtitle: Text(
                                               '${_fmtDate(event.at)} • $actor${details.isEmpty ? '' : '\n$details'}',
                                             ),
+                                            trailing: hasNote
+                                                ? Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        tooltip: 'Edit note',
+                                                        visualDensity:
+                                                            VisualDensity
+                                                                .compact,
+                                                        onPressed: () =>
+                                                            _editTimelineNote(
+                                                              item,
+                                                              event,
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons.edit_rounded,
+                                                          size: 20,
+                                                        ),
+                                                      ),
+                                                      IconButton(
+                                                        tooltip: 'Delete note',
+                                                        visualDensity:
+                                                            VisualDensity
+                                                                .compact,
+                                                        onPressed: () =>
+                                                            _deleteTimelineNote(
+                                                              item,
+                                                              event,
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .delete_outline_rounded,
+                                                          size: 20,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                                : null,
                                           );
                                         }).toList(),
                                 ),
@@ -1595,6 +1673,162 @@ class _JobApplicationItem {
   final List<_TimelineEvent> timeline;
   final bool isGuest;
   final String submittedByUid;
+}
+
+class _JobApplicationTextPromptDialog extends StatefulWidget {
+  const _JobApplicationTextPromptDialog({
+    required this.title,
+    required this.hint,
+    required this.requiredText,
+    required this.initialValue,
+  });
+
+  final String title;
+  final String hint;
+  final bool requiredText;
+  final String initialValue;
+
+  @override
+  State<_JobApplicationTextPromptDialog> createState() =>
+      _JobApplicationTextPromptDialogState();
+}
+
+class _JobApplicationTextPromptDialogState
+    extends State<_JobApplicationTextPromptDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        maxLines: 3,
+        decoration: InputDecoration(hintText: widget.hint),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            FocusScope.of(context).unfocus();
+            await Future<void>.delayed(Duration.zero);
+            if (!context.mounted) return;
+            Navigator.of(context, rootNavigator: true).pop(null);
+          },
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            FocusScope.of(context).unfocus();
+            final text = _controller.text.trim();
+            if (widget.requiredText && text.isEmpty) return;
+            await Future<void>.delayed(Duration.zero);
+            if (!context.mounted) return;
+            Navigator.of(context, rootNavigator: true).pop(text);
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _InterviewResultDialogValue {
+  const _InterviewResultDialogValue({required this.result, required this.note});
+
+  final String result;
+  final String note;
+}
+
+class _InterviewResultDialog extends StatefulWidget {
+  const _InterviewResultDialog();
+
+  @override
+  State<_InterviewResultDialog> createState() => _InterviewResultDialogState();
+}
+
+class _InterviewResultDialogState extends State<_InterviewResultDialog> {
+  String _result = 'pass';
+  late final TextEditingController _noteController;
+
+  @override
+  void initState() {
+    super.initState();
+    _noteController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Interview result'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _result,
+            decoration: const InputDecoration(labelText: 'Result'),
+            items: const [
+              DropdownMenuItem(value: 'pass', child: Text('Pass')),
+              DropdownMenuItem(value: 'fail', child: Text('Fail')),
+              DropdownMenuItem(value: 'hold', child: Text('Hold')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _result = v);
+            },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _noteController,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Optional note'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            FocusScope.of(context).unfocus();
+            await Future<void>.delayed(Duration.zero);
+            if (!context.mounted) return;
+            Navigator.of(context, rootNavigator: true).pop();
+          },
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            FocusScope.of(context).unfocus();
+            await Future<void>.delayed(Duration.zero);
+            if (!context.mounted) return;
+            Navigator.of(context, rootNavigator: true).pop(
+              _InterviewResultDialogValue(
+                result: _result,
+                note: _noteController.text.trim(),
+              ),
+            );
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 class _TimelineEvent {

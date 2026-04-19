@@ -873,6 +873,13 @@ class _JoinOnlineCircleEntryButtonState
   final Map<String, String> _teacherPhotoCache = <String, String>{};
   final Map<String, Future<String>> _teacherPhotoLoads =
       <String, Future<String>>{};
+  final Map<String, List<String>> _teacherPhotosCache =
+      <String, List<String>>{};
+  final Map<String, Future<List<String>>> _teacherPhotosLoads =
+      <String, Future<List<String>>>{};
+  String _openCircleTeacherPhotosSignature = '';
+  List<String> _openCircleTeacherPhotosCache = const <String>[];
+  Future<List<String>>? _openCircleTeacherPhotosLoad;
 
   @override
   void initState() {
@@ -919,6 +926,40 @@ class _JoinOnlineCircleEntryButtonState
     return ProfileAvatar.resolvePhotoFromMap(Map<dynamic, dynamic>.from(raw));
   }
 
+  List<String> _resolvePhotosFromProfile(dynamic raw) {
+    if (raw is! Map) return const <String>[];
+    final profile = Map<dynamic, dynamic>.from(raw);
+    final out = <String>[];
+    final seen = <String>{};
+
+    void add(dynamic value) {
+      final url = value.toString().trim();
+      if (url.isEmpty || !seen.add(url)) return;
+      out.add(url);
+    }
+
+    add(profile['profile_photo']);
+
+    final rawPhotos = profile['profile_photos'];
+    if (rawPhotos is List) {
+      for (final item in rawPhotos) {
+        add(item);
+      }
+    } else if (rawPhotos is Map) {
+      final entries = rawPhotos.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final entry in entries) {
+        add(entry.value);
+      }
+    }
+
+    return out;
+  }
+
   Future<String> _resolveTeacherPhoto(
     String teacherUid, {
     String fallbackUrl = '',
@@ -962,6 +1003,151 @@ class _JoinOnlineCircleEntryButtonState
 
     _teacherPhotoLoads[uid] = future;
     return future;
+  }
+
+  Future<List<String>> _resolveTeacherPhotos(
+    String teacherUid, {
+    String fallbackUrl = '',
+  }) {
+    final uid = teacherUid.trim();
+    final fallback = fallbackUrl.trim();
+    if (!_isSafeUid(uid)) {
+      return Future<List<String>>.value(
+        fallback.isEmpty ? const <String>[] : <String>[fallback],
+      );
+    }
+    final cached = _teacherPhotosCache[uid];
+    if (cached != null && cached.isNotEmpty) {
+      return Future<List<String>>.value(cached);
+    }
+    final inFlight = _teacherPhotosLoads[uid];
+    if (inFlight != null) return inFlight;
+
+    final future = () async {
+      try {
+        final userSnap = await FirebaseDatabase.instance
+            .ref('users/$uid')
+            .get();
+        final fromUser = _resolvePhotosFromProfile(userSnap.value);
+        if (fromUser.isNotEmpty) {
+          _teacherPhotosCache[uid] = fromUser;
+          _teacherPhotoCache[uid] = fromUser.first;
+          return fromUser;
+        }
+
+        final websiteSnap = await FirebaseDatabase.instance
+            .ref('website/teachers/$uid/profile')
+            .get();
+        final fromWebsite = _resolvePhotosFromProfile(websiteSnap.value);
+        final resolved = fromWebsite.isNotEmpty
+            ? fromWebsite
+            : (fallback.isEmpty ? const <String>[] : <String>[fallback]);
+        _teacherPhotosCache[uid] = resolved;
+        if (resolved.isNotEmpty) _teacherPhotoCache[uid] = resolved.first;
+        return resolved;
+      } catch (_) {
+        final resolved = fallback.isEmpty
+            ? const <String>[]
+            : <String>[fallback];
+        _teacherPhotosCache[uid] = resolved;
+        if (resolved.isNotEmpty) _teacherPhotoCache[uid] = resolved.first;
+        return resolved;
+      } finally {
+        _teacherPhotosLoads.remove(uid);
+      }
+    }();
+
+    _teacherPhotosLoads[uid] = future;
+    return future;
+  }
+
+  Future<List<String>> _resolveOpenCircleTeacherPhotos(
+    List<_OnlineCircle> circles,
+  ) {
+    final signature =
+        circles
+            .map(
+              (c) => '${c.teacherUid.trim()}_${c.teacherProfilePhoto.trim()}',
+            )
+            .where((v) => v.isNotEmpty && v != '_')
+            .toSet()
+            .toList()
+          ..sort();
+    final key = signature.join('|');
+
+    if (key.isEmpty) {
+      _openCircleTeacherPhotosSignature = '';
+      _openCircleTeacherPhotosCache = const <String>[];
+      _openCircleTeacherPhotosLoad = null;
+      return Future<List<String>>.value(const <String>[]);
+    }
+
+    if (_openCircleTeacherPhotosSignature == key &&
+        _openCircleTeacherPhotosCache.isNotEmpty) {
+      return Future<List<String>>.value(_openCircleTeacherPhotosCache);
+    }
+
+    final inFlight = _openCircleTeacherPhotosLoad;
+    if (_openCircleTeacherPhotosSignature == key && inFlight != null) {
+      return inFlight;
+    }
+
+    final seenTeachers = <String>{};
+    final futures = <Future<List<String>>>[];
+    for (final circle in circles) {
+      final uid = circle.teacherUid.trim();
+      if (!_isSafeUid(uid) || !seenTeachers.add(uid)) continue;
+      futures.add(
+        _resolveTeacherPhotos(uid, fallbackUrl: circle.teacherProfilePhoto),
+      );
+    }
+
+    _openCircleTeacherPhotosSignature = key;
+    final future = Future.wait(futures)
+        .then((photoLists) {
+          final seenUrls = <String>{};
+          final photos = photoLists
+              .expand((urls) => urls)
+              .map((url) => url.trim())
+              .where((url) => url.isNotEmpty && seenUrls.add(url))
+              .toList(growable: false);
+          _openCircleTeacherPhotosCache = photos;
+          return photos;
+        })
+        .whenComplete(() {
+          if (_openCircleTeacherPhotosSignature == key) {
+            _openCircleTeacherPhotosLoad = null;
+          }
+        });
+    _openCircleTeacherPhotosLoad = future;
+    return future;
+  }
+
+  Widget _buildOpenCircleTeacherIcon({
+    required List<_OnlineCircle> circles,
+    required double size,
+    required BorderRadius borderRadius,
+    required Color backgroundColor,
+    required IconData fallbackIcon,
+    required Color fallbackIconColor,
+    double fallbackIconSize = 24,
+  }) {
+    return FutureBuilder<List<String>>(
+      future: _resolveOpenCircleTeacherPhotos(circles),
+      initialData: _openCircleTeacherPhotosCache,
+      builder: (context, snapshot) {
+        final photos = snapshot.data ?? const <String>[];
+        return _RotatingTeacherPhotoIcon(
+          photoUrls: photos,
+          size: size,
+          borderRadius: borderRadius,
+          backgroundColor: backgroundColor,
+          fallbackIcon: fallbackIcon,
+          fallbackIconColor: fallbackIconColor,
+          fallbackIconSize: fallbackIconSize,
+        );
+      },
+    );
   }
 
   Widget _liveTeacherAvatar({
@@ -1647,18 +1833,17 @@ class _JoinOnlineCircleEntryButtonState
                           children: [
                             Row(
                               children: [
-                                Container(
+                                SizedBox(
                                   width: 44,
                                   height: 44,
-                                  decoration: BoxDecoration(
-                                    color: Brand.primaryBlue.withValues(
-                                      alpha: 0.10,
-                                    ),
+                                  child: _buildOpenCircleTeacherIcon(
+                                    circles: circles,
+                                    size: 44,
                                     borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: const Icon(
-                                    Icons.groups_rounded,
-                                    color: Brand.primaryBlue,
+                                    backgroundColor: Brand.primaryBlue
+                                        .withValues(alpha: 0.10),
+                                    fallbackIcon: Icons.groups_rounded,
+                                    fallbackIconColor: Brand.primaryBlue,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -1842,17 +2027,17 @@ class _JoinOnlineCircleEntryButtonState
             ),
             child: Row(
               children: [
-                Container(
+                SizedBox(
                   width: 56,
                   height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.35),
+                  child: _buildOpenCircleTeacherIcon(
+                    circles: _prefetchedOpenCircles,
+                    size: 56,
                     borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Icon(
-                    Icons.groups_rounded,
-                    color: Brand.primaryBlue,
-                    size: 28,
+                    backgroundColor: Colors.white.withValues(alpha: 0.35),
+                    fallbackIcon: Icons.groups_rounded,
+                    fallbackIconColor: Brand.primaryBlue,
+                    fallbackIconSize: 28,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1967,6 +2152,112 @@ class _CircleJoinState {
   final String message;
 
   const _CircleJoinState({required this.canJoin, required this.message});
+}
+
+class _RotatingTeacherPhotoIcon extends StatefulWidget {
+  const _RotatingTeacherPhotoIcon({
+    required this.photoUrls,
+    required this.size,
+    required this.borderRadius,
+    required this.backgroundColor,
+    required this.fallbackIcon,
+    required this.fallbackIconColor,
+    this.fallbackIconSize = 24,
+  });
+
+  final List<String> photoUrls;
+  final double size;
+  final BorderRadius borderRadius;
+  final Color backgroundColor;
+  final IconData fallbackIcon;
+  final Color fallbackIconColor;
+  final double fallbackIconSize;
+
+  @override
+  State<_RotatingTeacherPhotoIcon> createState() =>
+      _RotatingTeacherPhotoIconState();
+}
+
+class _RotatingTeacherPhotoIconState extends State<_RotatingTeacherPhotoIcon> {
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _configureTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RotatingTeacherPhotoIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldPhotos = oldWidget.photoUrls;
+    final newPhotos = widget.photoUrls;
+    if (!listEquals(oldPhotos, newPhotos)) {
+      _index = 0;
+      _configureTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _configureTimer() {
+    _timer?.cancel();
+    if (widget.photoUrls.length <= 1) return;
+    _timer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (!mounted) return;
+      setState(() {
+        _index = (_index + 1) % widget.photoUrls.length;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = widget.photoUrls;
+    final currentUrl = photos.isEmpty ? '' : photos[_index % photos.length];
+
+    return ClipRRect(
+      borderRadius: widget.borderRadius,
+      child: Container(
+        width: widget.size,
+        height: widget.size,
+        color: widget.backgroundColor,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: currentUrl.isEmpty
+              ? Center(
+                  key: const ValueKey('fallback'),
+                  child: Icon(
+                    widget.fallbackIcon,
+                    color: widget.fallbackIconColor,
+                    size: widget.fallbackIconSize,
+                  ),
+                )
+              : Image.network(
+                  currentUrl,
+                  key: ValueKey(currentUrl),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Center(
+                    child: Icon(
+                      widget.fallbackIcon,
+                      color: widget.fallbackIconColor,
+                      size: widget.fallbackIconSize,
+                    ),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CircleJoinStatusBanner extends StatelessWidget {

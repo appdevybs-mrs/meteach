@@ -86,6 +86,8 @@ class _AdminHomeState extends State<AdminHome> {
   final GlobalKey _paymentsCardKey = GlobalKey();
   final GlobalKey _learnersCardKey = GlobalKey();
   final GlobalKey _sharedCardKey = GlobalKey();
+  late final DatabaseReference _receptionistWindowAccessRef;
+  StreamSubscription<DatabaseEvent>? _receptionistWindowAccessSub;
 
   bool _isAdminMode = true;
   bool _loadingRole = true;
@@ -98,17 +100,31 @@ class _AdminHomeState extends State<AdminHome> {
   @override
   void initState() {
     super.initState();
+    _receptionistWindowAccessRef = FirebaseDatabase.instance.ref(
+      'appConfig/window_access/${AppWindowRole.admin}',
+    );
     _homeSearchController.text = _homeSearch;
     _loadSavedRoleMode();
     unawaited(_loadReceptionistWindowAccess());
+    _listenToReceptionistWindowAccess();
     unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
     unawaited(AdminPaymentSummarySyncService.runForAdminLogin());
   }
 
   @override
   void dispose() {
+    _receptionistWindowAccessSub?.cancel();
     _homeSearchController.dispose();
     super.dispose();
+  }
+
+  void _listenToReceptionistWindowAccess() {
+    _receptionistWindowAccessSub?.cancel();
+    _receptionistWindowAccessSub = _receptionistWindowAccessRef.onValue.listen((
+      _,
+    ) {
+      unawaited(_loadReceptionistWindowAccess());
+    });
   }
 
   Future<void> _loadSavedRoleMode() async {
@@ -170,41 +186,35 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<bool?> _promptForAdminPassword() async {
-    final controller = TextEditingController();
-    try {
-      final ok = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Admin password'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            obscureText: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Enter password',
-              hintText: '0808',
-            ),
-            onSubmitted: (_) => Navigator.of(dialogContext).pop(true),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Unlock'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return null;
-      return controller.text.trim() == _adminModePassword;
-    } finally {
-      controller.dispose();
+    final password = await showDialog<String?>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (_) => const _AdminPasswordDialog(),
+    );
+    if (password == null) return null;
+    return password.trim() == _adminModePassword;
+  }
+
+  Future<void> _handleSelectAdmin() async {
+    Navigator.of(context).pop();
+
+    // Let the drawer route fully settle before pushing the password dialog.
+    await WidgetsBinding.instance.endOfFrame;
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    if (!mounted) return;
+
+    if (!_isAdminMode) {
+      final unlocked = await _promptForAdminPassword();
+      if (!mounted) return;
+      if (unlocked == null) return;
+      if (!unlocked) {
+        AppToast.show(context, 'Wrong password.', type: AppToastType.error);
+        return;
+      }
     }
+
+    await _setRoleMode(true);
   }
 
   void _openAdminWindow(String windowKey, VoidCallback onAllowed) {
@@ -1050,23 +1060,7 @@ class _AdminHomeState extends State<AdminHome> {
               MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
             );
           },
-          onSelectAdmin: () async {
-            Navigator.of(context).pop();
-            if (!_isAdminMode) {
-              final unlocked = await _promptForAdminPassword();
-              if (!context.mounted) return;
-              if (unlocked == null) return;
-              if (!unlocked) {
-                AppToast.show(
-                  context,
-                  'Wrong password.',
-                  type: AppToastType.error,
-                );
-                return;
-              }
-            }
-            await _setRoleMode(true);
-          },
+          onSelectAdmin: _handleSelectAdmin,
           onSelectReceptionist: () async {
             Navigator.of(context).pop();
             await _setRoleMode(false);
@@ -1208,6 +1202,61 @@ class _HomeCardItem {
   final String subtitle;
   final Widget child;
   final String? windowKey;
+}
+
+class _AdminPasswordDialog extends StatefulWidget {
+  const _AdminPasswordDialog();
+
+  @override
+  State<_AdminPasswordDialog> createState() => _AdminPasswordDialogState();
+}
+
+class _AdminPasswordDialogState extends State<_AdminPasswordDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(_controller.text.trim());
+  }
+
+  Future<void> _cancel() async {
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Admin password'),
+      content: TextField(
+        controller: _controller,
+        obscureText: true,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(labelText: 'Enter password'),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(onPressed: _cancel, child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Unlock')),
+      ],
+    );
+  }
 }
 
 class _AdminTodoHomeCard extends StatelessWidget {

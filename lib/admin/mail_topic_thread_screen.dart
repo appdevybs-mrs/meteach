@@ -1021,51 +1021,78 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                           : CrossAxisAlignment.start,
                                       children: [
                                         Row(
-                                          mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              mine ? 'Me' : widget.peerName,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                                color: scheme.onSurface,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              _fmt(m.createdAtMs),
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontStyle: FontStyle.italic,
-                                                color: scheme.onSurfaceVariant,
-                                              ),
-                                            ),
-                                            if (receiptLevel > 0) ...[
-                                              const SizedBox(width: 6),
-                                              Icon(
-                                                receiptLevel == 2
-                                                    ? Icons.done_all_rounded
-                                                    : Icons.done_rounded,
-                                                size: 15,
-                                                color: receiptLevel == 2
-                                                    ? scheme.primary
-                                                    : scheme.onSurfaceVariant,
-                                              ),
-                                              if (receiptLabel.isNotEmpty) ...[
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  receiptLabel,
-                                                  style: TextStyle(
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: receiptLevel == 2
-                                                        ? scheme.primary
-                                                        : scheme
-                                                              .onSurfaceVariant,
+                                            Expanded(
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      mine
+                                                          ? 'Me'
+                                                          : widget.peerName,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: scheme.onSurface,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
-                                            ],
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    _fmt(m.createdAtMs),
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontStyle:
+                                                          FontStyle.italic,
+                                                      color: scheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                  ),
+                                                  if (receiptLevel > 0) ...[
+                                                    const SizedBox(width: 6),
+                                                    Icon(
+                                                      receiptLevel == 2
+                                                          ? Icons
+                                                                .done_all_rounded
+                                                          : Icons.done_rounded,
+                                                      size: 15,
+                                                      color: receiptLevel == 2
+                                                          ? scheme.primary
+                                                          : scheme
+                                                                .onSurfaceVariant,
+                                                    ),
+                                                    if (receiptLabel
+                                                        .isNotEmpty) ...[
+                                                      const SizedBox(width: 4),
+                                                      Flexible(
+                                                        child: Text(
+                                                          receiptLabel,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: 10.5,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            color:
+                                                                receiptLevel ==
+                                                                    2
+                                                                ? scheme.primary
+                                                                : scheme
+                                                                      .onSurfaceVariant,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
                                             const SizedBox(width: 6),
                                             if (!_selectionMode)
                                               PopupMenuButton<String>(
