@@ -77,6 +77,7 @@ class AdminHome extends StatefulWidget {
 
 class _AdminHomeState extends State<AdminHome> {
   static const _prefsRoleKey = 'admin_home_role_mode_is_admin';
+  static const _adminModePassword = '0808';
   int _lastBackPressMs = 0;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -88,15 +89,18 @@ class _AdminHomeState extends State<AdminHome> {
 
   bool _isAdminMode = true;
   bool _loadingRole = true;
+  bool _loadingReceptionistWindows = true;
   bool _showSearch = false;
   String _homeSearch = '';
   final TextEditingController _homeSearchController = TextEditingController();
+  Map<String, bool> _receptionistWindowEnabled = const <String, bool>{};
 
   @override
   void initState() {
     super.initState();
     _homeSearchController.text = _homeSearch;
     _loadSavedRoleMode();
+    unawaited(_loadReceptionistWindowAccess());
     unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
     unawaited(AdminPaymentSummarySyncService.runForAdminLogin());
   }
@@ -138,12 +142,77 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<void> _refreshHome() async {
+    await _loadReceptionistWindowAccess();
     if (!mounted) return;
     setState(() {});
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
+  Future<void> _loadReceptionistWindowAccess() async {
+    try {
+      final states = await WindowAccessService.instance.loadStatesForRole(
+        AppWindowRole.admin,
+      );
+      if (!mounted) return;
+      setState(() {
+        _receptionistWindowEnabled = {
+          for (final state in states) state.definition.key: state.enabled,
+        };
+        _loadingReceptionistWindows = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _receptionistWindowEnabled = const <String, bool>{};
+        _loadingReceptionistWindows = false;
+      });
+    }
+  }
+
+  Future<bool?> _promptForAdminPassword() async {
+    final controller = TextEditingController();
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Admin password'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Enter password',
+              hintText: '0808',
+            ),
+            onSubmitted: (_) => Navigator.of(dialogContext).pop(true),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Unlock'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return null;
+      return controller.text.trim() == _adminModePassword;
+    } finally {
+      controller.dispose();
+    }
+  }
+
   void _openAdminWindow(String windowKey, VoidCallback onAllowed) {
+    if (_isAdminMode) {
+      onAllowed();
+      return;
+    }
+
     unawaited(
       WindowAccessService.instance.guardOpen(
         context: context,
@@ -215,6 +284,20 @@ class _AdminHomeState extends State<AdminHome> {
 
     _HomeCardItem card(String title, String subtitle, Widget child) {
       return _HomeCardItem(title: title, subtitle: subtitle, child: child);
+    }
+
+    _HomeCardItem receptionistCard(
+      String title,
+      String subtitle,
+      String windowKey,
+      Widget child,
+    ) {
+      return _HomeCardItem(
+        title: title,
+        subtitle: subtitle,
+        child: child,
+        windowKey: windowKey,
+      );
     }
 
     final allCards = <_HomeCardItem>[
@@ -603,9 +686,10 @@ class _AdminHomeState extends State<AdminHome> {
     ];
 
     final receptionistCards = <_HomeCardItem>[
-      card(
+      receptionistCard(
         'Learners',
         'Students overview',
+        AppWindowKeys.adminLearners,
         KeyedSubtree(
           key: _learnersCardKey,
           child: _LearnersDashCard(
@@ -619,9 +703,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Classes',
         'Manage classes',
+        AppWindowKeys.adminClasses,
         _ClassesDashCard(
           isReceptionistStyle: true,
           onTap: () => _openAdminWindow(
@@ -632,9 +717,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Payments',
         'Financial records',
+        AppWindowKeys.adminPayments,
         KeyedSubtree(
           key: _paymentsCardKey,
           child: _PaymentsAttentionDashCard(
@@ -648,9 +734,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Schedule',
         'Weekly timetable',
+        AppWindowKeys.adminSchedule,
         _DashCard(
           title: 'Schedule',
           subtitle: 'Weekly timetable',
@@ -666,9 +753,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Reminders',
         'Send reminders',
+        AppWindowKeys.adminReminders,
         _RemindersDashCard(
           isReceptionistStyle: true,
           onTap: () => _openAdminWindow(
@@ -681,9 +769,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Priority Alerts',
         'Popup messages',
+        AppWindowKeys.adminPriorityAlerts,
         _PriorityAlertsDashCard(
           isReceptionistStyle: true,
           onTap: () => _openAdminWindow(
@@ -696,9 +785,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Staff',
         'Teachers & staff',
+        AppWindowKeys.adminStaff,
         _StaffMailDashCard(
           isReceptionistStyle: true,
           onTap: () => _openAdminWindow(
@@ -709,9 +799,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Admin Mail',
         'Central inbox hub',
+        AppWindowKeys.adminMail,
         _AdminMailDashCard(
           isReceptionistStyle: true,
           onTap: () => _openAdminWindow(
@@ -722,9 +813,10 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
       ),
-      card(
+      receptionistCard(
         'Public Gallery',
         'Teaser media',
+        AppWindowKeys.adminPublicGallery,
         _PublicGalleryDashCard(
           isReceptionistStyle: true,
           onTap: () => _openAdminWindow(
@@ -742,12 +834,18 @@ class _AdminHomeState extends State<AdminHome> {
     final q = _homeSearch.trim().toLowerCase();
     final selectedCards = _isAdminMode ? allCards : receptionistCards;
     final visibleCards = selectedCards
-        .where(
-          (c) =>
+        .where((c) {
+          final matchesSearch =
               q.isEmpty ||
               c.title.toLowerCase().contains(q) ||
-              c.subtitle.toLowerCase().contains(q),
-        )
+              c.subtitle.toLowerCase().contains(q);
+          if (!matchesSearch) return false;
+          if (_isAdminMode) return true;
+          if (_loadingReceptionistWindows) return false;
+          final windowKey = c.windowKey;
+          if (windowKey == null || windowKey.isEmpty) return true;
+          return _receptionistWindowEnabled[windowKey] ?? true;
+        })
         .map((c) => c.child)
         .toList();
 
@@ -811,7 +909,9 @@ class _AdminHomeState extends State<AdminHome> {
             Expanded(
               child: KeyedSubtree(
                 key: _cardsGridKey,
-                child: visibleCards.isEmpty
+                child: !_isAdminMode && _loadingReceptionistWindows
+                    ? const Center(child: CircularProgressIndicator())
+                    : visibleCards.isEmpty
                     ? Center(
                         child: Text(
                           'No tools matched "$q"',
@@ -952,6 +1052,19 @@ class _AdminHomeState extends State<AdminHome> {
           },
           onSelectAdmin: () async {
             Navigator.of(context).pop();
+            if (!_isAdminMode) {
+              final unlocked = await _promptForAdminPassword();
+              if (!context.mounted) return;
+              if (unlocked == null) return;
+              if (!unlocked) {
+                AppToast.show(
+                  context,
+                  'Wrong password.',
+                  type: AppToastType.error,
+                );
+                return;
+              }
+            }
             await _setRoleMode(true);
           },
           onSelectReceptionist: () async {
@@ -1088,11 +1201,13 @@ class _HomeCardItem {
     required this.title,
     required this.subtitle,
     required this.child,
+    this.windowKey,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
+  final String? windowKey;
 }
 
 class _AdminTodoHomeCard extends StatelessWidget {

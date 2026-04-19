@@ -161,7 +161,7 @@ class _AdminWindowAccessScreenState extends State<AdminWindowAccessScreen>
           tabs: const [
             Tab(text: 'Learner'),
             Tab(text: 'Teacher'),
-            Tab(text: 'Admin'),
+            Tab(text: 'Receptionist'),
           ],
         ),
       ),

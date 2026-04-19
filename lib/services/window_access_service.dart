@@ -358,7 +358,7 @@ class WindowAccessService {
       labelEn: 'Learners',
       labelAr: 'الطلاب',
       tab: 'Core',
-      canClose: false,
+      canClose: true,
     ),
     AppWindowDefinition(
       role: AppWindowRole.admin,
@@ -366,7 +366,7 @@ class WindowAccessService {
       labelEn: 'Classes',
       labelAr: 'الحصص',
       tab: 'Core',
-      canClose: false,
+      canClose: true,
     ),
     AppWindowDefinition(
       role: AppWindowRole.admin,
@@ -374,7 +374,7 @@ class WindowAccessService {
       labelEn: 'Staff',
       labelAr: 'الكادر',
       tab: 'Core',
-      canClose: false,
+      canClose: true,
     ),
     AppWindowDefinition(
       role: AppWindowRole.admin,
