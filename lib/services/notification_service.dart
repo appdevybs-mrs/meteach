@@ -51,6 +51,11 @@ class NotificationService {
     return raw.hashCode.abs().toString();
   }
 
+  String _attendanceEventId(String classId, DateTime sessionStart) {
+    final raw = 'attendance|$classId|${sessionStart.toIso8601String()}';
+    return raw.hashCode.abs().toString();
+  }
+
   Future<void> init() async {
     if (_inited) return;
 
@@ -381,6 +386,14 @@ class NotificationService {
     await _plugin.cancel(id: id);
   }
 
+  Future<void> cancelAttendanceReminder({
+    required String classId,
+    required DateTime sessionStart,
+  }) async {
+    final id = _makeAttendanceNotifId(classId, sessionStart);
+    await _plugin.cancel(id: id);
+  }
+
   /// Improved: auto-enhance body with time info (does NOT change your method signature).
   Future<void> scheduleSessionReminder({
     required String classId,
@@ -429,6 +442,46 @@ class NotificationService {
         sessionStart: sessionStart,
         scheduledAt: scheduledAt,
       ),
+      payload: payloadJson,
+    );
+  }
+
+  Future<void> scheduleAttendanceReminder({
+    required String classId,
+    required String title,
+    required String body,
+    required DateTime sessionStart,
+    required DateTime remindAt,
+  }) async {
+    var scheduledAt = remindAt;
+    final now = DateTime.now();
+
+    if (scheduledAt.isBefore(now)) {
+      if (sessionStart.isAfter(now.subtract(const Duration(hours: 12)))) {
+        scheduledAt = now.add(const Duration(seconds: 2));
+      } else {
+        return;
+      }
+    }
+
+    final tzTime = tz.TZDateTime.from(scheduledAt, tz.local);
+    final id = _makeAttendanceNotifId(classId, sessionStart);
+    final payloadJson = jsonEncode({
+      'type': 'attendance_due',
+      'eventId': _attendanceEventId(classId, sessionStart),
+      'classId': classId,
+      'sessionStart': sessionStart.toIso8601String(),
+      'title': title,
+      'body': body,
+      'kind': 'attendance_due',
+    });
+
+    await _zonedScheduleWithExactFallback(
+      id: id,
+      title: title,
+      body: body,
+      scheduledDate: tzTime,
+      notificationDetails: _detailsSimpleSession(),
       payload: payloadJson,
     );
   }
@@ -574,6 +627,11 @@ class NotificationService {
 
   int _makeSnoozeNotifId(String classId, DateTime sessionStart, int mins) {
     final raw = 'SNOOZE|$classId|${sessionStart.toIso8601String()}|$mins';
+    return raw.hashCode.abs() % 2147483647;
+  }
+
+  int _makeAttendanceNotifId(String classId, DateTime sessionStart) {
+    final raw = 'ATTENDANCE|$classId|${sessionStart.toIso8601String()}';
     return raw.hashCode.abs() % 2147483647;
   }
 

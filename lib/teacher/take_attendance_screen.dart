@@ -12,12 +12,14 @@ class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
   final String? existingSessionId;
   final Map<String, dynamic>? existingRecord;
+  final DateTime? initialDate;
 
   const TakeAttendanceScreen({
     super.key,
     required this.classData,
     this.existingSessionId,
     this.existingRecord,
+    this.initialDate,
   });
 
   @override
@@ -37,7 +39,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   String? _error;
   Map<String, dynamic>? _loadedEditRecord;
 
-  DateTime _date = DateTime.now();
+  late DateTime _date;
   int _successRate = 80;
 
   // Syllabus flattened sessions for picker
@@ -87,6 +89,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   @override
   void initState() {
     super.initState();
+    _date = widget.initialDate ?? DateTime.now();
     _init();
   }
 
@@ -979,7 +982,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
         'present': presentMap,
         'absent': absentMap,
-        if (homeworkObj != null) 'homework': homeworkObj,
+        'homework': homeworkObj,
       };
 
       final Map<String, dynamic> updates = {

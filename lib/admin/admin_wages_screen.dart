@@ -1553,7 +1553,7 @@ class _TeacherSection extends StatelessWidget {
       });
 
     final subtitle =
-        'Learners: ${learnerKeys.length} • Payments: ${itemsAll.length} • Gross: $grossAll DA • Teacher net: $teacherNetAll DA • School net: $schoolNetAll DA • Confirmed: $confirmedCount';
+        'Learners: ${learnerKeys.length} • Payments: ${itemsAll.length} • Gross: $grossAll DA • Net: $teacherNetAll DA • School: $schoolNetAll DA • Received: $confirmedCount';
 
     return Container(
       decoration: BoxDecoration(
@@ -1918,10 +1918,10 @@ class _PaymentRow extends StatelessWidget {
                     _miniTag('Sessions: $sessionsPaid'),
                     _miniTag('Left: $left'),
                     _miniTag('Amount: $amount DA'),
-                    _miniTag('Teacher %: $percent%'),
+                    _miniTag('Share: $percent%'),
                     _miniTag('Gross: $gross DA'),
-                    _miniTag('Teacher net: $teacherNet DA'),
-                    _miniTag('School net: $schoolNet DA'),
+                    _miniTag('Net: $teacherNet DA'),
+                    _miniTag('School: $schoolNet DA'),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -1930,7 +1930,7 @@ class _PaymentRow extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     _chip(
-                      text: confirmed ? 'CONFIRMED' : 'NOT CONFIRMED',
+                      text: confirmed ? 'RECEIVED' : 'NOT RECEIVED',
                       color: confirmed ? Colors.green : Colors.red,
                     ),
                     if (confirmed && paymentId.isNotEmpty)

@@ -27,6 +27,7 @@ import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail.dart';
 import '../teacher/teacher_mail_thread_screen.dart';
+import '../teacher/take_attendance_screen.dart';
 import 'audit_action_keys.dart';
 import 'audit_log_service.dart';
 import 'mail_thread_by_id_screen.dart'; // safe fallback only
@@ -929,6 +930,61 @@ class FCMService {
     final type = _canonicalType(data['type']);
     final nav = await _waitForNavigator();
     if (nav == null) return;
+
+    if (type == 'attendance_due') {
+      final role = await _fetchCurrentUserRole();
+      if (role != 'teacher') return;
+
+      final classId = (data['classId'] ?? '').toString().trim();
+      final sessionStartRaw = (data['sessionStart'] ?? '').toString().trim();
+      final sessionStart = DateTime.tryParse(sessionStartRaw);
+      if (classId.isEmpty) {
+        nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
+        return;
+      }
+
+      try {
+        Map<String, dynamic>? classData;
+        final directSnap = await FirebaseDatabase.instance
+            .ref('classes/$classId')
+            .get();
+        if (directSnap.exists && directSnap.value is Map) {
+          classData = Map<String, dynamic>.from(directSnap.value as Map);
+        } else {
+          final allSnap = await FirebaseDatabase.instance.ref('classes').get();
+          if (allSnap.exists && allSnap.value is Map) {
+            final classes = Map<dynamic, dynamic>.from(allSnap.value as Map);
+            for (final value in classes.values) {
+              if (value is! Map) continue;
+              final candidate = Map<String, dynamic>.from(value);
+              final candidateId =
+                  (candidate['class_id'] ?? candidate['id'] ?? '')
+                      .toString()
+                      .trim();
+              if (candidateId == classId) {
+                classData = candidate;
+                break;
+              }
+            }
+          }
+        }
+
+        if (classData != null) {
+          nav.push(
+            MaterialPageRoute(
+              builder: (_) => TakeAttendanceScreen(
+                classData: classData!,
+                initialDate: sessionStart,
+              ),
+            ),
+          );
+          return;
+        }
+      } catch (_) {}
+
+      nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
+      return;
+    }
 
     if (type == 'session') {
       final role = await _fetchCurrentUserRole();

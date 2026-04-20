@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'teacher_public_gallery_screen.dart';
 import 'teacher_online_circle_screen.dart';
 import '../shared/app_feedback.dart';
@@ -27,6 +28,8 @@ import 'teacher_shared_files_screen.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
 import 'teacher_my_platform_screen.dart';
+import 'take_attendance_screen.dart';
+import '../services/notification_service.dart';
 import '../services/notification_counter_service.dart';
 import '../services/window_access_service.dart';
 
@@ -40,6 +43,8 @@ class TeacherHomeScreen extends StatefulWidget {
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   static const String usersNode = 'users';
   static const String classesNode = 'classes';
+  static const String _attendanceReminderKeysPref =
+      'teacher_home_attendance_reminder_keys_v1';
   int _lastBackPressMs = 0;
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -59,6 +64,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Future<int>? _upcomingOnlineCountFuture;
   Future<String>? _displayNameFuture;
   Future<List<_HomeUpcomingClass>>? _nextUpcomingClassesFuture;
+  Timer? _attendanceReminderTimer;
+  bool _attendanceReminderCheckInProgress = false;
+  bool _attendanceReminderSyncInProgress = false;
+  bool _attendanceReminderDialogOpen = false;
+  final Set<String> _handledAttendanceReminderKeys = <String>{};
 
   @override
   void initState() {
@@ -83,16 +93,272 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       _displayNameFuture = _myDisplayName();
       _nextUpcomingClassesFuture = _loadNextUpcomingClassesForHome(uid);
+      _startAttendanceReminderWatcher(uid);
     }
   }
 
   @override
   void dispose() {
+    _attendanceReminderTimer?.cancel();
     appThemeController.removeListener(_onThemeChanged);
     super.dispose();
   }
 
   _HomePalette get palette => _toHomePalette(appThemeController.palette);
+
+  void _startAttendanceReminderWatcher(String uid) {
+    _attendanceReminderTimer?.cancel();
+    unawaited(NotificationService.I.init());
+    unawaited(NotificationService.I.requestPermissions());
+    Future<void>.delayed(const Duration(seconds: 2), () async {
+      if (!mounted) return;
+      await _pollAttendanceReminder(uid);
+    });
+    _attendanceReminderTimer = Timer.periodic(const Duration(minutes: 1), (
+      _,
+    ) async {
+      await _pollAttendanceReminder(uid);
+    });
+  }
+
+  Future<void> _pollAttendanceReminder(String uid) async {
+    if (!mounted ||
+        _attendanceReminderCheckInProgress ||
+        _attendanceReminderDialogOpen) {
+      return;
+    }
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+
+    _attendanceReminderCheckInProgress = true;
+    try {
+      await _syncAttendanceReminderNotifications(uid);
+      final pending = await _loadPendingAttendanceReminderForHome(uid);
+      if (!mounted || pending == null) return;
+      if (_handledAttendanceReminderKeys.contains(pending.reminderKey)) return;
+      await _showAttendanceReminderDialog(pending);
+    } finally {
+      _attendanceReminderCheckInProgress = false;
+    }
+  }
+
+  Future<void> _syncAttendanceReminderNotifications(String teacherUid) async {
+    if (_attendanceReminderSyncInProgress) return;
+    _attendanceReminderSyncInProgress = true;
+    try {
+      final identity = await _loadTeacherIdentityForHome(teacherUid);
+      final snap = await _db.child(classesNode).get();
+      final prefs = await SharedPreferences.getInstance();
+      final prevKeys =
+          prefs.getStringList(_attendanceReminderKeysPref) ?? const [];
+
+      if (!snap.exists || snap.value == null || snap.value is! Map) {
+        for (final key in prevKeys) {
+          final parsed = _parseAttendanceReminderKey(key);
+          if (parsed == null) continue;
+          await NotificationService.I.cancelAttendanceReminder(
+            classId: parsed.classId,
+            sessionStart: parsed.start,
+          );
+        }
+        await prefs.setStringList(_attendanceReminderKeysPref, const []);
+        return;
+      }
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      final now = DateTime.now();
+      final candidates = <_HomeUpcomingClass>[];
+
+      for (final entry in raw.entries) {
+        final value = entry.value;
+        if (value is! Map) continue;
+
+        final classMap = Map<String, dynamic>.from(value);
+        if (!_matchesTeacherForHome(
+          classMap,
+          teacherUid: teacherUid,
+          teacherName: identity.name,
+          teacherSerial: identity.serial,
+        )) {
+          continue;
+        }
+
+        for (final occ in _generateOccurrencesForHome(classMap)) {
+          if (occ.isOnline || !occ.end.isAfter(now)) continue;
+          candidates.add(occ);
+        }
+      }
+
+      candidates.sort((a, b) => a.end.compareTo(b.end));
+      final trimmed = candidates.take(30).toList();
+      final nextKeys = <String>{
+        for (final occ in trimmed) _attendanceReminderKey(occ),
+      };
+
+      for (final key in prevKeys) {
+        if (nextKeys.contains(key)) continue;
+        final parsed = _parseAttendanceReminderKey(key);
+        if (parsed == null) continue;
+        await NotificationService.I.cancelAttendanceReminder(
+          classId: parsed.classId,
+          sessionStart: parsed.start,
+        );
+      }
+
+      for (final occ in trimmed) {
+        await NotificationService.I.scheduleAttendanceReminder(
+          classId: occ.classId,
+          title: 'Attendance Needed',
+          body:
+              '${occ.courseCode.isEmpty ? 'Class' : occ.courseCode} just ended. Please take attendance now.',
+          sessionStart: occ.start,
+          remindAt: occ.end,
+        );
+      }
+
+      await prefs.setStringList(_attendanceReminderKeysPref, nextKeys.toList());
+    } catch (_) {
+      // Keep the home screen usable even if reminder sync fails.
+    } finally {
+      _attendanceReminderSyncInProgress = false;
+    }
+  }
+
+  String _attendanceReminderKey(_HomeUpcomingClass occ) {
+    return '${occ.classId}@@${occ.start.toIso8601String()}';
+  }
+
+  ({String classId, DateTime start})? _parseAttendanceReminderKey(String raw) {
+    final i = raw.lastIndexOf('@@');
+    if (i <= 0) return null;
+    final classId = raw.substring(0, i);
+    final dt = DateTime.tryParse(raw.substring(i + 2));
+    if (classId.isEmpty || dt == null) return null;
+    return (classId: classId, start: dt);
+  }
+
+  Future<_HomeAttendanceReminder?> _loadPendingAttendanceReminderForHome(
+    String teacherUid,
+  ) async {
+    try {
+      final identity = await _loadTeacherIdentityForHome(teacherUid);
+      final snap = await _db.child(classesNode).get();
+      if (!snap.exists || snap.value == null || snap.value is! Map) {
+        return null;
+      }
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(hours: 12));
+      final pending = <_HomeAttendanceReminder>[];
+
+      for (final entry in raw.entries) {
+        final value = entry.value;
+        if (value is! Map) continue;
+
+        final classMap = Map<String, dynamic>.from(value);
+        if (!_matchesTeacherForHome(
+          classMap,
+          teacherUid: teacherUid,
+          teacherName: identity.name,
+          teacherSerial: identity.serial,
+        )) {
+          continue;
+        }
+
+        final occurrences = _generateOccurrencesForHome(classMap);
+        for (final occ in occurrences) {
+          if (occ.isOnline) continue;
+          if (occ.end.isAfter(now) || occ.end.isBefore(cutoff)) continue;
+          if (_hasAttendanceForDate(classMap, occ.start)) continue;
+          pending.add(
+            _HomeAttendanceReminder(classData: classMap, occurrence: occ),
+          );
+        }
+      }
+
+      if (pending.isEmpty) return null;
+      pending.sort((a, b) => a.occurrence.end.compareTo(b.occurrence.end));
+      return pending.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _hasAttendanceForDate(Map<String, dynamic> classData, DateTime date) {
+    final attendanceRaw = classData['attendance'];
+    if (attendanceRaw is! Map) return false;
+    final dateKey = DateFormat('yyyy-MM-dd').format(date);
+    final attendanceMap = Map<dynamic, dynamic>.from(attendanceRaw);
+    for (final value in attendanceMap.values) {
+      if (value is! Map) continue;
+      final record = value.map((k, v) => MapEntry(k.toString(), v));
+      final recordDate = (record['date'] ?? '').toString().trim();
+      if (recordDate == dateKey) return true;
+    }
+    return false;
+  }
+
+  Future<void> _showAttendanceReminderDialog(
+    _HomeAttendanceReminder reminder,
+  ) async {
+    if (!mounted) return;
+
+    final p = palette;
+    _attendanceReminderDialogOpen = true;
+    _handledAttendanceReminderKeys.add(reminder.reminderKey);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: p.cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            'Attendance Needed',
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            '${reminder.displayTitle} ended at ${DateFormat('h:mm a').format(reminder.occurrence.end)}. Please take attendance now.',
+            style: TextStyle(color: p.text, fontWeight: FontWeight.w600),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(
+                'Later',
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
+              ),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: p.accent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                if (!mounted) return;
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TakeAttendanceScreen(
+                      classData: reminder.classData,
+                      initialDate: reminder.occurrence.start,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Take Attendance'),
+            ),
+          ],
+        );
+      },
+    );
+
+    _attendanceReminderDialogOpen = false;
+  }
 
   Future<void> _refreshHome() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1440,6 +1706,25 @@ class _HomeTeacherIdentity {
 
   final String name;
   final String serial;
+}
+
+class _HomeAttendanceReminder {
+  const _HomeAttendanceReminder({
+    required this.classData,
+    required this.occurrence,
+  });
+
+  final Map<String, dynamic> classData;
+  final _HomeUpcomingClass occurrence;
+
+  String get reminderKey =>
+      '${occurrence.classId}@@${DateFormat('yyyy-MM-dd').format(occurrence.start)}';
+
+  String get displayTitle {
+    if (occurrence.courseCode.isNotEmpty) return occurrence.courseCode;
+    if (occurrence.courseTitle.isNotEmpty) return occurrence.courseTitle;
+    return 'This class';
+  }
 }
 
 class _TeacherHomeWebRail extends StatelessWidget {

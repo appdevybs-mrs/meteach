@@ -35,6 +35,8 @@ class TeacherSchedule extends StatefulWidget {
 class _TeacherScheduleState extends State<TeacherSchedule> {
   static const String _sessionReminderKeysPref =
       'teacher_schedule_session_reminder_keys_v1';
+  static const String _attendanceReminderKeysPref =
+      'teacher_schedule_attendance_reminder_keys_v1';
   static const List<int> _sessionLeadPresetOptions = <int>[
     5,
     10,
@@ -286,6 +288,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         .toList();
   }
 
+  List<_Occ> _buildAttendanceReminderCandidates(List<_Occ> allOcc) {
+    final now = DateTime.now();
+    return allOcc
+        .where((e) => !e.isOnline)
+        .where((e) => e.end.isAfter(now))
+        .take(30)
+        .toList();
+  }
+
   String _reminderPlanKey(List<_Occ> candidates) {
     final sb = StringBuffer()
       ..write('d:')
@@ -304,6 +315,20 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         ..write(o.notificationClassId)
         ..write('@')
         ..write(o.start.millisecondsSinceEpoch)
+        ..write('|');
+    }
+    return sb.toString();
+  }
+
+  String _attendanceReminderPlanKey(List<_Occ> candidates) {
+    final sb = StringBuffer()..write('attendance;');
+    for (final o in candidates) {
+      sb
+        ..write(o.classId)
+        ..write('@')
+        ..write(o.start.millisecondsSinceEpoch)
+        ..write('@')
+        ..write(o.end.millisecondsSinceEpoch)
         ..write('|');
     }
     return sb.toString();
@@ -442,15 +467,27 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     try {
       final upcoming = _lastUpcoming;
       final reminderCandidates = _buildReminderCandidates(upcoming);
+      final attendanceCandidates = _buildAttendanceReminderCandidates(
+        _lastAllOcc,
+      );
       final planKey = _reminderPlanKey(reminderCandidates);
-      if (planKey == _lastAppliedReminderPlanKey) {
+      final attendancePlanKey = _attendanceReminderPlanKey(
+        attendanceCandidates,
+      );
+      final combinedPlanKey = '$planKey::$attendancePlanKey';
+      if (combinedPlanKey == _lastAppliedReminderPlanKey) {
         return;
       }
 
       final prevKeys =
           _prefs.getStringList(_sessionReminderKeysPref) ?? const [];
+      final prevAttendanceKeys =
+          _prefs.getStringList(_attendanceReminderKeysPref) ?? const [];
       final nextKeys = <String>{
         for (final o in reminderCandidates) _sessionReminderKey(o),
+      };
+      final nextAttendanceKeys = <String>{
+        for (final o in attendanceCandidates) _attendanceReminderKey(o),
       };
 
       if (!_dailyEnabled) {
@@ -497,7 +534,33 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         }
         await _prefs.setStringList(_sessionReminderKeysPref, const []);
       }
-      _lastAppliedReminderPlanKey = planKey;
+
+      for (final key in prevAttendanceKeys) {
+        if (nextAttendanceKeys.contains(key)) continue;
+        final parsed = _parseAttendanceReminderKey(key);
+        if (parsed == null) continue;
+        await NotificationService.I.cancelAttendanceReminder(
+          classId: parsed.classId,
+          sessionStart: parsed.start,
+        );
+      }
+
+      for (final o in attendanceCandidates) {
+        await NotificationService.I.scheduleAttendanceReminder(
+          classId: o.classId,
+          title: 'Attendance Needed',
+          body:
+              '${o.courseCode.isEmpty ? 'Class' : o.courseCode} just ended. Please take attendance now.',
+          sessionStart: o.start,
+          remindAt: o.end,
+        );
+      }
+      await _prefs.setStringList(
+        _attendanceReminderKeysPref,
+        nextAttendanceKeys.toList(),
+      );
+
+      _lastAppliedReminderPlanKey = combinedPlanKey;
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -517,6 +580,20 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   ({String classId, DateTime start})? _parseSessionReminderKey(String raw) {
+    final i = raw.lastIndexOf('@@');
+    if (i <= 0) return null;
+    final classId = raw.substring(0, i);
+    final dtRaw = raw.substring(i + 2);
+    final dt = DateTime.tryParse(dtRaw);
+    if (classId.isEmpty || dt == null) return null;
+    return (classId: classId, start: dt);
+  }
+
+  String _attendanceReminderKey(_Occ o) {
+    return '${o.classId}@@${o.start.toIso8601String()}';
+  }
+
+  ({String classId, DateTime start})? _parseAttendanceReminderKey(String raw) {
     final i = raw.lastIndexOf('@@');
     if (i <= 0) return null;
     final classId = raw.substring(0, i);

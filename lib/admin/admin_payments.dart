@@ -2150,6 +2150,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     String? selectedTeacherUid;
     String? selectedTeacherName;
 
+    bool sendReceipt = true;
     bool isSaving = false;
     bool saveLocked = false;
 
@@ -2595,6 +2596,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         labelText: 'Notes (optional)',
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    CheckboxListTile(
+                      value: sendReceipt,
+                      onChanged: (v) => setD(() => sendReceipt = v ?? true),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Send receipt'),
+                    ),
                   ],
                 ),
               ),
@@ -2770,29 +2779,31 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 'Payment saved, but learner summary refresh failed.';
                           }
 
-                          try {
-                            await _sendPaymentReceiptMail(
-                              learnerUid: pickedUid!,
-                              learnerName: learnerName.isEmpty
-                                  ? 'Learner'
-                                  : learnerName,
-                              courseTitle: courseTitle,
-                              amount: fee,
-                              sessionsPaid: usesSessions ? sessionsPaid : 0,
-                              paidDateYmd: paidDateYmd,
-                              variantKey: pickedVariantKey,
-                              durationMonths:
-                                  _variantIsRecorded(pickedVariantKey)
-                                  ? durationMonths
-                                  : 0,
-                              expiresAt: expiresAt,
-                            );
-                          } catch (mailErr) {
-                            final mailWarning =
-                                'Receipt mail failed (${humanizeUiMessage(mailErr.toString())}).';
-                            postWarning = postWarning.isEmpty
-                                ? 'Payment saved, but $mailWarning'
-                                : '$postWarning $mailWarning';
+                          if (sendReceipt) {
+                            try {
+                              await _sendPaymentReceiptMail(
+                                learnerUid: pickedUid!,
+                                learnerName: learnerName.isEmpty
+                                    ? 'Learner'
+                                    : learnerName,
+                                courseTitle: courseTitle,
+                                amount: fee,
+                                sessionsPaid: usesSessions ? sessionsPaid : 0,
+                                paidDateYmd: paidDateYmd,
+                                variantKey: pickedVariantKey,
+                                durationMonths:
+                                    _variantIsRecorded(pickedVariantKey)
+                                    ? durationMonths
+                                    : 0,
+                                expiresAt: expiresAt,
+                              );
+                            } catch (mailErr) {
+                              final mailWarning =
+                                  'Receipt mail failed (${humanizeUiMessage(mailErr.toString())}).';
+                              postWarning = postWarning.isEmpty
+                                  ? 'Payment saved, but $mailWarning'
+                                  : '$postWarning $mailWarning';
+                            }
                           }
 
                           if (context.mounted) Navigator.pop(context);

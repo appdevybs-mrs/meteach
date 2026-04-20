@@ -502,7 +502,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
       context: context,
       builder: (dialogCtx) {
         return AlertDialog(
-          title: const Text('Waiting (All Teachers)'),
+          title: const Text('Pending (All Teachers)'),
           content: SizedBox(
             width: 760,
             child: rows.isEmpty
@@ -543,7 +543,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                           ),
                         ),
                         subtitle: Text(
-                          'Teacher: $teacher · Date: $date · Method: ${method.toUpperCase()}\nPayment: ${_money(amount)} · Paid($paidPartLabel): ${_money(alloc.payoutAmount)} · Waiting: ${_money(alloc.waitingAmount)}\nID: ${paymentId.isEmpty ? '-' : paymentId}',
+                          'Teacher: $teacher · Date: $date · Method: ${method.toUpperCase()}\nPayment: ${_money(amount)} · ${paidPartLabel == 'DONE' ? 'Received' : 'Ready'}: ${_money(alloc.payoutAmount)} · Pending: ${_money(alloc.waitingAmount)}\nID: ${paymentId.isEmpty ? '-' : paymentId}',
                           style: const TextStyle(
                             color: AdminFinanceScreen.primary,
                             fontWeight: FontWeight.w700,
@@ -570,7 +570,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
       context: context,
       builder: (dialogCtx) {
         return AlertDialog(
-          title: const Text('School Net (Pushed Only)'),
+          title: const Text('School (Pushed Only)'),
           content: SizedBox(
             width: 760,
             child: rows.isEmpty
@@ -623,7 +623,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                           ),
                         ),
                         subtitle: Text(
-                          'Teacher: $teacher · Date: $date · Method: ${method.toUpperCase()}\nGross: ${_money(gross)} · Teacher net: ${_money(teacherNet)} · School net: ${_money(schoolNet)} · %: $percent\nPushed: ${pushedStatus.isEmpty ? '-' : pushedStatus} · Confirmed: $confirmed',
+                          'Teacher: $teacher · Date: $date · Method: ${method.toUpperCase()}\nGross: ${_money(gross)} · Net: ${_money(teacherNet)} · School: ${_money(schoolNet)} · Share: $percent%\nSync: ${pushedStatus.isEmpty ? '-' : pushedStatus} · Received: $confirmed',
                           style: const TextStyle(
                             color: AdminFinanceScreen.primary,
                             fontWeight: FontWeight.w700,
@@ -1225,7 +1225,7 @@ class _TeacherFinanceDetailsScreenState
               content: DropdownButtonFormField<int>(
                 initialValue: selected,
                 decoration: const InputDecoration(
-                  labelText: 'Teacher % (35-100)',
+                  labelText: 'Share % (35-100)',
                 ),
                 items: options
                     .map(
@@ -1511,7 +1511,7 @@ class _TeacherFinanceDetailsScreenState
                             onSelected: (_) => setD(() => status = 'done'),
                           ),
                           ChoiceChip(
-                            label: const Text('TBPAID'),
+                            label: const Text('Ready'),
                             selected: status == 'tbpaid',
                             selectedColor: const Color(0xFFDCE8FF),
                             onSelected: (_) => setD(() => status = 'tbpaid'),
@@ -1537,7 +1537,7 @@ class _TeacherFinanceDetailsScreenState
                         DropdownButtonFormField<String>(
                           initialValue: splitPaidStatus,
                           decoration: const InputDecoration(
-                            labelText: 'Paid part marked as',
+                            labelText: 'Ready part marked as',
                           ),
                           items: const [
                             DropdownMenuItem(
@@ -1546,7 +1546,7 @@ class _TeacherFinanceDetailsScreenState
                             ),
                             DropdownMenuItem(
                               value: 'tbpaid',
-                              child: Text('TBPAID'),
+                              child: Text('Ready'),
                             ),
                           ],
                           onChanged: (v) {
@@ -1559,8 +1559,8 @@ class _TeacherFinanceDetailsScreenState
                           controller: paidCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Part to teacher',
-                            hintText: 'Amount paid / to be paid',
+                            labelText: 'Ready amount',
+                            hintText: 'Amount ready or received',
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -1568,7 +1568,7 @@ class _TeacherFinanceDetailsScreenState
                           controller: waitingCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Part to waiting',
+                            labelText: 'Pending amount',
                             hintText: 'Amount left',
                           ),
                         ),
@@ -2742,7 +2742,7 @@ class _TeacherFinanceDetailsScreenState
                       final missingLabels = <String>[
                         if (statusMissing) 'Status',
                         if (methodMissing) 'Method',
-                        if (teacherMissing) 'Teacher %',
+                        if (teacherMissing) 'Share %',
                         if (needsNoPaymentAction) 'Add old waiting or Done',
                       ];
 
@@ -3125,7 +3125,7 @@ class _TeacherFinanceDetailsScreenState
                                                 ),
                                               ),
                                               child: Text(
-                                                'Teacher %: $percent',
+                                                'Share: $percent%',
                                                 style: const TextStyle(
                                                   color: Color(0xFF3666D8),
                                                   fontWeight: FontWeight.w800,
@@ -3155,7 +3155,7 @@ class _TeacherFinanceDetailsScreenState
                                             ),
                                           ),
                                           child: const Text(
-                                            'Teacher %: N/A',
+                                            'Share: N/A',
                                             style: TextStyle(
                                               color: Color(0xFF8A5A00),
                                               fontWeight: FontWeight.w800,

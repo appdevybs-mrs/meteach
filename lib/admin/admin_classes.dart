@@ -3631,10 +3631,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     } catch (_) {}
 
-    final teacherReviewBySessionNo = <int, int>{};
-    final teacherCommentBySessionNo = <int, String>{};
-    final teacherNoteStampBySessionNo = <int, int>{};
-    final presentRows = <_FlexAttendanceRow>[];
+    final rows = <_FlexAttendanceRow>[];
     try {
       final progressSnap = await _db
           .child(
@@ -3646,7 +3643,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         att.forEach((key, value) {
           if (value is! Map) return;
           final m = Map<String, dynamic>.from(value);
-          if (m['present'] != true) return;
+          final isPresent = m['present'] == true;
 
           final tsRaw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
           int ts = 0;
@@ -3661,19 +3658,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           final sessionNo = _asInt(m['sessionNo']);
           final teacherRating = _asInt(m['teacherRating']);
           final teacherComment = (m['teacherComment'] ?? '').toString().trim();
-          final teacherNoteStamp = _asInt(m['teacherCommentUpdatedAt']) > 0
-              ? _asInt(m['teacherCommentUpdatedAt'])
-              : ts;
-          if (sessionNo > 0) {
-            final prevStamp = teacherNoteStampBySessionNo[sessionNo] ?? 0;
-            if (teacherNoteStamp >= prevStamp) {
-              if (teacherRating >= 1 && teacherRating <= 5) {
-                teacherReviewBySessionNo[sessionNo] = teacherRating;
-              }
-              teacherCommentBySessionNo[sessionNo] = teacherComment;
-              teacherNoteStampBySessionNo[sessionNo] = teacherNoteStamp;
-            }
-          }
           String taughtTitle = '';
           final taughtItems = m['taughtItems'];
           if (taughtItems is List) {
@@ -3692,9 +3676,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             }
           }
 
-          presentRows.add(
+          rows.add(
             _FlexAttendanceRow(
               bookingKey: key.toString(),
+              present: isPresent,
               sessionNo: sessionNo,
               dayKey: (m['dayKey'] ?? '').toString().trim(),
               time: (m['time'] ?? '').toString().trim(),
@@ -3705,16 +3690,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       .trim(),
               lessonTitle: syllabusTitleBySession[sessionNo] ?? taughtTitle,
               taughtTitle: taughtTitle,
-              learnerReviewRating: learnerReviewBySessionNo[sessionNo] ?? 0,
-              teacherReviewRating: teacherReviewBySessionNo[sessionNo] ?? 0,
-              teacherComment: teacherCommentBySessionNo[sessionNo] ?? '',
+              learnerReviewRating: isPresent
+                  ? (learnerReviewBySessionNo[sessionNo] ?? 0)
+                  : 0,
+              teacherReviewRating: teacherRating >= 1 && teacherRating <= 5
+                  ? teacherRating
+                  : 0,
+              teacherComment: teacherComment,
             ),
           );
         });
       }
     } catch (_) {}
 
-    presentRows.sort((a, b) => b.sortTs.compareTo(a.sortTs));
+    rows.sort((a, b) => b.sortTs.compareTo(a.sortTs));
+    final presentRows = rows.where((row) => row.present).toList();
 
     final paymentsForUser = await _loadPaymentsForUidCached(item.uid);
     final matchedPayments =
@@ -3795,7 +3785,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
-    return _FlexCourseDetails(rows: presentRows, paymentBlocks: paymentBlocks);
+    return _FlexCourseDetails(rows: rows, paymentBlocks: paymentBlocks);
   }
 
   Future<_FlexCourseDetails> _flexDetailsFor(_FlexCourseSummary item) {
@@ -5202,6 +5192,10 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                 final teacher = row.teacherName.isEmpty
                     ? 'Teacher'
                     : row.teacherName;
+                final statusLabel = row.present ? 'Present' : 'Absent';
+                final statusColor = row.present
+                    ? const Color(0xFF166534)
+                    : const Color(0xFFB91C1C);
                 final learnerReviewLabel =
                     row.learnerReviewRating >= 1 && row.learnerReviewRating <= 5
                     ? '${row.learnerReviewRating}/5'
@@ -5289,6 +5283,15 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                       ),
                       const SizedBox(height: 2),
                       Text(
+                        'Status: $statusLabel',
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
                         'Learner review: $learnerReviewLabel • Teacher review: $teacherReviewLabel',
                         style: TextStyle(
                           color: Colors.grey.shade800,
@@ -5350,6 +5353,7 @@ class _ClassProg {
 
 class _FlexAttendanceRow {
   final String bookingKey;
+  final bool present;
   final int sessionNo;
   final String dayKey;
   final String time;
@@ -5363,6 +5367,7 @@ class _FlexAttendanceRow {
 
   const _FlexAttendanceRow({
     required this.bookingKey,
+    required this.present,
     required this.sessionNo,
     required this.dayKey,
     required this.time,

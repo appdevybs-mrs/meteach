@@ -199,6 +199,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
   bool _uploadingVideo = false;
   double? _uploadPhotoProgress;
   double? _uploadVideoProgress;
+  int _uploadPhotoBatchTotal = 0;
+  int _uploadPhotoBatchCurrent = 0;
+  int _uploadVideoBatchTotal = 0;
+  int _uploadVideoBatchCurrent = 0;
   String? _error;
   String? _ok;
 
@@ -483,12 +487,14 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         _uploadingPhoto = true;
         _uploadingVideo = false;
         _uploadPhotoProgress = 0;
+        _uploadPhotoBatchCurrent = 0;
+        _uploadPhotoBatchTotal = 0;
         _error = null;
         _ok = null;
       });
 
       final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
+        allowMultiple: true,
         withData: kIsWeb,
         type: FileType.custom,
         allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
@@ -496,21 +502,66 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
       if (result == null || result.files.isEmpty) return;
 
-      final file = result.files.first;
-      final url = await _uploadPlatformFile(
-        file,
-        onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _uploadPhotoProgress = p);
-        },
-      );
+      final files = result.files;
+      var uploadedCount = 0;
+      final failedFiles = <String>[];
 
-      await _saveGalleryItem(type: 'photo', url: url);
+      if (mounted) {
+        setState(() {
+          _uploadPhotoBatchCurrent = 0;
+          _uploadPhotoBatchTotal = files.length;
+        });
+      }
+
+      for (int i = 0; i < files.length; i++) {
+        final file = files[i];
+        if (mounted) {
+          setState(() {
+            _uploadPhotoBatchCurrent = i + 1;
+            _uploadPhotoProgress = 0;
+          });
+        }
+
+        try {
+          final url = await _uploadPlatformFile(
+            file,
+            onProgress: (p) {
+              if (!mounted) return;
+              setState(() => _uploadPhotoProgress = p);
+            },
+          );
+
+          await _saveGalleryItem(type: 'photo', url: url);
+          uploadedCount += 1;
+        } catch (e) {
+          failedFiles.add(file.name);
+          debugPrint('Public gallery photo upload failed for ${file.name}: $e');
+        }
+      }
 
       if (!mounted) return;
       setState(() {
-        _ok = 'Photo uploaded ✅';
+        if (uploadedCount > 0) {
+          final uploadedLabel =
+              '$uploadedCount photo${uploadedCount == 1 ? '' : 's'} uploaded';
+          _ok = failedFiles.isEmpty
+              ? uploadedLabel
+              : '$uploadedLabel. Failed: ${failedFiles.join(', ')}';
+          _error = null;
+        } else {
+          _ok = null;
+          _error = failedFiles.isEmpty
+              ? 'Could not upload photos.'
+              : 'Could not upload photos. Failed: ${failedFiles.join(', ')}';
+        }
       });
+      if (failedFiles.isNotEmpty) {
+        await _showUploadSummaryDialog(
+          mediaLabel: 'Photos',
+          uploadedCount: uploadedCount,
+          failedFiles: failedFiles,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -521,6 +572,8 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       setState(() {
         _uploadingPhoto = false;
         _uploadPhotoProgress = null;
+        _uploadPhotoBatchCurrent = 0;
+        _uploadPhotoBatchTotal = 0;
       });
     }
   }
@@ -533,12 +586,14 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         _uploadingVideo = true;
         _uploadingPhoto = false;
         _uploadVideoProgress = 0;
+        _uploadVideoBatchCurrent = 0;
+        _uploadVideoBatchTotal = 0;
         _error = null;
         _ok = null;
       });
 
       final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
+        allowMultiple: true,
         withData: kIsWeb,
         type: FileType.custom,
         allowedExtensions: const ['mp4', 'mov', 'webm', '3gp', 'ogg'],
@@ -546,21 +601,66 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
       if (result == null || result.files.isEmpty) return;
 
-      final file = result.files.first;
-      final url = await _uploadPlatformFile(
-        file,
-        onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _uploadVideoProgress = p);
-        },
-      );
+      final files = result.files;
+      var uploadedCount = 0;
+      final failedFiles = <String>[];
 
-      await _saveGalleryItem(type: 'video', url: url);
+      if (mounted) {
+        setState(() {
+          _uploadVideoBatchCurrent = 0;
+          _uploadVideoBatchTotal = files.length;
+        });
+      }
+
+      for (int i = 0; i < files.length; i++) {
+        final file = files[i];
+        if (mounted) {
+          setState(() {
+            _uploadVideoBatchCurrent = i + 1;
+            _uploadVideoProgress = 0;
+          });
+        }
+
+        try {
+          final url = await _uploadPlatformFile(
+            file,
+            onProgress: (p) {
+              if (!mounted) return;
+              setState(() => _uploadVideoProgress = p);
+            },
+          );
+
+          await _saveGalleryItem(type: 'video', url: url);
+          uploadedCount += 1;
+        } catch (e) {
+          failedFiles.add(file.name);
+          debugPrint('Public gallery video upload failed for ${file.name}: $e');
+        }
+      }
 
       if (!mounted) return;
       setState(() {
-        _ok = 'Video uploaded ✅';
+        if (uploadedCount > 0) {
+          final uploadedLabel =
+              '$uploadedCount video${uploadedCount == 1 ? '' : 's'} uploaded';
+          _ok = failedFiles.isEmpty
+              ? uploadedLabel
+              : '$uploadedLabel. Failed: ${failedFiles.join(', ')}';
+          _error = null;
+        } else {
+          _ok = null;
+          _error = failedFiles.isEmpty
+              ? 'Could not upload videos.'
+              : 'Could not upload videos. Failed: ${failedFiles.join(', ')}';
+        }
       });
+      if (failedFiles.isNotEmpty) {
+        await _showUploadSummaryDialog(
+          mediaLabel: 'Videos',
+          uploadedCount: uploadedCount,
+          failedFiles: failedFiles,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -571,8 +671,77 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       setState(() {
         _uploadingVideo = false;
         _uploadVideoProgress = null;
+        _uploadVideoBatchCurrent = 0;
+        _uploadVideoBatchTotal = 0;
       });
     }
+  }
+
+  String _photoUploadLabel() {
+    if (!_uploadingPhoto) return 'Upload Photos';
+    final progress = ((_uploadPhotoProgress ?? 0) * 100).toStringAsFixed(0);
+    final batchLabel = _uploadPhotoBatchTotal > 0
+        ? ' $_uploadPhotoBatchCurrent/$_uploadPhotoBatchTotal'
+        : '';
+    return 'Uploading$batchLabel ($progress%)';
+  }
+
+  String _videoUploadLabel() {
+    if (!_uploadingVideo) return 'Upload Videos';
+    final progress = ((_uploadVideoProgress ?? 0) * 100).toStringAsFixed(0);
+    final batchLabel = _uploadVideoBatchTotal > 0
+        ? ' $_uploadVideoBatchCurrent/$_uploadVideoBatchTotal'
+        : '';
+    return 'Uploading$batchLabel ($progress%)';
+  }
+
+  Future<void> _showUploadSummaryDialog({
+    required String mediaLabel,
+    required int uploadedCount,
+    required List<String> failedFiles,
+  }) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$mediaLabel Upload Summary'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  uploadedCount > 0
+                      ? '$uploadedCount uploaded successfully.'
+                      : 'No files were uploaded successfully.',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Failed files (${failedFiles.length}):',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                for (final fileName in failedFiles)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(fileName),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _confirmDelete() async {
@@ -1293,11 +1462,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                             ),
                           )
                         : const Icon(Icons.add_photo_alternate_rounded),
-                    label: Text(
-                      _uploadingPhoto
-                          ? 'Uploading ${((_uploadPhotoProgress ?? 0) * 100).toStringAsFixed(0)}%'
-                          : 'Upload Photo',
-                    ),
+                    label: Text(_photoUploadLabel()),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: actionOrange,
                       foregroundColor: Colors.white,
@@ -1321,11 +1486,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.video_call_rounded),
-                    label: Text(
-                      _uploadingVideo
-                          ? 'Uploading ${((_uploadVideoProgress ?? 0) * 100).toStringAsFixed(0)}%'
-                          : 'Upload Video',
-                    ),
+                    label: Text(_videoUploadLabel()),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: primaryBlue,
                       side: BorderSide(color: uiBorder.withValues(alpha: 0.9)),
