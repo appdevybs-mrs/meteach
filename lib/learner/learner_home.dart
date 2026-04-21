@@ -2335,169 +2335,11 @@ class _CourseProgressItem {
   });
 }
 
-class _LearnerHeroCard extends StatelessWidget {
-  const _LearnerHeroCard({
-    required this.palette,
-    required this.learnerName,
-    required this.profilePhotoUrl,
-    required this.onOpenCourses,
-  });
-
-  final _HomePalette palette;
-  final String learnerName;
-  final String profilePhotoUrl;
-  final VoidCallback onOpenCourses;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.35),
-                width: 2,
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: profilePhotoUrl.isNotEmpty
-                ? Image.network(
-                    profilePhotoUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.person_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  )
-                : const Icon(
-                    Icons.person_rounded,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-          ),
-
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome back',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.80),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  learnerName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 24,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _HeroMiniButton(
-                      label: 'My Courses',
-                      icon: Icons.menu_book_rounded,
-                      onTap: onOpenCourses,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroMiniButton extends StatelessWidget {
-  const _HeroMiniButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: Colors.white, size: 17),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({
-    required this.palette,
-    required this.title,
-    this.actionLabel = '',
-    this.onActionTap,
-  });
+  const _SectionTitle({required this.palette, required this.title});
 
   final _HomePalette palette;
   final String title;
-  final String actionLabel;
-  final VoidCallback? onActionTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2513,17 +2355,6 @@ class _SectionTitle extends StatelessWidget {
             ),
           ),
         ),
-        if (actionLabel.trim().isNotEmpty && onActionTap != null)
-          TextButton(
-            onPressed: onActionTap,
-            child: Text(
-              actionLabel,
-              style: TextStyle(
-                color: palette.accent,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -5299,6 +5130,7 @@ class _LearnerMailHomeCard extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _GalleryHomeCard extends StatelessWidget {
   const _GalleryHomeCard();
 
@@ -5389,6 +5221,7 @@ class _GalleryHomeCard extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _StudyCoachHomeCard extends StatelessWidget {
   const _StudyCoachHomeCard();
 
@@ -5972,14 +5805,12 @@ class _DrawerTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.onTap,
-    this.subtitle = '',
     this.targetKey,
   });
 
   final _HomePalette palette;
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
   final GlobalKey? targetKey;
 
@@ -6026,17 +5857,6 @@ class _DrawerTile extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        if (subtitle.trim().isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            subtitle,
-                            style: TextStyle(
-                              color: palette.text.withValues(alpha: 0.55),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),

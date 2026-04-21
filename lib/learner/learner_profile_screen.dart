@@ -390,55 +390,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     });
   }
 
-  Future<int> _fetchTotalLessonsForCourse({
-    required String courseId,
-    required String variantKey,
-  }) async {
-    if (courseId.trim().isEmpty) return 0;
-
-    try {
-      DatabaseReference syllabusRef = _syllabiRef.child(courseId);
-      if (variantKey.trim().isNotEmpty) {
-        syllabusRef = syllabusRef.child(variantKey.trim().toLowerCase());
-      }
-
-      final snap = await syllabusRef.get();
-      if (!snap.exists || snap.value == null || snap.value is! Map) return 0;
-
-      final data = Map<String, dynamic>.from(snap.value as Map);
-      int total = 0;
-      final modules = data['modules'];
-      if (modules is List) {
-        for (final m in modules) {
-          if (m is! Map) continue;
-          final module = Map<String, dynamic>.from(m);
-          final units = module['units'];
-          if (units is! List) continue;
-          for (final u in units) {
-            if (u is! Map) continue;
-            final unit = Map<String, dynamic>.from(u);
-            final lessons = unit['lessons'];
-            if (lessons is List) total += lessons.length;
-          }
-        }
-      } else {
-        final units = data['units'];
-        if (units is List) {
-          for (final u in units) {
-            if (u is! Map) continue;
-            final unit = Map<String, dynamic>.from(u);
-            final sessions = unit['sessions'];
-            if (sessions is List) total += sessions.length;
-          }
-        }
-      }
-
-      return total;
-    } catch (_) {
-      return 0;
-    }
-  }
-
   Future<Map<int, String>> _loadSessionIdByNumber({
     required String courseId,
     required String variantKey,

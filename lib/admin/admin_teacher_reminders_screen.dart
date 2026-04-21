@@ -39,7 +39,6 @@ class _AdminTeacherRemindersScreenState
 
   DatabaseReference get _allRemindersRef => _db.ref('reminders');
 
-  late final Stream<DatabaseEvent> _usersStream;
   Stream<DatabaseEvent>? _singleTeacherRemindersStream;
   late final Stream<DatabaseEvent> _allRemindersStream;
 
@@ -52,7 +51,6 @@ class _AdminTeacherRemindersScreenState
   @override
   void initState() {
     super.initState();
-    _usersStream = _usersRef.onValue.asBroadcastStream();
     _allRemindersStream = _allRemindersRef.onValue.asBroadcastStream();
 
     if (_isSingleTeacherMode) {
@@ -1384,7 +1382,7 @@ class _MiniPill extends StatelessWidget {
 }
 
 class _AddReminderDialog extends StatefulWidget {
-  const _AddReminderDialog({this.teacher, this.selectedCount});
+  const _AddReminderDialog({this.teacher}) : selectedCount = null;
 
   const _AddReminderDialog.mass({required this.selectedCount})
     : teacher = null,
@@ -1642,15 +1640,10 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
 }
 
 class ReminderUploadClient {
-  ReminderUploadClient({
-    required this.endpoint,
-    required this.appId,
-    http.Client? httpClient,
-  }) : _http = httpClient ?? http.Client();
+  ReminderUploadClient({required this.endpoint, required this.appId});
 
   final String endpoint;
   final String appId;
-  final http.Client _http;
 
   factory ReminderUploadClient.defaultClient() {
     return ReminderUploadClient(

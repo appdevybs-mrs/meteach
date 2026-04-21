@@ -136,7 +136,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   bool _peerIsLearner = false;
   bool _loadedPeerRole = false;
   String? _threadCourseKey;
-  bool _loadedThreadMeta = false;
   String? _threadCourseTitle;
   Map<String, String> _learnerCourseTitles = {};
   bool _loadingLearnerCourses = false;
@@ -440,14 +439,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       setState(() {
         _threadCourseKey = ck;
         _threadCourseTitle = (title != null && title.isNotEmpty) ? title : null;
-        _loadedThreadMeta = true;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _threadCourseKey = null;
         _threadCourseTitle = null;
-        _loadedThreadMeta = true;
       });
     }
   }
@@ -1219,74 +1216,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   Navigator.pop(context);
                   await _deleteMessageForMe(m);
                 },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _openQuickReactions(_MailMsg m) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏'];
-
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'React',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: _navy.withValues(alpha: 0.9),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: emojis.map((e) {
-                  final selected = (m.reactions[e] ?? const <String>{})
-                      .contains(_meUid);
-
-                  return InkWell(
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await _toggleReaction(m, e);
-                    },
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? _orange.withValues(alpha: 0.18)
-                            : Colors.grey.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: selected
-                              ? _orange.withValues(alpha: 0.55)
-                              : Colors.grey.withValues(alpha: 0.18),
-                        ),
-                      ),
-                      child: Text(e, style: const TextStyle(fontSize: 18)),
-                    ),
-                  );
-                }).toList(),
               ),
             ],
           ),
@@ -2497,8 +2426,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       int score = 100;
       String note = '';
       String status = 'pass';
-      bool needsRedo = false;
-
       try {
         final hwSnap = await _db.ref(hwRefPath).get();
         if (hwSnap.exists && hwSnap.value is Map) {
@@ -2512,9 +2439,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           final st = (hw['reviewStatus'] ?? '').toString().trim().toLowerCase();
           if (st == 'pass' || st == 'approved') status = 'pass';
           if (st == 'redo' || st == 'needs_work') status = 'redo';
-
-          final nr = hw['needsRedo'];
-          if (nr is bool) needsRedo = nr;
         }
       } catch (_) {}
 
@@ -2736,7 +2660,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                     borderRadius: BorderRadius.circular(18),
                                     onTap: () => setLocal(() {
                                       status = 'pass';
-                                      needsRedo = false;
                                     }),
                                     child: AnimatedContainer(
                                       duration: const Duration(
@@ -2808,7 +2731,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                     borderRadius: BorderRadius.circular(18),
                                     onTap: () => setLocal(() {
                                       status = 'redo';
-                                      needsRedo = true;
                                     }),
                                     child: AnimatedContainer(
                                       duration: const Duration(

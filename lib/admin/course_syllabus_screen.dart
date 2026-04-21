@@ -1260,85 +1260,6 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
   }
 
-  Future<void> _openBulkRecordedUpload() async {
-    if (!_isRecordedVariant) return;
-    if (_units.isEmpty) {
-      AppToast.show(
-        context,
-        'Add at least one unit/session before bulk upload.',
-        type: AppToastType.info,
-      );
-      return;
-    }
-
-    final hasAnySession = _units.any((u) => u.sessions.isNotEmpty);
-    if (!hasAnySession) {
-      AppToast.show(
-        context,
-        'No sessions found. Add sessions first.',
-        type: AppToastType.info,
-      );
-      return;
-    }
-
-    final courseFolderName = await _loadCourseFolderName();
-    if (!mounted) return;
-
-    final result = await showModalBottomSheet<_BulkUploadResult>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: const Color(0xFFF8FAFC),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) => _RecordedBulkSimpleUploadSheet(
-        units: _units,
-        courseFolderName: courseFolderName,
-        courseTitle: widget.courseTitle,
-        courseId: widget.courseId,
-      ),
-    );
-
-    if (!mounted || result == null || result.updates.isEmpty) return;
-
-    setState(() {
-      final nextUnits = [..._units];
-      for (final u in result.updates) {
-        if (u.unitIndex < 0 || u.unitIndex >= nextUnits.length) continue;
-        final unit = nextUnits[u.unitIndex];
-        if (u.sessionIndex < 0 || u.sessionIndex >= unit.sessions.length) {
-          continue;
-        }
-
-        final sessions = [...unit.sessions];
-        final current = sessions[u.sessionIndex];
-        final currentId = current.id.trim();
-        if (currentId.isNotEmpty) {
-          _bulkTouchedSessionIds.add(currentId);
-        }
-        sessions[u.sessionIndex] = current.copyWith(
-          videoUrl: u.videoUrl ?? current.videoUrl,
-          materialsUrl: u.materialsUrl ?? current.materialsUrl,
-          videoThumbnailUrl: (u.videoUrl != null)
-              ? ''
-              : current.videoThumbnailUrl,
-          serverFolderPath: u.serverFolderPath ?? current.serverFolderPath,
-        );
-        nextUnits[u.unitIndex] = unit.copyWith(sessions: sessions);
-      }
-      _units = nextUnits;
-    });
-
-    AppToast.show(
-      context,
-      'Bulk upload applied to ${result.updates.length} session file(s). Auto-saving...',
-      type: AppToastType.success,
-    );
-
-    await _saveSyllabus();
-  }
-
   // ----------------------------
   // UI
   // ----------------------------
@@ -5264,7 +5185,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
 
     setState(() => _uploading = true);
 
-    bool _isIgnorableDeleteError(Object err) {
+    bool isIgnorableDeleteError(Object err) {
       final m = err.toString().toLowerCase();
       return m.contains('not found') ||
           m.contains('already missing') ||
@@ -5272,7 +5193,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
           m.contains('no such file');
     }
 
-    Future<String> _uploadWithRetry({
+    Future<String> uploadWithRetry({
       required PlatformFile file,
       required String serverPath,
       required int sessionNumber,
@@ -5311,13 +5232,13 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     }) async {
       final key = entry.key;
       final read = isVideo ? _videoOf : _htmlOf;
-      final write = (_BulkAssetSlot s) {
+      void write(_BulkAssetSlot s) {
         if (isVideo) {
           _videoSlots[key] = s;
         } else {
           _htmlSlots[key] = s;
         }
-      };
+      }
 
       final slot = read(key);
       if (slot.action == _BulkAssetAction.keep) return;
@@ -5342,7 +5263,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
           try {
             await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
           } catch (err) {
-            if (_isIgnorableDeleteError(err)) {
+            if (isIgnorableDeleteError(err)) {
               // old file already missing is acceptable in replace/remove flow
             } else {
               if (!mounted) return;
@@ -5398,7 +5319,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
       }
 
       try {
-        final url = await _uploadWithRetry(
+        final url = await uploadWithRetry(
           file: fresh.file!,
           serverPath: serverPath,
           sessionNumber: entry.sessionNumber,

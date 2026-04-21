@@ -49,9 +49,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  // optional classId inference
-  String _classId = '';
-
   // Auth
   String myUid = '';
   bool loading = true;
@@ -851,7 +848,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     await _loadOrCreateProgress(courseId!);
     await _loadStudiedSessions(courseId!);
 
-    _classId = await _inferClassIdForCourse(courseId!);
+    await _inferClassIdForCourse(courseId!);
 
     await _loadReservationsSummary(courseId!);
     await _generateSlots(courseId!);
@@ -4549,6 +4546,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'How booking works',
+            onPressed: _openHowBookingWorks,
+            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+          ),
           const SizedBox.shrink(),
           IconButton(
             tooltip: 'Refresh',

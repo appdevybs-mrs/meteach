@@ -1292,6 +1292,7 @@ class _AdminTodoHomeCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool isReceptionistStyle;
 
+  // ignore: unused_element
   int _toInt(dynamic v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
@@ -2330,12 +2331,6 @@ class _PriorityAlertsDashCard extends StatelessWidget {
 
   final VoidCallback onTap;
   final bool isReceptionistStyle;
-
-  int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v?.toString() ?? '') ?? 0;
-  }
 
   @override
   Widget build(BuildContext context) {

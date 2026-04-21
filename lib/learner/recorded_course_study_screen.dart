@@ -1326,6 +1326,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<Uint8List> _buildCertificatePdfBytes({
     required String learnerName,
     required String courseTitle,

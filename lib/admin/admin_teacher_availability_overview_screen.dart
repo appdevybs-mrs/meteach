@@ -427,17 +427,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
     return t.activeCourses.length > 3 ? '$list …' : list;
   }
 
-  List<String> _allVisibleTimeSlots(List<_TeacherCoverage> sourceTeachers) {
-    final Set<String> slots = {};
-    for (final teacher in sourceTeachers) {
-      for (final dk in dayKeys) {
-        slots.addAll(teacher.mergedWeek[dk] ?? const <String>{});
-      }
-    }
-    final list = slots.toList()..sort();
-    return list;
-  }
-
   void _showCourseTeachersSheet(_CourseMeta course) {
     final list = (coveredByCourse[course.id] ?? <_TeacherCoverage>[])
       ..sort((a, b) => a.teacherName.compareTo(b.teacherName));

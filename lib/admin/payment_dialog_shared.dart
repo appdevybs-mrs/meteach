@@ -551,53 +551,6 @@ class PaymentDialogShared {
     }
   }
 
-  static Future<void> _updateLearnerSummary({
-    required DatabaseReference usersRef,
-    required String uid,
-    required String courseKey,
-    required int addSessionsPaid,
-    required int addAmount,
-    required String lastPaymentId,
-    required String lastMethod,
-    required int lastAmount,
-    required int remindBeforeSession,
-  }) async {
-    final sumRef = usersRef
-        .child(uid)
-        .child('courses')
-        .child(courseKey)
-        .child('payment_summary');
-
-    await sumRef.runTransaction((current) {
-      final cur = current is Map
-          ? current.map((k, v) => MapEntry(k.toString(), v))
-          : <String, dynamic>{};
-
-      final oldTotalPaid = _asInt(cur['totalPaid']);
-      final oldSessionsPaid = _asInt(cur['sessionsPaidTotal']);
-
-      final newTotalPaid = oldTotalPaid + addAmount;
-      final newSessionsPaidTotal = oldSessionsPaid + addSessionsPaid;
-
-      final remind = normalizeReminderForSessions(
-        sessionsPaidTotal: newSessionsPaidTotal,
-        remindBeforeSession: remindBeforeSession,
-      );
-
-      return Transaction.success({
-        ...cur,
-        'totalPaid': newTotalPaid,
-        'sessionsPaidTotal': newSessionsPaidTotal,
-        'remindBeforeSession': remind,
-        'lastPaymentAt': ServerValue.timestamp,
-        'updatedAt': ServerValue.timestamp,
-        'lastPaymentId': lastPaymentId,
-        'lastMethod': lastMethod,
-        'lastAmount': lastAmount,
-      });
-    });
-  }
-
   static Future<void> _rebuildVariantAccessFromPayments({
     required FirebaseDatabase db,
     required String uid,
