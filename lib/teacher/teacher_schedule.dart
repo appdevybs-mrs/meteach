@@ -20,6 +20,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../services/notification_service.dart';
 import '../shared/app_theme.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 import 'attendance_history_screen.dart';
 import 'teacher_classes.dart';
@@ -605,6 +606,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -763,20 +769,62 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                     );
                   }
 
-                  return Column(
+                  final scheduleViews = TabBarView(
                     children: [
-                      Expanded(
-                        child: TabBarView(
+                      _buildGroupedSchedule(
+                        recentAndUpcoming,
+                        allOcc,
+                        visibleClasses,
+                      ),
+                      _buildCalendarView(
+                        allOcc,
+                        recentAndUpcoming,
+                        visibleClasses,
+                      ),
+                    ],
+                  );
+
+                  if (!desktopWorkspace) {
+                    return Column(children: [Expanded(child: scheduleViews)]);
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: scheduleViews),
+                      Container(
+                        width: 1,
+                        color: p.border.withValues(alpha: 0.75),
+                      ),
+                      SizedBox(
+                        width: 320,
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
                           children: [
-                            _buildGroupedSchedule(
-                              recentAndUpcoming,
-                              allOcc,
-                              visibleClasses,
+                            _desktopScheduleSummaryCard(
+                              title: 'Visible classes',
+                              value: '${visibleClasses.length}',
+                              subtitle: 'Classes matched to this teacher view',
                             ),
-                            _buildCalendarView(
-                              allOcc,
-                              recentAndUpcoming,
-                              visibleClasses,
+                            const SizedBox(height: 12),
+                            _desktopScheduleSummaryCard(
+                              title: 'Recent + upcoming',
+                              value: '${recentAndUpcoming.length}',
+                              subtitle:
+                                  'Sessions shown in the active schedule feed',
+                            ),
+                            const SizedBox(height: 12),
+                            _desktopScheduleSummaryCard(
+                              title: 'All sessions',
+                              value: '${allOcc.length}',
+                              subtitle:
+                                  'Includes calendar history and online occurrences',
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: _openSettingsSheet,
+                              icon: const Icon(Icons.settings_rounded),
+                              label: const Text('Schedule settings'),
                             ),
                           ],
                         ),
@@ -881,6 +929,48 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           ],
         );
       },
+    );
+  }
+
+  Widget _desktopScheduleSummaryCard({
+    required String title,
+    required String value,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withValues(alpha: 0.88)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+              color: p.accent,
+              fontWeight: FontWeight.w900,
+              fontSize: 28,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

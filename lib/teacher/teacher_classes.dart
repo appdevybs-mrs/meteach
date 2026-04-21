@@ -26,6 +26,7 @@ import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_learner_profile_screen.dart';
@@ -88,6 +89,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   late TabController _tab;
   late TabController _onlineTab;
+  String? _desktopSelectedClassId;
 
   @override
   void initState() {
@@ -1865,6 +1867,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Widget _buildInClassTab() {
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
+
     if (_busy) {
       return Center(child: CircularProgressIndicator(color: p.accent));
     }
@@ -1885,14 +1892,116 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    if (!desktopWorkspace) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (_myClasses.isEmpty)
+            _emptyState('No classes found for you yet.')
+          else
+            ..._myClasses.map((c) => _classCard(c)),
+        ],
+      );
+    }
+
+    if (_myClasses.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [_emptyState('No classes found for you yet.')],
+      );
+    }
+
+    Map<String, dynamic> selectedClass = _myClasses.first;
+    final selectedId = (_desktopSelectedClassId ?? '').trim();
+    if (selectedId.isNotEmpty) {
+      for (final c in _myClasses) {
+        final cid = _safeStr(c['id'] ?? c['class_id']);
+        if (cid == selectedId) {
+          selectedClass = c;
+          break;
+        }
+      }
+    }
+
+    final activeClassId = _safeStr(
+      selectedClass['id'] ?? selectedClass['class_id'],
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_myClasses.isEmpty)
-          _emptyState('No classes found for you yet.')
-        else
-          ..._myClasses.map((c) => _classCard(c)),
+        SizedBox(
+          width: 380,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: _myClasses.map((c) {
+              final classId = _safeStr(c['id'] ?? c['class_id']);
+              final title = _safeStr(c['course_title']).isEmpty
+                  ? 'Class'
+                  : _safeStr(c['course_title']);
+              return _desktopClassPickerTile(
+                title: title,
+                learnersCount: _learnersCount(c),
+                firstSession: _firstSessionDate(c),
+                selected: classId == activeClassId,
+                onTap: () => setState(() => _desktopSelectedClassId = classId),
+              );
+            }).toList(),
+          ),
+        ),
+        Container(width: 1, color: p.border.withValues(alpha: 0.7)),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [_classCard(selectedClass)],
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _desktopClassPickerTile({
+    required String title,
+    required int learnersCount,
+    required String firstSession,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: selected ? p.soft.withValues(alpha: 0.65) : p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: selected
+              ? p.accent.withValues(alpha: 0.55)
+              : p.border.withValues(alpha: 0.88),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _miniInfoLine(Icons.groups_rounded, 'Learners', '$learnersCount'),
+              const SizedBox(height: 4),
+              _miniInfoLine(Icons.event_rounded, 'First session', firstSession),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2303,6 +2412,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Widget _buildOnlineTab() {
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
+
     if (_onlineBusy) {
       return Center(child: CircularProgressIndicator(color: p.accent));
     }
@@ -2359,6 +2473,21 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     return Column(
       children: [
+        if (desktopWorkspace)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _emptyHint('Live: ${startingOrOngoing.length}'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: _emptyHint('Upcoming: ${upcoming.length}')),
+                const SizedBox(width: 10),
+                Expanded(child: _emptyHint('Past 7 days: ${past.length}')),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Container(

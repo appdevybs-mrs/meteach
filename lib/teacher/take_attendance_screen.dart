@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
 import '../services/audit_action_keys.dart';
@@ -1609,34 +1610,97 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Widget _buildForm() {
     final presentCount = _present.values.where((v) => v).length;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1180,
+    );
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _sectionLabel("LESSON DETAILS"),
-        _buildLessonCard(),
-        const SizedBox(height: 20),
-        _sectionLabel("HOMEWORK"),
-        _buildHomeworkCard(),
-        const SizedBox(height: 20),
-        _sectionLabel("PROGRESS"),
-        _buildSuccessRateCard(),
-        const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _sectionLabel("LEARNERS"),
-            Text(
-              "$presentCount/${_learnerUids.length} Present",
-              style: const TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
+    final summaryChildren = <Widget>[
+      _sectionLabel("LESSON DETAILS"),
+      _buildLessonCard(),
+      const SizedBox(height: 20),
+      _sectionLabel("HOMEWORK"),
+      _buildHomeworkCard(),
+      const SizedBox(height: 20),
+      _sectionLabel("PROGRESS"),
+      _buildSuccessRateCard(),
+      const SizedBox(height: 20),
+    ];
+
+    if (desktopWorkspace) {
+      summaryChildren.add(
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: uiBorder),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Attendance Summary',
+                  style: TextStyle(
+                    color: primaryBlue,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$presentCount/${_learnerUids.length} present',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _saveAttendance,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: actionOrange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      _isEdit ? 'UPDATE SESSION' : 'SAVE ATTENDANCE',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-        ..._learnerUids.map(_buildLearnerTile),
+      );
+    }
+
+    final learnersChildren = <Widget>[
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _sectionLabel("LEARNERS"),
+          Text(
+            "$presentCount/${_learnerUids.length} Present",
+            style: const TextStyle(
+              color: primaryBlue,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+      ..._learnerUids.map(_buildLearnerTile),
+    ];
+
+    if (!desktopWorkspace) {
+      learnersChildren.addAll([
         const SizedBox(height: 30),
         ElevatedButton(
           onPressed: _saveAttendance,
@@ -1657,6 +1721,31 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           ),
         ),
         const SizedBox(height: 40),
+      ]);
+
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [...summaryChildren, ...learnersChildren],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 420,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: summaryChildren,
+          ),
+        ),
+        Container(width: 1, color: uiBorder),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: learnersChildren,
+          ),
+        ),
       ],
     );
   }
