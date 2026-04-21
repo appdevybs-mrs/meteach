@@ -24,6 +24,8 @@ import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/offline_action_guard.dart';
+import '../shared/offline_notice_banner.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/course_join_rules.dart';
@@ -230,12 +232,14 @@ class _LearnerHomeState extends State<LearnerHome> {
 
   void _openLearnerWindow(String windowKey, VoidCallback onAllowed) {
     unawaited(
-      WindowAccessService.instance.guardOpen(
-        context: context,
-        role: AppWindowRole.learner,
-        windowKey: windowKey,
-        onAllowed: onAllowed,
-      ),
+      OfflineActionGuard.run(context, () {
+        return WindowAccessService.instance.guardOpen(
+          context: context,
+          role: AppWindowRole.learner,
+          windowKey: windowKey,
+          onAllowed: onAllowed,
+        );
+      }),
     );
   }
 
@@ -310,6 +314,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   Future<void> _refreshShell() async {
+    if (!OfflineActionGuard.ensureOnline(context)) return;
     setState(() {
       _displayNameFuture = _myDisplayName();
       _profilePhotoFuture = _myProfilePhoto();
@@ -575,16 +580,23 @@ class _LearnerHomeState extends State<LearnerHome> {
                 ),
               if (webDesktop) const SizedBox(width: 14),
               Expanded(
-                child: RefreshIndicator(
-                  onRefresh: _refreshShell,
-                  child: WatermarkBackground(
-                    child: _LearnerDashboardLite(
-                      key: ValueKey('learner_dash_$_shellRefreshEpoch'),
-                      homeworkCardKey: _dashboardHomeworkCardKey,
-                      bookingCardKey: _dashboardBookingCardKey,
-                      coursesListKey: _dashboardCoursesListKey,
+                child: Column(
+                  children: [
+                    const OfflineNoticeBanner(),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _refreshShell,
+                        child: WatermarkBackground(
+                          child: _LearnerDashboardLite(
+                            key: ValueKey('learner_dash_$_shellRefreshEpoch'),
+                            homeworkCardKey: _dashboardHomeworkCardKey,
+                            bookingCardKey: _dashboardBookingCardKey,
+                            coursesListKey: _dashboardCoursesListKey,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
               if (webDesktop) const SizedBox(width: 14),

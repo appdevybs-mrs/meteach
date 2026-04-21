@@ -27,6 +27,8 @@ import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/offline_action_guard.dart';
+import '../shared/offline_notice_banner.dart';
 import '../shared/app_theme.dart';
 import '../shared/payment_status.dart';
 import '../shared/admin_web_layout.dart';
@@ -158,6 +160,7 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<void> _refreshHome() async {
+    if (!OfflineActionGuard.ensureOnline(context)) return;
     await _loadReceptionistWindowAccess();
     if (!mounted) return;
     setState(() {});
@@ -218,6 +221,8 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   void _openAdminWindow(String windowKey, VoidCallback onAllowed) {
+    if (!OfflineActionGuard.ensureOnline(context)) return;
+
     if (_isAdminMode) {
       onAllowed();
       return;
@@ -680,9 +685,17 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.toggle_on_rounded,
           color: AdminHome.accentSlate,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminWindowAccessScreen()),
-          ),
+          onTap: () {
+            unawaited(
+              OfflineActionGuard.run(context, () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AdminWindowAccessScreen(),
+                  ),
+                );
+              }),
+            );
+          },
         ),
       ),
       card(
@@ -864,6 +877,7 @@ class _AdminHomeState extends State<AdminHome> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const OfflineNoticeBanner(),
             AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               height: _showSearch ? 56 : 0,
@@ -906,11 +920,17 @@ class _AdminHomeState extends State<AdminHome> {
             ),
             _AdminTodoHomeCard(
               isReceptionistStyle: !_isAdminMode,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AdminAdminTodosScreen(),
-                ),
-              ),
+              onTap: () {
+                unawaited(
+                  OfflineActionGuard.run(context, () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const AdminAdminTodosScreen(),
+                      ),
+                    );
+                  }),
+                );
+              },
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -1053,8 +1073,12 @@ class _AdminHomeState extends State<AdminHome> {
           loadingRole: _loadingRole,
           onOpenMain: () {
             Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
+            unawaited(
+              OfflineActionGuard.run(context, () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
+                );
+              }),
             );
           },
           onSelectAdmin: _handleSelectAdmin,

@@ -31,6 +31,16 @@ class TeacherWagesScreen extends StatefulWidget {
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
+  static String financePeriodLabel({
+    required String startDate,
+    required String endDate,
+  }) {
+    final start = startDate.trim();
+    final end = endDate.trim();
+    if (start.isEmpty) return 'No finance cycle';
+    return end.isEmpty ? 'From $start To ...' : 'From $start To $end';
+  }
+
   @override
   State<TeacherWagesScreen> createState() => _TeacherWagesScreenState();
 }
@@ -56,6 +66,9 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
   AppPalette get p => appThemeController.palette;
 
   String _money(int amount) => '$amount DA';
+
+  final DatabaseReference _financePayoutPeriodsRef = FirebaseDatabase.instance
+      .ref('finance_payout_periods');
 
   static String _courseIdFromPayment(Map<String, dynamic> payment) {
     return (payment['course_id'] ?? payment['courseId'] ?? '')
@@ -340,14 +353,12 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
         context: context,
         maxWidth: 1540,
         child: StreamBuilder<DatabaseEvent>(
-          stream: myUid.isEmpty
-              ? const Stream<DatabaseEvent>.empty()
-              : FirebaseDatabase.instance.ref('payments').onValue,
-          builder: (context, snap) {
-            if (snap.hasError) {
+          stream: _financePayoutPeriodsRef.onValue,
+          builder: (context, periodsSnap) {
+            if (periodsSnap.hasError) {
               return Center(
                 child: Text(
-                  'Could not load wages.',
+                  'Could not load finance cycle.',
                   style: TextStyle(
                     color: p.primary,
                     fontWeight: FontWeight.w800,
@@ -356,19 +367,46 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
               );
             }
 
-            if (!snap.hasData) {
-              return Center(child: CircularProgressIndicator(color: p.accent));
+            final periodsRaw = periodsSnap.data?.snapshot.value;
+            final periods = <_TeacherFinancePayoutPeriod>[];
+            if (periodsRaw is Map) {
+              periodsRaw.forEach((k, v) {
+                if (v is! Map) return;
+                final map = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+                periods.add(
+                  _TeacherFinancePayoutPeriod.fromMap(
+                    id: k.toString(),
+                    map: map.cast<String, dynamic>(),
+                  ),
+                );
+              });
             }
+            periods.sort((a, b) => b.startAtMs.compareTo(a.startAtMs));
+            _TeacherFinancePayoutPeriod? activePeriod;
+            for (final period in periods) {
+              if (period.isActive) {
+                activePeriod = period;
+                break;
+              }
+            }
+
+            if (activePeriod == null) {
+              return _EmptyWagesState(
+                palette: p,
+                text: 'No active finance cycle yet.',
+              );
+            }
+            final currentFinancePeriod = activePeriod;
 
             return StreamBuilder<DatabaseEvent>(
               stream: myUid.isEmpty
                   ? const Stream<DatabaseEvent>.empty()
-                  : FirebaseDatabase.instance.ref('classes').onValue,
-              builder: (context, classesSnap) {
-                if (classesSnap.hasError) {
+                  : FirebaseDatabase.instance.ref('payments').onValue,
+              builder: (context, snap) {
+                if (snap.hasError) {
                   return Center(
                     child: Text(
-                      'Could not load classes.',
+                      'Could not load wages.',
                       style: TextStyle(
                         color: p.primary,
                         fontWeight: FontWeight.w800,
@@ -377,202 +415,243 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
                   );
                 }
 
-                if (!classesSnap.hasData) {
+                if (!snap.hasData) {
                   return Center(
                     child: CircularProgressIndicator(color: p.accent),
                   );
                 }
 
-                final raw = snap.data?.snapshot.value;
-                if (raw is! Map) {
-                  return _EmptyWagesState(
-                    palette: p,
-                    text: 'No pushed wage items found.',
-                  );
-                }
-
-                final classesRaw = classesSnap.data?.snapshot.value;
-                final classMetaByCourse = _classMetaByCourse(classesRaw);
-                final attendanceCounts = _attendanceCountsByLearnerCourse(
-                  raw: classesRaw,
-                  teacherId: myUid,
-                );
-
-                final grouped = <String, _TeacherWageRowAccumulator>{};
-                raw.forEach((k, v) {
-                  if (k == null || v == null || v is! Map) return;
-                  final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-                  final payment = m.cast<String, dynamic>();
-                  payment['paymentId'] = k.toString();
-                  final allocations = financeAllocationsFromPayment(payment);
-                  for (final allocation in allocations) {
-                    if (allocation.teacherId.trim() != myUid) continue;
-                    if (allocation.pushedAt <= 0) continue;
-
-                    final learnerName = financeLearnerNameFrom(payment);
-                    final learnerUid = _learnerUidFromPayment(payment);
-                    final courseId = _courseIdFromPayment(payment);
-                    final groupingKey = learnerUid.isNotEmpty
-                        ? '$learnerUid|$courseId'
-                        : '${learnerName.toLowerCase()}|$courseId';
-                    final deliveryLabel = _deliveryLabelFromPayment(
-                      payment,
-                      fallback: classMetaByCourse[courseId],
-                    );
-                    final acc = grouped.putIfAbsent(
-                      groupingKey,
-                      () => _TeacherWageRowAccumulator(
-                        learnerName: learnerName.isEmpty
-                            ? '(No name)'
-                            : learnerName,
-                        learnerSerial: (payment['learner_serial'] ?? '')
-                            .toString()
-                            .trim(),
-                        learnerUid: learnerUid,
-                        courseId: courseId,
-                        deliveryLabel: deliveryLabel,
-                      ),
-                    );
-
-                    acc.paidAtMs =
-                        TeacherWagesScreen.asInt(payment['paidAt']) >
-                            acc.paidAtMs
-                        ? TeacherWagesScreen.asInt(payment['paidAt'])
-                        : acc.paidAtMs;
-                    if (acc.learnerSerial.isEmpty) {
-                      acc.learnerSerial = (payment['learner_serial'] ?? '')
-                          .toString()
-                          .trim();
-                    }
-                    if (acc.deliveryLabel.isEmpty) {
-                      acc.deliveryLabel = deliveryLabel;
-                    }
-                    acc.netTotal += allocation.teacherNet;
-                    acc.readyGross += allocation.payoutStatus == 'tbpaid'
-                        ? allocation.grossShare
-                        : 0;
-                    acc.pendingGross += allocation.payoutStatus == 'waiting'
-                        ? allocation.grossShare
-                        : 0;
-                    acc.receivedGross += allocation.payoutStatus == 'done'
-                        ? allocation.grossShare
-                        : 0;
-                    acc.assignedSessions += allocation.assignedSessions ?? 0;
-                    acc.allocationCount += 1;
-                    acc.teacherPercentLabels.add(
-                      '${allocation.teacherPercent}%',
-                    );
-                    if (allocation.payoutStatus == 'tbpaid') {
-                      acc.readyPaymentIds.add(
-                        allocation.isLegacy
-                            ? allocation.paymentId
-                            : '${allocation.paymentId}|${allocation.allocationId}',
+                return StreamBuilder<DatabaseEvent>(
+                  stream: myUid.isEmpty
+                      ? const Stream<DatabaseEvent>.empty()
+                      : FirebaseDatabase.instance.ref('classes').onValue,
+                  builder: (context, classesSnap) {
+                    if (classesSnap.hasError) {
+                      return Center(
+                        child: Text(
+                          'Could not load classes.',
+                          style: TextStyle(
+                            color: p.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       );
                     }
-                  }
-                });
 
-                final rows = grouped.values.map((acc) {
-                  final sess =
-                      (acc.learnerUid.isNotEmpty && acc.courseId.isNotEmpty)
-                      ? (attendanceCounts[_sessionKey(
-                              uid: acc.learnerUid,
-                              courseId: acc.courseId,
-                            )] ??
-                            const _SessionCounts())
-                      : const _SessionCounts();
-                  final absentCount = sess.held - sess.present;
-                  return _TeacherWageRowData(
-                    learnerName: acc.learnerName,
-                    learnerSerial: acc.learnerSerial,
-                    paidAtMs: acc.paidAtMs,
-                    percentLabel: acc.teacherPercentLabels.length == 1
-                        ? acc.teacherPercentLabels.first
-                        : 'Mixed',
-                    deliveryLabel: acc.deliveryLabel.isEmpty
-                        ? 'Class'
-                        : acc.deliveryLabel,
-                    assignedSessions: acc.assignedSessions,
-                    sessionTotal: sess.held,
-                    presentCount: sess.present,
-                    absentCount: absentCount < 0 ? 0 : absentCount,
-                    netTotal: acc.netTotal,
-                    statusLabel: _statusLabelFromParts(
-                      readyGross: acc.readyGross,
-                      pendingGross: acc.pendingGross,
-                      receivedGross: acc.receivedGross,
-                    ),
-                    readyPaymentIds: List<String>.from(acc.readyPaymentIds),
-                  );
-                }).toList();
+                    if (!classesSnap.hasData) {
+                      return Center(
+                        child: CircularProgressIndicator(color: p.accent),
+                      );
+                    }
 
-                if (rows.isEmpty) {
-                  return _EmptyWagesState(
-                    palette: p,
-                    text: 'No pushed items right now.',
-                  );
-                }
+                    final raw = snap.data?.snapshot.value;
+                    if (raw is! Map) {
+                      return _EmptyWagesState(
+                        palette: p,
+                        text: 'No pushed wage items found.',
+                      );
+                    }
 
-                rows.sort((a, b) => b.paidAtMs.compareTo(a.paidAtMs));
-                var netTotal = 0;
-                var readyCount = 0;
-                var pendingCount = 0;
-                var receivedCount = 0;
-                for (final row in rows) {
-                  netTotal += row.netTotal;
-                  if (row.statusLabel == 'Ready') {
-                    readyCount += 1;
-                  } else if (row.statusLabel == 'Received') {
-                    receivedCount += 1;
-                  } else {
-                    pendingCount += 1;
-                  }
-                }
+                    final classesRaw = classesSnap.data?.snapshot.value;
+                    final classMetaByCourse = _classMetaByCourse(classesRaw);
+                    final attendanceCounts = _attendanceCountsByLearnerCourse(
+                      raw: classesRaw,
+                      teacherId: myUid,
+                    );
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    final grouped = <String, _TeacherWageRowAccumulator>{};
+                    raw.forEach((k, v) {
+                      if (k == null || v == null || v is! Map) return;
+                      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+                      final payment = m.cast<String, dynamic>();
+                      payment['paymentId'] = k.toString();
+                      if ((payment['financePeriodId'] ?? '')
+                              .toString()
+                              .trim() !=
+                          currentFinancePeriod.id) {
+                        return;
+                      }
+                      final allocations = financeAllocationsFromPayment(
+                        payment,
+                      );
+                      for (final allocation in allocations) {
+                        if (allocation.teacherId.trim() != myUid) continue;
+                        if (allocation.pushedAt <= 0) continue;
+
+                        final learnerName = financeLearnerNameFrom(payment);
+                        final learnerUid = _learnerUidFromPayment(payment);
+                        final courseId = _courseIdFromPayment(payment);
+                        final groupingKey = learnerUid.isNotEmpty
+                            ? '$learnerUid|$courseId'
+                            : '${learnerName.toLowerCase()}|$courseId';
+                        final deliveryLabel = _deliveryLabelFromPayment(
+                          payment,
+                          fallback: classMetaByCourse[courseId],
+                        );
+                        final acc = grouped.putIfAbsent(
+                          groupingKey,
+                          () => _TeacherWageRowAccumulator(
+                            learnerName: learnerName.isEmpty
+                                ? '(No name)'
+                                : learnerName,
+                            learnerSerial: (payment['learner_serial'] ?? '')
+                                .toString()
+                                .trim(),
+                            learnerUid: learnerUid,
+                            courseId: courseId,
+                            deliveryLabel: deliveryLabel,
+                          ),
+                        );
+
+                        acc.paidAtMs =
+                            TeacherWagesScreen.asInt(payment['paidAt']) >
+                                acc.paidAtMs
+                            ? TeacherWagesScreen.asInt(payment['paidAt'])
+                            : acc.paidAtMs;
+                        if (acc.learnerSerial.isEmpty) {
+                          acc.learnerSerial = (payment['learner_serial'] ?? '')
+                              .toString()
+                              .trim();
+                        }
+                        if (acc.deliveryLabel.isEmpty) {
+                          acc.deliveryLabel = deliveryLabel;
+                        }
+                        acc.netTotal += allocation.teacherNet;
+                        acc.readyGross += allocation.payoutStatus == 'tbpaid'
+                            ? allocation.grossShare
+                            : 0;
+                        acc.pendingGross += allocation.payoutStatus == 'waiting'
+                            ? allocation.grossShare
+                            : 0;
+                        acc.receivedGross += allocation.payoutStatus == 'done'
+                            ? allocation.grossShare
+                            : 0;
+                        acc.assignedSessions +=
+                            allocation.assignedSessions ?? 0;
+                        acc.allocationCount += 1;
+                        acc.teacherPercentLabels.add(
+                          '${allocation.teacherPercent}%',
+                        );
+                        if (allocation.payoutStatus == 'tbpaid') {
+                          acc.readyPaymentIds.add(
+                            allocation.isLegacy
+                                ? allocation.paymentId
+                                : '${allocation.paymentId}|${allocation.allocationId}',
+                          );
+                        }
+                      }
+                    });
+
+                    final rows = grouped.values.map((acc) {
+                      final sess =
+                          (acc.learnerUid.isNotEmpty && acc.courseId.isNotEmpty)
+                          ? (attendanceCounts[_sessionKey(
+                                  uid: acc.learnerUid,
+                                  courseId: acc.courseId,
+                                )] ??
+                                const _SessionCounts())
+                          : const _SessionCounts();
+                      final absentCount = sess.held - sess.present;
+                      return _TeacherWageRowData(
+                        learnerName: acc.learnerName,
+                        learnerSerial: acc.learnerSerial,
+                        paidAtMs: acc.paidAtMs,
+                        percentLabel: acc.teacherPercentLabels.length == 1
+                            ? acc.teacherPercentLabels.first
+                            : 'Mixed',
+                        deliveryLabel: acc.deliveryLabel.isEmpty
+                            ? 'Class'
+                            : acc.deliveryLabel,
+                        assignedSessions: acc.assignedSessions,
+                        sessionTotal: sess.held,
+                        presentCount: sess.present,
+                        absentCount: absentCount < 0 ? 0 : absentCount,
+                        netTotal: acc.netTotal,
+                        statusLabel: _statusLabelFromParts(
+                          readyGross: acc.readyGross,
+                          pendingGross: acc.pendingGross,
+                          receivedGross: acc.receivedGross,
+                        ),
+                        readyPaymentIds: List<String>.from(acc.readyPaymentIds),
+                      );
+                    }).toList();
+
+                    if (rows.isEmpty) {
+                      return _EmptyWagesState(
+                        palette: p,
+                        text: 'No pushed items right now.',
+                      );
+                    }
+
+                    rows.sort((a, b) => b.paidAtMs.compareTo(a.paidAtMs));
+                    var netTotal = 0;
+                    var readyCount = 0;
+                    var pendingCount = 0;
+                    var receivedCount = 0;
+                    for (final row in rows) {
+                      netTotal += row.netTotal;
+                      if (row.statusLabel == 'Ready') {
+                        readyCount += 1;
+                      } else if (row.statusLabel == 'Received') {
+                        receivedCount += 1;
+                      } else {
+                        pendingCount += 1;
+                      }
+                    }
+
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                       children: [
-                        _WageChip(
-                          label: 'Net total',
-                          value: _money(netTotal),
-                          color: const Color(0xFF22945A),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _WageChip(
+                              label: 'Cycle',
+                              value: currentFinancePeriod.displayLabel,
+                              color: const Color(0xFF1A2B48),
+                            ),
+                            _WageChip(
+                              label: 'Net total',
+                              value: _money(netTotal),
+                              color: const Color(0xFF22945A),
+                            ),
+                            _WageChip(
+                              label: 'Ready',
+                              value: '$readyCount',
+                              color: const Color(0xFF3666D8),
+                            ),
+                            _WageChip(
+                              label: 'Pending',
+                              value: '$pendingCount',
+                              color: const Color(0xFFF0A526),
+                            ),
+                            _WageChip(
+                              label: 'Received',
+                              value: '$receivedCount',
+                              color: const Color(0xFF22945A),
+                            ),
+                          ],
                         ),
-                        _WageChip(
-                          label: 'Ready',
-                          value: '$readyCount',
-                          color: const Color(0xFF3666D8),
-                        ),
-                        _WageChip(
-                          label: 'Pending',
-                          value: '$pendingCount',
-                          color: const Color(0xFFF0A526),
-                        ),
-                        _WageChip(
-                          label: 'Received',
-                          value: '$receivedCount',
-                          color: const Color(0xFF22945A),
-                        ),
+                        const SizedBox(height: 12),
+                        ...rows.map((row) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _TeacherWageRow(
+                              palette: p,
+                              row: row,
+                              onConfirm: row.readyPaymentIds.isNotEmpty
+                                  ? () => _confirmReceived(
+                                      context: context,
+                                      row: row,
+                                    )
+                                  : null,
+                            ),
+                          );
+                        }),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                    ...rows.map((row) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _TeacherWageRow(
-                          palette: p,
-                          row: row,
-                          onConfirm: row.readyPaymentIds.isNotEmpty
-                              ? () =>
-                                    _confirmReceived(context: context, row: row)
-                              : null,
-                        ),
-                      );
-                    }),
-                  ],
+                    );
+                  },
                 );
               },
             );
@@ -581,6 +660,43 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       ),
     );
   }
+}
+
+class _TeacherFinancePayoutPeriod {
+  const _TeacherFinancePayoutPeriod({
+    required this.id,
+    required this.startDate,
+    required this.startAtMs,
+    required this.endDate,
+    required this.endAtMs,
+    required this.isActive,
+  });
+
+  final String id;
+  final String startDate;
+  final int startAtMs;
+  final String endDate;
+  final int endAtMs;
+  final bool isActive;
+
+  factory _TeacherFinancePayoutPeriod.fromMap({
+    required String id,
+    required Map<String, dynamic> map,
+  }) {
+    return _TeacherFinancePayoutPeriod(
+      id: id,
+      startDate: (map['startDate'] ?? '').toString().trim(),
+      startAtMs: TeacherWagesScreen.asInt(map['startAtMs']),
+      endDate: (map['endDate'] ?? '').toString().trim(),
+      endAtMs: TeacherWagesScreen.asInt(map['endAtMs']),
+      isActive: map['isActive'] == true,
+    );
+  }
+
+  String get displayLabel => TeacherWagesScreen.financePeriodLabel(
+    startDate: startDate,
+    endDate: endDate,
+  );
 }
 
 class _TeacherWageRowData {

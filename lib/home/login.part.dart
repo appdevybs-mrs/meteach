@@ -263,6 +263,69 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     }
   }
 
+  void _registerFailedAttempt() {
+    failedAttempts += 1;
+    showCaptcha = true;
+    _refreshCaptcha();
+
+    if (failedAttempts >= 3) {
+      _startCooldown(seconds: 20);
+    }
+  }
+
+  bool _isNetworkLoginError(Object error) {
+    if (error is TimeoutException) return true;
+
+    final lower = error.toString().toLowerCase();
+    if (error is FirebaseAuthException) {
+      final code = error.code.toLowerCase();
+      if (code.contains('network') || code.contains('unavailable')) {
+        return true;
+      }
+    }
+
+    return lower.contains('socketexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('no address associated with hostname') ||
+        lower.contains('connection refused') ||
+        lower.contains('connection reset') ||
+        lower.contains('broken pipe') ||
+        lower.contains('connection aborted') ||
+        lower.contains('software caused connection abort') ||
+        lower.contains('timeout') ||
+        lower.contains('timed out');
+  }
+
+  String _friendlyNetworkLoginMsg(Object error) {
+    if (error is TimeoutException) {
+      return 'Sign-in is taking too long. Please check your connection and try again.';
+    }
+
+    final lower = error.toString().toLowerCase();
+    if (lower.contains('connection reset') ||
+        lower.contains('broken pipe') ||
+        lower.contains('connection aborted') ||
+        lower.contains('software caused connection abort')) {
+      return 'Connection was interrupted while signing in. Please try again.';
+    }
+
+    if (lower.contains('timeout') || lower.contains('timed out')) {
+      return 'Sign-in is taking too long. Please check your connection and try again.';
+    }
+
+    return 'No internet connection. Check your internet and try again.';
+  }
+
+  void _showNetworkLoginError(String message) {
+    if (!mounted) return;
+    AppToast.show(context, message, type: AppToastType.error);
+    setState(() {
+      loading = false;
+      error = message;
+    });
+  }
+
   bool _validateInputs({required bool enforceCaptcha}) {
     final email = emailCtrl.text.trim().toLowerCase();
     final pass = passCtrl.text;
@@ -299,10 +362,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     });
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: pass,
-      );
+      await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: pass)
+          .timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
 
@@ -317,28 +379,28 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       );
 
       Navigator.of(context).pop();
+    } on TimeoutException catch (e) {
+      _showNetworkLoginError(_friendlyNetworkLoginMsg(e));
     } on FirebaseAuthException catch (e) {
-      failedAttempts += 1;
-      showCaptcha = true;
-      _refreshCaptcha();
-
-      if (failedAttempts >= 3) {
-        _startCooldown(seconds: 20);
+      if (_isNetworkLoginError(e)) {
+        _showNetworkLoginError(_friendlyNetworkLoginMsg(e));
+        return;
       }
+
+      _registerFailedAttempt();
 
       if (!mounted) return;
       setState(() {
         loading = false;
         error = _friendlyAuthMsg(e);
       });
-    } catch (_) {
-      failedAttempts += 1;
-      showCaptcha = true;
-      _refreshCaptcha();
-
-      if (failedAttempts >= 3) {
-        _startCooldown(seconds: 20);
+    } catch (e) {
+      if (_isNetworkLoginError(e)) {
+        _showNetworkLoginError(_friendlyNetworkLoginMsg(e));
+        return;
       }
+
+      _registerFailedAttempt();
 
       if (!mounted) return;
       setState(() {

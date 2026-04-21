@@ -37,6 +37,8 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   final DatabaseReference _financeDoneRef = FirebaseDatabase.instance.ref(
     'finance_done_marks',
   );
+  final DatabaseReference _financePayoutPeriodsRef = FirebaseDatabase.instance
+      .ref('finance_payout_periods');
 
   bool _unlocked = false;
   bool _loadingFilter = true;
@@ -62,6 +64,42 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     final cleaned = raw.replaceAll(RegExp(r'[^0-9-]'), '');
     if (cleaned.isEmpty || cleaned == '-') return 0;
     return int.tryParse(cleaned) ?? 0;
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  static String _ymd(DateTime d) {
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}';
+  }
+
+  static String _todayYmd() => _ymd(DateTime.now());
+
+  static int _ymdToMs(String ymd) {
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(ymd.trim());
+    if (m == null) return 0;
+    final year = int.tryParse(m.group(1) ?? '') ?? 0;
+    final month = int.tryParse(m.group(2) ?? '') ?? 0;
+    final day = int.tryParse(m.group(3) ?? '') ?? 0;
+    if (year <= 0 || month <= 0 || day <= 0) return 0;
+    return DateTime(year, month, day).millisecondsSinceEpoch;
+  }
+
+  static String _previousDayYmd(String ymd) {
+    final ms = _ymdToMs(ymd);
+    if (ms <= 0) return ymd;
+    return _ymd(
+      DateTime.fromMillisecondsSinceEpoch(ms).subtract(const Duration(days: 1)),
+    );
+  }
+
+  static String _financePeriodLabel({
+    required String startDate,
+    required String endDate,
+  }) {
+    final start = startDate.trim();
+    final end = endDate.trim();
+    if (start.isEmpty) return 'No finance cycle';
+    return end.isEmpty ? 'From $start To ...' : 'From $start To $end';
   }
 
   static String _normalizeStatus(dynamic v) {
@@ -431,6 +469,178 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const AdminFinanceLedgerScreen()));
+  }
+
+  Future<String?> _pickFinancePeriodStartDate({
+    required String initialYmd,
+  }) async {
+    final initialMs = _ymdToMs(initialYmd);
+    final initialDate = initialMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(initialMs)
+        : DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2018, 1, 1),
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+      helpText: 'Pick finance cycle start date',
+    );
+    if (picked == null) return null;
+    return _ymd(picked);
+  }
+
+  Future<void> _openFinanceFreshStartDialog({
+    required _FinancePayoutPeriodRecord? activePeriod,
+  }) async {
+    String startDateYmd = _todayYmd();
+    bool isSaving = false;
+    bool saveLocked = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setD) {
+          return AlertDialog(
+            title: const Text('Finance fresh start'),
+            content: SizedBox(
+              width: 460,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (activePeriod != null) ...[
+                    Text(
+                      'Current cycle: ${activePeriod.displayLabel}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_rounded),
+                    title: const Text('New cycle start date'),
+                    subtitle: Text(startDateYmd),
+                    onTap: () async {
+                      final picked = await _pickFinancePeriodStartDate(
+                        initialYmd: startDateYmd,
+                      );
+                      if (picked == null) return;
+                      startDateYmd = picked;
+                      setD(() {});
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving
+                    ? null
+                    : () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (saveLocked) return;
+                        saveLocked = true;
+                        final startAtMs = _ymdToMs(startDateYmd);
+                        if (startAtMs <= 0) {
+                          saveLocked = false;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Pick a valid start date.'),
+                            ),
+                          );
+                          return;
+                        }
+                        if (activePeriod != null &&
+                            startAtMs <= activePeriod.startAtMs) {
+                          saveLocked = false;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'New finance cycle must start after the current one.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        setD(() => isSaving = true);
+                        try {
+                          final periodsSnap = await _financePayoutPeriodsRef
+                              .get();
+                          final rootUpdate = <String, Object?>{};
+                          if (periodsSnap.value is Map) {
+                            final existing = periodsSnap.value as Map;
+                            existing.forEach((k, value) {
+                              if (value is! Map) return;
+                              final rec = value.map(
+                                (kk, vv) => MapEntry(kk.toString(), vv),
+                              );
+                              if (rec['isActive'] == true) {
+                                rootUpdate['finance_payout_periods/${k.toString()}/isActive'] =
+                                    false;
+                              }
+                            });
+                          }
+                          if (activePeriod != null) {
+                            final endDate = _previousDayYmd(startDateYmd);
+                            final endAtMs = _ymdToMs(endDate);
+                            rootUpdate['finance_payout_periods/${activePeriod.id}/endDate'] =
+                                endDate;
+                            rootUpdate['finance_payout_periods/${activePeriod.id}/endAtMs'] =
+                                endAtMs;
+                            rootUpdate['finance_payout_periods/${activePeriod.id}/updatedAt'] =
+                                ServerValue.timestamp;
+                          }
+
+                          final newRef = _financePayoutPeriodsRef.push();
+                          final periodId = newRef.key;
+                          if (periodId == null || periodId.trim().isEmpty) {
+                            throw Exception('Could not create finance cycle.');
+                          }
+                          rootUpdate['finance_payout_periods/$periodId'] = {
+                            'id': periodId,
+                            'startDate': startDateYmd,
+                            'startAtMs': startAtMs,
+                            'endDate': '',
+                            'endAtMs': 0,
+                            'isActive': true,
+                            'createdAt': ServerValue.timestamp,
+                            'updatedAt': ServerValue.timestamp,
+                          };
+                          await FirebaseDatabase.instance.ref().update(
+                            rootUpdate,
+                          );
+                          if (!mounted) return;
+                          Navigator.of(dialogCtx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Finance cycle started.'),
+                            ),
+                          );
+                        } catch (e) {
+                          saveLocked = false;
+                          setD(() => isSaving = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Could not start finance cycle: $e',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                child: Text(isSaving ? 'Saving...' : 'Start'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   static int _schoolNetFromPayment(Map<String, dynamic> p) {
@@ -823,380 +1033,452 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
         child: _loadingFilter
             ? const Center(child: CircularProgressIndicator())
             : StreamBuilder<DatabaseEvent>(
-                stream: _classesRef.onValue,
-                builder: (context, classSnapshot) {
-                  final rosterCountsByScope =
-                      _rosterLearnersCountByTeacherScope(
-                        classSnapshot.data?.snapshot.value,
+                stream: _financePayoutPeriodsRef.onValue,
+                builder: (context, periodsSnap) {
+                  if (periodsSnap.hasError) {
+                    return const Center(
+                      child: Text('Error loading finance cycles.'),
+                    );
+                  }
+                  final periods = <_FinancePayoutPeriodRecord>[];
+                  final rawPeriods = periodsSnap.data?.snapshot.value;
+                  if (rawPeriods is Map) {
+                    rawPeriods.forEach((k, v) {
+                      if (v is! Map) return;
+                      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+                      periods.add(
+                        _FinancePayoutPeriodRecord.fromMap(
+                          id: k.toString(),
+                          map: m.cast<String, dynamic>(),
+                        ),
                       );
+                    });
+                  }
+                  periods.sort((a, b) => b.startAtMs.compareTo(a.startAtMs));
+                  _FinancePayoutPeriodRecord? activeFinancePeriod;
+                  for (final period in periods) {
+                    if (period.isActive && activeFinancePeriod == null) {
+                      activeFinancePeriod = period;
+                    }
+                  }
                   return StreamBuilder<DatabaseEvent>(
-                    stream: _paymentsRef
-                        .orderByChild('paidAt')
-                        .limitToLast(5000)
-                        .onValue,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return const Center(
-                          child: Text('Error loading finance data.'),
-                        );
-                      }
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          !snapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      final raw = snapshot.data?.snapshot.value;
-                      final all = <Map<String, dynamic>>[];
-                      if (raw is Map) {
-                        raw.forEach((k, v) {
-                          if (v is! Map) return;
-                          final m = v.map(
-                            (kk, vv) => MapEntry(kk.toString(), vv),
+                    stream: _classesRef.onValue,
+                    builder: (context, classSnapshot) {
+                      final rosterCountsByScope =
+                          _rosterLearnersCountByTeacherScope(
+                            classSnapshot.data?.snapshot.value,
                           );
-                          m['paymentId'] = k.toString();
-                          all.add(m.cast<String, dynamic>());
-                        });
-                      }
-
-                      final visible =
-                          all
-                              .where((p) => _inRangeMs(_asInt(p['paidAt'])))
-                              .toList()
-                            ..sort(
-                              (a, b) => _asInt(
-                                b['paidAt'],
-                              ).compareTo(_asInt(a['paidAt'])),
+                      return StreamBuilder<DatabaseEvent>(
+                        stream: _paymentsRef
+                            .orderByChild('paidAt')
+                            .limitToLast(5000)
+                            .onValue,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return const Center(
+                              child: Text('Error loading finance data.'),
                             );
-                      final financeRows = <Map<String, dynamic>>[];
-                      final flexibleRows = <Map<String, dynamic>>[];
-                      final recordedRows = <Map<String, dynamic>>[];
-                      for (final payment in visible) {
-                        final variantKey = _variantKeyFrom(payment);
-                        if (variantKey == 'flexible') {
-                          flexibleRows.add(payment);
-                        } else if (variantKey == 'recorded') {
-                          recordedRows.add(payment);
-                        }
-                        final allocations = financeAllocationsFromPayment(
-                          payment,
-                        );
-                        for (final allocation in allocations) {
-                          financeRows.add(allocation.toRow());
-                        }
-                      }
-
-                      var originalIncome = 0;
-                      var waitingTotal = 0;
-                      var schoolTotal = 0;
-                      var originalByMethod = _methodTotalsZero();
-                      var waitingByMethod = _methodTotalsZero();
-                      var schoolByMethod = _methodTotalsZero();
-                      final waitingRows = <Map<String, dynamic>>[];
-                      final schoolRows = <Map<String, dynamic>>[];
-                      final teacherMap = <String, List<Map<String, dynamic>>>{};
-
-                      _TeacherCardData? buildCardData({
-                        required String name,
-                        required List<Map<String, dynamic>> rows,
-                        bool includeRoster = false,
-                      }) {
-                        if (rows.isEmpty) return null;
-                        var original = 0;
-                        var payout = 0;
-                        var waiting = 0;
-                        var school = 0;
-                        var originalMethods = _methodTotalsZero();
-                        var payoutMethods = _methodTotalsZero();
-                        var waitingMethods = _methodTotalsZero();
-                        final learners = <String>{};
-                        final doneLearners = <String>{};
-
-                        for (final p in rows) {
-                          final effective = _effectiveFinanceFromPayment(p);
-                          final alloc = _amountsFrom(p);
-
-                          original += effective.originalAmount;
-                          payout += effective.teacherNet;
-                          waiting += effective.waitingAmount;
-                          school += effective.schoolNet;
-
-                          originalMethods = _addToMethodTotals(
-                            current: originalMethods,
-                            method: effective.method,
-                            amount: effective.originalAmount,
-                          );
-                          payoutMethods = _addToMethodTotals(
-                            current: payoutMethods,
-                            method: effective.method,
-                            amount: effective.teacherNet,
-                          );
-                          waitingMethods = _addToMethodTotals(
-                            current: waitingMethods,
-                            method: effective.method,
-                            amount: effective.waitingAmount,
-                          );
-
-                          final uid = (p['uid'] ?? '').toString().trim();
-                          final learnerName = _learnerNameFrom(p);
-                          final learnerKey = uid.isNotEmpty ? uid : learnerName;
-                          if (learnerKey.isNotEmpty) learners.add(learnerKey);
-
-                          final pushedStatus = (p['financePushedStatus'] ?? '')
-                              .toString()
-                              .trim()
-                              .toLowerCase();
-                          final payoutStatus = _normalizeStatus(
-                            p['financePayoutStatus'],
-                          );
-                          final doneLike =
-                              pushedStatus == 'done' ||
-                              payoutStatus == 'done' ||
-                              (payoutStatus == 'split' &&
-                                  (alloc.splitPaidStatus == 'done' ||
-                                      _normalizeStatus(
-                                            p['financeSplitPaidStatus'],
-                                          ) ==
-                                          'done'));
-                          if (doneLike && learnerKey.isNotEmpty) {
-                            doneLearners.add(learnerKey);
                           }
-                        }
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              !snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
 
-                        final teacherId = rows.isEmpty
-                            ? ''
-                            : _teacherIdFrom(rows.first);
-                        final scope = _teacherScopeKey(
-                          teacherId: teacherId,
-                          teacherName: name,
-                        );
-                        final rosterCount = includeRoster
-                            ? (rosterCountsByScope[scope] ?? 0)
-                            : 0;
+                          final raw = snapshot.data?.snapshot.value;
+                          final all = <Map<String, dynamic>>[];
+                          if (raw is Map) {
+                            raw.forEach((k, v) {
+                              if (v is! Map) return;
+                              final m = v.map(
+                                (kk, vv) => MapEntry(kk.toString(), vv),
+                              );
+                              m['paymentId'] = k.toString();
+                              all.add(m.cast<String, dynamic>());
+                            });
+                          }
 
-                        return _TeacherCardData(
-                          teacherId: teacherId,
-                          teacherScopeKey: scope,
-                          teacherName: name,
-                          originalTotal: original,
-                          payoutTotal: payout,
-                          waitingTotal: waiting,
-                          originalByMethod: originalMethods,
-                          payoutByMethod: payoutMethods,
-                          waitingByMethod: waitingMethods,
-                          learnersCount: learners.length > rosterCount
-                              ? learners.length
-                              : rosterCount,
-                          doneLearnersCount: doneLearners.length,
-                          paymentsCount: rows.length,
-                          schoolTotal: school,
-                          payments: rows,
-                        );
-                      }
+                          final visible =
+                              all
+                                  .where((p) => _inRangeMs(_asInt(p['paidAt'])))
+                                  .toList()
+                                ..sort(
+                                  (a, b) => _asInt(
+                                    b['paidAt'],
+                                  ).compareTo(_asInt(a['paidAt'])),
+                                );
+                          final financeRows = <Map<String, dynamic>>[];
+                          final flexibleRows = <Map<String, dynamic>>[];
+                          final recordedRows = <Map<String, dynamic>>[];
+                          for (final payment in visible) {
+                            final variantKey = _variantKeyFrom(payment);
+                            if (variantKey == 'flexible') {
+                              flexibleRows.add(payment);
+                            } else if (variantKey == 'recorded') {
+                              recordedRows.add(payment);
+                            }
+                            final allocations = financeAllocationsFromPayment(
+                              payment,
+                            );
+                            for (final allocation in allocations) {
+                              financeRows.add(allocation.toRow());
+                            }
+                          }
 
-                      for (final p in visible) {
-                        final effective = _effectiveFinanceFromPayment(p);
-                        originalIncome += effective.originalAmount;
-                        originalByMethod = _addToMethodTotals(
-                          current: originalByMethod,
-                          method: effective.method,
-                          amount: effective.originalAmount,
-                        );
-                      }
+                          var originalIncome = 0;
+                          var waitingTotal = 0;
+                          var schoolTotal = 0;
+                          var originalByMethod = _methodTotalsZero();
+                          var waitingByMethod = _methodTotalsZero();
+                          var schoolByMethod = _methodTotalsZero();
+                          final waitingRows = <Map<String, dynamic>>[];
+                          final schoolRows = <Map<String, dynamic>>[];
+                          final teacherMap =
+                              <String, List<Map<String, dynamic>>>{};
 
-                      for (final p in financeRows) {
-                        final effective = _effectiveFinanceFromPayment(p);
-                        final teacher = _teacherNameFrom(p);
-                        final isVariantPseudoTeacher =
-                            (teacher == 'Flexible' || teacher == 'Recorded') &&
-                            _teacherIdFrom(p).isEmpty;
-                        if (!isVariantPseudoTeacher) {
-                          teacherMap
-                              .putIfAbsent(
-                                teacher,
-                                () => <Map<String, dynamic>>[],
-                              )
-                              .add(p);
-                        }
-                        waitingTotal += effective.waitingAmount;
-                        waitingByMethod = _addToMethodTotals(
-                          current: waitingByMethod,
-                          method: effective.method,
-                          amount: effective.waitingAmount,
-                        );
+                          _TeacherCardData? buildCardData({
+                            required String name,
+                            required List<Map<String, dynamic>> rows,
+                            bool includeRoster = false,
+                          }) {
+                            if (rows.isEmpty) return null;
+                            var original = 0;
+                            var payout = 0;
+                            var waiting = 0;
+                            var school = 0;
+                            var originalMethods = _methodTotalsZero();
+                            var payoutMethods = _methodTotalsZero();
+                            var waitingMethods = _methodTotalsZero();
+                            final learners = <String>{};
+                            final doneLearners = <String>{};
 
-                        if (effective.waitingAmount > 0) {
-                          waitingRows.add(p);
-                        }
+                            for (final p in rows) {
+                              final effective = _effectiveFinanceFromPayment(p);
+                              final alloc = _amountsFrom(p);
 
-                        final schoolNet = effective.schoolNet;
-                        if (schoolNet > 0) {
-                          schoolTotal += schoolNet;
-                          schoolRows.add(p);
-                          schoolByMethod = _addToMethodTotals(
-                            current: schoolByMethod,
-                            method: effective.method,
-                            amount: schoolNet,
+                              original += effective.originalAmount;
+                              payout += effective.teacherNet;
+                              waiting += effective.waitingAmount;
+                              school += effective.schoolNet;
+
+                              originalMethods = _addToMethodTotals(
+                                current: originalMethods,
+                                method: effective.method,
+                                amount: effective.originalAmount,
+                              );
+                              payoutMethods = _addToMethodTotals(
+                                current: payoutMethods,
+                                method: effective.method,
+                                amount: effective.teacherNet,
+                              );
+                              waitingMethods = _addToMethodTotals(
+                                current: waitingMethods,
+                                method: effective.method,
+                                amount: effective.waitingAmount,
+                              );
+
+                              final uid = (p['uid'] ?? '').toString().trim();
+                              final learnerName = _learnerNameFrom(p);
+                              final learnerKey = uid.isNotEmpty
+                                  ? uid
+                                  : learnerName;
+                              if (learnerKey.isNotEmpty)
+                                learners.add(learnerKey);
+
+                              final pushedStatus =
+                                  (p['financePushedStatus'] ?? '')
+                                      .toString()
+                                      .trim()
+                                      .toLowerCase();
+                              final payoutStatus = _normalizeStatus(
+                                p['financePayoutStatus'],
+                              );
+                              final doneLike =
+                                  pushedStatus == 'done' ||
+                                  payoutStatus == 'done' ||
+                                  (payoutStatus == 'split' &&
+                                      (alloc.splitPaidStatus == 'done' ||
+                                          _normalizeStatus(
+                                                p['financeSplitPaidStatus'],
+                                              ) ==
+                                              'done'));
+                              if (doneLike && learnerKey.isNotEmpty) {
+                                doneLearners.add(learnerKey);
+                              }
+                            }
+
+                            final teacherId = rows.isEmpty
+                                ? ''
+                                : _teacherIdFrom(rows.first);
+                            final scope = _teacherScopeKey(
+                              teacherId: teacherId,
+                              teacherName: name,
+                            );
+                            final rosterCount = includeRoster
+                                ? (rosterCountsByScope[scope] ?? 0)
+                                : 0;
+
+                            return _TeacherCardData(
+                              teacherId: teacherId,
+                              teacherScopeKey: scope,
+                              teacherName: name,
+                              originalTotal: original,
+                              payoutTotal: payout,
+                              waitingTotal: waiting,
+                              originalByMethod: originalMethods,
+                              payoutByMethod: payoutMethods,
+                              waitingByMethod: waitingMethods,
+                              learnersCount: learners.length > rosterCount
+                                  ? learners.length
+                                  : rosterCount,
+                              doneLearnersCount: doneLearners.length,
+                              paymentsCount: rows.length,
+                              schoolTotal: school,
+                              payments: rows,
+                            );
+                          }
+
+                          for (final p in visible) {
+                            final effective = _effectiveFinanceFromPayment(p);
+                            originalIncome += effective.originalAmount;
+                            originalByMethod = _addToMethodTotals(
+                              current: originalByMethod,
+                              method: effective.method,
+                              amount: effective.originalAmount,
+                            );
+                          }
+
+                          for (final p in financeRows) {
+                            final effective = _effectiveFinanceFromPayment(p);
+                            final teacher = _teacherNameFrom(p);
+                            final isVariantPseudoTeacher =
+                                (teacher == 'Flexible' ||
+                                    teacher == 'Recorded') &&
+                                _teacherIdFrom(p).isEmpty;
+                            if (!isVariantPseudoTeacher) {
+                              teacherMap
+                                  .putIfAbsent(
+                                    teacher,
+                                    () => <Map<String, dynamic>>[],
+                                  )
+                                  .add(p);
+                            }
+                            waitingTotal += effective.waitingAmount;
+                            waitingByMethod = _addToMethodTotals(
+                              current: waitingByMethod,
+                              method: effective.method,
+                              amount: effective.waitingAmount,
+                            );
+
+                            if (effective.waitingAmount > 0) {
+                              waitingRows.add(p);
+                            }
+
+                            final schoolNet = effective.schoolNet;
+                            if (schoolNet > 0) {
+                              schoolTotal += schoolNet;
+                              schoolRows.add(p);
+                              schoolByMethod = _addToMethodTotals(
+                                current: schoolByMethod,
+                                method: effective.method,
+                                amount: schoolNet,
+                              );
+                            }
+                          }
+
+                          final variantCards = <_TeacherCardData>[];
+                          final flexibleCard = buildCardData(
+                            name: 'Flexible',
+                            rows: flexibleRows,
                           );
-                        }
-                      }
+                          if (flexibleCard != null)
+                            variantCards.add(flexibleCard);
+                          final recordedCard = buildCardData(
+                            name: 'Recorded',
+                            rows: recordedRows,
+                          );
+                          if (recordedCard != null)
+                            variantCards.add(recordedCard);
 
-                      final variantCards = <_TeacherCardData>[];
-                      final flexibleCard = buildCardData(
-                        name: 'Flexible',
-                        rows: flexibleRows,
-                      );
-                      if (flexibleCard != null) variantCards.add(flexibleCard);
-                      final recordedCard = buildCardData(
-                        name: 'Recorded',
-                        rows: recordedRows,
-                      );
-                      if (recordedCard != null) variantCards.add(recordedCard);
+                          final teacherCards = <_TeacherCardData>[];
+                          for (final entry in teacherMap.entries) {
+                            final card = buildCardData(
+                              name: entry.key,
+                              rows: entry.value,
+                              includeRoster: true,
+                            );
+                            if (card != null) teacherCards.add(card);
+                          }
 
-                      final teacherCards = <_TeacherCardData>[];
-                      for (final entry in teacherMap.entries) {
-                        final card = buildCardData(
-                          name: entry.key,
-                          rows: entry.value,
-                          includeRoster: true,
-                        );
-                        if (card != null) teacherCards.add(card);
-                      }
-
-                      teacherCards.sort(
-                        (a, b) => a.teacherName.toLowerCase().compareTo(
-                          b.teacherName.toLowerCase(),
-                        ),
-                      );
-
-                      return ListView(
-                        padding: EdgeInsets.fromLTRB(
-                          12,
-                          12,
-                          12,
-                          20 + MediaQuery.of(context).padding.bottom + 20,
-                        ),
-                        children: [
-                          _FilterHeader(
-                            fromLabel: _fromDate == null
-                                ? 'From: not set'
-                                : 'From: ${_fmtDate(_fromDate!)}',
-                            toLabel: _toDate == null
-                                ? 'To: not set'
-                                : 'To: ${_fmtDate(_toDate!)}',
-                            onPickFrom: _pickFromDate,
-                            onPickTo: _pickToDate,
-                            onReset: _clearFilter,
-                            originalIncome: _money(originalIncome),
-                            waitingTotal: _money(waitingTotal),
-                            originalByMethod: originalByMethod,
-                            waitingByMethod: waitingByMethod,
-                            teachersCount:
-                                teacherCards.length + variantCards.length,
-                          ),
-                          const SizedBox(height: 12),
-                          _WaitingCard(
-                            totalWaiting: waitingTotal,
-                            byMethod: waitingByMethod,
-                            money: _money,
-                            onTap: () => _openWaitingDetailsDialog(waitingRows),
-                          ),
-                          const SizedBox(height: 10),
-                          _SchoolCard(
-                            totalSchool: schoolTotal,
-                            byMethod: schoolByMethod,
-                            money: _money,
-                            onTap: () => _openSchoolDetailsDialog(schoolRows),
-                          ),
-                          const SizedBox(height: 10),
-                          if (variantCards.isEmpty && teacherCards.isEmpty)
-                            const Card(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text(
-                                  'No finance cards in this date range.',
-                                ),
-                              ),
-                            )
-                          else ...[
-                            if (variantCards.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: variantCards
-                                      .map(
-                                        (card) => SizedBox(
-                                          width: 520,
-                                          child: _TeacherSquareCard(
-                                            data: card,
-                                            money: _money,
-                                            onTap: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      _TeacherFinanceDetailsScreen(
-                                                        teacherId:
-                                                            card.teacherId,
-                                                        teacherScopeKey: card
-                                                            .teacherScopeKey,
-                                                        teacherName:
-                                                            card.teacherName,
-                                                        initialPayments:
-                                                            card.payments,
-                                                        paymentsRef:
-                                                            _paymentsRef,
-                                                        classesRef: _classesRef,
-                                                        usersRef: _usersRef,
-                                                        financeDoneRef:
-                                                            _financeDoneRef,
-                                                        money: _money,
-                                                        onSetMethod:
-                                                            _setPaymentMethod,
-                                                        showNoPaymentRows:
-                                                            false,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-                              ),
-                          ],
-                          ...teacherCards.map(
-                            (card) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _TeacherSquareCard(
-                                data: card,
-                                money: _money,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          _TeacherFinanceDetailsScreen(
-                                            teacherId: card.teacherId,
-                                            teacherScopeKey:
-                                                card.teacherScopeKey,
-                                            teacherName: card.teacherName,
-                                            initialPayments: card.payments,
-                                            paymentsRef: _paymentsRef,
-                                            classesRef: _classesRef,
-                                            usersRef: _usersRef,
-                                            financeDoneRef: _financeDoneRef,
-                                            money: _money,
-                                            onSetMethod: _setPaymentMethod,
-                                            showNoPaymentRows: true,
-                                          ),
-                                    ),
-                                  );
-                                },
-                              ),
+                          teacherCards.sort(
+                            (a, b) => a.teacherName.toLowerCase().compareTo(
+                              b.teacherName.toLowerCase(),
                             ),
-                          ),
-                        ],
+                          );
+
+                          return ListView(
+                            padding: EdgeInsets.fromLTRB(
+                              12,
+                              12,
+                              12,
+                              20 + MediaQuery.of(context).padding.bottom + 20,
+                            ),
+                            children: [
+                              _FilterHeader(
+                                fromLabel: _fromDate == null
+                                    ? 'From: not set'
+                                    : 'From: ${_fmtDate(_fromDate!)}',
+                                toLabel: _toDate == null
+                                    ? 'To: not set'
+                                    : 'To: ${_fmtDate(_toDate!)}',
+                                onPickFrom: _pickFromDate,
+                                onPickTo: _pickToDate,
+                                onReset: _clearFilter,
+                                originalIncome: _money(originalIncome),
+                                waitingTotal: _money(waitingTotal),
+                                originalByMethod: originalByMethod,
+                                waitingByMethod: waitingByMethod,
+                                teachersCount:
+                                    teacherCards.length + variantCards.length,
+                                extraChild: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _FinancePill(
+                                      icon: Icons.event_repeat_rounded,
+                                      text: activeFinancePeriod == null
+                                          ? 'Finance cycle: not started'
+                                          : 'Finance cycle: ${activeFinancePeriod.displayLabel}',
+                                      strong: true,
+                                    ),
+                                    FilledButton.icon(
+                                      onPressed: () =>
+                                          _openFinanceFreshStartDialog(
+                                            activePeriod: activeFinancePeriod,
+                                          ),
+                                      icon: const Icon(
+                                        Icons.restart_alt_rounded,
+                                      ),
+                                      label: const Text('Fresh start'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _WaitingCard(
+                                totalWaiting: waitingTotal,
+                                byMethod: waitingByMethod,
+                                money: _money,
+                                onTap: () =>
+                                    _openWaitingDetailsDialog(waitingRows),
+                              ),
+                              const SizedBox(height: 10),
+                              _SchoolCard(
+                                totalSchool: schoolTotal,
+                                byMethod: schoolByMethod,
+                                money: _money,
+                                onTap: () =>
+                                    _openSchoolDetailsDialog(schoolRows),
+                              ),
+                              const SizedBox(height: 10),
+                              if (variantCards.isEmpty && teacherCards.isEmpty)
+                                const Card(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Text(
+                                      'No finance cards in this date range.',
+                                    ),
+                                  ),
+                                )
+                              else ...[
+                                if (variantCards.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: variantCards
+                                          .map(
+                                            (card) => SizedBox(
+                                              width: 520,
+                                              child: _TeacherSquareCard(
+                                                data: card,
+                                                money: _money,
+                                                onTap: () {
+                                                  Navigator.of(context).push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          _TeacherFinanceDetailsScreen(
+                                                            teacherId:
+                                                                card.teacherId,
+                                                            teacherScopeKey: card
+                                                                .teacherScopeKey,
+                                                            teacherName: card
+                                                                .teacherName,
+                                                            initialPayments:
+                                                                card.payments,
+                                                            paymentsRef:
+                                                                _paymentsRef,
+                                                            classesRef:
+                                                                _classesRef,
+                                                            usersRef: _usersRef,
+                                                            financeDoneRef:
+                                                                _financeDoneRef,
+                                                            activeFinancePeriod:
+                                                                activeFinancePeriod,
+                                                            money: _money,
+                                                            onSetMethod:
+                                                                _setPaymentMethod,
+                                                            showNoPaymentRows:
+                                                                false,
+                                                          ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ),
+                              ],
+                              ...teacherCards.map(
+                                (card) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _TeacherSquareCard(
+                                    data: card,
+                                    money: _money,
+                                    onTap: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              _TeacherFinanceDetailsScreen(
+                                                teacherId: card.teacherId,
+                                                teacherScopeKey:
+                                                    card.teacherScopeKey,
+                                                teacherName: card.teacherName,
+                                                initialPayments: card.payments,
+                                                paymentsRef: _paymentsRef,
+                                                classesRef: _classesRef,
+                                                usersRef: _usersRef,
+                                                financeDoneRef: _financeDoneRef,
+                                                activeFinancePeriod:
+                                                    activeFinancePeriod,
+                                                money: _money,
+                                                onSetMethod: _setPaymentMethod,
+                                                showNoPaymentRows: true,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       );
                     },
                   );
@@ -1217,6 +1499,7 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
     required this.classesRef,
     required this.usersRef,
     required this.financeDoneRef,
+    required this.activeFinancePeriod,
     required this.money,
     required this.onSetMethod,
     this.showNoPaymentRows = true,
@@ -1230,6 +1513,7 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
   final DatabaseReference classesRef;
   final DatabaseReference usersRef;
   final DatabaseReference financeDoneRef;
+  final _FinancePayoutPeriodRecord? activeFinancePeriod;
   final String Function(int amount) money;
   final bool showNoPaymentRows;
   final Future<void> Function({
@@ -2384,6 +2668,13 @@ class _TeacherFinanceDetailsScreenState
 
   Future<void> _pushAllEligibleRows() async {
     if (_isPushingAll) return;
+    final activeFinancePeriod = widget.activeFinancePeriod;
+    if (activeFinancePeriod == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Start a finance cycle before pushing.')),
+      );
+      return;
+    }
     final eligible = _rows.where(_isPushEligibleRow).toList();
     final eligiblePaymentIds = eligible
         .map((row) => (row['paymentId'] ?? '').toString().trim())
@@ -2434,12 +2725,22 @@ class _TeacherFinanceDetailsScreenState
           'financePushedAt': ServerValue.timestamp,
           'financePushedBy': 'admin',
           'financePushedStatus': pushedStatus,
+          'financePeriodId': activeFinancePeriod.id,
+          'financePeriodStartDate': activeFinancePeriod.startDate,
+          'financePeriodStartAtMs': activeFinancePeriod.startAtMs,
+          'financePeriodEndDate': activeFinancePeriod.endDate,
+          'financePeriodEndAtMs': activeFinancePeriod.endAtMs,
           'financeUpdatedAt': ServerValue.timestamp,
         });
         localPatches[paymentId] = {
           'financePushedAt': pushedAtMs,
           'financePushedBy': 'admin',
           'financePushedStatus': pushedStatus,
+          'financePeriodId': activeFinancePeriod.id,
+          'financePeriodStartDate': activeFinancePeriod.startDate,
+          'financePeriodStartAtMs': activeFinancePeriod.startAtMs,
+          'financePeriodEndDate': activeFinancePeriod.endDate,
+          'financePeriodEndAtMs': activeFinancePeriod.endAtMs,
         };
       }
 
@@ -4132,6 +4433,7 @@ class _FilterHeader extends StatelessWidget {
     required this.originalByMethod,
     required this.waitingByMethod,
     required this.teachersCount,
+    this.extraChild,
   });
 
   final String fromLabel;
@@ -4144,6 +4446,7 @@ class _FilterHeader extends StatelessWidget {
   final _MethodTotals originalByMethod;
   final _MethodTotals waitingByMethod;
   final int teachersCount;
+  final Widget? extraChild;
 
   @override
   Widget build(BuildContext context) {
@@ -4202,11 +4505,49 @@ class _FilterHeader extends StatelessWidget {
               text: 'Teachers: $teachersCount',
               strong: true,
             ),
+            if (extraChild != null) extraChild!,
           ],
         ),
       ),
     );
   }
+}
+
+class _FinancePayoutPeriodRecord {
+  const _FinancePayoutPeriodRecord({
+    required this.id,
+    required this.startDate,
+    required this.startAtMs,
+    required this.endDate,
+    required this.endAtMs,
+    required this.isActive,
+  });
+
+  final String id;
+  final String startDate;
+  final int startAtMs;
+  final String endDate;
+  final int endAtMs;
+  final bool isActive;
+
+  factory _FinancePayoutPeriodRecord.fromMap({
+    required String id,
+    required Map<String, dynamic> map,
+  }) {
+    return _FinancePayoutPeriodRecord(
+      id: id,
+      startDate: (map['startDate'] ?? '').toString().trim(),
+      startAtMs: _AdminFinanceScreenState._asInt(map['startAtMs']),
+      endDate: (map['endDate'] ?? '').toString().trim(),
+      endAtMs: _AdminFinanceScreenState._asInt(map['endAtMs']),
+      isActive: map['isActive'] == true,
+    );
+  }
+
+  String get displayLabel => _AdminFinanceScreenState._financePeriodLabel(
+    startDate: startDate,
+    endDate: endDate,
+  );
 }
 
 class _FinanceAmounts {

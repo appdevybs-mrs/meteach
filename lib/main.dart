@@ -26,6 +26,7 @@ import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
 import 'shared/app_feedback.dart';
+import 'shared/app_connectivity.dart';
 import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
 import 'shared/profile_avatar.dart';
@@ -74,6 +75,7 @@ Future<void> main() async {
   runApp(const YourBridgeSchoolApp());
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(AppConnectivity.instance.start());
     unawaited(FCMService.I.init());
   });
 }

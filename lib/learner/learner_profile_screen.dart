@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
@@ -275,6 +276,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   Future<void> _pickAndUploadMainPhoto() async {
     if (_busy || _uploadingMainPhoto || _uploadingExtraPhotos) return;
+    if (!OfflineActionGuard.ensureOnline(context)) return;
 
     try {
       setState(() {
@@ -308,6 +310,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   Future<void> _pickAndUploadExtraPhotos() async {
     if (_busy || _uploadingMainPhoto || _uploadingExtraPhotos) return;
+    if (!OfflineActionGuard.ensureOnline(context)) return;
 
     final remaining = _maxExtraPhotos - _photoUrls.length;
     if (remaining <= 0) {
@@ -819,6 +822,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   Future<bool> _save({bool showSuccessSnackBar = true}) async {
     FocusScope.of(context).unfocus();
+    if (!OfflineActionGuard.ensureOnline(context)) return false;
 
     setState(() {
       _error = null;

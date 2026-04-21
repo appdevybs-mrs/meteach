@@ -12,6 +12,8 @@ import 'teacher_online_circle_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/first_login_agreement.dart';
+import '../shared/offline_action_guard.dart';
+import '../shared/offline_notice_banner.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_web_layout.dart';
 import 'TeacherStoriesScreen.dart';
@@ -1129,15 +1131,26 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
-  void _openTeacherWindow(String windowKey, VoidCallback onAllowed) {
-    unawaited(
-      WindowAccessService.instance.guardOpen(
+  void _openTeacherWindow(
+    String windowKey,
+    VoidCallback onAllowed, {
+    bool requiresInternet = true,
+  }) {
+    Future<void> openAction() {
+      return WindowAccessService.instance.guardOpen(
         context: context,
         role: AppWindowRole.teacher,
         windowKey: windowKey,
         onAllowed: onAllowed,
-      ),
-    );
+      );
+    }
+
+    if (!requiresInternet) {
+      unawaited(openAction());
+      return;
+    }
+
+    unawaited(OfflineActionGuard.run(context, openAction));
   }
 
   void _openProfileScreen() {
@@ -1253,7 +1266,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   void _openThemeSettings() {
-    _openTeacherWindow(AppWindowKeys.teacherThemeSettings, _openThemeSheet);
+    _openTeacherWindow(
+      AppWindowKeys.teacherThemeSettings,
+      _openThemeSheet,
+      requiresInternet: false,
+    );
   }
 
   void _onThemeChanged() {
@@ -1397,11 +1414,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       ),
                     ),
                     RefreshIndicator(
-                      onRefresh: _refreshHome,
+                      onRefresh: () async {
+                        if (!OfflineActionGuard.ensureOnline(context)) return;
+                        await _refreshHome();
+                      },
                       child: ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: pagePadding,
                         children: [
+                          const OfflineNoticeBanner(),
                           FutureBuilder<String>(
                             future: _displayNameFuture,
                             builder: (context, snap) {

@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
 import '../services/audit_action_keys.dart';
@@ -266,6 +267,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Future<bool> _save({bool showSuccessMessage = true}) async {
     FocusScope.of(context).unfocus();
+    if (!OfflineActionGuard.ensureOnline(context)) return false;
 
     setState(() {
       _error = null;
@@ -580,6 +582,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Future<void> _pickAndUploadPhotos() async {
     if (_uploadingPhotos || _busy) return;
+    if (!OfflineActionGuard.ensureOnline(context)) return;
 
     final remaining = _maxPhotos - _photoUrls.length;
     if (remaining <= 0) {
@@ -634,6 +637,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Future<void> _pickAndUploadVideo() async {
     if (_uploadingVideo || _busy) return;
+    if (!OfflineActionGuard.ensureOnline(context)) return;
 
     try {
       setState(() {
@@ -685,6 +689,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
 
     if (!ok) return;
+    if (!mounted) return;
+    if (!OfflineActionGuard.ensureOnline(context)) return;
 
     setState(() {
       _photoUrls.removeAt(index);

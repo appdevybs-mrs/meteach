@@ -1,6 +1,7 @@
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../shared/offline_action_guard.dart';
 import '../shared/window_access_dialogs.dart';
 
 class AppWindowRole {
@@ -704,6 +705,8 @@ class WindowAccessService {
     required String windowKey,
     required VoidCallback onAllowed,
   }) async {
+    if (!OfflineActionGuard.ensureOnline(context)) return;
+
     final guardKey = '$role::$windowKey';
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final lastAttemptMs = _guardLastAttemptMs[guardKey];
