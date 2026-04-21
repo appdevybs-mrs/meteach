@@ -599,6 +599,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             final rec = e.value;
             if (rec is! Map) continue;
             final r = Map<String, dynamic>.from(rec);
+            if (r['present'] != true) continue;
 
             final taughtItems = r['taughtItems'];
             if (taughtItems is List) {
@@ -720,6 +721,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               for (final item in om.values) {
                 if (item is! Map) continue;
                 final rec = Map<String, dynamic>.from(item);
+
+                final hasPresentFlag = rec.containsKey('present');
+                if (!hasPresentFlag) continue;
 
                 totalAttendance += 1;
                 final present = rec['present'] == true;

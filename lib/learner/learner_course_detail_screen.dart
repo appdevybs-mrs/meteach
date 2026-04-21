@@ -1122,6 +1122,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               if (e.value is! Map) continue;
               final rec = Map<String, dynamic>.from(e.value as Map);
 
+              final bool hasPresentFlag = rec.containsKey('present');
               final bool present = rec['present'] == true;
 
               final int startAt = _asInt(rec['startAt']);
@@ -1144,9 +1145,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ? 'Session $sessionNo'
                     : 'Session $sessionNo — $title';
 
-                // ✅ syllabus covered from online sessionNo -> sessionId
-                final sid = _sessionIdByNumber[sessionNo];
-                if (sid != null && sid.isNotEmpty) covered.add(sid);
+                // Only teacher-confirmed present sessions count as covered.
+                if (present) {
+                  final sid = _sessionIdByNumber[sessionNo];
+                  if (sid != null && sid.isNotEmpty) covered.add(sid);
+                }
               }
 
               // display date for UI
@@ -1166,7 +1169,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 'source': 'online',
                 'meetingId': bookingKey,
                 'date': dateLabel,
-                'status': present ? 'present' : 'absent',
+                'status': !hasPresentFlag
+                    ? 'pending'
+                    : (present ? 'present' : 'absent'),
                 'taughtSummary': taughtSummary,
                 'sessionNo': sessionNo,
                 'reviewRating': (reviewRating >= 1 && reviewRating <= 5)
@@ -1206,6 +1211,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               final v = entry.value;
               if (v is! Map) continue;
               final rec = Map<String, dynamic>.from(v);
+              if (rec['present'] != true) continue;
 
               // Prefer taughtItems if present
               final taughtItems = rec['taughtItems'];
@@ -1280,7 +1286,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   Map<String, int> _attendanceCountsAll() {
-    final total = _attendanceAll.length;
+    final total = _attendanceAll.where((x) {
+      final status = (x['status'] ?? '').toString().toLowerCase();
+      return status == 'present' || status == 'absent';
+    }).length;
     final present = _attendanceAll
         .where((x) => (x['status'] ?? '').toString().toLowerCase() == 'present')
         .length;
@@ -2517,8 +2526,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final hwDue = (hw['dueDate'] ?? '').toString().trim();
 
     final isPresent = status == 'present';
+    final isPending = status == 'pending';
     final presentBorder = UiK.primaryBlue.withValues(alpha: 0.28);
     final absentBorder = Colors.red.withValues(alpha: 0.22);
+    final pendingBorder = UiK.actionOrange.withValues(alpha: 0.26);
 
     final tagBg = isOnline
         ? UiK.actionOrange.withValues(alpha: 0.10)
@@ -2546,7 +2557,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: isPresent ? presentBorder : absentBorder),
+            border: Border.all(
+              color: isPresent
+                  ? presentBorder
+                  : (isPending ? pendingBorder : absentBorder),
+            ),
             gradient: isPresent
                 ? LinearGradient(
                     begin: Alignment.topLeft,
@@ -2573,11 +2588,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CircleAvatar(
-                  backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red)
-                      .withValues(alpha: 0.10),
+                  backgroundColor:
+                      (isPresent
+                              ? UiK.primaryBlue
+                              : (isPending ? UiK.actionOrange : Colors.red))
+                          .withValues(alpha: 0.10),
                   child: Icon(
-                    isPresent ? Icons.check_rounded : Icons.close_rounded,
-                    color: isPresent ? UiK.primaryBlue : Colors.red,
+                    isPresent
+                        ? Icons.check_rounded
+                        : (isPending
+                              ? Icons.schedule_rounded
+                              : Icons.close_rounded),
+                    color: isPresent
+                        ? UiK.primaryBlue
+                        : (isPending ? UiK.actionOrange : Colors.red),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2630,7 +2654,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Status: ${isPresent ? 'Present' : 'Absent'}'
+                        'Status: ${isPresent ? 'Present' : (isPending ? 'Pending confirmation' : 'Absent')}'
                         '${rate.isEmpty ? '' : ' • Success: $rate%'}'
                         '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
                         style: UiK.subtleText(),

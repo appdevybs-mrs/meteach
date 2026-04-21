@@ -3846,12 +3846,14 @@ class _BookingTopCardState extends State<_BookingTopCard>
       final int sessionNo = _toInt(slot['sessionNo']);
       final String bKey = _bookingKey(next.courseId, next.dayKey, next.time);
 
-      final ref = _db.child(
-        'booking_progress/$learnerUid/${next.courseId}/flexible_attendance/$bKey',
+      final onlineRef = _db.child(
+        'booking_progress/$learnerUid/${next.courseId}/online_attendance/$bKey',
       );
-
-      final existing = await ref.get();
-      if (existing.exists && existing.value != null) return;
+      final existing = await onlineRef.get();
+      final existingMap = existing.exists && existing.value is Map
+          ? Map<String, dynamic>.from(existing.value as Map)
+          : <String, dynamic>{};
+      if (onlineAttendanceRecordConsumesCredit(existingMap)) return;
 
       final taughtItems = (sessionNo > 0)
           ? [
@@ -3859,18 +3861,45 @@ class _BookingTopCardState extends State<_BookingTopCard>
             ]
           : <Map<String, dynamic>>[];
 
-      await ref.set({
+      final createdAt = existingMap['createdAt'];
+      await onlineRef.set({
+        ...existingMap,
         'bookingKey': bKey,
         'courseId': next.courseId,
         'dayKey': next.dayKey,
         'time': next.time,
         'startAt': next.start.millisecondsSinceEpoch,
-        'present': true,
         'sessionNo': sessionNo,
         'taughtItems': taughtItems,
-        'autoMarkedByLearnerJoin': true,
+        'countedCredit': true,
+        'creditCountReason': 'learner_join',
+        'createdAt': createdAt ?? ServerValue.timestamp,
         'updatedAt': ServerValue.timestamp,
       });
+
+      if (sessionNo > 0) {
+        final curRef = _db.child(
+          'booking_progress/$learnerUid/${next.courseId}/currentSession',
+        );
+        final curSnap = await curRef.get();
+        final curVal = curSnap.value;
+
+        int cur = 0;
+        if (curVal is int) {
+          cur = curVal;
+        } else if (curVal is num) {
+          cur = curVal.toInt();
+        } else {
+          cur = int.tryParse(curVal?.toString() ?? '') ?? 0;
+        }
+
+        if (cur <= 0) cur = 1;
+
+        final nextSession = sessionNo + 1;
+        if (cur < nextSession) {
+          await curRef.set(nextSession);
+        }
+      }
     } catch (_) {}
   }
 

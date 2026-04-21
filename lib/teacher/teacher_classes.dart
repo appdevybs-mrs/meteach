@@ -25,6 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_learner_profile_screen.dart';
@@ -3292,8 +3293,19 @@ class _OnlineTakeAttendanceScreenState
         final rating = _normalizedRating(teacherRatingMap[uid]);
         final comment = _commentController(uid).text.trim();
         final hasTeacherNote = rating > 0 || comment.isNotEmpty;
+        final learnerRef = _learnerAttendanceRef(uid);
+        final learnerSnap = await learnerRef.get();
+        final existing = learnerSnap.exists && learnerSnap.value is Map
+            ? Map<String, dynamic>.from(learnerSnap.value as Map)
+            : <String, dynamic>{};
+        final createdAt = existing['createdAt'];
+        final countedCredit =
+            onlineAttendanceRecordConsumesCredit(existing) ||
+            isPresent ||
+            widget.booking.sessionNo > 0;
 
-        await _learnerAttendanceRef(uid).set({
+        await learnerRef.set({
+          ...existing,
           'bookingKey': widget.booking.bookingKey,
           'courseId': widget.booking.courseId,
           'dayKey': widget.booking.dayKey,
@@ -3309,10 +3321,16 @@ class _OnlineTakeAttendanceScreenState
           'teacherCommentByUid': hasTeacherNote ? widget.teacherUid : '',
           'teacherCommentByName': hasTeacherNote ? widget.teacherName : '',
           'taughtItems': taughtItems,
+          'countedCredit': countedCredit,
+          'creditCountReason':
+              (existing['creditCountReason'] ?? '').toString().trim().isNotEmpty
+              ? existing['creditCountReason']
+              : 'teacher_attendance',
+          'createdAt': createdAt ?? ServerValue.timestamp,
           'updatedAt': ServerValue.timestamp,
         });
 
-        if (isPresent && widget.booking.sessionNo > 0) {
+        if (widget.booking.sessionNo > 0) {
           final curRef = _db.child(
             '${_TeacherClassesScreenState.bookingProgressNode}/$uid/${widget.booking.courseId}/currentSession',
           );
@@ -3331,10 +3349,14 @@ class _OnlineTakeAttendanceScreenState
 
           if (cur <= 0) cur = 1;
 
-          final confirmedSession = widget.booking.sessionNo;
-          final next = (cur >= confirmedSession ? cur : confirmedSession) + 1;
-
-          await curRef.set(next);
+          if (isPresent) {
+            final desiredNext = widget.booking.sessionNo + 1;
+            if (cur < desiredNext) {
+              await curRef.set(desiredNext);
+            }
+          } else {
+            await curRef.set(widget.booking.sessionNo);
+          }
         }
       }
 

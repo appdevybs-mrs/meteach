@@ -1342,45 +1342,34 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                 waitingByMethod: waitingByMethod,
                                 teachersCount:
                                     teacherCards.length + variantCards.length,
-                                extraChild: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _FinancePill(
-                                      icon: Icons.event_repeat_rounded,
-                                      text: activeFinancePeriod == null
-                                          ? 'Finance cycle: not started'
-                                          : 'Finance cycle: ${activeFinancePeriod.displayLabel}',
-                                      strong: true,
+                                financeCycleLabel: activeFinancePeriod == null
+                                    ? 'Finance cycle: not started'
+                                    : 'Finance cycle: ${activeFinancePeriod.displayLabel}',
+                                onFreshStart: () =>
+                                    _openFinanceFreshStartDialog(
+                                      activePeriod: activeFinancePeriod,
                                     ),
-                                    FilledButton.icon(
-                                      onPressed: () =>
-                                          _openFinanceFreshStartDialog(
-                                            activePeriod: activeFinancePeriod,
-                                          ),
-                                      icon: const Icon(
-                                        Icons.restart_alt_rounded,
-                                      ),
-                                      label: const Text('Fresh start'),
-                                    ),
-                                  ],
-                                ),
                               ),
                               const SizedBox(height: 12),
-                              _WaitingCard(
-                                totalWaiting: waitingTotal,
-                                byMethod: waitingByMethod,
-                                money: _money,
-                                onTap: () =>
-                                    _openWaitingDetailsDialog(waitingRows),
-                              ),
-                              const SizedBox(height: 10),
-                              _SchoolCard(
-                                totalSchool: schoolTotal,
-                                byMethod: schoolByMethod,
-                                money: _money,
-                                onTap: () =>
-                                    _openSchoolDetailsDialog(schoolRows),
+                              _ResponsiveCardWrap(
+                                minItemWidth: 260,
+                                maxColumns: 2,
+                                children: [
+                                  _WaitingCard(
+                                    totalWaiting: waitingTotal,
+                                    byMethod: waitingByMethod,
+                                    money: _money,
+                                    onTap: () =>
+                                        _openWaitingDetailsDialog(waitingRows),
+                                  ),
+                                  _SchoolCard(
+                                    totalSchool: schoolTotal,
+                                    byMethod: schoolByMethod,
+                                    money: _money,
+                                    onTap: () =>
+                                        _openSchoolDetailsDialog(schoolRows),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 10),
                               if (variantCards.isEmpty && teacherCards.isEmpty)
@@ -1396,86 +1385,91 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                 if (variantCards.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(bottom: 10),
-                                    child: Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
+                                    child: _ResponsiveCardWrap(
+                                      minItemWidth: 320,
+                                      maxColumns: 2,
                                       children: variantCards
                                           .map(
-                                            (card) => SizedBox(
-                                              width: 520,
-                                              child: _TeacherSquareCard(
-                                                data: card,
-                                                money: _money,
-                                                onTap: () {
-                                                  Navigator.of(context).push(
-                                                    MaterialPageRoute(
-                                                      builder: (_) =>
-                                                          _TeacherFinanceDetailsScreen(
-                                                            teacherId:
-                                                                card.teacherId,
-                                                            teacherScopeKey: card
-                                                                .teacherScopeKey,
-                                                            teacherName: card
-                                                                .teacherName,
-                                                            initialPayments:
-                                                                card.payments,
-                                                            paymentsRef:
-                                                                _paymentsRef,
-                                                            classesRef:
-                                                                _classesRef,
-                                                            usersRef: _usersRef,
-                                                            financeDoneRef:
-                                                                _financeDoneRef,
-                                                            activeFinancePeriod:
-                                                                activeFinancePeriod,
-                                                            money: _money,
-                                                            onSetMethod:
-                                                                _setPaymentMethod,
-                                                            showNoPaymentRows:
-                                                                false,
-                                                          ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
+                                            (card) => _TeacherSquareCard(
+                                              data: card,
+                                              money: _money,
+                                              onTap: () {
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        _TeacherFinanceDetailsScreen(
+                                                          teacherId:
+                                                              card.teacherId,
+                                                          teacherScopeKey: card
+                                                              .teacherScopeKey,
+                                                          teacherName:
+                                                              card.teacherName,
+                                                          initialPayments:
+                                                              card.payments,
+                                                          paymentsRef:
+                                                              _paymentsRef,
+                                                          classesRef:
+                                                              _classesRef,
+                                                          usersRef: _usersRef,
+                                                          financeDoneRef:
+                                                              _financeDoneRef,
+                                                          activeFinancePeriod:
+                                                              activeFinancePeriod,
+                                                          money: _money,
+                                                          onSetMethod:
+                                                              _setPaymentMethod,
+                                                          showNoPaymentRows:
+                                                              false,
+                                                        ),
+                                                  ),
+                                                );
+                                              },
                                             ),
                                           )
                                           .toList(),
                                     ),
                                   ),
                               ],
-                              ...teacherCards.map(
-                                (card) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: _TeacherSquareCard(
-                                    data: card,
-                                    money: _money,
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              _TeacherFinanceDetailsScreen(
-                                                teacherId: card.teacherId,
-                                                teacherScopeKey:
-                                                    card.teacherScopeKey,
-                                                teacherName: card.teacherName,
-                                                initialPayments: card.payments,
-                                                paymentsRef: _paymentsRef,
-                                                classesRef: _classesRef,
-                                                usersRef: _usersRef,
-                                                financeDoneRef: _financeDoneRef,
-                                                activeFinancePeriod:
-                                                    activeFinancePeriod,
-                                                money: _money,
-                                                onSetMethod: _setPaymentMethod,
-                                                showNoPaymentRows: true,
+                              if (teacherCards.isNotEmpty)
+                                _ResponsiveCardWrap(
+                                  minItemWidth: 340,
+                                  maxColumns: 2,
+                                  children: teacherCards
+                                      .map(
+                                        (card) => _TeacherSquareCard(
+                                          data: card,
+                                          money: _money,
+                                          onTap: () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    _TeacherFinanceDetailsScreen(
+                                                      teacherId: card.teacherId,
+                                                      teacherScopeKey:
+                                                          card.teacherScopeKey,
+                                                      teacherName:
+                                                          card.teacherName,
+                                                      initialPayments:
+                                                          card.payments,
+                                                      paymentsRef: _paymentsRef,
+                                                      classesRef: _classesRef,
+                                                      usersRef: _usersRef,
+                                                      financeDoneRef:
+                                                          _financeDoneRef,
+                                                      activeFinancePeriod:
+                                                          activeFinancePeriod,
+                                                      money: _money,
+                                                      onSetMethod:
+                                                          _setPaymentMethod,
+                                                      showNoPaymentRows: true,
+                                                    ),
                                               ),
+                                            );
+                                          },
                                         ),
-                                      );
-                                    },
-                                  ),
+                                      )
+                                      .toList(),
                                 ),
-                              ),
                             ],
                           );
                         },
@@ -4433,7 +4427,8 @@ class _FilterHeader extends StatelessWidget {
     required this.originalByMethod,
     required this.waitingByMethod,
     required this.teachersCount,
-    this.extraChild,
+    required this.financeCycleLabel,
+    required this.onFreshStart,
   });
 
   final String fromLabel;
@@ -4446,7 +4441,8 @@ class _FilterHeader extends StatelessWidget {
   final _MethodTotals originalByMethod;
   final _MethodTotals waitingByMethod;
   final int teachersCount;
-  final Widget? extraChild;
+  final String financeCycleLabel;
+  final VoidCallback onFreshStart;
 
   @override
   Widget build(BuildContext context) {
@@ -4486,26 +4482,96 @@ class _FilterHeader extends StatelessWidget {
               strong: true,
             ),
             _FinancePill(
-              icon: Icons.point_of_sale_rounded,
-              text:
-                  'Income Cash/CCP/Un: ${originalByMethod.cash}/${originalByMethod.ccp}/${originalByMethod.unspecified}',
-            ),
-            _FinancePill(
               icon: Icons.schedule_send_rounded,
               text: 'Waiting: $waitingTotal',
               strong: true,
             ),
-            _FinancePill(
-              icon: Icons.hourglass_top_rounded,
-              text:
-                  'Waiting Cash/CCP/Un: ${waitingByMethod.cash}/${waitingByMethod.ccp}/${waitingByMethod.unspecified}',
+            OutlinedButton.icon(
+              onPressed: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (sheetContext) {
+                    return SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Finance summary',
+                                style: TextStyle(
+                                  color: AdminFinanceScreen.primary,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _FinancePill(
+                                    icon: Icons.point_of_sale_rounded,
+                                    text:
+                                        'Income Cash/CCP/Un: ${originalByMethod.cash}/${originalByMethod.ccp}/${originalByMethod.unspecified}',
+                                  ),
+                                  _FinancePill(
+                                    icon: Icons.hourglass_top_rounded,
+                                    text:
+                                        'Waiting Cash/CCP/Un: ${waitingByMethod.cash}/${waitingByMethod.ccp}/${waitingByMethod.unspecified}',
+                                  ),
+                                  _FinancePill(
+                                    icon: Icons.badge_rounded,
+                                    text: 'Teachers: $teachersCount',
+                                    strong: true,
+                                  ),
+                                  _FinancePill(
+                                    icon: Icons.event_repeat_rounded,
+                                    text: financeCycleLabel,
+                                    strong: true,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.of(sheetContext).pop();
+                                      onReset();
+                                    },
+                                    icon: const Icon(
+                                      Icons.filter_alt_off_rounded,
+                                      size: 17,
+                                    ),
+                                    label: const Text('Reset filter'),
+                                  ),
+                                  FilledButton.icon(
+                                    onPressed: () {
+                                      Navigator.of(sheetContext).pop();
+                                      onFreshStart();
+                                    },
+                                    icon: const Icon(Icons.restart_alt_rounded),
+                                    label: const Text('Fresh start'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+              icon: const Icon(Icons.info_outline_rounded, size: 16),
+              label: const Text('More'),
             ),
-            _FinancePill(
-              icon: Icons.badge_rounded,
-              text: 'Teachers: $teachersCount',
-              strong: true,
-            ),
-            if (extraChild != null) extraChild!,
           ],
         ),
       ),
@@ -4627,7 +4693,7 @@ class _FinancePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: bg ?? AdminFinanceScreen.appBg,
         borderRadius: BorderRadius.circular(999),
@@ -4646,10 +4712,12 @@ class _FinancePill extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
               color: fg ?? AdminFinanceScreen.primary.withValues(alpha: 0.92),
-              fontSize: 12.5,
+              fontSize: 11.5,
             ),
           ),
         ],
@@ -4673,55 +4741,14 @@ class _WaitingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 240,
-      height: 130,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Card(
-          elevation: 0,
-          color: const Color(0xFFFFF6EC),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: Colors.orange.withValues(alpha: 0.22)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Waiting',
-                  style: TextStyle(
-                    color: AdminFinanceScreen.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  money(totalWaiting),
-                  style: const TextStyle(
-                    color: AdminFinanceScreen.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 24,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
-                  style: TextStyle(
-                    color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return _CompactSummaryCard(
+      title: 'Waiting',
+      amount: money(totalWaiting),
+      subtitle:
+          'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
+      backgroundColor: const Color(0xFFFFF6EC),
+      borderColor: Colors.orange.withValues(alpha: 0.22),
+      onTap: onTap,
     );
   }
 }
@@ -4741,57 +4768,117 @@ class _SchoolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 320,
-      height: 130,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Card(
-          elevation: 0,
-          color: const Color(0xFFEFF4FF),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(
-              color: const Color(0xFF3666D8).withValues(alpha: 0.28),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'School (Pushed Only)',
-                  style: TextStyle(
-                    color: AdminFinanceScreen.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
+    return _CompactSummaryCard(
+      title: 'School (Pushed Only)',
+      amount: money(totalSchool),
+      subtitle:
+          'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
+      backgroundColor: const Color(0xFFEFF4FF),
+      borderColor: const Color(0xFF3666D8).withValues(alpha: 0.28),
+      onTap: onTap,
+    );
+  }
+}
+
+class _CompactSummaryCard extends StatelessWidget {
+  const _CompactSummaryCard({
+    required this.title,
+    required this.amount,
+    required this.subtitle,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.onTap,
+  });
+
+  final String title;
+  final String amount;
+  final String subtitle;
+  final Color backgroundColor;
+  final Color borderColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Card(
+        elevation: 0,
+        color: backgroundColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: borderColor),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AdminFinanceScreen.primary,
+                  fontWeight: FontWeight.w900,
                 ),
-                const Spacer(),
-                Text(
-                  money(totalSchool),
-                  style: const TextStyle(
-                    color: AdminFinanceScreen.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 24,
-                    height: 1.1,
-                  ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                amount,
+                style: const TextStyle(
+                  color: AdminFinanceScreen.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                  height: 1.05,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Cash ${money(byMethod.cash)} · CCP ${money(byMethod.ccp)} · Un ${money(byMethod.unspecified)}',
-                  style: TextStyle(
-                    color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: AdminFinanceScreen.primary.withValues(alpha: 0.74),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ResponsiveCardWrap extends StatelessWidget {
+  const _ResponsiveCardWrap({
+    required this.children,
+    this.minItemWidth = 320,
+    this.maxColumns = 2,
+  });
+
+  final List<Widget> children;
+  final double minItemWidth;
+  final int maxColumns;
+
+  @override
+  Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 10.0;
+        final availableWidth = constraints.maxWidth;
+        var columns = (availableWidth / minItemWidth).floor();
+        if (columns < 1) columns = 1;
+        if (columns > maxColumns) columns = maxColumns;
+        final totalSpacing = spacing * (columns - 1);
+        final itemWidth = (availableWidth - totalSpacing) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: children
+              .map((child) => SizedBox(width: itemWidth, child: child))
+              .toList(),
+        );
+      },
     );
   }
 }
@@ -4817,73 +4904,47 @@ class _TeacherSquareCard extends StatelessWidget {
         side: BorderSide(color: Colors.black.withValues(alpha: 0.07)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Text(
                     data.teacherName,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AdminFinanceScreen.primary,
                       fontWeight: FontWeight.w900,
-                      fontSize: 18,
+                      fontSize: 15,
                       height: 1.05,
                     ),
                   ),
                 ),
-                FilledButton.tonalIcon(
+                const SizedBox(width: 8),
+                TextButton.icon(
                   onPressed: onTap,
                   icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                  label: const Text('Open learners'),
+                  label: const Text('Open'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 _FinancePill(
-                  icon: Icons.groups_rounded,
-                  text:
-                      'Learners/Payments: ${data.learnersCount}/${data.paymentsCount}',
-                  strong: true,
-                ),
-                _FinancePill(
-                  icon: Icons.verified_user_rounded,
-                  text: 'Done learners: ${data.doneLearnersCount}',
-                  bg: AdminFinanceScreen.done.withValues(alpha: 0.08),
-                  fg: AdminFinanceScreen.done,
-                  border: AdminFinanceScreen.done.withValues(alpha: 0.22),
-                  strong: true,
-                ),
-                _FinancePill(
                   icon: Icons.account_balance_wallet_rounded,
-                  text: 'Total income: ${money(data.originalTotal)}',
-                  strong: true,
-                ),
-                _FinancePill(
-                  icon: Icons.schedule_send_rounded,
-                  text: 'Waiting: ${money(data.waitingTotal)}',
-                  bg: AdminFinanceScreen.waiting.withValues(alpha: 0.1),
-                  fg: const Color(0xFF8A5A00),
-                  border: AdminFinanceScreen.waiting.withValues(alpha: 0.28),
-                  strong: true,
-                ),
-                _FinancePill(
-                  icon: Icons.swap_horiz_rounded,
-                  text:
-                      'Cash/CCP: ${money(data.originalByMethod.cash)} / ${money(data.originalByMethod.ccp)}',
+                  text: 'Income ${money(data.originalTotal)}',
                   strong: true,
                 ),
                 _FinancePill(
                   icon: Icons.payments_rounded,
-                  text: 'Teacher part: ${money(data.payoutTotal)}',
+                  text: 'Teacher ${money(data.payoutTotal)}',
                   bg: AdminFinanceScreen.tbpaid.withValues(alpha: 0.08),
                   fg: AdminFinanceScreen.tbpaid,
                   border: AdminFinanceScreen.tbpaid.withValues(alpha: 0.22),
@@ -4891,10 +4952,36 @@ class _TeacherSquareCard extends StatelessWidget {
                 ),
                 _FinancePill(
                   icon: Icons.school_rounded,
-                  text: 'School part: ${money(data.schoolTotal)}',
+                  text: 'School ${money(data.schoolTotal)}',
                   bg: const Color(0xFF3666D8).withValues(alpha: 0.08),
                   fg: const Color(0xFF3666D8),
                   border: const Color(0xFF3666D8).withValues(alpha: 0.22),
+                  strong: true,
+                ),
+                _FinancePill(
+                  icon: Icons.schedule_send_rounded,
+                  text: 'Waiting ${money(data.waitingTotal)}',
+                  bg: AdminFinanceScreen.waiting.withValues(alpha: 0.1),
+                  fg: const Color(0xFF8A5A00),
+                  border: AdminFinanceScreen.waiting.withValues(alpha: 0.28),
+                  strong: true,
+                ),
+                _FinancePill(
+                  icon: Icons.groups_rounded,
+                  text: 'Learners ${data.learnersCount}',
+                  strong: true,
+                ),
+                _FinancePill(
+                  icon: Icons.receipt_long_rounded,
+                  text: 'Payments ${data.paymentsCount}',
+                  strong: true,
+                ),
+                _FinancePill(
+                  icon: Icons.verified_user_rounded,
+                  text: 'Done ${data.doneLearnersCount}',
+                  bg: AdminFinanceScreen.done.withValues(alpha: 0.08),
+                  fg: AdminFinanceScreen.done,
+                  border: AdminFinanceScreen.done.withValues(alpha: 0.22),
                   strong: true,
                 ),
               ],

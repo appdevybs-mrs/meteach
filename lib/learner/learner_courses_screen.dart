@@ -962,6 +962,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
           final v = entry.value;
           if (v is! Map) continue;
           final rec = Map<String, dynamic>.from(v);
+          if (rec['present'] != true) continue;
 
           final taughtItems = rec['taughtItems'];
           if (taughtItems is List) {
@@ -1103,7 +1104,6 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
-
 
     return Scaffold(
       backgroundColor: p.appBg,
