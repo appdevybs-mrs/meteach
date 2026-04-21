@@ -2763,7 +2763,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) =>
-                                          OnlineAttendanceHistoryScreen(
+                                          _OnlineAttendanceHistoryScreen(
                                             booking: b,
                                             teacherUid: _teacherUid,
                                           ),
@@ -2775,7 +2775,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => OnlineTakeAttendanceScreen(
+                                    builder: (_) => _OnlineTakeAttendanceScreen(
                                       booking: b,
                                       teacherUid: _teacherUid,
                                       teacherName: _teacherName.isEmpty
@@ -2806,7 +2806,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => OnlineAttendanceHistoryScreen(
+                          builder: (_) => _OnlineAttendanceHistoryScreen(
                             booking: b,
                             teacherUid: _teacherUid,
                           ),
@@ -3149,9 +3149,8 @@ class _OnlineBooking {
       '$courseId|$dayKey|$hhmm';
 }
 
-class OnlineTakeAttendanceScreen extends StatefulWidget {
-  const OnlineTakeAttendanceScreen({
-    super.key,
+class _OnlineTakeAttendanceScreen extends StatefulWidget {
+  const _OnlineTakeAttendanceScreen({
     required this.booking,
     required this.teacherUid,
     required this.teacherName,
@@ -3162,12 +3161,12 @@ class OnlineTakeAttendanceScreen extends StatefulWidget {
   final String teacherName;
 
   @override
-  State<OnlineTakeAttendanceScreen> createState() =>
+  State<_OnlineTakeAttendanceScreen> createState() =>
       _OnlineTakeAttendanceScreenState();
 }
 
 class _OnlineTakeAttendanceScreenState
-    extends State<OnlineTakeAttendanceScreen> {
+    extends State<_OnlineTakeAttendanceScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool saving = false;
@@ -3806,9 +3805,8 @@ class _OnlineTakeAttendanceScreenState
   }
 }
 
-class OnlineAttendanceHistoryScreen extends StatefulWidget {
-  const OnlineAttendanceHistoryScreen({
-    super.key,
+class _OnlineAttendanceHistoryScreen extends StatefulWidget {
+  const _OnlineAttendanceHistoryScreen({
     required this.booking,
     required this.teacherUid,
   });
@@ -3817,12 +3815,12 @@ class OnlineAttendanceHistoryScreen extends StatefulWidget {
   final String teacherUid;
 
   @override
-  State<OnlineAttendanceHistoryScreen> createState() =>
+  State<_OnlineAttendanceHistoryScreen> createState() =>
       _OnlineAttendanceHistoryScreenState();
 }
 
 class _OnlineAttendanceHistoryScreenState
-    extends State<OnlineAttendanceHistoryScreen> {
+    extends State<_OnlineAttendanceHistoryScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final Map<String, Future<_LearnerHistoryInsight>> _learnerInsightCache = {};
 

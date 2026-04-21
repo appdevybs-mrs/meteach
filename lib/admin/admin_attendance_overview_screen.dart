@@ -196,7 +196,7 @@ class _AdminAttendanceOverviewScreenState
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
-            AdminAttendanceDetailsScreen(title: title, rows: filtered),
+            _AdminAttendanceDetailsScreen(title: title, rows: filtered),
       ),
     );
   }
@@ -204,7 +204,7 @@ class _AdminAttendanceOverviewScreenState
   void _openMissingDetails() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => AdminMissingAttendanceScreen(
+        builder: (_) => _AdminMissingAttendanceScreen(
           title:
               'Missing Attendance (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})',
           rows: _missingRows,
@@ -1076,7 +1076,6 @@ class _AdminAttendanceOverviewScreenState
 
   @override
   Widget build(BuildContext context) {
-
     final rangeTitle =
         'Selected Range (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})';
 
@@ -1171,9 +1170,8 @@ class _AdminAttendanceOverviewScreenState
   }
 }
 
-class AdminAttendanceDetailsScreen extends StatelessWidget {
-  const AdminAttendanceDetailsScreen({
-    super.key,
+class _AdminAttendanceDetailsScreen extends StatelessWidget {
+  const _AdminAttendanceDetailsScreen({
     required this.title,
     required this.rows,
   });
@@ -1192,7 +1190,6 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final sorted = [...rows]
       ..sort((a, b) {
         final dateCmp = b.dateStr.compareTo(a.dateStr);
@@ -1355,9 +1352,8 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
   }
 }
 
-class AdminMissingAttendanceScreen extends StatelessWidget {
-  const AdminMissingAttendanceScreen({
-    super.key,
+class _AdminMissingAttendanceScreen extends StatelessWidget {
+  const _AdminMissingAttendanceScreen({
     required this.title,
     required this.rows,
   });
@@ -1372,7 +1368,6 @@ class AdminMissingAttendanceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final sorted = [...rows]
       ..sort((a, b) {
         final dateCmp = a.dateStr.compareTo(b.dateStr);

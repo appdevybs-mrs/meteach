@@ -16,7 +16,7 @@ import '../shared/offline_notice_banner.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_web_layout.dart';
-import 'TeacherStoriesScreen.dart';
+import 'teacher_stories_screen.dart';
 import 'teacher_classes.dart';
 import 'teacher_games_screen.dart';
 import 'teacher_mail.dart';
