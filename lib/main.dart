@@ -4424,20 +4424,23 @@ class UpdateRequiredScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () => _openStore(context),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Brand.actionOrange,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => _openStore(context),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Brand.actionOrange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        label: const Text('Update now'),
                       ),
-                      icon: const Icon(Icons.open_in_new_rounded),
-                      label: const Text('Update now'),
                     ),
                   ),
                 ],

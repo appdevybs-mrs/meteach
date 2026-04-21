@@ -8,6 +8,7 @@ import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart';
+import '../shared/responsive_layout.dart';
 
 class _CvnInputFormatter extends TextInputFormatter {
   @override
@@ -289,6 +290,8 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWide = AppResponsive.isWebDesktop(context, minWidth: 1180);
+
     return Scaffold(
       backgroundColor: _appBg,
       appBar: AppBar(
@@ -306,15 +309,21 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildStepIndicator(),
-            const SizedBox(height: 24),
-            if (_currentStep == 1) _buildStep1(),
-            if (_currentStep == 2) _buildStep2(),
-            if (_currentStep == 3) _buildStep3(),
-          ],
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: desktopWide ? 840 : 680),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildStepIndicator(),
+                const SizedBox(height: 24),
+                if (_currentStep == 1) _buildStep1(),
+                if (_currentStep == 2) _buildStep2(),
+                if (_currentStep == 3) _buildStep3(),
+              ],
+            ),
+          ),
         ),
       ),
     );

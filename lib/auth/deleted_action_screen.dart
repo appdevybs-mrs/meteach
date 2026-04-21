@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
+import '../shared/responsive_layout.dart';
 
 class DeletedActionScreen extends StatefulWidget {
   final String uid;
@@ -459,6 +460,8 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWide = AppResponsive.isWebDesktop(context, minWidth: 1180);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F9),
       appBar: AppBar(
@@ -476,84 +479,87 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFFD9E1E8)),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: desktopWide ? 640 : 520),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFD9E1E8)),
+                      ),
+                      child: Text(
+                        'Error:\n$_error',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                    child: Text(
-                      'Error:\n$_error',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _header(),
+                        const SizedBox(height: 18),
+                        _detailsCard(),
+                        const SizedBox(height: 14),
+                        _statusCard(),
+                        const SizedBox(height: 18),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            side: const BorderSide(color: Color(0xFFD1D9E0)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF1A2B48),
+                          ),
+                          onPressed: _busy
+                              ? null
+                              : () async {
+                                  await _signOut();
+                                },
+                          icon: const Icon(Icons.logout_rounded),
+                          label: const Text(
+                            'Sign out',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            backgroundColor: const Color(0xFFF98D28),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          onPressed: _busy
+                              ? null
+                              : () async {
+                                  await _closeApp();
+                                },
+                          icon: const Icon(Icons.close_rounded),
+                          label: const Text(
+                            'Close app',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              )
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _header(),
-                    const SizedBox(height: 18),
-                    _detailsCard(),
-                    const SizedBox(height: 14),
-                    _statusCard(),
-                    const SizedBox(height: 18),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: const BorderSide(color: Color(0xFFD1D9E0)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF1A2B48),
-                      ),
-                      onPressed: _busy
-                          ? null
-                          : () async {
-                              await _signOut();
-                            },
-                      icon: const Icon(Icons.logout_rounded),
-                      label: const Text(
-                        'Sign out',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: const Color(0xFFF98D28),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: _busy
-                          ? null
-                          : () async {
-                              await _closeApp();
-                            },
-                      icon: const Icon(Icons.close_rounded),
-                      label: const Text(
-                        'Close app',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          ),
+        ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'shared/human_error.dart';
 import 'shared/app_feedback.dart';
+import 'shared/responsive_layout.dart';
 
 /// ===== Brand Colors (from your palette) =====
 class Brand {
@@ -652,6 +653,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
   Widget build(BuildContext context) {
     final selected = _selectedOption;
     final showPrivateMode = selected?.requiresStudyMode == true;
+    final desktopWide = AppResponsive.isWebDesktop(context, minWidth: 1180);
 
     return Scaffold(
       backgroundColor: Brand.appBg,
@@ -701,249 +703,264 @@ class _EnrollScreenState extends State<EnrollScreen> {
             ),
             SingleChildScrollView(
               padding: _screenPadding(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _GlassCard(
-                    radius: _cardRadius(context),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const _SectionTitle(
-                          icon: Icons.menu_book_rounded,
-                          title: 'Choose how you want to study',
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Swipe to explore the available study options.',
-                          style: TextStyle(
-                            color: Brand.mainText.withValues(alpha: 0.72),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (deliveryOptions.isEmpty)
-                          const _InfoBanner(
-                            text:
-                                'No study options are available for this course right now.',
-                          )
-                        else ...[
-                          _DeliveryCarousel(
-                            controller: _deliveryPageController,
-                            options: deliveryOptions,
-                            selectedIndex: _currentDeliveryIndex,
-                            onTapIndex: _selectDeliveryByIndex,
-                            onPageChanged: (index) {
-                              setState(() {
-                                _currentDeliveryIndex = index;
-                                selectedDeliveryKey =
-                                    deliveryOptions[index].key;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 10),
-                          _CarouselDots(
-                            count: deliveryOptions.length,
-                            activeIndex: _currentDeliveryIndex,
-                          ),
-                          const SizedBox(height: 14),
-                          if (selected != null)
-                            _SelectedOptionSummary(
-                              option: selected,
-                              studyMode: showPrivateMode
-                                  ? _privateStudyMode
-                                  : '',
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: desktopWide ? 980 : 760,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _GlassCard(
+                        radius: _cardRadius(context),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const _SectionTitle(
+                              icon: Icons.menu_book_rounded,
+                              title: 'Choose how you want to study',
                             ),
-                          if (selected != null) const SizedBox(height: 12),
-                          if (selected != null)
-                            _DeliveryExplanation(option: selected),
-                        ],
+                            const SizedBox(height: 6),
+                            Text(
+                              'Swipe to explore the available study options.',
+                              style: TextStyle(
+                                color: Brand.mainText.withValues(alpha: 0.72),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (deliveryOptions.isEmpty)
+                              const _InfoBanner(
+                                text:
+                                    'No study options are available for this course right now.',
+                              )
+                            else ...[
+                              _DeliveryCarousel(
+                                controller: _deliveryPageController,
+                                options: deliveryOptions,
+                                selectedIndex: _currentDeliveryIndex,
+                                onTapIndex: _selectDeliveryByIndex,
+                                onPageChanged: (index) {
+                                  setState(() {
+                                    _currentDeliveryIndex = index;
+                                    selectedDeliveryKey =
+                                        deliveryOptions[index].key;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 10),
+                              _CarouselDots(
+                                count: deliveryOptions.length,
+                                activeIndex: _currentDeliveryIndex,
+                              ),
+                              const SizedBox(height: 14),
+                              if (selected != null)
+                                _SelectedOptionSummary(
+                                  option: selected,
+                                  studyMode: showPrivateMode
+                                      ? _privateStudyMode
+                                      : '',
+                                ),
+                              if (selected != null) const SizedBox(height: 12),
+                              if (selected != null)
+                                _DeliveryExplanation(option: selected),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      if (showPrivateMode) ...[
+                        const SizedBox(height: 14),
+                        _GlassCard(
+                          radius: _cardRadius(context),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const _SectionTitle(
+                                icon: Icons.place_rounded,
+                                title: 'Private lesson mode',
+                              ),
+                              const SizedBox(height: 12),
+                              _StudyModeSelector(
+                                value: _privateStudyMode,
+                                onChanged: saving
+                                    ? null
+                                    : (v) => setState(
+                                        () => _privateStudyMode = v ?? 'online',
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
 
-                  if (showPrivateMode) ...[
-                    const SizedBox(height: 14),
-                    _GlassCard(
-                      radius: _cardRadius(context),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const _SectionTitle(
-                            icon: Icons.place_rounded,
-                            title: 'Private lesson mode',
-                          ),
-                          const SizedBox(height: 12),
-                          _StudyModeSelector(
-                            value: _privateStudyMode,
-                            onChanged: saving
-                                ? null
-                                : (v) => setState(
-                                    () => _privateStudyMode = v ?? 'online',
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
 
-                  const SizedBox(height: 14),
-
-                  _GlassCard(
-                    radius: _cardRadius(context),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const _SectionTitle(
-                            icon: Icons.assignment_rounded,
-                            title: 'Enrollment details',
-                          ),
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: fullNameC,
-                            textInputAction: TextInputAction.next,
-                            decoration: _inputDeco(
-                              label: 'Full name | الاسم الكامل',
-                              icon: Icons.person_rounded,
-                              hint: _biHint('Your full name', 'الاسم الكامل'),
-                            ),
-                            validator: (v) {
-                              final s = (v ?? '').trim();
-                              if (s.isEmpty) {
-                                return 'Please enter your full name.';
-                              }
-                              if (s.length < 3) return 'Name looks too short.';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: phoneC,
-                            keyboardType: TextInputType.phone,
-                            textInputAction: TextInputAction.next,
-                            decoration: _inputDeco(
-                              label: 'Phone number | رقم الهاتف',
-                              icon: Icons.phone_rounded,
-                              hint: _biHint(
-                                'e.g. 0550 00 00 00',
-                                'مثال: 0550 00 00 00',
+                      _GlassCard(
+                        radius: _cardRadius(context),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const _SectionTitle(
+                                icon: Icons.assignment_rounded,
+                                title: 'Enrollment details',
                               ),
-                            ),
-                            validator: (v) {
-                              final s = (v ?? '').trim();
-                              if (s.isEmpty) {
-                                return 'Please enter your phone number.';
-                              }
-                              if (s.length < 8) {
-                                return 'Phone number looks too short.';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
+                              const SizedBox(height: 12),
 
-                          TextFormField(
-                            controller: dobC,
-                            readOnly: true,
-                            onTap: _pickDob,
-                            textInputAction: TextInputAction.next,
-                            decoration: _inputDeco(
-                              label: 'Date of birth | تاريخ الميلاد',
-                              icon: Icons.cake_rounded,
-                              hint: _biHint('YYYY-MM-DD', 'سنة-شهر-يوم'),
-                            ),
-                            validator: (v) {
-                              final s = (v ?? '').trim();
-                              if (s.isEmpty) {
-                                return 'Please select your date of birth.';
-                              }
-                              final p = s.split('-');
-                              if (p.length != 3) {
-                                return 'Use format YYYY-MM-DD.';
-                              }
-                              final y = int.tryParse(p[0]);
-                              final m = int.tryParse(p[1]);
-                              final d = int.tryParse(p[2]);
-                              if (y == null || m == null || d == null) {
-                                return 'Use format YYYY-MM-DD.';
-                              }
-                              final parsed = DateTime(y, m, d);
-                              if (parsed.year != y ||
-                                  parsed.month != m ||
-                                  parsed.day != d) {
-                                return 'Please choose a valid date.';
-                              }
-                              if (parsed.isAfter(DateTime.now())) {
-                                return 'Date of birth cannot be in the future.';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-
-                          DropdownButtonFormField<String>(
-                            initialValue: _gender,
-                            decoration: _inputDeco(
-                              label: 'Gender | الجنس',
-                              icon: Icons.wc_rounded,
-                              hint: _biHint('Select gender', 'اختر الجنس'),
-                            ),
-                            items: _genderOptions
-                                .map(
-                                  (value) => DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(value),
+                              TextFormField(
+                                controller: fullNameC,
+                                textInputAction: TextInputAction.next,
+                                decoration: _inputDeco(
+                                  label: 'Full name | الاسم الكامل',
+                                  icon: Icons.person_rounded,
+                                  hint: _biHint(
+                                    'Your full name',
+                                    'الاسم الكامل',
                                   ),
-                                )
-                                .toList(),
-                            validator: (v) {
-                              if (!_genderOptions.contains((v ?? '').trim())) {
-                                return 'Please select your gender.';
-                              }
-                              return null;
-                            },
-                            onChanged: (v) => setState(() => _gender = v),
-                          ),
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: emailC,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.done,
-                            decoration: _inputDeco(
-                              label:
-                                  'Email (optional) | البريد الإلكتروني (اختياري)',
-                              icon: Icons.alternate_email_rounded,
-                              hint: _biHint(
-                                'name@example.com',
-                                'البريد الإلكتروني (اختياري)',
+                                ),
+                                validator: (v) {
+                                  final s = (v ?? '').trim();
+                                  if (s.isEmpty) {
+                                    return 'Please enter your full name.';
+                                  }
+                                  if (s.length < 3) {
+                                    return 'Name looks too short.';
+                                  }
+                                  return null;
+                                },
                               ),
-                            ),
-                            validator: (v) {
-                              final s = (v ?? '').trim();
-                              if (s.isEmpty) return null;
-                              if (!s.contains('@') || !s.contains('.')) {
-                                return 'Please enter a valid email address.';
-                              }
-                              return null;
-                            },
-                          ),
+                              const SizedBox(height: 12),
 
-                          const SizedBox(height: 14),
+                              TextFormField(
+                                controller: phoneC,
+                                keyboardType: TextInputType.phone,
+                                textInputAction: TextInputAction.next,
+                                decoration: _inputDeco(
+                                  label: 'Phone number | رقم الهاتف',
+                                  icon: Icons.phone_rounded,
+                                  hint: _biHint(
+                                    'e.g. 0550 00 00 00',
+                                    'مثال: 0550 00 00 00',
+                                  ),
+                                ),
+                                validator: (v) {
+                                  final s = (v ?? '').trim();
+                                  if (s.isEmpty) {
+                                    return 'Please enter your phone number.';
+                                  }
+                                  if (s.length < 8) {
+                                    return 'Phone number looks too short.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
 
-                          const _InfoBanner(
-                            text:
-                                'We will contact you soon to confirm your subscription.',
+                              TextFormField(
+                                controller: dobC,
+                                readOnly: true,
+                                onTap: _pickDob,
+                                textInputAction: TextInputAction.next,
+                                decoration: _inputDeco(
+                                  label: 'Date of birth | تاريخ الميلاد',
+                                  icon: Icons.cake_rounded,
+                                  hint: _biHint('YYYY-MM-DD', 'سنة-شهر-يوم'),
+                                ),
+                                validator: (v) {
+                                  final s = (v ?? '').trim();
+                                  if (s.isEmpty) {
+                                    return 'Please select your date of birth.';
+                                  }
+                                  final p = s.split('-');
+                                  if (p.length != 3) {
+                                    return 'Use format YYYY-MM-DD.';
+                                  }
+                                  final y = int.tryParse(p[0]);
+                                  final m = int.tryParse(p[1]);
+                                  final d = int.tryParse(p[2]);
+                                  if (y == null || m == null || d == null) {
+                                    return 'Use format YYYY-MM-DD.';
+                                  }
+                                  final parsed = DateTime(y, m, d);
+                                  if (parsed.year != y ||
+                                      parsed.month != m ||
+                                      parsed.day != d) {
+                                    return 'Please choose a valid date.';
+                                  }
+                                  if (parsed.isAfter(DateTime.now())) {
+                                    return 'Date of birth cannot be in the future.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
+
+                              DropdownButtonFormField<String>(
+                                initialValue: _gender,
+                                decoration: _inputDeco(
+                                  label: 'Gender | الجنس',
+                                  icon: Icons.wc_rounded,
+                                  hint: _biHint('Select gender', 'اختر الجنس'),
+                                ),
+                                items: _genderOptions
+                                    .map(
+                                      (value) => DropdownMenuItem<String>(
+                                        value: value,
+                                        child: Text(value),
+                                      ),
+                                    )
+                                    .toList(),
+                                validator: (v) {
+                                  if (!_genderOptions.contains(
+                                    (v ?? '').trim(),
+                                  )) {
+                                    return 'Please select your gender.';
+                                  }
+                                  return null;
+                                },
+                                onChanged: (v) => setState(() => _gender = v),
+                              ),
+                              const SizedBox(height: 12),
+
+                              TextFormField(
+                                controller: emailC,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.done,
+                                decoration: _inputDeco(
+                                  label:
+                                      'Email (optional) | البريد الإلكتروني (اختياري)',
+                                  icon: Icons.alternate_email_rounded,
+                                  hint: _biHint(
+                                    'name@example.com',
+                                    'البريد الإلكتروني (اختياري)',
+                                  ),
+                                ),
+                                validator: (v) {
+                                  final s = (v ?? '').trim();
+                                  if (s.isEmpty) return null;
+                                  if (!s.contains('@') || !s.contains('.')) {
+                                    return 'Please enter a valid email address.';
+                                  }
+                                  return null;
+                                },
+                              ),
+
+                              const SizedBox(height: 14),
+
+                              const _InfoBanner(
+                                text:
+                                    'We will contact you soon to confirm your subscription.',
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
             Positioned(
