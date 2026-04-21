@@ -12,6 +12,8 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   AppMode mode = AppMode.home;
 
+  static const double _desktopShellMinWidth = 1100;
+
   late final List<Widget> _pages = const [
     AssistantHome(),
     MediaHome(),
@@ -24,31 +26,211 @@ class _HomeShellState extends State<HomeShell> {
     ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: IndexedStack(index: mode.index, children: _pages),
-      ),
-      floatingActionButton: mode == AppMode.jobs
-          ? null
-          : _PulsingLoginFab(onPressed: () => _openLogin(context)),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: mode.index,
-        onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(
-            icon: Icon(Icons.perm_media_rounded),
-            label: 'Media',
+  bool _isDesktopShell(BuildContext context) {
+    return kIsWeb && MediaQuery.sizeOf(context).width >= _desktopShellMinWidth;
+  }
+
+  String _labelForMode(AppMode value) {
+    switch (value) {
+      case AppMode.home:
+        return 'Home';
+      case AppMode.media:
+        return 'Media';
+      case AppMode.jobs:
+        return 'Jobs';
+    }
+  }
+
+  Widget _buildDesktopShell(BuildContext context) {
+    final currentPage = IndexedStack(index: mode.index, children: _pages);
+    return SafeArea(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 10, 18),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Brand.uiBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: NavigationRail(
+                extended: true,
+                minExtendedWidth: 208,
+                backgroundColor: Colors.transparent,
+                selectedIndex: mode.index,
+                useIndicator: true,
+                labelType: NavigationRailLabelType.none,
+                onDestinationSelected: (i) =>
+                    setState(() => mode = AppMode.values[i]),
+                leading: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const YbsBusyLogo(size: 42),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Your Bridge School',
+                        style: TextStyle(
+                          color: Brand.primaryBlue,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Browse the public app with a desktop-ready shell.',
+                        style: TextStyle(
+                          color: Brand.mainText.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                trailing: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                  child: FilledButton.icon(
+                    onPressed: () => _openLogin(context),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Brand.actionOrange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: const Icon(Icons.login_rounded),
+                    label: const Text('Login'),
+                  ),
+                ),
+                destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.home_rounded),
+                    label: Text('Home'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.perm_media_rounded),
+                    label: Text('Media'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.work_outline_rounded),
+                    label: Text('Jobs'),
+                  ),
+                ],
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.work_outline_rounded),
-            label: 'Jobs',
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 18, 18, 18),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.56),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: Brand.uiBorder.withValues(alpha: 0.9),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(27),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _labelForMode(mode),
+                                    style: TextStyle(
+                                      color: Brand.primaryBlue,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Desktop navigation keeps the current design while using larger screens intentionally.',
+                                    style: TextStyle(
+                                      color: Brand.mainText.withValues(
+                                        alpha: 0.72,
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => _openLogin(context),
+                              icon: const Icon(Icons.login_rounded),
+                              label: const Text('Login'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(child: currentPage),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final desktopShell = _isDesktopShell(context);
+    return Scaffold(
+      backgroundColor: Brand.appBg,
+      resizeToAvoidBottomInset: true,
+      body: desktopShell
+          ? _buildDesktopShell(context)
+          : SafeArea(
+              child: IndexedStack(index: mode.index, children: _pages),
+            ),
+      floatingActionButton: desktopShell || mode == AppMode.jobs
+          ? null
+          : _PulsingLoginFab(onPressed: () => _openLogin(context)),
+      bottomNavigationBar: desktopShell
+          ? null
+          : NavigationBar(
+              selectedIndex: mode.index,
+              onDestinationSelected: (i) =>
+                  setState(() => mode = AppMode.values[i]),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_rounded),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.perm_media_rounded),
+                  label: 'Media',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.work_outline_rounded),
+                  label: 'Jobs',
+                ),
+              ],
+            ),
     );
   }
 }

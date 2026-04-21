@@ -1,15 +1,36 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import 'responsive_layout.dart';
+
 Widget webPageFrame({
+  required BuildContext context,
   required Widget child,
   double maxWidth = 1380,
-  EdgeInsetsGeometry padding = const EdgeInsets.fromLTRB(14, 10, 14, 14),
+  EdgeInsetsGeometry? padding,
 }) {
   if (!kIsWeb) return child;
 
+  final resolvedPadding =
+      padding ??
+      AppResponsive.pagePadding(
+        context,
+        phone: 12,
+        tablet: 16,
+        desktop: 24,
+        largeDesktop: 28,
+        topPhone: 10,
+        topTablet: 12,
+        topDesktop: 18,
+        topLargeDesktop: 20,
+        bottomPhone: 12,
+        bottomTablet: 16,
+        bottomDesktop: 24,
+        bottomLargeDesktop: 28,
+      );
+
   return Padding(
-    padding: padding,
+    padding: resolvedPadding,
     child: Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(

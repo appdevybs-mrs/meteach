@@ -870,6 +870,7 @@ class _AdminHomeState extends State<AdminHome> {
         .toList();
 
     final dashboardPanel = webPageFrame(
+      context: context,
       maxWidth: 1500,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       child: Padding(

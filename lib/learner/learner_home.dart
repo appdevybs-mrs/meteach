@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -28,6 +27,7 @@ import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 import '../shared/window_access_dialogs.dart';
@@ -459,7 +459,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
-    final isWebDashboard = kIsWeb && MediaQuery.of(context).size.width >= 1100;
+    final isWebDashboard = AppResponsive.isWebDesktop(context, minWidth: 1100);
     final webDesktop = isLearnerWebDesktop(context, minWidth: 1280);
 
     return PopScope(
@@ -477,31 +477,33 @@ class _LearnerHomeState extends State<LearnerHome> {
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: p.appBg,
-        drawer: _LearnerDrawer(
-          palette: p,
-          displayNameFuture: _displayNameFuture,
-          profilePhotoFuture: _profilePhotoFuture,
-          coursesTileKey: _drawerCoursesKey,
-          galleryTileKey: _drawerGalleryKey,
-          gamesTileKey: _drawerGamesKey,
-          coachTileKey: _drawerCoachKey,
-          storiesTileKey: _drawerStoriesKey,
-          profileTileKey: _drawerProfileKey,
-          mailTileKey: _drawerMailKey,
-          regulationsTileKey: _drawerRegulationsKey,
-          themeTileKey: _drawerThemeKey,
-          logoutButtonKey: _drawerLogoutKey,
-          onOpenProfile: _openProfileScreen,
-          onOpenMail: _openMailScreen,
-          onOpenCourses: _openCoursesWindow,
-          onOpenGallery: _openGalleryScreen,
-          onOpenStories: _openStoriesScreen,
-          onOpenGames: _openGamesScreen,
-          onOpenStudyCoach: _openStudyCoachScreen,
-          onOpenRegulations: _openRegulationsScreen,
-          onOpenThemeSettings: _openThemeSettings,
-          onLogout: () => _logout(context),
-        ),
+        drawer: webDesktop
+            ? null
+            : _LearnerDrawer(
+                palette: p,
+                displayNameFuture: _displayNameFuture,
+                profilePhotoFuture: _profilePhotoFuture,
+                coursesTileKey: _drawerCoursesKey,
+                galleryTileKey: _drawerGalleryKey,
+                gamesTileKey: _drawerGamesKey,
+                coachTileKey: _drawerCoachKey,
+                storiesTileKey: _drawerStoriesKey,
+                profileTileKey: _drawerProfileKey,
+                mailTileKey: _drawerMailKey,
+                regulationsTileKey: _drawerRegulationsKey,
+                themeTileKey: _drawerThemeKey,
+                logoutButtonKey: _drawerLogoutKey,
+                onOpenProfile: _openProfileScreen,
+                onOpenMail: _openMailScreen,
+                onOpenCourses: _openCoursesWindow,
+                onOpenGallery: _openGalleryScreen,
+                onOpenStories: _openStoriesScreen,
+                onOpenGames: _openGamesScreen,
+                onOpenStudyCoach: _openStudyCoachScreen,
+                onOpenRegulations: _openRegulationsScreen,
+                onOpenThemeSettings: _openThemeSettings,
+                onLogout: () => _logout(context),
+              ),
 
         appBar: AppBar(
           toolbarHeight: isWebDashboard ? 74 : kToolbarHeight,
@@ -550,8 +552,14 @@ class _LearnerHomeState extends State<LearnerHome> {
             },
           ),
           actions: [
-            const SizedBox.shrink(),
+            if (webDesktop)
+              IconButton(
+                tooltip: 'Theme',
+                icon: Icon(Icons.palette_outlined, color: p.primary),
+                onPressed: _openThemeSettings,
+              ),
             IconButton(
+              tooltip: 'Logout',
               icon: Icon(Icons.logout_rounded, color: p.accent),
               onPressed: () => _logout(context),
             ),

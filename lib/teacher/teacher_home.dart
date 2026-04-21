@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -14,6 +13,7 @@ import '../shared/app_theme.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_web_layout.dart';
 import 'TeacherStoriesScreen.dart';
@@ -1281,12 +1281,27 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
-    final isWideWeb = kIsWeb && MediaQuery.of(context).size.width >= 1180;
+    final isWideWeb = AppResponsive.isWebDesktop(context, minWidth: 1180);
     final webDesktop = isTeacherWebDesktop(context, minWidth: 1280);
+    final basePagePadding = AppResponsive.pagePadding(
+      context,
+      phone: 16,
+      tablet: 18,
+      desktop: 24,
+      largeDesktop: 28,
+      topPhone: 14,
+      topTablet: 16,
+      topDesktop: 18,
+      topLargeDesktop: 22,
+      bottomPhone: 24,
+      bottomTablet: 28,
+      bottomDesktop: 36,
+      bottomLargeDesktop: 40,
+    );
     final pagePadding = EdgeInsets.fromLTRB(
-      isWideWeb ? 20 : 16,
-      isWideWeb ? 18 : 14,
-      isWideWeb ? 20 : 16,
+      basePagePadding.left,
+      basePagePadding.top,
+      basePagePadding.right,
       100,
     );
 
@@ -1305,36 +1320,40 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: p.appBg,
-        drawer: _TeacherDrawer(
-          palette: p,
-          onOpenProfile: _openProfileScreen,
-          onOpenSchedule: _openScheduleScreen,
-          onOpenClasses: _openClassesScreen,
-          onOpenGames: _openGamesScreen,
-          onOpenStories: _openStoriesScreen,
-          onOpenOnlineBooking: _openOnlineAvailabilityScreen,
-          onOpenOnlineCircle: _openOnlineCircleScreen,
-          onOpenMail: _openMailScreen,
-          onOpenReminders: _openRemindersScreen,
-          onOpenGallery: _openGalleryScreen,
-          onOpenWages: _openWagesScreen,
-          onOpenRegulations: _openRegulationsScreen,
-          onOpenSyllabi: _openSyllabiScreen,
-          onOpenShared: _openSharedScreen,
-          onOpenMyPlatform: _openMyPlatformScreen,
-          onOpenThemeSettings: _openThemeSettings,
-          onLogout: () => _logout(context),
-        ),
+        drawer: webDesktop
+            ? null
+            : _TeacherDrawer(
+                palette: p,
+                onOpenProfile: _openProfileScreen,
+                onOpenSchedule: _openScheduleScreen,
+                onOpenClasses: _openClassesScreen,
+                onOpenGames: _openGamesScreen,
+                onOpenStories: _openStoriesScreen,
+                onOpenOnlineBooking: _openOnlineAvailabilityScreen,
+                onOpenOnlineCircle: _openOnlineCircleScreen,
+                onOpenMail: _openMailScreen,
+                onOpenReminders: _openRemindersScreen,
+                onOpenGallery: _openGalleryScreen,
+                onOpenWages: _openWagesScreen,
+                onOpenRegulations: _openRegulationsScreen,
+                onOpenSyllabi: _openSyllabiScreen,
+                onOpenShared: _openSharedScreen,
+                onOpenMyPlatform: _openMyPlatformScreen,
+                onOpenThemeSettings: _openThemeSettings,
+                onLogout: () => _logout(context),
+              ),
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
           centerTitle: false,
           surfaceTintColor: Colors.white,
-          leading: IconButton(
-            key: _menuButtonKey,
-            icon: Icon(Icons.menu_rounded, color: p.primary),
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-          ),
+          leading: webDesktop
+              ? null
+              : IconButton(
+                  key: _menuButtonKey,
+                  icon: Icon(Icons.menu_rounded, color: p.primary),
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                ),
           title: FutureBuilder<String>(
             future: _displayNameFuture,
             builder: (context, snap) {
@@ -1366,8 +1385,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             },
           ),
           actions: [
-            const SizedBox.shrink(),
-            const SizedBox.shrink(),
+            if (webDesktop)
+              IconButton(
+                tooltip: 'Theme',
+                icon: Icon(Icons.palette_outlined, color: p.primary),
+                onPressed: _openThemeSettings,
+              ),
             IconButton(
               tooltip: 'Logout',
               icon: Icon(Icons.logout_rounded, color: p.accent),
