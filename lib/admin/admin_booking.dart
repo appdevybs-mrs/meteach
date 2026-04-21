@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../services/booking_communication_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
 
@@ -164,8 +166,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       final hh = int.tryParse(tp[0]);
       final mm = int.tryParse(tp[1]);
 
-      if (y == null || m == null || d == null || hh == null || mm == null)
+      if (y == null || m == null || d == null || hh == null || mm == null) {
         return null;
+      }
 
       return DateTime(y, m, d, hh, mm);
     } catch (_) {
@@ -253,6 +256,19 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   String _sessionLabel(int sessionNo) {
     return sessionNo <= 0 ? 'Session —' : 'Session $sessionNo';
   }
+
+  double _sheetActionButtonWidth(double maxWidth) {
+    if (maxWidth <= 440) return maxWidth;
+    if (maxWidth <= 760) return (maxWidth - 8) / 2;
+    return 220;
+  }
+
+  bool _isPastBooking(_AdminBookedSlot slot) {
+    return slot.start.isBefore(DateTime.now());
+  }
+
+  String _bookingKey(String courseId, String dayKey, String hhmm) =>
+      '$courseId|$dayKey|$hhmm';
 
   Color _statusColorForSlot(_AdminBookedSlot s) {
     if (s.start.isBefore(DateTime.now())) return Colors.grey.shade700;
@@ -368,8 +384,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       }
 
       out.sort((a, b) {
-        if (a.orderIndex != b.orderIndex)
+        if (a.orderIndex != b.orderIndex) {
           return a.orderIndex.compareTo(b.orderIndex);
+        }
         return a.title.compareTo(b.title);
       });
 
@@ -502,98 +519,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     }
   }
 
-  Future<void> _loadBookingsForCourse(String cid) async {
-    setState(() {
-      loadingBookings = true;
-      bookedSlots = [];
-      teacherFilter = 'all';
-    });
-
-    try {
-      final snap = await _reservationsRootRef(cid).get();
-      final v = snap.value;
-
-      final List<_AdminBookedSlot> out = [];
-
-      if (v is Map) {
-        final days = v.map((k, vv) => MapEntry(k.toString(), vv));
-
-        for (final dayEntry in days.entries) {
-          final dayKey = dayEntry.key;
-          final dayNode = dayEntry.value;
-          if (dayNode is! Map) continue;
-
-          final times = dayNode.map((k, vv) => MapEntry(k.toString(), vv));
-
-          for (final timeEntry in times.entries) {
-            final hhmm = timeEntry.key;
-            final slotVal = timeEntry.value;
-            if (slotVal is! Map) continue;
-
-            final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
-            final start = _parseSlotStart(dayKey, hhmm);
-            if (start == null) continue;
-
-            void collect(Map<dynamic, dynamic> slotNode, String teacherKey) {
-              final learnersRaw = slotNode['learners'];
-              if (learnersRaw is! Map) return;
-              final learnersMap = learnersRaw.map(
-                (k, vv) => MapEntry(k.toString(), vv),
-              );
-              final learnerUids = learnersMap.keys
-                  .map((e) => e.toString())
-                  .toList();
-              if (learnerUids.isEmpty) return;
-
-              out.add(
-                _AdminBookedSlot(
-                  courseId: cid,
-                  dayKey: dayKey,
-                  time: hhmm,
-                  start: start,
-                  teacherId: (slotNode['teacherId'] ?? teacherKey)
-                      .toString()
-                      .trim(),
-                  teacherName: (slotNode['teacherName'] ?? 'Teacher')
-                      .toString()
-                      .trim(),
-                  sessionNo: _toInt(slotNode['sessionNo'], fallback: 0),
-                  learnerUids: learnerUids,
-                  createdAt: _toInt(slotNode['createdAt'], fallback: 0),
-                ),
-              );
-            }
-
-            if (m['learners'] is Map) {
-              collect(m, '');
-              continue;
-            }
-
-            for (final teacherEntry in m.entries) {
-              final teacherNode = teacherEntry.value;
-              if (teacherNode is! Map) continue;
-              collect(
-                teacherNode.map((k, vv) => MapEntry(k.toString(), vv)),
-                teacherEntry.key.toString(),
-              );
-            }
-          }
-        }
-      }
-
-      out.sort((a, b) => a.start.compareTo(b.start));
-
-      if (!mounted) return;
-      setState(() => bookedSlots = out);
-    } catch (e) {
-      _toast('Failed loading bookings: $e');
-    } finally {
-      if (mounted) {
-        setState(() => loadingBookings = false);
-      }
-    }
-  }
-
   // ========================= Learner Profiles =========================
 
   Future<void> _ensureLearnerProfiles(List<String> uids) async {
@@ -653,6 +578,80 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     } catch (e) {
       _toast('Failed loading learner profiles: $e');
     }
+  }
+
+  String _actingAdminUid() {
+    return (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+  }
+
+  String _actingAdminName() {
+    return (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+  }
+
+  List<String> _learnerNamesFor(Iterable<String> uids) {
+    return uids
+        .map((uid) => learnerCache[uid]?.fullName.trim() ?? '')
+        .map((name) => name.isEmpty ? 'Learner' : name)
+        .toList(growable: false);
+  }
+
+  List<BookingRecipient> _learnerRecipientsFor(Iterable<String> uids) {
+    return uids
+        .map(
+          (uid) => BookingRecipient(
+            uid: uid,
+            name: learnerCache[uid]?.fullName.trim() ?? 'Learner',
+            role: 'learner',
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  BookingSnapshot _bookingSnapshot({
+    required String courseId,
+    required String dayKey,
+    required String time,
+    required int sessionNo,
+    required String teacherId,
+    required String teacherName,
+    required List<String> learnerUids,
+  }) {
+    return BookingSnapshot(
+      courseId: courseId,
+      courseTitle: _courseTitle(courseId),
+      dayKey: dayKey,
+      time: time,
+      sessionNo: sessionNo,
+      teacherId: teacherId,
+      teacherName: teacherName,
+      learnerUids: learnerUids,
+      learnerNames: _learnerNamesFor(learnerUids),
+    );
+  }
+
+  Future<void> _dispatchBookingChange({
+    required BookingChangeAction action,
+    required BookingSnapshot before,
+    BookingSnapshot? after,
+    required List<String> learnerUids,
+  }) async {
+    await _ensureLearnerProfiles(learnerUids);
+
+    final actingAdminUid = _actingAdminUid();
+    if (actingAdminUid.isEmpty) {
+      throw Exception('Missing admin account for booking communication.');
+    }
+
+    await BookingCommunicationService.sendBookingChangeCommunications(
+      request: BookingCommunicationRequest(
+        action: action,
+        actingAdminUid: actingAdminUid,
+        actingAdminName: _actingAdminName(),
+        before: before,
+        after: after,
+        learnerRecipients: _learnerRecipientsFor(learnerUids),
+      ),
+    );
   }
 
   // ========================= Filters =========================
@@ -728,6 +727,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     BuildContext detailsSheetContext,
   ) async {
     if (busyAction) return;
+    if (_isPastBooking(slot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return;
+    }
 
     final ok = await showDialog<bool>(
       context: context,
@@ -865,6 +868,23 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         _toast('This booking was already canceled. ✅');
       } else {
         _toast('Booking canceled ✅');
+        try {
+          await _dispatchBookingChange(
+            action: BookingChangeAction.cancelLearner,
+            before: _bookingSnapshot(
+              courseId: slot.courseId,
+              dayKey: slot.dayKey,
+              time: slot.time,
+              sessionNo: slot.sessionNo,
+              teacherId: slot.teacherId,
+              teacherName: slot.teacherName,
+              learnerUids: [learnerUid],
+            ),
+            learnerUids: [learnerUid],
+          );
+        } catch (e) {
+          _toast('Booking canceled, but notifications failed.');
+        }
       }
       await _loadAllBookedSlots();
 
@@ -949,8 +969,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       }
 
       final availabilitySnap = await _db.child('booking_availability').get();
-      if (!availabilitySnap.exists || availabilitySnap.value is! Map)
+      if (!availabilitySnap.exists || availabilitySnap.value is! Map) {
         return out;
+      }
 
       final root = (availabilitySnap.value as Map).map(
         (k, vv) => MapEntry(k.toString(), vv),
@@ -1067,10 +1088,31 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     String learnerUid,
     BuildContext detailsSheetContext,
   ) async {
+    final chosen = await _pickRescheduleChoice(sourceSlot);
+    if (chosen == null) return;
+    if (!detailsSheetContext.mounted) return;
+
+    await _moveLearnerToNewSlot(
+      sourceSlot: sourceSlot,
+      learnerUid: learnerUid,
+      target: chosen.slot,
+      targetSessionNo: chosen.sessionNo,
+      detailsSheetContext: detailsSheetContext,
+    );
+  }
+
+  Future<_RescheduleChoice?> _pickRescheduleChoice(
+    _AdminBookedSlot sourceSlot,
+  ) async {
+    if (_isPastBooking(sourceSlot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return null;
+    }
+
     final available = await _buildAvailableSlotsForCourse(sourceSlot.courseId);
     final sessionOptions = await _loadCourseSessionNumbers(sourceSlot.courseId);
 
-    if (!mounted) return;
+    if (!mounted) return null;
 
     final basePossible = available.where((s) {
       if (s.dayKey == sourceSlot.dayKey &&
@@ -1099,7 +1141,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
     if (basePossible.isEmpty) {
       _toast('No valid target slots found.');
-      return;
+      return null;
     }
 
     String query = '';
@@ -1107,7 +1149,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         ? sourceSlot.sessionNo
         : sessionOptions.first;
 
-    final chosen = await showModalBottomSheet<_RescheduleChoice>(
+    return showModalBottomSheet<_RescheduleChoice>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -1159,6 +1201,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                       isDense: true,
                       decoration: InputDecoration(
                         labelText: 'Study session',
+                        helperText: selectedSessionNo == sourceSlot.sessionNo
+                            ? 'Keeping the current session number.'
+                            : 'Changing the session number during reschedule.',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -1284,17 +1329,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         );
       },
     );
-
-    if (chosen == null) return;
-    if (!detailsSheetContext.mounted) return;
-
-    await _moveLearnerToNewSlot(
-      sourceSlot: sourceSlot,
-      learnerUid: learnerUid,
-      target: chosen.slot,
-      targetSessionNo: chosen.sessionNo,
-      detailsSheetContext: detailsSheetContext,
-    );
   }
 
   Future<void> _moveLearnerToNewSlot({
@@ -1305,6 +1339,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     required BuildContext detailsSheetContext,
   }) async {
     if (busyAction) return;
+    if (_isPastBooking(sourceSlot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return;
+    }
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1411,6 +1449,32 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         );
       } else {
         _toast('Booking moved ✅');
+        try {
+          await _dispatchBookingChange(
+            action: BookingChangeAction.rescheduleLearner,
+            before: _bookingSnapshot(
+              courseId: sourceSlot.courseId,
+              dayKey: sourceSlot.dayKey,
+              time: sourceSlot.time,
+              sessionNo: sourceSlot.sessionNo,
+              teacherId: sourceSlot.teacherId,
+              teacherName: sourceSlot.teacherName,
+              learnerUids: [learnerUid],
+            ),
+            after: _bookingSnapshot(
+              courseId: target.courseId,
+              dayKey: target.dayKey,
+              time: target.time,
+              sessionNo: targetSessionNo,
+              teacherId: target.teacherId,
+              teacherName: target.teacherName,
+              learnerUids: [learnerUid],
+            ),
+            learnerUids: [learnerUid],
+          );
+        } catch (e) {
+          _toast('Booking moved, but notifications failed.');
+        }
       }
 
       await _loadAllBookedSlots();
@@ -1422,6 +1486,777 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       }
     } catch (e) {
       _toast('Reschedule failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+    }
+  }
+
+  Future<void> _changeSessionOnly(
+    _AdminBookedSlot slot,
+    BuildContext detailsSheetContext,
+  ) async {
+    if (busyAction) return;
+    if (_isPastBooking(slot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return;
+    }
+    if (slot.learnerCount != 1) {
+      _toast('Session-only change is available only for 1-learner bookings.');
+      return;
+    }
+
+    final sessionOptions = await _loadCourseSessionNumbers(slot.courseId);
+    if (!mounted) return;
+
+    if (slot.sessionNo > 0 && !sessionOptions.contains(slot.sessionNo)) {
+      sessionOptions.add(slot.sessionNo);
+      sessionOptions.sort();
+    }
+    if (sessionOptions.isEmpty) {
+      sessionOptions.add(slot.sessionNo <= 0 ? 0 : slot.sessionNo);
+    }
+
+    int selectedSessionNo = slot.sessionNo > 0
+        ? slot.sessionNo
+        : sessionOptions.first;
+
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setInner) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  14,
+                  8,
+                  14,
+                  MediaQuery.of(context).padding.bottom + 10,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Change Session Only',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                        color: primaryBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Keep date, time, and teacher the same. Only the session number will change.',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      initialValue: selectedSessionNo,
+                      isDense: true,
+                      decoration: InputDecoration(
+                        labelText: 'Study session',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: uiBorder),
+                        ),
+                      ),
+                      items: sessionOptions
+                          .map(
+                            (no) => DropdownMenuItem<int>(
+                              value: no,
+                              child: Text(
+                                _sessionLabel(no),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setInner(() => selectedSessionNo = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            Navigator.pop(context, selectedSessionNo),
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text(
+                          'Continue',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (chosen == null || chosen == slot.sessionNo) return;
+    if (!mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Change Session Only'),
+        content: Text(
+          'Keep date, time, and teacher the same. Only the session number will change.\n\n'
+          '${_sessionLabel(slot.sessionNo)} → ${_sessionLabel(chosen)}\n\n'
+          '${_friendlyDateLong(slot.start)} at ${slot.time}\n${slot.teacherName}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Change'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => busyAction = true);
+
+    try {
+      final reservationRef = _reservationByTeacherRef(
+        slot.courseId,
+        slot.dayKey,
+        slot.time,
+        slot.teacherId,
+      );
+
+      final tx = await reservationRef.runTransaction((Object? currentData) {
+        if (currentData is! Map) return Transaction.abort();
+
+        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+        final learnersRaw = node['learners'];
+        if (learnersRaw is! Map || learnersRaw.length != 1) {
+          return Transaction.abort();
+        }
+
+        node['sessionNo'] = chosen;
+        return Transaction.success(node);
+      });
+
+      if (!tx.committed) {
+        _toast('Could not change the session number for this booking.');
+        return;
+      }
+
+      final bookingKey = _bookingKey(slot.courseId, slot.dayKey, slot.time);
+      await _syncBookingAttendanceSessionNo(
+        bookingKey: bookingKey,
+        courseId: slot.courseId,
+        learnerUids: slot.learnerUids,
+        sessionNo: chosen,
+      );
+
+      _toast('Session number updated ✅');
+      try {
+        await _dispatchBookingChange(
+          action: BookingChangeAction.changeSessionSingle,
+          before: _bookingSnapshot(
+            courseId: slot.courseId,
+            dayKey: slot.dayKey,
+            time: slot.time,
+            sessionNo: slot.sessionNo,
+            teacherId: slot.teacherId,
+            teacherName: slot.teacherName,
+            learnerUids: slot.learnerUids,
+          ),
+          after: _bookingSnapshot(
+            courseId: slot.courseId,
+            dayKey: slot.dayKey,
+            time: slot.time,
+            sessionNo: chosen,
+            teacherId: slot.teacherId,
+            teacherName: slot.teacherName,
+            learnerUids: slot.learnerUids,
+          ),
+          learnerUids: slot.learnerUids,
+        );
+      } catch (e) {
+        _toast('Session updated, but notifications failed.');
+      }
+      await _loadAllBookedSlots();
+
+      if (!mounted) return;
+      if (detailsSheetContext.mounted &&
+          Navigator.of(detailsSheetContext).canPop()) {
+        Navigator.of(detailsSheetContext).pop();
+      }
+    } catch (e) {
+      _toast('Session change failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+    }
+  }
+
+  Future<void> _syncBookingAttendanceSessionNo({
+    required String bookingKey,
+    required String courseId,
+    required Iterable<String> learnerUids,
+    required int sessionNo,
+  }) async {
+    final teacherAttendanceRef = _db.child('online_attendance/$bookingKey');
+    final teacherAttendanceSnap = await teacherAttendanceRef.get();
+    if (teacherAttendanceSnap.exists && teacherAttendanceSnap.value is Map) {
+      await teacherAttendanceRef.update({
+        'sessionNo': sessionNo,
+        'updatedAt': ServerValue.timestamp,
+      });
+    }
+
+    for (final learnerUid in learnerUids) {
+      final learnerAttendanceRef = _db.child(
+        'booking_progress/$learnerUid/$courseId/online_attendance/$bookingKey',
+      );
+      final learnerAttendanceSnap = await learnerAttendanceRef.get();
+      if (learnerAttendanceSnap.exists && learnerAttendanceSnap.value is Map) {
+        await learnerAttendanceRef.update({
+          'sessionNo': sessionNo,
+          'updatedAt': ServerValue.timestamp,
+        });
+      }
+    }
+  }
+
+  Future<void> _changeSessionForGroup(
+    _AdminBookedSlot slot,
+    BuildContext detailsSheetContext,
+  ) async {
+    if (busyAction) return;
+    if (_isPastBooking(slot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return;
+    }
+    if (slot.learnerCount <= 1) {
+      _toast('Use Change Session Only for 1-learner bookings.');
+      return;
+    }
+
+    final sessionOptions = await _loadCourseSessionNumbers(slot.courseId);
+    if (!mounted) return;
+
+    if (slot.sessionNo > 0 && !sessionOptions.contains(slot.sessionNo)) {
+      sessionOptions.add(slot.sessionNo);
+      sessionOptions.sort();
+    }
+    if (sessionOptions.isEmpty) {
+      sessionOptions.add(slot.sessionNo <= 0 ? 0 : slot.sessionNo);
+    }
+
+    int selectedSessionNo = slot.sessionNo > 0
+        ? slot.sessionNo
+        : sessionOptions.first;
+
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setInner) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  14,
+                  8,
+                  14,
+                  MediaQuery.of(context).padding.bottom + 10,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Change Session for Group',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                        color: primaryBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Keep date, time, and teacher the same. The session number will change for all learners in this slot.',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      initialValue: selectedSessionNo,
+                      isDense: true,
+                      decoration: InputDecoration(
+                        labelText: 'Study session',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: uiBorder),
+                        ),
+                      ),
+                      items: sessionOptions
+                          .map(
+                            (no) => DropdownMenuItem<int>(
+                              value: no,
+                              child: Text(
+                                _sessionLabel(no),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setInner(() => selectedSessionNo = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            Navigator.pop(context, selectedSessionNo),
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text(
+                          'Continue',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (chosen == null || chosen == slot.sessionNo) return;
+    if (!mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Change Session for Group'),
+        content: Text(
+          'Keep date, time, and teacher the same. The session number will change for all learners in this slot.\n\n'
+          '${_sessionLabel(slot.sessionNo)} → ${_sessionLabel(chosen)}\n\n'
+          '${_friendlyDateLong(slot.start)} at ${slot.time}\n${slot.teacherName}\n${slot.learnerCount} learners',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Change'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => busyAction = true);
+
+    try {
+      final reservationRef = _reservationByTeacherRef(
+        slot.courseId,
+        slot.dayKey,
+        slot.time,
+        slot.teacherId,
+      );
+
+      final tx = await reservationRef.runTransaction((Object? currentData) {
+        if (currentData is! Map) return Transaction.abort();
+
+        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+        final learnersRaw = node['learners'];
+        if (learnersRaw is! Map || learnersRaw.length <= 1) {
+          return Transaction.abort();
+        }
+
+        node['sessionNo'] = chosen;
+        return Transaction.success(node);
+      });
+
+      if (!tx.committed) {
+        _toast('Could not change the session number for this group.');
+        return;
+      }
+
+      await _syncBookingAttendanceSessionNo(
+        bookingKey: _bookingKey(slot.courseId, slot.dayKey, slot.time),
+        courseId: slot.courseId,
+        learnerUids: slot.learnerUids,
+        sessionNo: chosen,
+      );
+
+      _toast('Group session number updated ✅');
+      try {
+        await _dispatchBookingChange(
+          action: BookingChangeAction.changeSessionGroup,
+          before: _bookingSnapshot(
+            courseId: slot.courseId,
+            dayKey: slot.dayKey,
+            time: slot.time,
+            sessionNo: slot.sessionNo,
+            teacherId: slot.teacherId,
+            teacherName: slot.teacherName,
+            learnerUids: slot.learnerUids,
+          ),
+          after: _bookingSnapshot(
+            courseId: slot.courseId,
+            dayKey: slot.dayKey,
+            time: slot.time,
+            sessionNo: chosen,
+            teacherId: slot.teacherId,
+            teacherName: slot.teacherName,
+            learnerUids: slot.learnerUids,
+          ),
+          learnerUids: slot.learnerUids,
+        );
+      } catch (e) {
+        _toast('Group session updated, but notifications failed.');
+      }
+      await _loadAllBookedSlots();
+
+      if (!mounted) return;
+      if (detailsSheetContext.mounted &&
+          Navigator.of(detailsSheetContext).canPop()) {
+        Navigator.of(detailsSheetContext).pop();
+      }
+    } catch (e) {
+      _toast('Group session change failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+    }
+  }
+
+  Future<void> _cancelWholeGroup(
+    _AdminBookedSlot slot,
+    BuildContext detailsSheetContext,
+  ) async {
+    if (busyAction) return;
+    if (_isPastBooking(slot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return;
+    }
+    if (slot.learnerCount <= 1) {
+      _toast('Use Cancel Learner for 1-learner bookings.');
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancel Group'),
+        content: Text(
+          'Cancel this group booking for all learners?\n\n'
+          '${_friendlyDateLong(slot.start)} at ${slot.time}\n'
+          'Teacher: ${slot.teacherName}\n'
+          'Learners: ${slot.learnerCount}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Cancel Group'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => busyAction = true);
+
+    try {
+      Future<_AdminCancelStatus> cancelWholeAtRef(DatabaseReference ref) async {
+        final tx = await ref.runTransaction((Object? currentData) {
+          if (currentData is! Map) return Transaction.abort();
+          final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+          final learnersRaw = node['learners'];
+          if (learnersRaw is! Map || learnersRaw.isEmpty) {
+            return Transaction.abort();
+          }
+          return Transaction.success(null);
+        });
+
+        if (tx.committed) return _AdminCancelStatus.cancelled;
+
+        final snap = await ref.get();
+        if (!snap.exists || snap.value == null) {
+          return _AdminCancelStatus.notFound;
+        }
+        return _AdminCancelStatus.failed;
+      }
+
+      final nestedRef = _reservationByTeacherRef(
+        slot.courseId,
+        slot.dayKey,
+        slot.time,
+        slot.teacherId,
+      );
+      final nestedStatus = await cancelWholeAtRef(nestedRef);
+      final legacyStatus = nestedStatus == _AdminCancelStatus.cancelled
+          ? _AdminCancelStatus.cancelled
+          : await cancelWholeAtRef(
+              _reservationsRef(slot.courseId, slot.dayKey, slot.time),
+            );
+      final finalStatus = nestedStatus == _AdminCancelStatus.cancelled
+          ? nestedStatus
+          : legacyStatus;
+
+      if (finalStatus == _AdminCancelStatus.failed) {
+        _toast('Group cancel failed. Please try again.');
+        return;
+      }
+      if (finalStatus == _AdminCancelStatus.notFound) {
+        _toast('This group booking was already canceled. ✅');
+      } else {
+        _toast('Group booking canceled ✅');
+        try {
+          await _dispatchBookingChange(
+            action: BookingChangeAction.cancelGroup,
+            before: _bookingSnapshot(
+              courseId: slot.courseId,
+              dayKey: slot.dayKey,
+              time: slot.time,
+              sessionNo: slot.sessionNo,
+              teacherId: slot.teacherId,
+              teacherName: slot.teacherName,
+              learnerUids: slot.learnerUids,
+            ),
+            learnerUids: slot.learnerUids,
+          );
+        } catch (e) {
+          _toast('Group canceled, but notifications failed.');
+        }
+      }
+
+      await _loadAllBookedSlots();
+
+      if (!mounted) return;
+      if (detailsSheetContext.mounted &&
+          Navigator.of(detailsSheetContext).canPop()) {
+        Navigator.of(detailsSheetContext).pop();
+      }
+    } catch (e) {
+      _toast('Group cancel failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+    }
+  }
+
+  Future<void> _rescheduleWholeGroup(
+    _AdminBookedSlot sourceSlot,
+    BuildContext detailsSheetContext,
+  ) async {
+    if (busyAction) return;
+    if (_isPastBooking(sourceSlot)) {
+      _toast('Past booking locked. Admin changes are disabled.');
+      return;
+    }
+    if (sourceSlot.learnerCount <= 1) {
+      _toast('Use Reschedule Learner for 1-learner bookings.');
+      return;
+    }
+
+    final chosen = await _pickRescheduleChoice(sourceSlot);
+    if (chosen == null) return;
+    if (!mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reschedule Group'),
+        content: Text(
+          'Move all learners in this booking?\n\n'
+          '${_sessionLabel(sourceSlot.sessionNo)} → ${_sessionLabel(chosen.sessionNo)}\n\n'
+          'From:\n${_friendlyDateLong(sourceSlot.start)} at ${sourceSlot.time}\n${sourceSlot.teacherName}\n${sourceSlot.learnerCount} learners\n\n'
+          'To:\n${_friendlyDateLong(chosen.slot.start)} at ${chosen.slot.time}\n${chosen.slot.teacherName}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Move Group'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => busyAction = true);
+
+    try {
+      final sourceRef = _reservationByTeacherRef(
+        sourceSlot.courseId,
+        sourceSlot.dayKey,
+        sourceSlot.time,
+        sourceSlot.teacherId,
+      );
+      final targetRef = _reservationByTeacherRef(
+        chosen.slot.courseId,
+        chosen.slot.dayKey,
+        chosen.slot.time,
+        chosen.slot.teacherId,
+      );
+      final sourceLearners = {
+        for (final uid in sourceSlot.learnerUids) uid: true,
+      };
+
+      final tx = await targetRef.runTransaction((Object? currentData) {
+        final Map<String, dynamic> node = (currentData is Map)
+            ? currentData.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
+
+        final Map<String, dynamic> learners = <String, dynamic>{};
+        final learnersRaw = node['learners'];
+        if (learnersRaw is Map) {
+          learners.addAll(learnersRaw.map((k, v) => MapEntry(k.toString(), v)));
+        }
+
+        final existingSession = _toInt(node['sessionNo'], fallback: 0);
+        if (existingSession > 0 && existingSession != chosen.sessionNo) {
+          return Transaction.abort();
+        }
+
+        final cap = chosen.slot.maxLearnersPerSlot <= 0
+            ? 6
+            : chosen.slot.maxLearnersPerSlot;
+        final additionalLearners = sourceLearners.keys
+            .where((uid) => !learners.containsKey(uid))
+            .length;
+        if (learners.length + additionalLearners > cap) {
+          return Transaction.abort();
+        }
+
+        learners.addAll(sourceLearners);
+        node['teacherId'] = chosen.slot.teacherId;
+        node['teacherName'] = chosen.slot.teacherName;
+        node['sessionNo'] = chosen.sessionNo;
+        node['learners'] = learners;
+        node['createdAt'] = ServerValue.timestamp;
+
+        return Transaction.success(node);
+      });
+
+      if (!tx.committed) {
+        _toast('Could not move the group to the selected slot.');
+        return;
+      }
+
+      final removeTx = await sourceRef.runTransaction((Object? currentData) {
+        if (currentData is! Map) return Transaction.abort();
+
+        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+        final learnersRaw = node['learners'];
+        if (learnersRaw is! Map || learnersRaw.isEmpty) {
+          return Transaction.abort();
+        }
+
+        return Transaction.success(null);
+      });
+
+      if (!removeTx.committed) {
+        _toast(
+          'Moved group to new slot, but old slot cleanup failed. Please refresh and check.',
+        );
+      } else {
+        _toast('Group moved ✅');
+        try {
+          await _dispatchBookingChange(
+            action: BookingChangeAction.rescheduleGroup,
+            before: _bookingSnapshot(
+              courseId: sourceSlot.courseId,
+              dayKey: sourceSlot.dayKey,
+              time: sourceSlot.time,
+              sessionNo: sourceSlot.sessionNo,
+              teacherId: sourceSlot.teacherId,
+              teacherName: sourceSlot.teacherName,
+              learnerUids: sourceSlot.learnerUids,
+            ),
+            after: _bookingSnapshot(
+              courseId: chosen.slot.courseId,
+              dayKey: chosen.slot.dayKey,
+              time: chosen.slot.time,
+              sessionNo: chosen.sessionNo,
+              teacherId: chosen.slot.teacherId,
+              teacherName: chosen.slot.teacherName,
+              learnerUids: sourceSlot.learnerUids,
+            ),
+            learnerUids: sourceSlot.learnerUids,
+          );
+        } catch (e) {
+          _toast('Group moved, but notifications failed.');
+        }
+      }
+
+      await _loadAllBookedSlots();
+
+      if (!mounted) return;
+      if (detailsSheetContext.mounted &&
+          Navigator.of(detailsSheetContext).canPop()) {
+        Navigator.of(detailsSheetContext).pop();
+      }
+    } catch (e) {
+      _toast('Group reschedule failed: $e');
     } finally {
       if (mounted) {
         setState(() => busyAction = false);
@@ -1446,6 +2281,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       ),
       builder: (sheetContext) {
         final bottomPad = MediaQuery.of(sheetContext).padding.bottom;
+        final isPast = _isPastBooking(slot);
+        final isSingleLearner = slot.learnerCount == 1;
 
         final learners =
             slot.learnerUids
@@ -1503,6 +2340,128 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     ),
                   ),
                 ),
+                if (!isSingleLearner) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final actionWidth = _sheetActionButtonWidth(
+                          constraints.maxWidth,
+                        );
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            SizedBox(
+                              width: actionWidth,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: primaryBlue,
+                                  side: BorderSide(
+                                    color: primaryBlue.withValues(alpha: 0.25),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: (busyAction || isPast)
+                                    ? null
+                                    : () => _changeSessionForGroup(
+                                        slot,
+                                        sheetContext,
+                                      ),
+                                icon: const Icon(Icons.groups_rounded),
+                                label: const Text(
+                                  'Change Session for Group',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: actionWidth,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: primaryBlue,
+                                  side: BorderSide(
+                                    color: primaryBlue.withValues(alpha: 0.25),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: (busyAction || isPast)
+                                    ? null
+                                    : () => _rescheduleWholeGroup(
+                                        slot,
+                                        sheetContext,
+                                      ),
+                                icon: const Icon(Icons.swap_horiz_rounded),
+                                label: const Text(
+                                  'Reschedule Group',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: actionWidth,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.red.shade600,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: (busyAction || isPast)
+                                    ? null
+                                    : () =>
+                                          _cancelWholeGroup(slot, sheetContext),
+                                icon: const Icon(Icons.group_remove_rounded),
+                                label: const Text(
+                                  'Cancel Group',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                if (isPast) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lock_clock_rounded,
+                        size: 16,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Past booking locked. Admin changes are disabled.',
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Flexible(
                   child: learners.isEmpty
@@ -1598,75 +2557,138 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                     ),
                                   ],
                                   const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: primaryBlue,
-                                            side: BorderSide(
-                                              color: primaryBlue.withValues(
-                                                alpha: 0.25,
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final actionWidth =
+                                          _sheetActionButtonWidth(
+                                            constraints.maxWidth,
+                                          );
+                                      return Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          if (isSingleLearner)
+                                            SizedBox(
+                                              width: actionWidth,
+                                              child: OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: primaryBlue,
+                                                  side: BorderSide(
+                                                    color: primaryBlue
+                                                        .withValues(
+                                                          alpha: 0.25,
+                                                        ),
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 10,
+                                                      ),
+                                                ),
+                                                onPressed:
+                                                    (busyAction || isPast)
+                                                    ? null
+                                                    : () => _changeSessionOnly(
+                                                        slot,
+                                                        sheetContext,
+                                                      ),
+                                                icon: const Icon(
+                                                  Icons.edit_note_rounded,
+                                                ),
+                                                label: const Text(
+                                                  'Change Session Only',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 10,
-                                            ),
-                                          ),
-                                          onPressed: busyAction
-                                              ? null
-                                              : () => _pickRescheduleTarget(
-                                                  slot,
-                                                  p.uid,
-                                                  sheetContext,
+                                          if (isSingleLearner)
+                                            SizedBox(
+                                              width: actionWidth,
+                                              child: OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: primaryBlue,
+                                                  side: BorderSide(
+                                                    color: primaryBlue
+                                                        .withValues(
+                                                          alpha: 0.25,
+                                                        ),
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 10,
+                                                      ),
                                                 ),
-                                          icon: const Icon(
-                                            Icons.swap_horiz_rounded,
-                                          ),
-                                          label: const Text(
-                                            'Reschedule',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: FilledButton.icon(
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor:
-                                                Colors.red.shade600,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 10,
-                                            ),
-                                          ),
-                                          onPressed: busyAction
-                                              ? null
-                                              : () => _cancelLearnerFromSlot(
-                                                  slot,
-                                                  p.uid,
-                                                  sheetContext,
+                                                onPressed:
+                                                    (busyAction || isPast)
+                                                    ? null
+                                                    : () =>
+                                                          _pickRescheduleTarget(
+                                                            slot,
+                                                            p.uid,
+                                                            sheetContext,
+                                                          ),
+                                                icon: const Icon(
+                                                  Icons.swap_horiz_rounded,
                                                 ),
-                                          icon: const Icon(Icons.close_rounded),
-                                          label: const Text(
-                                            'Cancel',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
+                                                label: const Text(
+                                                  'Reschedule Learner',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          SizedBox(
+                                            width: actionWidth,
+                                            child: FilledButton.icon(
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor:
+                                                    Colors.red.shade600,
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 10,
+                                                    ),
+                                              ),
+                                              onPressed: (busyAction || isPast)
+                                                  ? null
+                                                  : () =>
+                                                        _cancelLearnerFromSlot(
+                                                          slot,
+                                                          p.uid,
+                                                          sheetContext,
+                                                        ),
+                                              icon: const Icon(
+                                                Icons.close_rounded,
+                                              ),
+                                              label: const Text(
+                                                'Cancel Learner',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      ),
-                                    ],
+                                        ],
+                                      );
+                                    },
                                   ),
                                 ],
                               ),

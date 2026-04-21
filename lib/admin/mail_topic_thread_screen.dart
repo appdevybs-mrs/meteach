@@ -138,6 +138,8 @@ class MailTopicThreadScreen extends StatefulWidget {
 }
 
 class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
+  static const Color _personNameColor = Color(0xFFE65100);
+
   static const int _messageWindowSize = 300;
   static final String _uploadOrigin = BackendApi.mediaBaseUrl;
 
@@ -1037,7 +1039,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                       style: TextStyle(
                                                         fontWeight:
                                                             FontWeight.w800,
-                                                        color: scheme.onSurface,
+                                                        color: _personNameColor,
                                                         fontSize: 12,
                                                       ),
                                                     ),

@@ -803,9 +803,13 @@ class _TeacherHomeworkInboxScreenState
   List<_HomeworkThreadView> _applyFilter(List<_HomeworkThreadView> views) {
     switch (_filter) {
       case _HomeworkFilter.notReviewed:
-        return views.where((v) => !v.reviewed).toList();
+        return views
+            .where((v) => v.source == _HomeworkSource.inbox && !v.reviewed)
+            .toList();
       case _HomeworkFilter.reviewed:
-        return views.where((v) => v.reviewed).toList();
+        return views
+            .where((v) => v.source == _HomeworkSource.inbox && v.reviewed)
+            .toList();
       case _HomeworkFilter.sent:
         return views.where((v) => v.source == _HomeworkSource.sent).toList();
       case _HomeworkFilter.all:
@@ -922,8 +926,12 @@ class _TeacherHomeworkInboxScreenState
 
   Widget _buildFilterBar(List<_HomeworkThreadView> all) {
     final allCount = all.length;
-    final reviewedCount = all.where((v) => v.reviewed).length;
-    final notReviewedCount = allCount - reviewedCount;
+    final reviewedCount = all
+        .where((v) => v.source == _HomeworkSource.inbox && v.reviewed)
+        .length;
+    final notReviewedCount = all
+        .where((v) => v.source == _HomeworkSource.inbox && !v.reviewed)
+        .length;
     final sentCount = all.where((v) => v.source == _HomeworkSource.sent).length;
 
     Widget chip(String text, _HomeworkFilter value, int count) {

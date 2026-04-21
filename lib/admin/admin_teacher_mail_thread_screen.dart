@@ -145,6 +145,8 @@ class AdminTeacherMailThreadScreen extends StatefulWidget {
 
 class _AdminTeacherMailThreadScreenState
     extends State<AdminTeacherMailThreadScreen> {
+  static const Color _personNameColor = Color(0xFFE65100);
+
   static const int _messageWindowSize = 300;
   static final String _uploadOrigin = BackendApi.mediaBaseUrl;
 
@@ -1139,8 +1141,7 @@ class _AdminTeacherMailThreadScreenState
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w800,
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.6),
+                                                  color: _personNameColor,
                                                   fontSize: 12,
                                                 ),
                                               ),

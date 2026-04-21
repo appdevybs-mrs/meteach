@@ -18,6 +18,8 @@ class AdminMailInboxScreen extends StatefulWidget {
 }
 
 class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
+  static const Color _personNameColor = Color(0xFFE65100);
+
   final _db = FirebaseDatabase.instance;
   final _searchC = TextEditingController();
 
@@ -303,10 +305,29 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                                   : FontWeight.w600,
                             ),
                           ),
-                          subtitle: Text(
-                            '${item.peerName.isEmpty ? 'User' : item.peerName} • $roleLabel\n${item.lastMessage.isEmpty ? 'No messages yet' : item.lastMessage}',
+                          subtitle: RichText(
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
+                            text: TextSpan(
+                              style: DefaultTextStyle.of(context).style,
+                              children: [
+                                TextSpan(
+                                  text: item.peerName.isEmpty
+                                      ? 'User'
+                                      : item.peerName,
+                                  style: const TextStyle(
+                                    color: _personNameColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                TextSpan(text: ' • $roleLabel\n'),
+                                TextSpan(
+                                  text: item.lastMessage.isEmpty
+                                      ? 'No messages yet'
+                                      : item.lastMessage,
+                                ),
+                              ],
+                            ),
                           ),
                           isThreeLine: true,
                           trailing: Row(
