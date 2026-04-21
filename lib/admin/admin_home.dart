@@ -3561,12 +3561,6 @@ class _StaffMailDashCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool isReceptionistStyle;
 
-  static int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v?.toString() ?? '') ?? 0;
-  }
-
   @override
   Widget build(BuildContext context) {
     final meUid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';

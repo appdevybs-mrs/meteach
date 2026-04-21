@@ -49,8 +49,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   String? _expirationDateTo;
 
   List<String> _availableTitles = [];
-  String _sortBy = 'createdAt';
-  bool _sortAscending = false;
+  final String _sortBy = 'createdAt';
+  final bool _sortAscending = false;
 
   @override
   void initState() {

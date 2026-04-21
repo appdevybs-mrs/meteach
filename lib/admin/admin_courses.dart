@@ -1580,12 +1580,6 @@ class CourseEditorScreen extends StatefulWidget {
 
 class _CourseEditorScreenState extends State<CourseEditorScreen> {
   final _formKey = GlobalKey<FormState>();
-  static const List<String> _deliveryOptions = [
-    'Flexible',
-    'Private',
-    'Recorded',
-    'In-Class',
-  ];
   Set<String> _deliverySelected = {};
   late final Map<String, bool> _deliveryEnabled;
   late final Map<String, TextEditingController> _deliveryFeeControllers;
@@ -2354,7 +2348,6 @@ class _TextField extends StatelessWidget {
     required this.label,
     required this.hint,
     this.maxLines = 1,
-    this.keyboardType,
     this.validator,
   });
 
@@ -2362,7 +2355,6 @@ class _TextField extends StatelessWidget {
   final String label;
   final String hint;
   final int maxLines;
-  final TextInputType? keyboardType;
   final String? Function(String?)? validator;
 
   @override
@@ -2370,7 +2362,6 @@ class _TextField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
-      keyboardType: keyboardType,
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
@@ -2587,15 +2578,10 @@ class _ThumbPicker extends StatelessWidget {
 /// ----------------------------
 
 class UploadClient {
-  UploadClient({
-    required this.endpoint,
-    required this.appId,
-    http.Client? httpClient,
-  }) : _http = httpClient ?? http.Client();
+  UploadClient({required this.endpoint, required this.appId});
 
   final String endpoint;
   final String appId;
-  final http.Client _http;
 
   static void _debug(String message) {
     // no-op in production build
@@ -2875,12 +2861,6 @@ class Course {
   }
 
   factory Course.fromMap(Map<dynamic, dynamic> m) {
-    double? parsePrice(dynamic v) {
-      if (v == null) return null;
-      if (v is num) return v.toDouble();
-      return double.tryParse(v.toString());
-    }
-
     List<String> parseList(dynamic v) {
       if (v == null) return [];
       if (v is List) return v.map((e) => e.toString()).toList();
@@ -3128,57 +3108,6 @@ class _DeliveryConfigsEditor extends StatelessWidget {
                   ],
                 ],
               ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeliveryCheckboxes extends StatelessWidget {
-  const _DeliveryCheckboxes({
-    required this.options,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final List<String> options;
-  final Set<String> selected;
-  final ValueChanged<Set<String>> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AdminCoursesScreen.appBg,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Delivery option',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          ...options.map((opt) {
-            final isOn = selected.contains(opt);
-            return CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: isOn,
-              title: Text(opt),
-              controlAffinity: ListTileControlAffinity.leading,
-              onChanged: (v) {
-                final next = {...selected};
-                if (v == true) {
-                  next.add(opt);
-                } else {
-                  next.remove(opt);
-                }
-                onChanged(next);
-              },
             );
           }),
         ],

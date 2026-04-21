@@ -877,9 +877,7 @@ class _LearnersListState extends State<_LearnersList>
           case _PayFlag.yellow:
             return 2;
           case _PayFlag.ok:
-            return 1;
           case _PayFlag.noCourse:
-          default:
             return 0;
         }
       }
@@ -1438,7 +1436,6 @@ class _LearnersListState extends State<_LearnersList>
                           rowBgColor = Colors.orange.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.ok:
-                        default:
                           avatarBg = AdminLearnersScreen.appBg;
                           avatarFg = AdminLearnersScreen.primaryBlue;
                           break;
@@ -2673,7 +2670,6 @@ class _TextField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.hint,
-    this.maxLines = 1,
     this.keyboardType,
     this.validator,
     this.enabled = true,
@@ -2683,7 +2679,6 @@ class _TextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String hint;
-  final int maxLines;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
   final bool enabled;
@@ -2693,7 +2688,7 @@ class _TextField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
-      maxLines: maxLines,
+      maxLines: 1,
       keyboardType: keyboardType,
       validator: validator,
       enabled: enabled,
@@ -2756,26 +2751,6 @@ enum LearnerStatus {
       default:
         return LearnerStatus.active;
     }
-  }
-}
-
-Color _statusBg(LearnerStatus s) {
-  switch (s) {
-    case LearnerStatus.paused:
-      return const Color(0xFFFFF3D6);
-    case LearnerStatus.active:
-    default:
-      return const Color(0xFFDFF7E8);
-  }
-}
-
-Color _statusFg(LearnerStatus s) {
-  switch (s) {
-    case LearnerStatus.paused:
-      return const Color(0xFF9A6B00);
-    case LearnerStatus.active:
-    default:
-      return const Color(0xFF157A3D);
   }
 }
 
@@ -2974,8 +2949,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   final Map<String, Future<DataSnapshot>> _courseSnapFutureCache =
       <String, Future<DataSnapshot>>{};
-  final Map<String, Future<DataSnapshot>> _paymentSummaryFutureCache =
-      <String, Future<DataSnapshot>>{};
   final Map<String, Future<DataSnapshot>> _recordedSyllabusFutureCache =
       <String, Future<DataSnapshot>>{};
   final Map<String, Future<DataSnapshot>> _classAttendanceFutureCache =
@@ -3005,16 +2978,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     return _courseSnapFutureCache.putIfAbsent(
       key,
       () => _coursesRef.child(key).get(),
-    );
-  }
-
-  Future<DataSnapshot> _paymentSummaryFuture(String courseKey) {
-    final key = courseKey.trim();
-    return _paymentSummaryFutureCache.putIfAbsent(
-      key,
-      () => widget.db
-          .ref('users/${widget.uid}/courses/$key/payment_summary')
-          .get(),
     );
   }
 
@@ -3151,11 +3114,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     }
   }
 
-  static bool _variantUsesTeacher(String variantKey) {
-    final v = _normalizeVariantKey(variantKey);
-    return v == 'inclass' || v == 'private';
-  }
-
   static bool _variantUsesSessions(String variantKey) {
     final v = _normalizeVariantKey(variantKey);
     return v == 'inclass' || v == 'private' || v == 'flexible';
@@ -3182,10 +3140,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   static bool _variantIsFlexible(String variantKey) {
     return _normalizeVariantKey(variantKey) == 'flexible';
-  }
-
-  static bool _variantUsesAttendance(String variantKey) {
-    return !_variantIsRecorded(variantKey);
   }
 
   static bool _isExpiredMs(int expiresAt) {
@@ -5876,18 +5830,4 @@ class _MiniState extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MinimalStaff {
-  _MinimalStaff({
-    required this.firstName,
-    required this.lastName,
-    required this.email,
-  });
-
-  final String firstName;
-  final String lastName;
-  final String email;
-
-  String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 }

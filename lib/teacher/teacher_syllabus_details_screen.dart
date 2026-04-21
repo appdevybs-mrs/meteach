@@ -442,17 +442,9 @@ class _TeacherSyllabusDetailsScreenState
     ];
   }
 
-  _SyllabusVariant? get _currentVariant {
-    final c = _course;
-    if (c == null) return null;
-    final index = _tabController.index.clamp(0, _variantKeys.length - 1);
-    return c.variants[_variantKeys[index]];
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = _course;
-
 
     return Directionality(
       textDirection: TextDirection.ltr,

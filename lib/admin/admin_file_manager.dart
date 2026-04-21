@@ -1267,79 +1267,6 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     }
   }
 
-  Future<void> _duplicateGame({
-    required Map<String, dynamic> existingGame,
-  }) async {
-    try {
-      final ref = _gamesRef.push();
-      final now = ServerValue.timestamp;
-
-      final cloned = <String, dynamic>{
-        ...existingGame,
-        'gameUid': ref.key ?? '',
-        'name': '${(existingGame['name'] ?? 'Game').toString().trim()} Copy',
-        'createdAt': now,
-        'updatedAt': now,
-        'status': 'draft',
-      };
-
-      await ref.set(cloned);
-
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Game duplicated successfully.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _toggleArchive({
-    required String gameId,
-    required Map<String, dynamic> game,
-  }) async {
-    final currentStatus = (game['status'] ?? 'ready').toString().trim();
-    final nextStatus = currentStatus == 'archived' ? 'ready' : 'archived';
-
-    try {
-      await _gamesRef.child(gameId).update({
-        'status': nextStatus,
-        'updatedAt': ServerValue.timestamp,
-      });
-
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            nextStatus == 'archived'
-                ? 'Game archived successfully.'
-                : 'Game restored successfully.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            toHumanError(e, fallback: 'Could not update game. Try again.'),
-          ),
-        ),
-      );
-    }
-  }
-
   Future<void> _showGameForm({
     String? gameId,
     Map<String, dynamic>? existingGame,
@@ -2153,27 +2080,6 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
         );
       },
     );
-  }
-
-  String _ownerName(Map<String, dynamic> game) {
-    final first = (game['teacherFirstName'] ?? '').toString().trim();
-    final last = (game['teacherLastName'] ?? '').toString().trim();
-    final full = ('$first $last').trim();
-
-    if (full.isNotEmpty) return full;
-
-    final adminFirst = (game['adminFirstName'] ?? '').toString().trim();
-    final adminLast = (game['adminLastName'] ?? '').toString().trim();
-    final adminFull = ('$adminFirst $adminLast').trim();
-    if (adminFull.isNotEmpty) return adminFull;
-
-    final email = (game['teacherEmail'] ?? '').toString().trim();
-    if (email.isNotEmpty) return email;
-
-    final adminEmail = (game['adminEmail'] ?? '').toString().trim();
-    if (adminEmail.isNotEmpty) return adminEmail;
-
-    return 'Unknown';
   }
 
   List<String> _tagsFromGame(Map<String, dynamic> game) {

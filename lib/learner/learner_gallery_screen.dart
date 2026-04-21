@@ -15,7 +15,6 @@ class LearnerGalleryScreen extends StatefulWidget {
 
 class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
   static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
   static const mainText = Color(0xFF2D2D2D);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
@@ -68,7 +67,6 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
   @override
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-
 
     return Scaffold(
       backgroundColor: appBg,
@@ -622,13 +620,9 @@ class _LearnerGalleryViewerScreen extends StatelessWidget {
   final String classTitle;
   final String createdAt;
 
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const mainText = Color(0xFF2D2D2D);
-
   @override
   Widget build(BuildContext context) {
     final isVideo = type.trim().toLowerCase() == 'video';
-
 
     return Scaffold(
       backgroundColor: Colors.black,

@@ -42,7 +42,6 @@ class _TeacherClassProgressScreenState
   bool _busy = true;
   String? _error;
 
-  Map<String, dynamic> _class = {};
   Map<String, dynamic> _attendance = {};
   Map<String, dynamic> _learners = {};
 
@@ -90,13 +89,6 @@ class _TeacherClassProgressScreenState
         .toString(),
   );
 
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
   Future<void> _boot() async {
     setState(() {
       _busy = true;
@@ -140,7 +132,6 @@ class _TeacherClassProgressScreenState
 
           if (!mounted) return;
           setState(() {
-            _class = data;
             _attendance = att;
             _learners = learners;
             _classCoveredSessionIds = covered;

@@ -1116,33 +1116,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
-  Future<Map<String, String>> _loadLearnerHeaderData() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) {
-      return {'name': 'Learner', 'profilePhoto': ''};
-    }
-
-    try {
-      final snap = await _db.child('users/$uid').get();
-      final v = snap.value;
-
-      if (v is Map) {
-        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-        final first = (m['first_name'] ?? '').toString().trim();
-        final last = (m['last_name'] ?? '').toString().trim();
-        final full = ('$first $last').trim();
-        final profilePhoto = (m['profile_photo'] ?? '').toString().trim();
-
-        return {
-          'name': full.isNotEmpty ? full : 'Learner',
-          'profilePhoto': profilePhoto,
-        };
-      }
-    } catch (_) {}
-
-    return {'name': 'Learner', 'profilePhoto': ''};
-  }
-
   String _courseTypeLabel(Map<String, dynamic> course) {
     final variant = (course['variantKey'] ?? course['variant'] ?? '')
         .toString()
@@ -1283,8 +1256,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         .toString()
         .trim()
         .toLowerCase();
-    final isRecorded = variantKey == 'recorded';
-
     int? planned;
     final schedule = cls['schedule'];
     if (schedule is Map) {

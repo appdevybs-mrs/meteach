@@ -82,13 +82,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       {}; // uid -> {uid,name,serial}
   Map<String, String> _teacherUidByName = {}; // normalizedFullName -> uid
   // ✅ Cache progress per class (so list scrolling is smooth)
-  final Map<String, _ClassProg> _classProgCache = {};
   final Map<String, int> _syllabusSessionCountCache = <String, int>{};
   final Map<String, Map<int, Map<String, dynamic>>> _flexibleSyllabusCache =
       <String, Map<int, Map<String, dynamic>>>{};
   final Map<String, Map<String, _RecordedSessionMeta>>
   _recordedSessionMetaCache = <String, Map<String, _RecordedSessionMeta>>{};
-  final Set<String> _progressRequestedClassIds = <String>{};
   final Set<String> _expandedClassIds = <String>{};
   List<Map<String, String>> get _teachers {
     final list = _teachersByUid.values.toList();
@@ -601,10 +599,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return v == 'inclass' || v == 'private';
   }
 
-  bool _isNonScheduledClassType(String variantKey) {
-    return !_isScheduledClassType(variantKey);
-  }
-
   // Short Class ID: exactly 5 chars (human-friendly)
   String _makeShortClassId() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid 0/O/1/I
@@ -852,29 +846,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 
   // -------------------- Learner / course helpers --------------------
-
-  Set<String> _uidsWhoHaveCourse(String courseId) {
-    final set = <String>{};
-    for (final l in _allLearners) {
-      final courses = (l["courses"] is Map)
-          ? Map<String, dynamic>.from(l["courses"] as Map)
-          : <String, dynamic>{};
-
-      bool has = false;
-      for (final e in courses.entries) {
-        final m = (e.value is Map)
-            ? Map<String, dynamic>.from(e.value)
-            : <String, dynamic>{};
-        if ((m["id"] ?? "").toString() == courseId) {
-          has = true;
-          break;
-        }
-      }
-
-      if (has) set.add(l["uid"].toString());
-    }
-    return set;
-  }
 
   Set<String> _uidsWhoMatchCourseVariant({
     required String courseId,
@@ -1270,27 +1241,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     return parts.join(" • ");
   }
-
-  Widget _pill({required String text, required Color color}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w900,
-          fontSize: 11,
-        ),
-      ),
-    );
-  }
-
-  Color _openColor(bool isOpen) => isOpen ? Colors.blue : Colors.grey;
 
   // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
   Future<void> _openLearnersPickerStrict({
@@ -2407,87 +2357,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 
   // -------------------- ✅ Class progress (attendance taught.sessionId vs syllabi sessions) --------------------
-
-  Future<_ClassProg> _loadClassProgress(
-    String classId,
-    Map<String, dynamic> cls,
-  ) async {
-    // cache hit
-    if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
-
-    final courseId = (cls["course_id"] ?? "").toString().trim();
-    final rawVariant = (cls["variantKey"] ?? cls["variant"] ?? "").toString();
-    final syllabusVariant = syllabusVariantForScheduledAttendance(rawVariant);
-
-    // 1) total sessions from syllabi/<course_id> (same as Teacher screen)
-    int totalSessions = await _loadSyllabusSessionCount(
-      courseId: courseId,
-      syllabusVariant: syllabusVariant,
-    );
-
-    // Fallback: if syllabus missing, use schedule.sessions_count
-    if (totalSessions <= 0) {
-      final sched = (cls["schedule"] is Map)
-          ? Map<String, dynamic>.from(cls["schedule"])
-          : <String, dynamic>{};
-      totalSessions = _asInt(sched["sessions_count"]);
-    }
-
-    // 2) covered sessions = unique taught.sessionId from classes/<classId>/attendance/*
-    final att = cls["attendance"];
-    final Set<String> covered = {};
-    int held = 0;
-
-    if (att is Map) {
-      final m = Map<String, dynamic>.from(att);
-      held = m.length;
-
-      for (final entry in m.entries) {
-        final rec = entry.value;
-        if (rec is! Map) continue;
-        final r = Map<String, dynamic>.from(rec);
-
-        final taughtItems = r["taughtItems"];
-        bool countedFromNewFormat = false;
-
-        if (taughtItems is List) {
-          countedFromNewFormat = true;
-          for (final it in taughtItems) {
-            if (it is! Map) continue;
-            final item = Map<String, dynamic>.from(it);
-            final type = (item["type"] ?? "").toString().trim().toLowerCase();
-            if (type != "syllabus") continue;
-            final sid = (item["sessionId"] ?? "").toString().trim();
-            if (sid.isNotEmpty) covered.add(sid);
-          }
-        }
-
-        if (!countedFromNewFormat) {
-          final taught = r["taught"];
-          if (taught is Map) {
-            final tm = Map<String, dynamic>.from(taught);
-            final sid = (tm["sessionId"] ?? "").toString().trim();
-            if (sid.isNotEmpty) covered.add(sid);
-          }
-        }
-      }
-    }
-
-    final coveredCount = covered.length;
-    final pct = totalSessions <= 0
-        ? 0
-        : ((coveredCount / totalSessions) * 100).round().clamp(0, 100);
-
-    final prog = _ClassProg(
-      percent: pct,
-      coveredCount: coveredCount,
-      totalSessions: totalSessions,
-      sessionsHeld: held,
-    );
-
-    _classProgCache[classId] = prog;
-    return prog;
-  }
 
   Future<int> _loadSyllabusSessionCount({
     required String courseId,
@@ -5332,27 +5201,6 @@ class _ScheduleRow {
   String day;
   String? startTime;
   final TextEditingController durationCtrl = TextEditingController(text: "90");
-}
-
-class _ClassProg {
-  final int percent;
-  final int coveredCount;
-  final int totalSessions;
-  final int sessionsHeld;
-
-  const _ClassProg({
-    required this.percent,
-    required this.coveredCount,
-    required this.totalSessions,
-    required this.sessionsHeld,
-  });
-
-  factory _ClassProg.zero() => const _ClassProg(
-    percent: 0,
-    coveredCount: 0,
-    totalSessions: 0,
-    sessionsHeld: 0,
-  );
 }
 
 class _FlexAttendanceRow {
