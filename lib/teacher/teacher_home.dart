@@ -397,9 +397,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       message: 'Logging out...',
       isLogout: true,
     );
-
-    if (!context.mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   String _norm(String s) => s.trim().toLowerCase();

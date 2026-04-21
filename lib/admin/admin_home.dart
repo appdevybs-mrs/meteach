@@ -258,9 +258,6 @@ class _AdminHomeState extends State<AdminHome> {
       message: 'Logging out...',
       isLogout: true,
     );
-
-    if (!context.mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   Color get _screenBg =>
@@ -1067,6 +1064,8 @@ class _AdminHomeState extends State<AdminHome> {
           },
           onLogout: () async {
             Navigator.of(context).pop();
+            await WidgetsBinding.instance.endOfFrame;
+            if (!context.mounted) return;
             await _logout(context);
           },
         ),

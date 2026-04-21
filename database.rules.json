@@ -299,6 +299,11 @@
       ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
     },
 
+    "payment_periods": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
     "subscriptions": {
       ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
       "$subscriptionId": {
@@ -309,6 +314,7 @@
         "fullName": { ".validate": "newData.isString()" },
         "firstName": { ".validate": "!newData.exists() || newData.isString()" },
         "lastName": { ".validate": "!newData.exists() || newData.isString()" },
+        "gender": { ".validate": "!newData.exists() || (newData.isString() && (newData.val() == 'Male' || newData.val() == 'Female' || newData.val() == ''))" },
         "phone": { ".validate": "newData.isString()" },
         "dob": { ".validate": "!newData.exists() || newData.isString()" },
         "dateOfBirth": { ".validate": "!newData.exists() || newData.isString()" },

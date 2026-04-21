@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
+import '../shared/finance_allocations.dart';
 import '../shared/human_error.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
@@ -55,83 +56,6 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
   AppPalette get p => appThemeController.palette;
 
   String _money(int amount) => '$amount DA';
-
-  static String _normalizeStatus(dynamic v) {
-    final s = (v ?? '').toString().trim().toLowerCase();
-    if (s == 'done' || s == 'tbpaid' || s == 'split' || s == 'waiting') {
-      return s;
-    }
-    return 'tbpaid';
-  }
-
-  static _TeacherAllocation _allocationFromPayment(
-    Map<String, dynamic> payment,
-  ) {
-    final original = TeacherWagesScreen.asInt(payment['amount']);
-    final status = _normalizeStatus(payment['financePayoutStatus']);
-
-    if (status == 'done') {
-      return _TeacherAllocation(
-        original: original,
-        tbpaid: 0,
-        waiting: 0,
-        done: original,
-        paidStatusForSplit: null,
-      );
-    }
-    if (status == 'waiting') {
-      return _TeacherAllocation(
-        original: original,
-        tbpaid: 0,
-        waiting: original,
-        done: 0,
-        paidStatusForSplit: null,
-      );
-    }
-    if (status == 'tbpaid') {
-      return _TeacherAllocation(
-        original: original,
-        tbpaid: original,
-        waiting: 0,
-        done: 0,
-        paidStatusForSplit: null,
-      );
-    }
-
-    final splitPaid = TeacherWagesScreen.asInt(
-      payment['financeSplitPaidAmount'],
-    );
-    var splitWaiting = TeacherWagesScreen.asInt(
-      payment['financeSplitWaitingAmount'],
-    );
-    if (splitWaiting <= 0) splitWaiting = original - splitPaid;
-    final paid = splitPaid.clamp(0, original);
-    final waiting = splitWaiting.clamp(0, original - paid);
-    final paidStatus =
-        _normalizeStatus(payment['financeSplitPaidStatus']) == 'done'
-        ? 'done'
-        : 'tbpaid';
-
-    return _TeacherAllocation(
-      original: original,
-      tbpaid: paidStatus == 'tbpaid' ? paid : 0,
-      waiting: waiting,
-      done: paidStatus == 'done' ? paid : 0,
-      paidStatusForSplit: paidStatus,
-    );
-  }
-
-  static int _teacherPercent(dynamic v) {
-    final p = TeacherWagesScreen.asInt(v);
-    if (p <= 0) return 100;
-    if (p > 100) return 100;
-    return p;
-  }
-
-  static int _netOf(int amount, int percent) {
-    if (amount <= 0) return 0;
-    return ((amount * percent) / 100).round();
-  }
 
   static String _courseIdFromPayment(Map<String, dynamic> payment) {
     return (payment['course_id'] ?? payment['courseId'] ?? '')
@@ -334,28 +258,30 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
     if (!ok) return;
 
     try {
-      for (final paymentId in row.readyPaymentIds) {
-        final ref = FirebaseDatabase.instance.ref('payments/$paymentId');
-        final snap = await ref.get();
-        final v = snap.value;
-        if (v is! Map) continue;
-
-        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-        final status = _normalizeStatus(m['financePayoutStatus']);
-
-        final updates = <String, dynamic>{
+      for (final refKey in row.readyPaymentIds) {
+        final parts = refKey.split('|');
+        final paymentId = parts.isNotEmpty ? parts.first : '';
+        final allocationId = parts.length > 1 ? parts[1] : '';
+        if (paymentId.isEmpty) continue;
+        if (allocationId.isEmpty) {
+          await FirebaseDatabase.instance.ref('payments/$paymentId').update({
+            'teacherConfirmed': true,
+            'teacherConfirmedAt': ServerValue.timestamp,
+            'teacherConfirmedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
+            'financePayoutStatus': 'done',
+            'updatedAt': ServerValue.timestamp,
+          });
+          continue;
+        }
+        final allocationPath =
+            'payments/$paymentId/financeAllocations/$allocationId';
+        await FirebaseDatabase.instance.ref(allocationPath).update({
           'teacherConfirmed': true,
           'teacherConfirmedAt': ServerValue.timestamp,
           'teacherConfirmedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
-        };
-
-        if (status == 'tbpaid') {
-          updates['financePayoutStatus'] = 'done';
-        } else if (status == 'split') {
-          updates['financeSplitPaidStatus'] = 'done';
-        }
-
-        await ref.update(updates);
+          'payoutStatus': 'done',
+          'updatedAt': ServerValue.timestamp,
+        });
       }
 
       if (!context.mounted) return;
@@ -416,11 +342,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
         child: StreamBuilder<DatabaseEvent>(
           stream: myUid.isEmpty
               ? const Stream<DatabaseEvent>.empty()
-              : FirebaseDatabase.instance
-                    .ref('payments')
-                    .orderByChild('teacherId')
-                    .equalTo(myUid)
-                    .onValue,
+              : FirebaseDatabase.instance.ref('payments').onValue,
           builder: (context, snap) {
             if (snap.hasError) {
               return Center(
@@ -480,70 +402,73 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
                 raw.forEach((k, v) {
                   if (k == null || v == null || v is! Map) return;
                   final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-                  final pushedAt = TeacherWagesScreen.asInt(
-                    m['financePushedAt'],
-                  );
-                  if (pushedAt <= 0) return;
-
                   final payment = m.cast<String, dynamic>();
-                  final alloc = _allocationFromPayment(payment);
-                  final percent = _teacherPercent(
-                    payment['financeTeacherPercent'],
-                  );
-                  final learnerName =
-                      (payment['learner_name'] ??
-                              payment['learnerName'] ??
-                              '(No name)')
+                  payment['paymentId'] = k.toString();
+                  final allocations = financeAllocationsFromPayment(payment);
+                  for (final allocation in allocations) {
+                    if (allocation.teacherId.trim() != myUid) continue;
+                    if (allocation.pushedAt <= 0) continue;
+
+                    final learnerName = financeLearnerNameFrom(payment);
+                    final learnerUid = _learnerUidFromPayment(payment);
+                    final courseId = _courseIdFromPayment(payment);
+                    final groupingKey = learnerUid.isNotEmpty
+                        ? '$learnerUid|$courseId'
+                        : '${learnerName.toLowerCase()}|$courseId';
+                    final deliveryLabel = _deliveryLabelFromPayment(
+                      payment,
+                      fallback: classMetaByCourse[courseId],
+                    );
+                    final acc = grouped.putIfAbsent(
+                      groupingKey,
+                      () => _TeacherWageRowAccumulator(
+                        learnerName: learnerName.isEmpty
+                            ? '(No name)'
+                            : learnerName,
+                        learnerSerial: (payment['learner_serial'] ?? '')
+                            .toString()
+                            .trim(),
+                        learnerUid: learnerUid,
+                        courseId: courseId,
+                        deliveryLabel: deliveryLabel,
+                      ),
+                    );
+
+                    acc.paidAtMs =
+                        TeacherWagesScreen.asInt(payment['paidAt']) >
+                            acc.paidAtMs
+                        ? TeacherWagesScreen.asInt(payment['paidAt'])
+                        : acc.paidAtMs;
+                    if (acc.learnerSerial.isEmpty) {
+                      acc.learnerSerial = (payment['learner_serial'] ?? '')
                           .toString()
                           .trim();
-                  final learnerUid = _learnerUidFromPayment(payment);
-                  final courseId = _courseIdFromPayment(payment);
-                  final groupingKey = learnerUid.isNotEmpty
-                      ? '$learnerUid|$courseId'
-                      : '${learnerName.toLowerCase()}|$courseId';
-                  final deliveryLabel = _deliveryLabelFromPayment(
-                    payment,
-                    fallback: classMetaByCourse[courseId],
-                  );
-                  final acc = grouped.putIfAbsent(
-                    groupingKey,
-                    () => _TeacherWageRowAccumulator(
-                      learnerName: learnerName.isEmpty
-                          ? '(No name)'
-                          : learnerName,
-                      learnerSerial: (payment['learner_serial'] ?? '')
-                          .toString()
-                          .trim(),
-                      learnerUid: learnerUid,
-                      courseId: courseId,
-                      deliveryLabel: deliveryLabel,
-                      teacherPercent: percent,
-                    ),
-                  );
-
-                  acc.paidAtMs =
-                      TeacherWagesScreen.asInt(payment['paidAt']) > acc.paidAtMs
-                      ? TeacherWagesScreen.asInt(payment['paidAt'])
-                      : acc.paidAtMs;
-                  if (acc.learnerSerial.isEmpty) {
-                    acc.learnerSerial = (payment['learner_serial'] ?? '')
-                        .toString()
-                        .trim();
-                  }
-                  if (acc.deliveryLabel.isEmpty) {
-                    acc.deliveryLabel = deliveryLabel;
-                  }
-                  acc.teacherPercent = percent;
-                  acc.netTotal +=
-                      _netOf(alloc.tbpaid, percent) +
-                      _netOf(alloc.waiting, percent) +
-                      _netOf(alloc.done, percent);
-                  acc.readyGross += alloc.tbpaid;
-                  acc.pendingGross += alloc.waiting;
-                  acc.receivedGross += alloc.done;
-                  if (alloc.tbpaid > 0) {
-                    acc.readyPaymentIds.add(k.toString());
+                    }
+                    if (acc.deliveryLabel.isEmpty) {
+                      acc.deliveryLabel = deliveryLabel;
+                    }
+                    acc.netTotal += allocation.teacherNet;
+                    acc.readyGross += allocation.payoutStatus == 'tbpaid'
+                        ? allocation.grossShare
+                        : 0;
+                    acc.pendingGross += allocation.payoutStatus == 'waiting'
+                        ? allocation.grossShare
+                        : 0;
+                    acc.receivedGross += allocation.payoutStatus == 'done'
+                        ? allocation.grossShare
+                        : 0;
+                    acc.assignedSessions += allocation.assignedSessions ?? 0;
+                    acc.allocationCount += 1;
+                    acc.teacherPercentLabels.add(
+                      '${allocation.teacherPercent}%',
+                    );
+                    if (allocation.payoutStatus == 'tbpaid') {
+                      acc.readyPaymentIds.add(
+                        allocation.isLegacy
+                            ? allocation.paymentId
+                            : '${allocation.paymentId}|${allocation.allocationId}',
+                      );
+                    }
                   }
                 });
 
@@ -561,10 +486,13 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
                     learnerName: acc.learnerName,
                     learnerSerial: acc.learnerSerial,
                     paidAtMs: acc.paidAtMs,
-                    teacherPercent: acc.teacherPercent,
+                    percentLabel: acc.teacherPercentLabels.length == 1
+                        ? acc.teacherPercentLabels.first
+                        : 'Mixed',
                     deliveryLabel: acc.deliveryLabel.isEmpty
                         ? 'Class'
                         : acc.deliveryLabel,
+                    assignedSessions: acc.assignedSessions,
                     sessionTotal: sess.held,
                     presentCount: sess.present,
                     absentCount: absentCount < 0 ? 0 : absentCount,
@@ -587,20 +515,48 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
 
                 rows.sort((a, b) => b.paidAtMs.compareTo(a.paidAtMs));
                 var netTotal = 0;
+                var readyCount = 0;
+                var pendingCount = 0;
+                var receivedCount = 0;
                 for (final row in rows) {
                   netTotal += row.netTotal;
+                  if (row.statusLabel == 'Ready') {
+                    readyCount += 1;
+                  } else if (row.statusLabel == 'Received') {
+                    receivedCount += 1;
+                  } else {
+                    pendingCount += 1;
+                  }
                 }
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                   children: [
-                    Text(
-                      'Net = ${_money(netTotal)}',
-                      style: TextStyle(
-                        color: p.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 22,
-                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _WageChip(
+                          label: 'Net total',
+                          value: _money(netTotal),
+                          color: const Color(0xFF22945A),
+                        ),
+                        _WageChip(
+                          label: 'Ready',
+                          value: '$readyCount',
+                          color: const Color(0xFF3666D8),
+                        ),
+                        _WageChip(
+                          label: 'Pending',
+                          value: '$pendingCount',
+                          color: const Color(0xFFF0A526),
+                        ),
+                        _WageChip(
+                          label: 'Received',
+                          value: '$receivedCount',
+                          color: const Color(0xFF22945A),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     ...rows.map((row) {
@@ -627,29 +583,14 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
   }
 }
 
-class _TeacherAllocation {
-  const _TeacherAllocation({
-    required this.original,
-    required this.tbpaid,
-    required this.waiting,
-    required this.done,
-    required this.paidStatusForSplit,
-  });
-
-  final int original;
-  final int tbpaid;
-  final int waiting;
-  final int done;
-  final String? paidStatusForSplit;
-}
-
 class _TeacherWageRowData {
   const _TeacherWageRowData({
     required this.learnerName,
     required this.learnerSerial,
     required this.paidAtMs,
-    required this.teacherPercent,
+    required this.percentLabel,
     required this.deliveryLabel,
+    required this.assignedSessions,
     required this.sessionTotal,
     required this.presentCount,
     required this.absentCount,
@@ -661,8 +602,9 @@ class _TeacherWageRowData {
   final String learnerName;
   final String learnerSerial;
   final int paidAtMs;
-  final int teacherPercent;
+  final String percentLabel;
   final String deliveryLabel;
+  final int assignedSessions;
   final int sessionTotal;
   final int presentCount;
   final int absentCount;
@@ -704,78 +646,94 @@ class _TeacherWageRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  row.learnerName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: palette.text,
-                    fontSize: 14,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      row.learnerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: palette.text,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (paidAt.isNotEmpty) paidAt,
+                        row.deliveryLabel,
+                      ].join(' • '),
+                      style: TextStyle(
+                        color: palette.text.withValues(alpha: 0.72),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (row.learnerSerial.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Serial: ${row.learnerSerial}',
+                        style: TextStyle(
+                          color: palette.text.withValues(alpha: 0.66),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: statusColor.withValues(alpha: 0.35),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${row.netTotal} DA',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: palette.text,
+                      fontSize: 15,
+                    ),
                   ),
-                ),
-                child: Text(
-                  row.statusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w900,
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: statusColor.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      row.statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          Text(
-            [
-              if (row.learnerSerial.isNotEmpty) row.learnerSerial,
-              if (paidAt.isNotEmpty) paidAt,
-              row.deliveryLabel,
-            ].join(' • '),
-            style: TextStyle(
-              color: palette.text.withValues(alpha: 0.72),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Sessions: ${row.sessionTotal} • Present: ${row.presentCount} • Absent: ${row.absentCount}',
-            style: TextStyle(
-              color: palette.text.withValues(alpha: 0.84),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _WageChip(
-                label: 'My share',
-                value: '${row.teacherPercent}%',
-                color: const Color(0xFF3666D8),
+          if (row.sessionTotal > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Sessions: ${row.presentCount}/${row.sessionTotal} present',
+              style: TextStyle(
+                color: palette.text.withValues(alpha: 0.78),
+                fontWeight: FontWeight.w700,
               ),
-              _WageChip(
-                label: 'Net',
-                value: '${row.netTotal} DA',
-                color: const Color(0xFF22945A),
-              ),
-            ],
-          ),
+            ),
+          ],
           if (onConfirm != null) ...[
             const SizedBox(height: 10),
             FilledButton.icon(
@@ -897,7 +855,6 @@ class _TeacherWageRowAccumulator {
     required this.learnerUid,
     required this.courseId,
     required this.deliveryLabel,
-    required this.teacherPercent,
   });
 
   final String learnerName;
@@ -905,11 +862,13 @@ class _TeacherWageRowAccumulator {
   final String learnerUid;
   final String courseId;
   String deliveryLabel;
-  int teacherPercent;
   int paidAtMs = 0;
   int netTotal = 0;
+  int assignedSessions = 0;
   int readyGross = 0;
   int pendingGross = 0;
   int receivedGross = 0;
+  int allocationCount = 0;
+  final Set<String> teacherPercentLabels = <String>{};
   final List<String> readyPaymentIds = <String>[];
 }

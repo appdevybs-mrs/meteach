@@ -26,6 +26,8 @@ class _BioChoice {
   const _BioChoice({required this.ar, required this.en});
 }
 
+const List<String> _genderOptions = ['Male', 'Female'];
+
 class LearnerProfileScreen extends StatefulWidget {
   const LearnerProfileScreen({super.key});
 
@@ -60,6 +62,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final _phone2 = TextEditingController();
   final _dob = TextEditingController();
   final _aboutMe = TextEditingController();
+  String? _gender;
 
   String? _profilePhotoUrl;
   final List<String> _photoUrls = [];
@@ -69,6 +72,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   String _initialPhone1 = '';
   String _initialPhone2 = '';
   String _initialDob = '';
+  String _initialGender = '';
   String _initialAboutMe = '';
   String _initialProfilePhotoUrl = '';
   List<String> _initialPhotoUrls = const [];
@@ -775,6 +779,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       _phone1.text = (_user['phone1'] ?? '').toString();
       _phone2.text = (_user['phone2'] ?? '').toString();
       _dob.text = (_user['dob'] ?? '').toString();
+      final rawGender = (_user['gender'] ?? '').toString().trim();
+      _gender = _genderOptions.contains(rawGender) ? rawGender : null;
       _aboutMe.text = (_user['about_me'] ?? '').toString();
 
       _profilePhotoUrl = (_user['profile_photo'] ?? '').toString().trim();
@@ -831,6 +837,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         'phone1': _phone1.text.trim(),
         'phone2': _phone2.text.trim(),
         'dob': _dob.text.trim(),
+        'gender': (_gender ?? '').trim(),
         'about_me': _aboutMe.text.trim(),
         'profile_photo': _profilePhotoUrl ?? '',
         'profile_photos': _photoUrls.take(_maxExtraPhotos).toList(),
@@ -891,6 +898,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _initialPhone1 = _phone1.text.trim();
     _initialPhone2 = _phone2.text.trim();
     _initialDob = _dob.text.trim();
+    _initialGender = (_gender ?? '').trim();
     _initialAboutMe = _aboutMe.text.trim();
     _initialProfilePhotoUrl = (_profilePhotoUrl ?? '').trim();
     _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
@@ -906,6 +914,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     if (_phone1.text.trim() != _initialPhone1) return true;
     if (_phone2.text.trim() != _initialPhone2) return true;
     if (_dob.text.trim() != _initialDob) return true;
+    if ((_gender ?? '').trim() != _initialGender) return true;
     if (_aboutMe.text.trim() != _initialAboutMe) return true;
     if ((_profilePhotoUrl ?? '').trim() != _initialProfilePhotoUrl) return true;
     if (!listEquals(
@@ -2100,6 +2109,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required String email,
     required String serial,
     required String nationalIdNumber,
+    required String gender,
     required String role,
     required String status,
   }) {
@@ -2123,6 +2133,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               _readonlyRow('Email', email),
               _readonlyRow('Serial', serial),
               _readonlyRow('National ID', nationalIdNumber),
+              _readonlyRow('Gender', gender),
               _readonlyRow('Role', role),
               _readonlyRow('Status', status),
               const SizedBox(height: 12),
@@ -2174,6 +2185,41 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               const SizedBox(height: 10),
               _field('Phone 2', _phone2, keyboard: TextInputType.phone),
               const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: _gender,
+                decoration: InputDecoration(
+                  labelText: 'Gender',
+                  filled: true,
+                  fillColor: p.cardBg,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(
+                      color: p.border.withValues(alpha: 0.85),
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.accent, width: 1.4),
+                  ),
+                ),
+                items: _genderOptions
+                    .map(
+                      (value) => DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _gender = value),
+              ),
+              const SizedBox(height: 10),
               _field(
                 'Date of birth (YYYY-MM-DD)',
                 _dob,
@@ -2212,6 +2258,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final nationalIdNumber =
         (_user['national_id_number'] ?? _user['nationalIdNumber'] ?? '')
             .toString();
+    final gender = (_user['gender'] ?? '').toString().trim();
     final role = (_user['role'] ?? '').toString();
     final status = (_user['status'] ?? '').toString();
 
@@ -2306,6 +2353,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                               email: email,
                               serial: serial,
                               nationalIdNumber: nationalIdNumber,
+                              gender: gender,
                               role: role,
                               status: status,
                             ),

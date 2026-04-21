@@ -5,6 +5,7 @@ import 'admin_wages_export_excel.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/finance_allocations.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
@@ -413,10 +414,15 @@ class AdminWagesScreen extends StatelessWidget {
   Future<void> _togglePaid({
     required BuildContext context,
     required String paymentId,
+    String? allocationId,
     required bool makePaid,
   }) async {
     final db = FirebaseDatabase.instance;
-    final ref = db.ref('payments/$paymentId');
+    final ref = (allocationId ?? '').trim().isEmpty
+        ? db.ref('payments/$paymentId')
+        : db.ref(
+            'payments/$paymentId/financeAllocations/${allocationId!.trim()}',
+          );
 
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -490,6 +496,7 @@ class AdminWagesScreen extends StatelessWidget {
   Future<void> _adminRemoveTeacherConfirmation({
     required BuildContext context,
     required String paymentId,
+    String? allocationId,
   }) async {
     final ok =
         await showDialog<bool>(
@@ -517,10 +524,16 @@ class AdminWagesScreen extends StatelessWidget {
     if (!ok) return;
 
     try {
-      await FirebaseDatabase.instance.ref('payments/$paymentId').update({
+      final ref = (allocationId ?? '').trim().isEmpty
+          ? FirebaseDatabase.instance.ref('payments/$paymentId')
+          : FirebaseDatabase.instance.ref(
+              'payments/$paymentId/financeAllocations/${allocationId!.trim()}',
+            );
+      await ref.update({
         'teacherConfirmed': null,
         'teacherConfirmedAt': null,
         'teacherConfirmedBy': null,
+        if ((allocationId ?? '').trim().isNotEmpty) 'payoutStatus': 'tbpaid',
         'updatedAt': ServerValue.timestamp,
       });
 
@@ -615,7 +628,11 @@ class AdminWagesScreen extends StatelessWidget {
               if (k == null || v == null) return;
               if (v is! Map) return;
               final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-              payments.add({'paymentId': k.toString(), ...m});
+              final payment = {'paymentId': k.toString(), ...m};
+              final rows = financeAllocationsFromPayment(payment);
+              for (final row in rows) {
+                payments.add(row.toRow());
+              }
             });
 
             // Sort newest first by paidAt
@@ -932,15 +949,18 @@ class AdminWagesScreen extends StatelessWidget {
                                   studyingByTeacher: studyingByTeacher,
                                 ),
                             learnerMap: learnerMap,
-                            onTogglePaid: (paymentId, makePaid) => _togglePaid(
-                              context: context,
-                              paymentId: paymentId,
-                              makePaid: makePaid,
-                            ),
-                            onRemoveTeacherConfirm: (paymentId) =>
+                            onTogglePaid: (paymentId, allocationId, makePaid) =>
+                                _togglePaid(
+                                  context: context,
+                                  paymentId: paymentId,
+                                  allocationId: allocationId,
+                                  makePaid: makePaid,
+                                ),
+                            onRemoveTeacherConfirm: (paymentId, allocationId) =>
                                 _adminRemoveTeacherConfirmation(
                                   context: context,
                                   paymentId: paymentId,
+                                  allocationId: allocationId,
                                 ),
                           ),
                         );
@@ -1334,8 +1354,14 @@ class _TeacherSection extends StatelessWidget {
   final Set<String>? studyingLearnerUids;
   final Map<String, _LearnerInfo> learnerMap;
 
-  final Future<void> Function(String paymentId, bool makePaid) onTogglePaid;
-  final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
+  final Future<void> Function(
+    String paymentId,
+    String? allocationId,
+    bool makePaid,
+  )
+  onTogglePaid;
+  final Future<void> Function(String paymentId, String? allocationId)
+  onRemoveTeacherConfirm;
 
   static const primaryBlue = Color(0xFF1A2B48);
 
@@ -1658,8 +1684,14 @@ class _LearnerSection extends StatelessWidget {
   final List<Map<String, dynamic>> payments;
   final Map<String, _LearnerInfo> learnerMap;
 
-  final Future<void> Function(String paymentId, bool makePaid) onTogglePaid;
-  final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
+  final Future<void> Function(
+    String paymentId,
+    String? allocationId,
+    bool makePaid,
+  )
+  onTogglePaid;
+  final Future<void> Function(String paymentId, String? allocationId)
+  onRemoveTeacherConfirm;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const uiBorder = Color(0xFFD1D9E0);
@@ -1785,8 +1817,14 @@ class _PaymentRow extends StatelessWidget {
   });
 
   final Map<String, dynamic> payment;
-  final Future<void> Function(String paymentId, bool makePaid) onTogglePaid;
-  final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
+  final Future<void> Function(
+    String paymentId,
+    String? allocationId,
+    bool makePaid,
+  )
+  onTogglePaid;
+  final Future<void> Function(String paymentId, String? allocationId)
+  onRemoveTeacherConfirm;
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
@@ -1847,6 +1885,7 @@ class _PaymentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paymentId = (payment['paymentId'] ?? '').toString().trim();
+    final allocationId = (payment['allocationId'] ?? '').toString().trim();
 
     final learnerName = (payment['learner_name'] ?? '').toString().trim();
     final serial = (payment['learner_serial'] ?? '').toString().trim();
@@ -1856,7 +1895,7 @@ class _PaymentRow extends StatelessWidget {
 
     final startDate = (payment['startDate'] ?? '').toString().trim();
 
-    final sessionsPaid = _asInt(payment['sessionsPaid']);
+    final sessionsPaid = _asInt(payment['assignedSessions']);
     final left = _asInt(payment['remindBeforeSession']);
     final amount = _asInt(payment['amount']);
     final alloc = AdminWagesScreen._financeAlloc(payment);
@@ -1943,7 +1982,8 @@ class _PaymentRow extends StatelessWidget {
                             color: Colors.red.withValues(alpha: 0.5),
                           ),
                         ),
-                        onPressed: () => onRemoveTeacherConfirm(paymentId),
+                        onPressed: () =>
+                            onRemoveTeacherConfirm(paymentId, allocationId),
                       ),
                   ],
                 ),
@@ -1955,7 +1995,7 @@ class _PaymentRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             onTap: paymentId.isEmpty
                 ? null
-                : () => onTogglePaid(paymentId, !isPaidStaff),
+                : () => onTogglePaid(paymentId, allocationId, !isPaidStaff),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(

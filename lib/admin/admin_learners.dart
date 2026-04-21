@@ -1366,6 +1366,7 @@ class _LearnersListState extends State<_LearnersList>
                     : l.fullName.toLowerCase().contains(s) ||
                           l.email.toLowerCase().contains(s) ||
                           l.serial.toLowerCase().contains(s) ||
+                          (l.gender?.value.toLowerCase() ?? '').contains(s) ||
                           l.nationalIdNumber.toLowerCase().contains(s) ||
                           l.phone1.toLowerCase().contains(s) ||
                           l.phone2.toLowerCase().contains(s);
@@ -1445,6 +1446,9 @@ class _LearnersListState extends State<_LearnersList>
 
                       String compactLine2() {
                         final parts = <String>[];
+                        if ((l.gender?.value ?? '').trim().isNotEmpty) {
+                          parts.add('Gender ${l.gender!.value}');
+                        }
                         if (l.dob.trim().isNotEmpty) parts.add('🎂 ${l.dob}');
                         if (l.phone2.trim().isNotEmpty) {
                           parts.add('📞2 ${l.phone2}');
@@ -1976,6 +1980,7 @@ class LearnerPrefill {
   LearnerPrefill({
     this.firstName = '',
     this.lastName = '',
+    this.gender = '',
     this.phone1 = '',
     this.dob = '',
     this.email = '',
@@ -1985,10 +1990,36 @@ class LearnerPrefill {
 
   final String firstName;
   final String lastName;
+  final String gender;
   final String phone1;
   final String dob;
   final String email;
   final Set<String> selectedCourseIds;
+}
+
+enum LearnerGender {
+  male,
+  female;
+
+  String get value {
+    switch (this) {
+      case LearnerGender.male:
+        return 'Male';
+      case LearnerGender.female:
+        return 'Female';
+    }
+  }
+
+  static LearnerGender? fromValue(String? raw) {
+    switch ((raw ?? '').trim().toLowerCase()) {
+      case 'male':
+        return LearnerGender.male;
+      case 'female':
+        return LearnerGender.female;
+      default:
+        return null;
+    }
+  }
 }
 
 class LearnerEditorScreen extends StatefulWidget {
@@ -2027,6 +2058,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   bool _serialUnlocked = false;
 
   DateTime? _dob;
+  LearnerGender? _gender;
   LearnerStatus _status = LearnerStatus.active;
   bool _saving = false;
 
@@ -2061,6 +2093,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     );
     serialC = TextEditingController(text: initial?.serial ?? '');
     nationalIdC = TextEditingController(text: initial?.nationalIdNumber ?? '');
+
+    _gender = initial?.gender;
+    if (_gender == null &&
+        widget.mode == EditorMode.create &&
+        widget.prefill != null) {
+      _gender = LearnerGender.fromValue(widget.prefill!.gender);
+    }
 
     _status = initial?.status ?? LearnerStatus.active;
 
@@ -2194,6 +2233,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       final serial = serialC.text.trim();
       final nationalId = nationalIdC.text.trim();
       final dob = dobC.text.trim();
+      final gender = _gender;
       final phone1 = phone1C.text.trim();
       final phone2 = phone2C.text.trim();
 
@@ -2223,6 +2263,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         uid: uid,
         firstName: first,
         lastName: last,
+        gender: gender,
         dob: dob,
         phone1: phone1,
         phone2: phone2,
@@ -2394,6 +2435,38 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         ),
                         prefixIcon: const Icon(Icons.calendar_month_rounded),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<LearnerGender>(
+                      initialValue: _gender,
+                      decoration: InputDecoration(
+                        labelText: isEdit ? 'Gender' : 'Gender *',
+                        hintText: 'Select gender',
+                        filled: true,
+                        fillColor: AdminLearnersScreen.appBg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(Icons.wc_rounded),
+                      ),
+                      items: LearnerGender.values
+                          .map(
+                            (g) => DropdownMenuItem(
+                              value: g,
+                              child: Text(g.value),
+                            ),
+                          )
+                          .toList(),
+                      validator: (v) {
+                        if (!isEdit && v == null) {
+                          return 'Gender is required';
+                        }
+                        return null;
+                      },
+                      onChanged: (v) {
+                        setState(() => _gender = v);
+                      },
                     ),
                     const SizedBox(height: 12),
                     GestureDetector(
@@ -2711,6 +2784,7 @@ class Learner {
     required this.uid,
     required this.firstName,
     required this.lastName,
+    required this.gender,
     required this.dob,
     required this.phone1,
     required this.phone2,
@@ -2729,6 +2803,7 @@ class Learner {
   final String uid;
   final String firstName;
   final String lastName;
+  final LearnerGender? gender;
   final String dob;
   final String phone1;
   final String phone2;
@@ -2758,6 +2833,7 @@ class Learner {
       'role': role,
       'first_name': firstName,
       'last_name': lastName,
+      'gender': gender?.value ?? '',
       'dob': dob,
       'phone1': phone1,
       'phone2': phone2,
@@ -2788,6 +2864,7 @@ class Learner {
       role: (m['role'] ?? 'learner').toString(),
       firstName: (m['first_name'] ?? m['firstName'] ?? '').toString(),
       lastName: (m['last_name'] ?? m['lastName'] ?? '').toString(),
+      gender: LearnerGender.fromValue((m['gender'] ?? '').toString()),
       dob: (m['dob'] ?? '').toString(),
       phone1: (m['phone1'] ?? '').toString(),
       phone2: (m['phone2'] ?? '').toString(),

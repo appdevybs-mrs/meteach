@@ -847,6 +847,7 @@ class _TeacherLearnerProfileScreenState
     final phone1 = _safeStr(_user['phone1']);
     final phone2 = _safeStr(_user['phone2']);
     final dob = _safeStr(_user['dob']);
+    final gender = _safeStr(_user['gender']);
     final nationalIdNumber = _safeStr(
       _user['national_id_number'] ?? _user['nationalIdNumber'],
     );
@@ -884,6 +885,7 @@ class _TeacherLearnerProfileScreenState
           _readonlyRow(p, 'National ID', nationalIdNumber),
           _readonlyRow(p, 'Phone 1', phone1),
           _readonlyRow(p, 'Phone 2', phone2),
+          _readonlyRow(p, 'Gender', gender),
           _readonlyRow(p, 'DOB', dob),
         ],
       ),
@@ -945,7 +947,6 @@ class _TeacherLearnerProfileScreenState
     final title = widget.learnerName.isEmpty
         ? 'Learner Profile'
         : widget.learnerName;
-
 
     return Scaffold(
       backgroundColor: p.appBg,

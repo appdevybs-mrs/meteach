@@ -275,23 +275,27 @@ class AppLoading {
     String message = 'Please wait...',
     bool isLogout = false,
   }) async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final entry = OverlayEntry(
       builder: (_) => PopScope(
         canPop: false,
-        child: isLogout
-            ? _LogoutLoadingDialog(message: message)
-            : _AppLoadingDialog(message: message),
+        child: Material(
+          color: Colors.black.withValues(alpha: 0.18),
+          child: Center(
+            child: isLogout
+                ? _LogoutLoadingDialog(message: message)
+                : _AppLoadingDialog(message: message),
+          ),
+        ),
       ),
     );
+
+    overlay.insert(entry);
 
     try {
       return await task();
     } finally {
-      if (Navigator.of(context, rootNavigator: true).canPop()) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
+      entry.remove();
     }
   }
 }
@@ -321,39 +325,37 @@ class _AppLoadingDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 320),
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const YbsBusyLogo(size: 58),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+              height: 1.3,
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const YbsBusyLogo(size: 58),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-                height: 1.3,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -398,78 +400,76 @@ class _LogoutLoadingDialogState extends State<_LogoutLoadingDialog>
       end: 0.18,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 300),
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: scale.value,
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF1D4ED8,
-                          ).withValues(alpha: glow.value),
-                          blurRadius: 16,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: child,
-                  ),
-                );
-              },
-              child: ClipOval(
-                child: Image.asset(
-                  'assets/images/ybs_logo.png',
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: scale.value,
+                child: Container(
                   width: 64,
                   height: 64,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.school_rounded,
-                    size: 38,
-                    color: Color(0xFF1E293B),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(
+                          0xFF1D4ED8,
+                        ).withValues(alpha: glow.value),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
+                  child: child,
+                ),
+              );
+            },
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/ybs_logo.png',
+                width: 64,
+                height: 64,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.school_rounded,
+                  size: 38,
+                  color: Color(0xFF1E293B),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              widget.message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.2,
-                color: Color(0xFF64748B),
-                height: 1.25,
-              ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            widget.message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+              color: Color(0xFF64748B),
+              height: 1.25,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

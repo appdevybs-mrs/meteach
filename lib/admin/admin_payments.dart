@@ -33,10 +33,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   static const int _paymentsWindowSize = 3000;
 
   DatabaseReference get _paymentsRef => _db.ref('payments');
+  DatabaseReference get _paymentPeriodsRef => _db.ref('payment_periods');
   DatabaseReference get _usersRef => _db.ref('users');
   DatabaseReference get _coursesRef => _db.ref('courses');
 
   String? _selectedMonthYyyyMm;
+  String _selectedPaymentsView = _paymentsViewCurrent;
+  String? _selectedArchiveBucketId;
   String _selectedTeacherFilter = _teacherFilterAll;
   String _selectedVariantFilter = _variantFilterAll;
   String _selectedNotesFilter = _notesFilterAll;
@@ -52,6 +55,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   static const String _teacherFilterHasTeacher = '__has_teacher__';
   static const String _teacherFilterNoTeacher = '__no_teacher__';
   static const String _variantFilterAll = '__all__';
+  static const String _paymentsViewCurrent = 'current';
+  static const String _paymentsViewArchive = 'archive';
+  static const String _legacyArchivePrefix = '__legacy_month__:';
   static const String _notesFilterAll = '__all__';
   static const String _notesFilterHasNotes = '__has_notes__';
   static const String _notesFilterNoNotes = '__no_notes__';
@@ -374,6 +380,36 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     if (picked == null) return null;
     String two(int n) => n.toString().padLeft(2, '0');
     return '${picked.year}-${two(picked.month)}-${two(picked.day)}';
+  }
+
+  String _previousDayYmd(String ymd) {
+    final ms = _ymdToMs(ymd);
+    if (ms <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(
+      ms,
+    ).subtract(const Duration(days: 1));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  String _defaultPaymentPeriodLabel(String startDateYmd) {
+    return 'From $startDateYmd';
+  }
+
+  String _paymentPeriodId(Map<String, dynamic> p) {
+    return (p['periodId'] ?? '').toString().trim();
+  }
+
+  String _paymentArchiveBucketId(Map<String, dynamic> p) {
+    final periodId = _paymentPeriodId(p);
+    if (periodId.isNotEmpty) return periodId;
+    final monthKey = _monthOfPayment(p);
+    if (monthKey.isNotEmpty) return '$_legacyArchivePrefix$monthKey';
+    return '${_legacyArchivePrefix}unknown';
+  }
+
+  String _legacyArchiveLabel(String monthKey) {
+    return monthKey.isEmpty ? 'Legacy payments' : 'Legacy $monthKey';
   }
 
   int _sumAmount(Iterable<Map<String, dynamic>> items) {
@@ -1194,668 +1230,975 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   // ---------------- UI ----------------
 
+  Future<void> _openFreshStartDialog({
+    required _PaymentPeriodRecord? activePeriod,
+  }) async {
+    String startDateYmd = _todayYmd();
+    final labelC = TextEditingController(
+      text: _defaultPaymentPeriodLabel(startDateYmd),
+    );
+    bool didEditLabel = false;
+    bool isSaving = false;
+    bool saveLocked = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setD) {
+          final navigator = Navigator.of(context);
+          return AlertDialog(
+            title: const Text('Fresh Start'),
+            content: SizedBox(
+              width: 460,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _DateField(
+                    label: 'Start date',
+                    value: startDateYmd,
+                    onTap: () async {
+                      final picked = await _pickDateYmd(
+                        context: context,
+                        initialYmd: startDateYmd,
+                        helpText: 'Pick period start date',
+                      );
+                      if (picked == null) return;
+                      startDateYmd = picked;
+                      if (!didEditLabel) {
+                        labelC.text = _defaultPaymentPeriodLabel(startDateYmd);
+                      }
+                      setD(() {});
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: labelC,
+                    decoration: const InputDecoration(
+                      labelText: 'Label',
+                      hintText: 'Example: From 2026-04-12',
+                    ),
+                    onChanged: (_) => didEditLabel = true,
+                  ),
+                  if (activePeriod != null) ...[
+                    const SizedBox(height: 12),
+                    _InfoLine(
+                      label: 'Current active period',
+                      value: activePeriod.displayLabel,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (saveLocked) return;
+                        saveLocked = true;
+
+                        final startAtMs = _ymdToMs(startDateYmd);
+                        if (startAtMs <= 0) {
+                          saveLocked = false;
+                          _toast('Pick a valid start date.');
+                          return;
+                        }
+
+                        if (activePeriod != null &&
+                            startAtMs <= activePeriod.startAtMs) {
+                          saveLocked = false;
+                          _toast(
+                            'New period must start after the current one.',
+                          );
+                          return;
+                        }
+
+                        final label = labelC.text.trim().isEmpty
+                            ? _defaultPaymentPeriodLabel(startDateYmd)
+                            : labelC.text.trim();
+
+                        setD(() => isSaving = true);
+
+                        try {
+                          final periodsSnap = await _paymentPeriodsRef.get();
+                          final rootUpdate = <String, Object?>{};
+
+                          if (periodsSnap.value is Map) {
+                            final existing = periodsSnap.value as Map;
+                            existing.forEach((k, value) {
+                              if (value is! Map) return;
+                              final rec = value.map(
+                                (kk, vv) => MapEntry(kk.toString(), vv),
+                              );
+                              final isActive = rec['isActive'] == true;
+                              if (isActive) {
+                                rootUpdate['payment_periods/${k.toString()}/isActive'] =
+                                    false;
+                              }
+                            });
+                          }
+
+                          if (activePeriod != null) {
+                            final endDate = _previousDayYmd(startDateYmd);
+                            final endAtMs = _ymdToMs(endDate);
+                            rootUpdate['payment_periods/${activePeriod.id}/endDate'] =
+                                endDate;
+                            rootUpdate['payment_periods/${activePeriod.id}/endAtMs'] =
+                                endAtMs;
+                            rootUpdate['payment_periods/${activePeriod.id}/updatedAt'] =
+                                ServerValue.timestamp;
+                          }
+
+                          final newRef = _paymentPeriodsRef.push();
+                          final periodId = newRef.key;
+                          if (periodId == null || periodId.trim().isEmpty) {
+                            throw Exception('Could not create payment period.');
+                          }
+
+                          rootUpdate['payment_periods/$periodId'] = {
+                            'id': periodId,
+                            'label': label,
+                            'startDate': startDateYmd,
+                            'startAtMs': startAtMs,
+                            'endDate': '',
+                            'endAtMs': 0,
+                            'isActive': true,
+                            'createdAt': ServerValue.timestamp,
+                            'updatedAt': ServerValue.timestamp,
+                          };
+
+                          await _db.ref().update(rootUpdate);
+
+                          if (!mounted) return;
+                          navigator.pop();
+                          setState(() {
+                            _selectedPaymentsView = _paymentsViewCurrent;
+                            _selectedArchiveBucketId = null;
+                          });
+                          _toast('Fresh start ready ✅');
+                        } catch (e) {
+                          saveLocked = false;
+                          setD(() => isSaving = false);
+                          _toast(toHumanError(e));
+                        }
+                      },
+                child: Text(isSaving ? 'Saving…' : 'Start'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DatabaseEvent>(
-      stream: _paymentsRef
-          .orderByChild('paidAt')
-          .limitToLast(_paymentsWindowSize)
-          .onValue,
-      builder: (context, snap) {
-        if (snap.hasError) {
+      stream: _paymentPeriodsRef.onValue,
+      builder: (context, periodsSnap) {
+        if (periodsSnap.hasError) {
           return const Scaffold(
-            body: Center(child: Text('Error loading payments.')),
-          );
-        }
-        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: Text('Error loading payment periods.')),
           );
         }
 
-        final raw = snap.data?.snapshot.value;
-        final all = <Map<String, dynamic>>[];
-        if (raw is Map) {
-          raw.forEach((k, val) {
-            if (val is Map) {
-              final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
-              m['paymentId'] = k.toString();
-              all.add(m.cast<String, dynamic>());
+        final rawPeriods = periodsSnap.data?.snapshot.value;
+        final periods = <_PaymentPeriodRecord>[];
+        if (rawPeriods is Map) {
+          rawPeriods.forEach((k, value) {
+            if (value is! Map) return;
+            final m = value.map((kk, vv) => MapEntry(kk.toString(), vv));
+            periods.add(
+              _PaymentPeriodRecord.fromMap(
+                id: k.toString(),
+                map: m.cast<String, dynamic>(),
+              ),
+            );
+          });
+        }
+        periods.sort((a, b) => b.startAtMs.compareTo(a.startAtMs));
+
+        _PaymentPeriodRecord? activePeriod;
+        final closedPeriods = <_PaymentPeriodRecord>[];
+        for (final period in periods) {
+          if (period.isActive && activePeriod == null) {
+            activePeriod = period;
+          } else {
+            closedPeriods.add(period);
+          }
+        }
+
+        return StreamBuilder<DatabaseEvent>(
+          stream: _paymentsRef
+              .orderByChild('paidAt')
+              .limitToLast(_paymentsWindowSize)
+              .onValue,
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const Scaffold(
+                body: Center(child: Text('Error loading payments.')),
+              );
             }
-          });
-        }
+            if ((periodsSnap.connectionState == ConnectionState.waiting &&
+                    !periodsSnap.hasData) ||
+                (snap.connectionState == ConnectionState.waiting &&
+                    !snap.hasData)) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-        all.sort((a, b) {
-          final byMonth = _monthKeyForSorting(
-            a,
-          ).compareTo(_monthKeyForSorting(b));
-          if (byMonth != 0) return byMonth;
+            final raw = snap.data?.snapshot.value;
+            final all = <Map<String, dynamic>>[];
+            if (raw is Map) {
+              raw.forEach((k, val) {
+                if (val is Map) {
+                  final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+                  m['paymentId'] = k.toString();
+                  all.add(m.cast<String, dynamic>());
+                }
+              });
+            }
 
-          final byPaidAt = _effectivePaidAtMs(
-            a,
-          ).compareTo(_effectivePaidAtMs(b));
-          if (byPaidAt != 0) return byPaidAt;
+            all.sort((a, b) {
+              final byMonth = _monthKeyForSorting(
+                a,
+              ).compareTo(_monthKeyForSorting(b));
+              if (byMonth != 0) return byMonth;
 
-          final byCreated = _asInt(
-            a['createdAt'],
-          ).compareTo(_asInt(b['createdAt']));
-          if (byCreated != 0) return byCreated;
+              final byPaidAt = _effectivePaidAtMs(
+                a,
+              ).compareTo(_effectivePaidAtMs(b));
+              if (byPaidAt != 0) return byPaidAt;
 
-          return (a['paymentId'] ?? '').toString().compareTo(
-            (b['paymentId'] ?? '').toString(),
-          );
-        });
+              final byCreated = _asInt(
+                a['createdAt'],
+              ).compareTo(_asInt(b['createdAt']));
+              if (byCreated != 0) return byCreated;
 
-        if (all.isEmpty) {
-          return Scaffold(
-            body: Center(
-              child: TextButton.icon(
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('No payments yet. Tap to refresh'),
-                onPressed: () => setState(() {}),
+              return (a['paymentId'] ?? '').toString().compareTo(
+                (b['paymentId'] ?? '').toString(),
+              );
+            });
+
+            final monthsSet = <String>{};
+            final legacyMonthsSet = <String>{};
+            for (final p in all) {
+              final mm = _fmtMonthFromMs(p['paidAt']);
+              if (mm.isNotEmpty) monthsSet.add(mm);
+              if (_paymentPeriodId(p).isEmpty && mm.isNotEmpty) {
+                legacyMonthsSet.add(mm);
+              }
+            }
+            final months = monthsSet.toList()..sort((a, b) => b.compareTo(a));
+
+            if (_selectedMonthYyyyMm != null &&
+                !monthsSet.contains(_selectedMonthYyyyMm)) {
+              _selectedMonthYyyyMm = null;
+            }
+
+            final legacyMonths = legacyMonthsSet.toList()
+              ..sort((a, b) => b.compareTo(a));
+            final archiveBuckets = <_ArchiveBucket>[
+              ...closedPeriods.map(
+                (period) =>
+                    _ArchiveBucket(id: period.id, label: period.displayLabel),
               ),
-            ),
-          );
-        }
-
-        final monthsSet = <String>{};
-        for (final p in all) {
-          final mm = _fmtMonthFromMs(p['paidAt']);
-          if (mm.isNotEmpty) monthsSet.add(mm);
-        }
-        final months = monthsSet.toList()..sort((a, b) => b.compareTo(a));
-
-        if (_selectedMonthYyyyMm != null &&
-            !monthsSet.contains(_selectedMonthYyyyMm)) {
-          _selectedMonthYyyyMm = null;
-        }
-
-        final teacherFilterMap = <String, String>{};
-        final variantFilterMap = <String, String>{};
-        for (final p in all) {
-          final teacherName = _teacherLabelFrom(p).trim();
-          if (teacherName.isNotEmpty && !_isPseudoTeacherLabel(teacherName)) {
-            teacherFilterMap.putIfAbsent(
-              teacherName.toLowerCase(),
-              () => teacherName,
-            );
-          }
-
-          final variantKey = _normalizeVariantKey(
-            (p['variantKey'] ?? p['deliveryKey'] ?? p['variant'] ?? '')
-                .toString(),
-          );
-          if (variantKey.isNotEmpty) {
-            variantFilterMap.putIfAbsent(
-              variantKey,
-              () => _variantLabel(
-                variantKey: variantKey,
-                studyMode: (p['studyMode'] ?? '').toString(),
-              ),
-            );
-          }
-        }
-
-        final teacherFilterItems = teacherFilterMap.entries.toList()
-          ..sort(
-            (a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()),
-          );
-        final variantFilterItems = variantFilterMap.entries.toList()
-          ..sort(
-            (a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()),
-          );
-
-        if (_selectedTeacherFilter.startsWith(_teacherFilterPrefix)) {
-          final teacherKey = _selectedTeacherFilter.substring(
-            _teacherFilterPrefix.length,
-          );
-          if (!teacherFilterMap.containsKey(teacherKey)) {
-            _selectedTeacherFilter = _teacherFilterAll;
-          }
-        }
-        if (_selectedVariantFilter.startsWith(_variantFilterPrefix)) {
-          final variantKey = _selectedVariantFilter.substring(
-            _variantFilterPrefix.length,
-          );
-          if (!variantFilterMap.containsKey(variantKey)) {
-            _selectedVariantFilter = _variantFilterAll;
-          }
-        }
-
-        Iterable<Map<String, dynamic>> filtered = all;
-
-        if (_selectedMonthYyyyMm != null) {
-          filtered = filtered.where(
-            (p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm,
-          );
-        }
-
-        if (_selectedTeacherFilter == _teacherFilterHasTeacher) {
-          filtered = filtered.where(_hasAssignedTeacher);
-        } else if (_selectedTeacherFilter == _teacherFilterNoTeacher) {
-          filtered = filtered.where((p) => !_hasAssignedTeacher(p));
-        } else if (_selectedTeacherFilter.startsWith(_teacherFilterPrefix)) {
-          final teacherKey = _selectedTeacherFilter
-              .substring(_teacherFilterPrefix.length)
-              .trim();
-          filtered = filtered.where(
-            (p) => _teacherLabelFrom(p).trim().toLowerCase() == teacherKey,
-          );
-        }
-
-        if (_selectedVariantFilter.startsWith(_variantFilterPrefix)) {
-          final variantKey = _selectedVariantFilter
-              .substring(_variantFilterPrefix.length)
-              .trim();
-          filtered = filtered.where(
-            (p) =>
-                _normalizeVariantKey(
-                  (p['variantKey'] ?? p['deliveryKey'] ?? p['variant'] ?? '')
-                      .toString(),
-                ) ==
-                variantKey,
-          );
-        }
-
-        if (_selectedNotesFilter == _notesFilterHasNotes) {
-          filtered = filtered.where(
-            (p) => (p['notes'] ?? '').toString().trim().isNotEmpty,
-          );
-        } else if (_selectedNotesFilter == _notesFilterNoNotes) {
-          filtered = filtered.where(
-            (p) => (p['notes'] ?? '').toString().trim().isEmpty,
-          );
-        }
-
-        if (_nameSearchQuery.isNotEmpty) {
-          filtered = filtered.where((p) {
-            final name = _learnerNameFromPayment(p).toLowerCase();
-            final serial = (p['learner_serial'] ?? '')
-                .toString()
-                .trim()
-                .toLowerCase();
-            return name.contains(_nameSearchQuery) ||
-                serial.contains(_nameSearchQuery);
-          });
-        }
-
-        final visible = filtered.toList();
-
-        final monthCounters = <String, int>{};
-        final visibleDisplayNoByPaymentId = <String, int>{};
-        for (final p in visible) {
-          final paymentId = (p['paymentId'] ?? '').toString().trim();
-          if (paymentId.isEmpty) continue;
-          final monthKey = _monthKeyForSorting(p);
-          final next = (monthCounters[monthKey] ?? 0) + 1;
-          monthCounters[monthKey] = next;
-          visibleDisplayNoByPaymentId[paymentId] = next;
-        }
-
-        final today = _todayYmd();
-        final todayTotal = _sumAmount(
-          all.where((p) => (p['dayKey'] ?? '') == today),
-        );
-        final monthTotal = _sumAmount(
-          (_selectedMonthYyyyMm == null)
-              ? all
-              : all.where(
-                  (p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm,
+              ...legacyMonths.map(
+                (monthKey) => _ArchiveBucket(
+                  id: '$_legacyArchivePrefix$monthKey',
+                  label: _legacyArchiveLabel(monthKey),
                 ),
-        );
-
-        final todayPill = _Pill(
-          icon: Icons.today_rounded,
-          text: 'Today: ${_fmtMoneyDa(todayTotal)}',
-          strong: true,
-        );
-
-        return Scaffold(
-          backgroundColor: AdminPaymentsScreen.appBg,
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            surfaceTintColor: Colors.white,
-            iconTheme: const IconThemeData(
-              color: AdminPaymentsScreen.primaryBlue,
-            ),
-            titleSpacing: _showNameSearch
-                ? 8
-                : NavigationToolbar.kMiddleSpacing,
-            title: Padding(
-              padding: EdgeInsets.fromLTRB(
-                _showNameSearch ? 0 : 2,
-                4,
-                _showNameSearch ? 4 : 2,
-                4,
               ),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: _showNameSearch
-                    ? TextField(
-                        key: const ValueKey('payments-search-field'),
-                        controller: _nameSearchCtrl,
-                        autofocus: true,
-                        textInputAction: TextInputAction.search,
-                        style: const TextStyle(
-                          color: AdminPaymentsScreen.primaryBlue,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: 'Search learner name or serial',
-                          filled: true,
-                          fillColor: const Color(0xFFF7F9FC),
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: SizedBox(
-                            width: _nameSearchQuery.isEmpty ? 44 : 84,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                if (_nameSearchQuery.isNotEmpty)
-                                  IconButton(
-                                    tooltip: 'Clear search',
-                                    onPressed: () => _nameSearchCtrl.clear(),
-                                    icon: const Icon(Icons.backspace_outlined),
-                                  ),
-                                IconButton(
-                                  tooltip: 'Close search',
-                                  onPressed: _toggleNameSearch,
-                                  icon: const Icon(Icons.close_rounded),
+            ];
+
+            final archiveBucketIds = archiveBuckets.map((e) => e.id).toSet();
+            if (_selectedArchiveBucketId != null &&
+                !archiveBucketIds.contains(_selectedArchiveBucketId)) {
+              _selectedArchiveBucketId = null;
+            }
+            if (_selectedPaymentsView == _paymentsViewArchive &&
+                _selectedArchiveBucketId == null &&
+                archiveBuckets.isNotEmpty) {
+              _selectedArchiveBucketId = archiveBuckets.first.id;
+            }
+
+            final teacherFilterMap = <String, String>{};
+            final variantFilterMap = <String, String>{};
+            for (final p in all) {
+              final teacherName = _teacherLabelFrom(p).trim();
+              if (teacherName.isNotEmpty &&
+                  !_isPseudoTeacherLabel(teacherName)) {
+                teacherFilterMap.putIfAbsent(
+                  teacherName.toLowerCase(),
+                  () => teacherName,
+                );
+              }
+
+              final variantKey = _normalizeVariantKey(
+                (p['variantKey'] ?? p['deliveryKey'] ?? p['variant'] ?? '')
+                    .toString(),
+              );
+              if (variantKey.isNotEmpty) {
+                variantFilterMap.putIfAbsent(
+                  variantKey,
+                  () => _variantLabel(
+                    variantKey: variantKey,
+                    studyMode: (p['studyMode'] ?? '').toString(),
+                  ),
+                );
+              }
+            }
+
+            final teacherFilterItems = teacherFilterMap.entries.toList()
+              ..sort(
+                (a, b) =>
+                    a.value.toLowerCase().compareTo(b.value.toLowerCase()),
+              );
+            final variantFilterItems = variantFilterMap.entries.toList()
+              ..sort(
+                (a, b) =>
+                    a.value.toLowerCase().compareTo(b.value.toLowerCase()),
+              );
+
+            if (_selectedTeacherFilter.startsWith(_teacherFilterPrefix)) {
+              final teacherKey = _selectedTeacherFilter.substring(
+                _teacherFilterPrefix.length,
+              );
+              if (!teacherFilterMap.containsKey(teacherKey)) {
+                _selectedTeacherFilter = _teacherFilterAll;
+              }
+            }
+            if (_selectedVariantFilter.startsWith(_variantFilterPrefix)) {
+              final variantKey = _selectedVariantFilter.substring(
+                _variantFilterPrefix.length,
+              );
+              if (!variantFilterMap.containsKey(variantKey)) {
+                _selectedVariantFilter = _variantFilterAll;
+              }
+            }
+
+            Iterable<Map<String, dynamic>> filtered;
+            if (_selectedPaymentsView == _paymentsViewCurrent) {
+              filtered = activePeriod == null
+                  ? const <Map<String, dynamic>>[]
+                  : all.where((p) => _paymentPeriodId(p) == activePeriod!.id);
+            } else {
+              final bucketId = _selectedArchiveBucketId;
+              filtered = bucketId == null
+                  ? const <Map<String, dynamic>>[]
+                  : all.where((p) => _paymentArchiveBucketId(p) == bucketId);
+            }
+
+            if (_selectedTeacherFilter == _teacherFilterHasTeacher) {
+              filtered = filtered.where(_hasAssignedTeacher);
+            } else if (_selectedTeacherFilter == _teacherFilterNoTeacher) {
+              filtered = filtered.where((p) => !_hasAssignedTeacher(p));
+            } else if (_selectedTeacherFilter.startsWith(
+              _teacherFilterPrefix,
+            )) {
+              final teacherKey = _selectedTeacherFilter
+                  .substring(_teacherFilterPrefix.length)
+                  .trim();
+              filtered = filtered.where(
+                (p) => _teacherLabelFrom(p).trim().toLowerCase() == teacherKey,
+              );
+            }
+
+            if (_selectedVariantFilter.startsWith(_variantFilterPrefix)) {
+              final variantKey = _selectedVariantFilter
+                  .substring(_variantFilterPrefix.length)
+                  .trim();
+              filtered = filtered.where(
+                (p) =>
+                    _normalizeVariantKey(
+                      (p['variantKey'] ??
+                              p['deliveryKey'] ??
+                              p['variant'] ??
+                              '')
+                          .toString(),
+                    ) ==
+                    variantKey,
+              );
+            }
+
+            if (_selectedNotesFilter == _notesFilterHasNotes) {
+              filtered = filtered.where(
+                (p) => (p['notes'] ?? '').toString().trim().isNotEmpty,
+              );
+            } else if (_selectedNotesFilter == _notesFilterNoNotes) {
+              filtered = filtered.where(
+                (p) => (p['notes'] ?? '').toString().trim().isEmpty,
+              );
+            }
+
+            if (_nameSearchQuery.isNotEmpty) {
+              filtered = filtered.where((p) {
+                final name = _learnerNameFromPayment(p).toLowerCase();
+                final serial = (p['learner_serial'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                return name.contains(_nameSearchQuery) ||
+                    serial.contains(_nameSearchQuery);
+              });
+            }
+
+            final visible = filtered.toList();
+            final visibleDisplayNoByPaymentId = <String, int>{};
+            for (int i = 0; i < visible.length; i++) {
+              final paymentId = (visible[i]['paymentId'] ?? '')
+                  .toString()
+                  .trim();
+              if (paymentId.isEmpty) continue;
+              visibleDisplayNoByPaymentId[paymentId] = i + 1;
+            }
+
+            final today = _todayYmd();
+            final todayTotal = _sumAmount(
+              all.where((p) => (p['dayKey'] ?? '') == today),
+            );
+            final visibleTotal = _sumAmount(visible);
+            String currentScopeLabel =
+                activePeriod?.displayLabel ?? 'No active period';
+            if (_selectedPaymentsView == _paymentsViewArchive) {
+              currentScopeLabel = 'Archive';
+              for (final bucket in archiveBuckets) {
+                if (bucket.id == _selectedArchiveBucketId) {
+                  currentScopeLabel = bucket.label;
+                  break;
+                }
+              }
+            }
+
+            final todayPill = _Pill(
+              icon: Icons.today_rounded,
+              text: 'Today: ${_fmtMoneyDa(todayTotal)}',
+              strong: true,
+            );
+
+            final emptyMessage = _selectedPaymentsView == _paymentsViewCurrent
+                ? (activePeriod == null
+                      ? 'No active payment period yet. Tap Fresh Start to begin.'
+                      : 'No payments in the current period yet.')
+                : (archiveBuckets.isEmpty
+                      ? 'No archived payments yet.'
+                      : 'No payments found in this archive period.');
+
+            return Scaffold(
+              backgroundColor: AdminPaymentsScreen.appBg,
+              appBar: AppBar(
+                backgroundColor: Colors.white,
+                elevation: 0,
+                surfaceTintColor: Colors.white,
+                iconTheme: const IconThemeData(
+                  color: AdminPaymentsScreen.primaryBlue,
+                ),
+                titleSpacing: _showNameSearch
+                    ? 8
+                    : NavigationToolbar.kMiddleSpacing,
+                title: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    _showNameSearch ? 0 : 2,
+                    4,
+                    _showNameSearch ? 4 : 2,
+                    4,
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: _showNameSearch
+                        ? TextField(
+                            key: const ValueKey('payments-search-field'),
+                            controller: _nameSearchCtrl,
+                            autofocus: true,
+                            textInputAction: TextInputAction.search,
+                            style: const TextStyle(
+                              color: AdminPaymentsScreen.primaryBlue,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              hintText: 'Search learner name or serial',
+                              filled: true,
+                              fillColor: const Color(0xFFF7F9FC),
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              suffixIcon: IconButton(
+                                tooltip: _nameSearchQuery.isNotEmpty
+                                    ? 'Clear search'
+                                    : 'Close search',
+                                onPressed: _nameSearchQuery.isNotEmpty
+                                    ? () => _nameSearchCtrl.clear()
+                                    : _toggleNameSearch,
+                                icon: Icon(
+                                  _nameSearchQuery.isNotEmpty
+                                      ? Icons.backspace_outlined
+                                      : Icons.close_rounded,
                                 ),
-                              ],
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          )
+                        : const Text(
+                            'Payments',
+                            key: ValueKey('payments-title'),
+                            style: TextStyle(
+                              color: AdminPaymentsScreen.primaryBlue,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      )
-                    : const Text(
-                        'Payments',
-                        key: ValueKey('payments-title'),
-                        style: TextStyle(
-                          color: AdminPaymentsScreen.primaryBlue,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-              ),
-            ),
-            actions: _showNameSearch
-                ? const <Widget>[]
-                : [
-                    IconButton(
-                      tooltip: 'Search learner',
-                      icon: const Icon(
-                        Icons.search_rounded,
-                        color: AdminPaymentsScreen.primaryBlue,
-                      ),
-                      onPressed: _toggleNameSearch,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Center(child: todayPill),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Backup / Export',
-                      icon: const Icon(
-                        Icons.download_rounded,
-                        color: AdminPaymentsScreen.primaryBlue,
-                      ),
-                      onPressed: () =>
-                          _openExportDialog(all: all, months: months),
-                    ),
-                    IconButton(
-                      tooltip: 'Add payment',
-                      icon: const Icon(
-                        Icons.add_card_rounded,
-                        color: AdminPaymentsScreen.actionOrange,
-                      ),
-                      onPressed: () => _openAddPaymentDialog(),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-          ),
-          body: adminWebBodyFrame(
-            context: context,
-            maxWidth: 1750,
-            child: Column(
-              children: [
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _SmallDropdown<String?>(
-                          label: 'Month',
-                          value: _selectedMonthYyyyMm,
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text('All'),
-                            ),
-                            ...months.map(
-                              (m) => DropdownMenuItem<String?>(
-                                value: m,
-                                child: Text(m),
-                              ),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _selectedMonthYyyyMm = v;
-                          }),
-                        ),
-                        const SizedBox(width: 10),
-                        _SmallDropdown<String>(
-                          label: 'Teacher',
-                          value: _selectedTeacherFilter,
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: _teacherFilterAll,
-                              child: Text('All'),
-                            ),
-                            const DropdownMenuItem<String>(
-                              value: _teacherFilterHasTeacher,
-                              child: Text('Has teacher'),
-                            ),
-                            const DropdownMenuItem<String>(
-                              value: _teacherFilterNoTeacher,
-                              child: Text('No teacher'),
-                            ),
-                            ...teacherFilterItems.map(
-                              (e) => DropdownMenuItem<String>(
-                                value: '$_teacherFilterPrefix${e.key}',
-                                child: Text(e.value),
-                              ),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _selectedTeacherFilter = v ?? _teacherFilterAll;
-                          }),
-                        ),
-                        const SizedBox(width: 10),
-                        _SmallDropdown<String>(
-                          label: 'Variant',
-                          value: _selectedVariantFilter,
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: _variantFilterAll,
-                              child: Text('All'),
-                            ),
-                            ...variantFilterItems.map(
-                              (e) => DropdownMenuItem<String>(
-                                value: '$_variantFilterPrefix${e.key}',
-                                child: Text(e.value),
-                              ),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _selectedVariantFilter = v ?? _variantFilterAll;
-                          }),
-                        ),
-                        const SizedBox(width: 10),
-                        _SmallDropdown<String>(
-                          label: 'Notes',
-                          value: _selectedNotesFilter,
-                          items: const [
-                            DropdownMenuItem<String>(
-                              value: _notesFilterAll,
-                              child: Text('All'),
-                            ),
-                            DropdownMenuItem<String>(
-                              value: _notesFilterHasNotes,
-                              child: Text('Has notes'),
-                            ),
-                            DropdownMenuItem<String>(
-                              value: _notesFilterNoNotes,
-                              child: Text('No notes'),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _selectedNotesFilter = v ?? _notesFilterAll;
-                          }),
-                        ),
-                        const SizedBox(width: 10),
-                        _Pill(
-                          icon: Icons.calendar_view_month_rounded,
-                          text: 'Month: ${_fmtMoneyDa(monthTotal)}',
-                          strong: true,
-                        ),
-                        const SizedBox(width: 6),
-                        IconButton(
-                          tooltip: 'Clear filters',
-                          onPressed: () {
-                            setState(() {
-                              _selectedMonthYyyyMm = null;
-                              _selectedTeacherFilter = _teacherFilterAll;
-                              _selectedVariantFilter = _variantFilterAll;
-                              _selectedNotesFilter = _notesFilterAll;
-                            });
-                          },
-                          icon: const Icon(Icons.filter_alt_off),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final webDesktop = isWebDesktop(context);
-                      final minTableWidth = isWebDesktop(context)
-                          ? 1500.0
-                          : 1300.0;
-                      final tableWidth = constraints.maxWidth < minTableWidth
-                          ? minTableWidth
-                          : constraints.maxWidth;
-
-                      if (visible.isEmpty) {
-                        return const Center(child: Text('No payments found.'));
-                      }
-
-                      if (webDesktop) {
-                        return _buildWebFrozenPaymentsTable(
-                          visible: visible,
-                          visibleDisplayNoByPaymentId:
-                              visibleDisplayNoByPaymentId,
-                        );
-                      }
-
-                      return SingleChildScrollView(
+                actions: _showNameSearch
+                    ? const <Widget>[]
+                    : [
+                        IconButton(
+                          tooltip: 'Search learner',
+                          icon: const Icon(
+                            Icons.search_rounded,
+                            color: AdminPaymentsScreen.primaryBlue,
+                          ),
+                          onPressed: _toggleNameSearch,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Center(child: todayPill),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Backup / Export',
+                          icon: const Icon(
+                            Icons.download_rounded,
+                            color: AdminPaymentsScreen.primaryBlue,
+                          ),
+                          onPressed: () =>
+                              _openExportDialog(all: all, months: months),
+                        ),
+                        IconButton(
+                          tooltip: 'Add payment',
+                          icon: const Icon(
+                            Icons.add_card_rounded,
+                            color: AdminPaymentsScreen.actionOrange,
+                          ),
+                          onPressed: () =>
+                              _openAddPaymentDialog(activePeriod: activePeriod),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+              ),
+              body: adminWebBodyFrame(
+                context: context,
+                maxWidth: 1750,
+                child: Column(
+                  children: [
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
-                        child: SizedBox(
-                          width: tableWidth,
-                          height: constraints.maxHeight,
-                          child: Column(
-                            children: [
-                              Container(
-                                color: Colors.white,
-                                alignment: Alignment.center,
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  10,
-                                  12,
-                                  10,
-                                ),
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth: tableWidth,
-                                  ),
-                                  child: const _TableHeaderRow(),
-                                ),
+                        child: Row(
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Current'),
+                              selected:
+                                  _selectedPaymentsView == _paymentsViewCurrent,
+                              onSelected: (_) {
+                                setState(() {
+                                  _selectedPaymentsView = _paymentsViewCurrent;
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('Archive'),
+                              selected:
+                                  _selectedPaymentsView == _paymentsViewArchive,
+                              onSelected: (_) {
+                                setState(() {
+                                  _selectedPaymentsView = _paymentsViewArchive;
+                                  _selectedArchiveBucketId ??=
+                                      archiveBuckets.isEmpty
+                                      ? null
+                                      : archiveBuckets.first.id;
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 10),
+                            FilledButton.icon(
+                              onPressed: () => _openFreshStartDialog(
+                                activePeriod: activePeriod,
                               ),
-                              Divider(
-                                height: 1,
-                                color: Colors.black.withValues(alpha: 0.07),
-                              ),
-                              Expanded(
-                                child: ListView.separated(
-                                  padding: EdgeInsets.fromLTRB(
-                                    0,
-                                    0,
-                                    0,
-                                    MediaQuery.of(context).padding.bottom + 28,
+                              icon: const Icon(Icons.restart_alt_rounded),
+                              label: const Text('Fresh Start'),
+                            ),
+                            const SizedBox(width: 10),
+                            if (_selectedPaymentsView == _paymentsViewArchive)
+                              _SmallDropdown<String?>(
+                                label: 'Archive',
+                                value: _selectedArchiveBucketId,
+                                items: [
+                                  if (archiveBuckets.isEmpty)
+                                    const DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text('No archive'),
+                                    ),
+                                  ...archiveBuckets.map(
+                                    (bucket) => DropdownMenuItem<String?>(
+                                      value: bucket.id,
+                                      child: Text(bucket.label),
+                                    ),
                                   ),
-                                  itemCount: visible.length,
-                                  separatorBuilder: (_, _) => Divider(
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _selectedArchiveBucketId = v;
+                                }),
+                              ),
+                            if (_selectedPaymentsView == _paymentsViewArchive)
+                              const SizedBox(width: 10),
+                            _SmallDropdown<String>(
+                              label: 'Teacher',
+                              value: _selectedTeacherFilter,
+                              items: [
+                                const DropdownMenuItem<String>(
+                                  value: _teacherFilterAll,
+                                  child: Text('All'),
+                                ),
+                                const DropdownMenuItem<String>(
+                                  value: _teacherFilterHasTeacher,
+                                  child: Text('Has teacher'),
+                                ),
+                                const DropdownMenuItem<String>(
+                                  value: _teacherFilterNoTeacher,
+                                  child: Text('No teacher'),
+                                ),
+                                ...teacherFilterItems.map(
+                                  (e) => DropdownMenuItem<String>(
+                                    value: '$_teacherFilterPrefix${e.key}',
+                                    child: Text(e.value),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() {
+                                _selectedTeacherFilter = v ?? _teacherFilterAll;
+                              }),
+                            ),
+                            const SizedBox(width: 10),
+                            _SmallDropdown<String>(
+                              label: 'Variant',
+                              value: _selectedVariantFilter,
+                              items: [
+                                const DropdownMenuItem<String>(
+                                  value: _variantFilterAll,
+                                  child: Text('All'),
+                                ),
+                                ...variantFilterItems.map(
+                                  (e) => DropdownMenuItem<String>(
+                                    value: '$_variantFilterPrefix${e.key}',
+                                    child: Text(e.value),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() {
+                                _selectedVariantFilter = v ?? _variantFilterAll;
+                              }),
+                            ),
+                            const SizedBox(width: 10),
+                            _SmallDropdown<String>(
+                              label: 'Notes',
+                              value: _selectedNotesFilter,
+                              items: const [
+                                DropdownMenuItem<String>(
+                                  value: _notesFilterAll,
+                                  child: Text('All'),
+                                ),
+                                DropdownMenuItem<String>(
+                                  value: _notesFilterHasNotes,
+                                  child: Text('Has notes'),
+                                ),
+                                DropdownMenuItem<String>(
+                                  value: _notesFilterNoNotes,
+                                  child: Text('No notes'),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() {
+                                _selectedNotesFilter = v ?? _notesFilterAll;
+                              }),
+                            ),
+                            const SizedBox(width: 10),
+                            _Pill(
+                              icon:
+                                  _selectedPaymentsView == _paymentsViewCurrent
+                                  ? Icons.calendar_today_rounded
+                                  : Icons.inventory_2_outlined,
+                              text: currentScopeLabel,
+                              strong: true,
+                            ),
+                            const SizedBox(width: 8),
+                            _Pill(
+                              icon: Icons.payments_outlined,
+                              text: 'Visible: ${_fmtMoneyDa(visibleTotal)}',
+                              strong: true,
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              tooltip: 'Clear filters',
+                              onPressed: () {
+                                setState(() {
+                                  _selectedMonthYyyyMm = null;
+                                  _selectedTeacherFilter = _teacherFilterAll;
+                                  _selectedVariantFilter = _variantFilterAll;
+                                  _selectedNotesFilter = _notesFilterAll;
+                                  _nameSearchCtrl.clear();
+                                });
+                              },
+                              icon: const Icon(Icons.filter_alt_off),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final webDesktop = isWebDesktop(context);
+                          final minTableWidth = isWebDesktop(context)
+                              ? 1500.0
+                              : 1300.0;
+                          final tableWidth =
+                              constraints.maxWidth < minTableWidth
+                              ? minTableWidth
+                              : constraints.maxWidth;
+
+                          if (visible.isEmpty) {
+                            return Center(child: Text(emptyMessage));
+                          }
+
+                          if (webDesktop) {
+                            return _buildWebFrozenPaymentsTable(
+                              visible: visible,
+                              visibleDisplayNoByPaymentId:
+                                  visibleDisplayNoByPaymentId,
+                            );
+                          }
+
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: tableWidth,
+                              height: constraints.maxHeight,
+                              child: Column(
+                                children: [
+                                  Container(
+                                    color: Colors.white,
+                                    alignment: Alignment.center,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      10,
+                                      12,
+                                      10,
+                                    ),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: tableWidth,
+                                      ),
+                                      child: const _TableHeaderRow(),
+                                    ),
+                                  ),
+                                  Divider(
                                     height: 1,
                                     color: Colors.black.withValues(alpha: 0.07),
                                   ),
-                                  itemBuilder: (context, i) {
-                                    final p = visible[i];
-
-                                    final paymentId = (p['paymentId'] ?? '')
-                                        .toString();
-                                    final idx =
-                                        visibleDisplayNoByPaymentId[paymentId] ??
-                                        (i + 1);
-
-                                    final paidDate = _fmtDateFromMs(
-                                      p['paidAt'],
-                                    );
-                                    final startDate = (p['startDate'] ?? '')
-                                        .toString();
-                                    final expiresAt = _fmtDateFromMs(
-                                      p['expiresAt'],
-                                    );
-                                    final learnerName =
-                                        (p['learner_name'] ?? '').toString();
-                                    final amount = _asInt(p['amount']);
-                                    final teacher = (p['teacherName'] ?? '')
-                                        .toString();
-                                    final courseTitle =
-                                        (p['course_title'] ?? '').toString();
-                                    final notes = (p['notes'] ?? '').toString();
-                                    final variantText = _variantLabel(
-                                      variantKey: (p['variantKey'] ?? '')
-                                          .toString(),
-                                      studyMode: (p['studyMode'] ?? '')
-                                          .toString(),
-                                    );
-
-                                    final detail =
-                                        _variantIsRecorded(
-                                          (p['variantKey'] ?? '').toString(),
-                                        )
-                                        ? 'Months: ${_asInt(p['durationMonths'])}'
-                                        : _variantUsesSessions(
-                                            (p['variantKey'] ?? '').toString(),
-                                          )
-                                        ? 'Sessions: ${_asInt(p['sessionsPaid'])}'
-                                        : '—';
-
-                                    final baseRowBg = (i % 2 == 0)
-                                        ? Colors.white
-                                        : AdminPaymentsScreen.appBg.withValues(
-                                            alpha: 0.7,
-                                          );
-
-                                    return InkWell(
-                                      onTap: () async =>
-                                          _openEditPaymentDialog(p),
-                                      child: Container(
-                                        color: baseRowBg,
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 10,
-                                          horizontal: 6,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            const SizedBox(width: 34),
-                                            _cell(
-                                              '#$idx',
-                                              flex: 1,
-                                              isStrong: true,
-                                            ),
-                                            _cell(
-                                              paidDate.isEmpty ? '—' : paidDate,
-                                              flex: 2,
-                                            ),
-                                            _cell(
-                                              learnerName.isEmpty
-                                                  ? '—'
-                                                  : learnerName,
-                                              flex: 3,
-                                            ),
-                                            _cell(variantText, flex: 2),
-                                            _cell(
-                                              '$amount',
-                                              flex: 2,
-                                              isStrong: true,
-                                            ),
-                                            _cell(detail, flex: 2),
-                                            _cell(
-                                              teacher.isEmpty ? '—' : teacher,
-                                              flex: 3,
-                                            ),
-                                            _cell(
-                                              courseTitle.isEmpty
-                                                  ? '—'
-                                                  : courseTitle,
-                                              flex: 3,
-                                            ),
-                                            _cell(
-                                              startDate.isNotEmpty
-                                                  ? startDate
-                                                  : (expiresAt.isNotEmpty
-                                                        ? expiresAt
-                                                        : '—'),
-                                              flex: 2,
-                                            ),
-                                            _cell(
-                                              notes.isEmpty ? '—' : notes,
-                                              flex: 4,
-                                            ),
-                                            SizedBox(
-                                              width: 40,
-                                              child: Align(
-                                                alignment:
-                                                    Alignment.centerRight,
-                                                child: PopupMenuButton<String>(
-                                                  tooltip: 'Actions',
-                                                  onSelected: (a) async {
-                                                    if (a == 'edit') {
-                                                      await _openEditPaymentDialog(
-                                                        p,
-                                                      );
-                                                    } else if (a == 'delete') {
-                                                      await _deletePayment(p);
-                                                    }
-                                                  },
-                                                  itemBuilder: (_) => const [
-                                                    PopupMenuItem(
-                                                      value: 'edit',
-                                                      child: Text('Edit'),
-                                                    ),
-                                                    PopupMenuDivider(),
-                                                    PopupMenuItem(
-                                                      value: 'delete',
-                                                      child: Text('Delete'),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                  Expanded(
+                                    child: ListView.separated(
+                                      padding: EdgeInsets.fromLTRB(
+                                        0,
+                                        0,
+                                        0,
+                                        MediaQuery.of(context).padding.bottom +
+                                            28,
+                                      ),
+                                      itemCount: visible.length,
+                                      separatorBuilder: (_, _) => Divider(
+                                        height: 1,
+                                        color: Colors.black.withValues(
+                                          alpha: 0.07,
                                         ),
                                       ),
-                                    );
-                                  },
-                                ),
+                                      itemBuilder: (context, i) {
+                                        final p = visible[i];
+
+                                        final paymentId = (p['paymentId'] ?? '')
+                                            .toString();
+                                        final idx =
+                                            visibleDisplayNoByPaymentId[paymentId] ??
+                                            (i + 1);
+
+                                        final paidDate = _fmtDateFromMs(
+                                          p['paidAt'],
+                                        );
+                                        final startDate = (p['startDate'] ?? '')
+                                            .toString();
+                                        final expiresAt = _fmtDateFromMs(
+                                          p['expiresAt'],
+                                        );
+                                        final learnerName =
+                                            (p['learner_name'] ?? '')
+                                                .toString();
+                                        final amount = _asInt(p['amount']);
+                                        final teacher = (p['teacherName'] ?? '')
+                                            .toString();
+                                        final courseTitle =
+                                            (p['course_title'] ?? '')
+                                                .toString();
+                                        final notes = (p['notes'] ?? '')
+                                            .toString();
+                                        final variantText = _variantLabel(
+                                          variantKey: (p['variantKey'] ?? '')
+                                              .toString(),
+                                          studyMode: (p['studyMode'] ?? '')
+                                              .toString(),
+                                        );
+
+                                        final detail =
+                                            _variantIsRecorded(
+                                              (p['variantKey'] ?? '')
+                                                  .toString(),
+                                            )
+                                            ? 'Months: ${_asInt(p['durationMonths'])}'
+                                            : _variantUsesSessions(
+                                                (p['variantKey'] ?? '')
+                                                    .toString(),
+                                              )
+                                            ? 'Sessions: ${_asInt(p['sessionsPaid'])}'
+                                            : '—';
+
+                                        final baseRowBg = (i % 2 == 0)
+                                            ? Colors.white
+                                            : AdminPaymentsScreen.appBg
+                                                  .withValues(alpha: 0.7);
+
+                                        return InkWell(
+                                          onTap: () async =>
+                                              _openEditPaymentDialog(p),
+                                          child: Container(
+                                            color: baseRowBg,
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 10,
+                                              horizontal: 6,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const SizedBox(width: 34),
+                                                _cell(
+                                                  '#$idx',
+                                                  flex: 1,
+                                                  isStrong: true,
+                                                ),
+                                                _cell(
+                                                  paidDate.isEmpty
+                                                      ? '—'
+                                                      : paidDate,
+                                                  flex: 2,
+                                                ),
+                                                _cell(
+                                                  learnerName.isEmpty
+                                                      ? '—'
+                                                      : learnerName,
+                                                  flex: 3,
+                                                ),
+                                                _cell(variantText, flex: 2),
+                                                _cell(
+                                                  '$amount',
+                                                  flex: 2,
+                                                  isStrong: true,
+                                                ),
+                                                _cell(detail, flex: 2),
+                                                _cell(
+                                                  teacher.isEmpty
+                                                      ? '—'
+                                                      : teacher,
+                                                  flex: 3,
+                                                ),
+                                                _cell(
+                                                  courseTitle.isEmpty
+                                                      ? '—'
+                                                      : courseTitle,
+                                                  flex: 3,
+                                                ),
+                                                _cell(
+                                                  startDate.isNotEmpty
+                                                      ? startDate
+                                                      : (expiresAt.isNotEmpty
+                                                            ? expiresAt
+                                                            : '—'),
+                                                  flex: 2,
+                                                ),
+                                                _cell(
+                                                  notes.isEmpty ? '—' : notes,
+                                                  flex: 4,
+                                                ),
+                                                SizedBox(
+                                                  width: 40,
+                                                  child: Align(
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: PopupMenuButton<String>(
+                                                      tooltip: 'Actions',
+                                                      onSelected: (a) async {
+                                                        if (a == 'edit') {
+                                                          await _openEditPaymentDialog(
+                                                            p,
+                                                          );
+                                                        } else if (a ==
+                                                            'delete') {
+                                                          await _deletePayment(
+                                                            p,
+                                                          );
+                                                        }
+                                                      },
+                                                      itemBuilder: (_) =>
+                                                          const [
+                                                            PopupMenuItem(
+                                                              value: 'edit',
+                                                              child: Text(
+                                                                'Edit',
+                                                              ),
+                                                            ),
+                                                            PopupMenuDivider(),
+                                                            PopupMenuItem(
+                                                              value: 'delete',
+                                                              child: Text(
+                                                                'Delete',
+                                                              ),
+                                                            ),
+                                                          ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -2124,7 +2467,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   // ----------------- ADD PAYMENT -----------------
 
-  Future<void> _openAddPaymentDialog() async {
+  Future<void> _openAddPaymentDialog({
+    required _PaymentPeriodRecord? activePeriod,
+  }) async {
+    if (activePeriod == null) {
+      _toast('Start a fresh payment period first.');
+      return;
+    }
+
     String? pickedUid;
     String? pickedCourseId;
     String? pickedCourseKey;
@@ -2241,6 +2591,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
+                    _InfoLine(
+                      label: 'Current period',
+                      value: activePeriod.displayLabel,
+                    ),
+                    const SizedBox(height: 12),
                     _LearnerAutocomplete(
                       usersRef: _usersRef,
                       onPicked: (uid, learnerMap) async {
@@ -2755,6 +3110,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             'learner_serial': learnerSerial,
                             'dayKey': dayKey,
                             'monthKey': monthKey,
+                            'periodId': activePeriod.id,
+                            'periodLabel': activePeriod.displayLabel,
+                            'periodStartDate': activePeriod.startDate,
+                            'periodStartAtMs': activePeriod.startAtMs,
                           });
 
                           String postWarning = '';
@@ -3247,6 +3606,61 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       _toast(toHumanError(e, fallback: 'Could not delete payment.'));
     }
   }
+}
+
+class _PaymentPeriodRecord {
+  const _PaymentPeriodRecord({
+    required this.id,
+    required this.label,
+    required this.startDate,
+    required this.startAtMs,
+    required this.endDate,
+    required this.endAtMs,
+    required this.isActive,
+  });
+
+  final String id;
+  final String label;
+  final String startDate;
+  final int startAtMs;
+  final String endDate;
+  final int endAtMs;
+  final bool isActive;
+
+  static int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse((v ?? '').toString()) ?? 0;
+  }
+
+  factory _PaymentPeriodRecord.fromMap({
+    required String id,
+    required Map<String, dynamic> map,
+  }) {
+    return _PaymentPeriodRecord(
+      id: id,
+      label: (map['label'] ?? '').toString().trim(),
+      startDate: (map['startDate'] ?? '').toString().trim(),
+      startAtMs: _asInt(map['startAtMs']),
+      endDate: (map['endDate'] ?? '').toString().trim(),
+      endAtMs: _asInt(map['endAtMs']),
+      isActive: map['isActive'] == true,
+    );
+  }
+
+  String get displayLabel {
+    if (label.isNotEmpty) return label;
+    if (startDate.isEmpty) return 'Payment period';
+    if (endDate.isNotEmpty) return '$startDate -> $endDate';
+    return 'From $startDate';
+  }
+}
+
+class _ArchiveBucket {
+  const _ArchiveBucket({required this.id, required this.label});
+
+  final String id;
+  final String label;
 }
 
 // ------------------ Compact UI pieces ------------------

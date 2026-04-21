@@ -161,6 +161,8 @@ String canonicalShortLabelAr(String key, {String? fallback}) {
   }
 }
 
+const List<String> _genderOptions = ['Male', 'Female'];
+
 /// ===== New learner delivery model =====
 class EnrollDeliveryOption {
   const EnrollDeliveryOption({
@@ -318,6 +320,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
   final phoneC = TextEditingController();
   final dobC = TextEditingController();
   final emailC = TextEditingController();
+  String? _gender;
 
   bool saving = false;
   late final List<EnrollDeliveryOption> deliveryOptions;
@@ -525,6 +528,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'courseTitle': widget.courseTitle,
         'fullName': fullNameC.text.trim(),
         'phone': phoneC.text.trim(),
+        'gender': (_gender ?? '').trim(),
         'dob': dobC.text.trim(),
         'dateOfBirth': dobC.text.trim(),
         'email': emailC.text.trim(),
@@ -878,6 +882,31 @@ class _EnrollScreenState extends State<EnrollScreen> {
                               }
                               return null;
                             },
+                          ),
+                          const SizedBox(height: 12),
+
+                          DropdownButtonFormField<String>(
+                            initialValue: _gender,
+                            decoration: _inputDeco(
+                              label: 'Gender | الجنس',
+                              icon: Icons.wc_rounded,
+                              hint: _biHint('Select gender', 'اختر الجنس'),
+                            ),
+                            items: _genderOptions
+                                .map(
+                                  (value) => DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(value),
+                                  ),
+                                )
+                                .toList(),
+                            validator: (v) {
+                              if (!_genderOptions.contains((v ?? '').trim())) {
+                                return 'Please select your gender.';
+                              }
+                              return null;
+                            },
+                            onChanged: (v) => setState(() => _gender = v),
                           ),
                           const SizedBox(height: 12),
 

@@ -149,6 +149,7 @@ class WebsiteMirrorBackfillService {
     final out = <String, dynamic>{
       'first_name': _asString(userMap['first_name']),
       'last_name': _asString(userMap['last_name']),
+      'gender': _asString(userMap['gender']),
       'about_me': _asString(userMap['about_me']),
       'profile_photo': _asString(userMap['profile_photo']),
     };

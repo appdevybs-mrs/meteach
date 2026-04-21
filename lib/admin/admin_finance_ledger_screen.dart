@@ -84,24 +84,36 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
         : Colors.white;
   }
 
+  Map<String, dynamic> _buildLedgerEntryPayload({
+    required String title,
+    required String amountText,
+    required String note,
+    required Color selectedColor,
+  }) {
+    return <String, dynamic>{
+      'title': title,
+      'amount': _asInt(amountText),
+      'note': note,
+      'cardColor': _colorToHex(selectedColor),
+      'createdAt': ServerValue.timestamp,
+      'updatedAt': ServerValue.timestamp,
+      'createdBy': 'admin',
+    };
+  }
+
   Future<void> _openAddEntryDialog() async {
     final titleCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     var selectedColor = _defaultCardColor;
-    var saving = false;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogCtx) {
-        final insets = MediaQuery.of(dialogCtx).viewInsets;
-        return StatefulBuilder(
-          builder: (context, setD) {
-            return AnimatedPadding(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.only(bottom: insets.bottom),
-              child: AlertDialog(
+    try {
+      final payload = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (dialogCtx) {
+          return StatefulBuilder(
+            builder: (context, setD) {
+              return AlertDialog(
                 title: const Text('Add ledger card'),
                 scrollable: true,
                 content: SizedBox(
@@ -153,50 +165,40 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
                 ),
                 actions: [
                   TextButton(
-                    onPressed: saving
-                        ? null
-                        : () => Navigator.of(dialogCtx).pop(),
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
                     child: const Text('Cancel'),
                   ),
                   FilledButton.icon(
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            final title = titleCtrl.text.trim();
-                            if (title.isEmpty) return;
-                            setD(() => saving = true);
-                            try {
-                              final ref = _ledgerRef.push();
-                              await ref.set({
-                                'title': title,
-                                'amount': _asInt(amountCtrl.text),
-                                'note': noteCtrl.text.trim(),
-                                'cardColor': _colorToHex(selectedColor),
-                                'createdAt': ServerValue.timestamp,
-                                'updatedAt': ServerValue.timestamp,
-                                'createdBy': 'admin',
-                              });
-                              if (dialogCtx.mounted) {
-                                Navigator.of(dialogCtx).pop();
-                              }
-                            } finally {
-                              if (dialogCtx.mounted) setD(() => saving = false);
-                            }
-                          },
+                    onPressed: () {
+                      final title = titleCtrl.text.trim();
+                      if (title.isEmpty) return;
+                      Navigator.of(dialogCtx).pop(
+                        _buildLedgerEntryPayload(
+                          title: title,
+                          amountText: amountCtrl.text,
+                          note: noteCtrl.text.trim(),
+                          selectedColor: selectedColor,
+                        ),
+                      );
+                    },
                     icon: const Icon(Icons.add_card_rounded),
-                    label: Text(saving ? 'Saving...' : 'Add card'),
+                    label: const Text('Add card'),
                   ),
                 ],
-              ),
-            );
-          },
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
 
-    titleCtrl.dispose();
-    amountCtrl.dispose();
-    noteCtrl.dispose();
+      if (payload == null) return;
+      final ref = _ledgerRef.push();
+      await ref.set(payload);
+    } finally {
+      titleCtrl.dispose();
+      amountCtrl.dispose();
+      noteCtrl.dispose();
+    }
   }
 
   Future<void> _editEntry({
@@ -214,16 +216,12 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
     );
     var selectedColor = _parseCardColor(row['cardColor']);
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) {
-        final insets = MediaQuery.of(dialogCtx).viewInsets;
-        return StatefulBuilder(
-          builder: (context, setD) => AnimatedPadding(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: EdgeInsets.only(bottom: insets.bottom),
-            child: AlertDialog(
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) {
+          return StatefulBuilder(
+            builder: (context, setD) => AlertDialog(
               title: const Text('Edit ledger card'),
               scrollable: true,
               content: SizedBox(
@@ -287,24 +285,24 @@ class _AdminFinanceLedgerScreenState extends State<AdminFinanceLedgerScreen> {
                 ),
               ],
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
 
-    if (ok != true) return;
+      if (ok != true) return;
 
-    await _ledgerRef.child(entryId).update({
-      'title': titleCtrl.text.trim(),
-      'amount': _asInt(amountCtrl.text),
-      'note': noteCtrl.text.trim(),
-      'cardColor': _colorToHex(selectedColor),
-      'updatedAt': ServerValue.timestamp,
-    });
-
-    titleCtrl.dispose();
-    amountCtrl.dispose();
-    noteCtrl.dispose();
+      await _ledgerRef.child(entryId).update({
+        'title': titleCtrl.text.trim(),
+        'amount': _asInt(amountCtrl.text),
+        'note': noteCtrl.text.trim(),
+        'cardColor': _colorToHex(selectedColor),
+        'updatedAt': ServerValue.timestamp,
+      });
+    } finally {
+      titleCtrl.dispose();
+      amountCtrl.dispose();
+      noteCtrl.dispose();
+    }
   }
 
   Future<void> _openNoteDialog({

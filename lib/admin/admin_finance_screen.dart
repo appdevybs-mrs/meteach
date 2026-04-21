@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'admin_finance_ledger_screen.dart';
+import '../shared/finance_allocations.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/study_variant.dart';
 
@@ -32,6 +33,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   final DatabaseReference _classesRef = FirebaseDatabase.instance.ref(
     'classes',
   );
+  final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
   final DatabaseReference _financeDoneRef = FirebaseDatabase.instance.ref(
     'finance_done_marks',
   );
@@ -133,6 +135,14 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     if (variantKey == 'recorded') return 'Recorded';
 
     return 'Unassigned';
+  }
+
+  static String _variantKeyFrom(Map<String, dynamic> row) {
+    return normalizeVariantKey(
+      (row['variantKey'] ?? row['variant'] ?? row['deliveryKey'] ?? '')
+          .toString(),
+      fallback: 'inclass',
+    );
   }
 
   static String _teacherIdFrom(Map<String, dynamic> p) {
@@ -410,6 +420,9 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     final normalized = _normalizeMethod(method);
     await _paymentsRef.child(paymentId).update({
       'financeMethod': normalized,
+      'financePushedAt': null,
+      'financePushedBy': null,
+      'financePushedStatus': null,
       'financeUpdatedAt': ServerValue.timestamp,
     });
   }
@@ -421,6 +434,19 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   }
 
   static int _schoolNetFromPayment(Map<String, dynamic> p) {
+    if (p['isFinanceAllocation'] == true) {
+      if (_asInt(p['financePushedAt']) <= 0) return 0;
+      final saved = _asInt(p['financeSchoolNet']);
+      return saved < 0 ? 0 : saved;
+    }
+    if (p['financeAllocations'] is Map) {
+      var total = 0;
+      for (final allocation in financeAllocationsFromPayment(p)) {
+        if (allocation.pushedAt <= 0) continue;
+        total += allocation.schoolNet;
+      }
+      return total;
+    }
     final pushed = _asInt(p['financePushedAt']) > 0;
     if (!pushed) return 0;
 
@@ -456,6 +482,19 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   }
 
   static int _teacherNetFromPayment(Map<String, dynamic> p) {
+    if (p['isFinanceAllocation'] == true) {
+      if (_asInt(p['financePushedAt']) <= 0) return 0;
+      final saved = _asInt(p['financeTeacherNet']);
+      return saved < 0 ? 0 : saved;
+    }
+    if (p['financeAllocations'] is Map) {
+      var total = 0;
+      for (final allocation in financeAllocationsFromPayment(p)) {
+        if (allocation.pushedAt <= 0) continue;
+        total += allocation.teacherNet;
+      }
+      return total;
+    }
     final pushed = _asInt(p['financePushedAt']) > 0;
     if (!pushed) return 0;
 
@@ -495,6 +534,30 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
 
     final net = _percentOf(gross, percent);
     return net < 0 ? 0 : net;
+  }
+
+  static _EffectiveFinanceAmounts _effectiveFinanceFromPayment(
+    Map<String, dynamic> p,
+  ) {
+    final status = _normalizeStatus(p['financePayoutStatus']);
+    final method = _normalizeMethod(p['financeMethod']);
+    if (status == 'done') {
+      return _EffectiveFinanceAmounts(
+        originalAmount: 0,
+        teacherNet: 0,
+        schoolNet: 0,
+        waitingAmount: 0,
+        method: method,
+      );
+    }
+    final alloc = _amountsFrom(p);
+    return _EffectiveFinanceAmounts(
+      originalAmount: _asInt(p['amount']),
+      teacherNet: _teacherNetFromPayment(p),
+      schoolNet: _schoolNetFromPayment(p),
+      waitingAmount: alloc.waitingAmount,
+      method: method,
+    );
   }
 
   void _openWaitingDetailsDialog(List<Map<String, dynamic>> rows) {
@@ -569,6 +632,38 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogCtx) {
+        var totalTeacherIncome = 0;
+        final byTeacher = <String, Map<String, int>>{};
+        for (final row in rows) {
+          final teacher = _teacherNameFrom(row);
+          final schoolNet = _schoolNetFromPayment(row);
+          final teacherNet = _teacherNetFromPayment(row);
+          final teacherPercent = _normalizePercent(
+            row['financeTeacherPercent'],
+          );
+          totalTeacherIncome += teacherNet;
+          final item = byTeacher.putIfAbsent(
+            teacher,
+            () => {
+              'schoolNet': 0,
+              'teacherNet': 0,
+              'schoolPercentTotal': 0,
+              'count': 0,
+            },
+          );
+          item['schoolNet'] = (item['schoolNet'] ?? 0) + schoolNet;
+          item['teacherNet'] = (item['teacherNet'] ?? 0) + teacherNet;
+          item['schoolPercentTotal'] =
+              (item['schoolPercentTotal'] ?? 0) + (100 - teacherPercent);
+          item['count'] = (item['count'] ?? 0) + 1;
+        }
+        final teacherLines = byTeacher.entries.map((entry) {
+          final count = (entry.value['count'] ?? 1).clamp(1, 999999);
+          final avgSchoolPercent =
+              (((entry.value['schoolPercentTotal'] ?? 0) / count) as num)
+                  .round();
+          return '${entry.key}: ${_money(entry.value['schoolNet'] ?? 0)} school · ${_money(entry.value['teacherNet'] ?? 0)} teachers · ~$avgSchoolPercent% school';
+        }).toList()..sort();
         return AlertDialog(
           title: const Text('School (Pushed Only)'),
           content: SizedBox(
@@ -579,13 +674,33 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                   )
                 : ListView.separated(
                     shrinkWrap: true,
-                    itemCount: rows.length,
+                    itemCount: rows.length + 1,
                     separatorBuilder: (_, _) => Divider(
                       height: 1,
                       color: Colors.black.withValues(alpha: 0.08),
                     ),
                     itemBuilder: (_, i) {
-                      final p = rows[i];
+                      if (i == 0) {
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            'Teachers paid total: ${_money(totalTeacherIncome)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: AdminFinanceScreen.primary,
+                            ),
+                          ),
+                          subtitle: Text(
+                            teacherLines.join('\n'),
+                            style: const TextStyle(
+                              color: AdminFinanceScreen.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          isThreeLine: teacherLines.length > 1,
+                        );
+                      }
+                      final p = rows[i - 1];
                       final learner = _learnerNameFrom(p);
                       final teacher = _teacherNameFrom(p);
                       final method = _normalizeMethod(p['financeMethod']);
@@ -752,6 +867,23 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                 b['paidAt'],
                               ).compareTo(_asInt(a['paidAt'])),
                             );
+                      final financeRows = <Map<String, dynamic>>[];
+                      final flexibleRows = <Map<String, dynamic>>[];
+                      final recordedRows = <Map<String, dynamic>>[];
+                      for (final payment in visible) {
+                        final variantKey = _variantKeyFrom(payment);
+                        if (variantKey == 'flexible') {
+                          flexibleRows.add(payment);
+                        } else if (variantKey == 'recorded') {
+                          recordedRows.add(payment);
+                        }
+                        final allocations = financeAllocationsFromPayment(
+                          payment,
+                        );
+                        for (final allocation in allocations) {
+                          financeRows.add(allocation.toRow());
+                        }
+                      }
 
                       var originalIncome = 0;
                       var waitingTotal = 0;
@@ -763,49 +895,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                       final schoolRows = <Map<String, dynamic>>[];
                       final teacherMap = <String, List<Map<String, dynamic>>>{};
 
-                      for (final p in visible) {
-                        final amount = _asInt(p['amount']);
-                        final method = _normalizeMethod(p['financeMethod']);
-                        final alloc = _amountsFrom(p);
-
-                        originalIncome += amount;
-                        final teacher = _teacherNameFrom(p);
-                        teacherMap
-                            .putIfAbsent(
-                              teacher,
-                              () => <Map<String, dynamic>>[],
-                            )
-                            .add(p);
-                        waitingTotal += alloc.waitingAmount;
-                        originalByMethod = _addToMethodTotals(
-                          current: originalByMethod,
-                          method: method,
-                          amount: amount,
-                        );
-                        waitingByMethod = _addToMethodTotals(
-                          current: waitingByMethod,
-                          method: method,
-                          amount: alloc.waitingAmount,
-                        );
-
-                        if (alloc.waitingAmount > 0) {
-                          waitingRows.add(p);
-                        }
-
-                        final schoolNet = _schoolNetFromPayment(p);
-                        if (schoolNet > 0) {
-                          schoolTotal += schoolNet;
-                          schoolRows.add(p);
-                          schoolByMethod = _addToMethodTotals(
-                            current: schoolByMethod,
-                            method: method,
-                            amount: schoolNet,
-                          );
-                        }
-                      }
-
-                      final teacherCards = <_TeacherCardData>[];
-                      for (final entry in teacherMap.entries) {
+                      _TeacherCardData? buildCardData({
+                        required String name,
+                        required List<Map<String, dynamic>> rows,
+                        bool includeRoster = false,
+                      }) {
+                        if (rows.isEmpty) return null;
                         var original = 0;
                         var payout = 0;
                         var waiting = 0;
@@ -816,38 +911,35 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         final learners = <String>{};
                         final doneLearners = <String>{};
 
-                        for (final p in entry.value) {
-                          final amount = _asInt(p['amount']);
-                          final method = _normalizeMethod(p['financeMethod']);
+                        for (final p in rows) {
+                          final effective = _effectiveFinanceFromPayment(p);
                           final alloc = _amountsFrom(p);
-                          final schoolNet = _schoolNetFromPayment(p);
-                          final teacherNet = _teacherNetFromPayment(p);
 
-                          original += amount;
-                          payout += teacherNet;
-                          waiting += alloc.waitingAmount;
-                          school += schoolNet;
+                          original += effective.originalAmount;
+                          payout += effective.teacherNet;
+                          waiting += effective.waitingAmount;
+                          school += effective.schoolNet;
 
                           originalMethods = _addToMethodTotals(
                             current: originalMethods,
-                            method: method,
-                            amount: amount,
+                            method: effective.method,
+                            amount: effective.originalAmount,
                           );
                           payoutMethods = _addToMethodTotals(
                             current: payoutMethods,
-                            method: method,
-                            amount: teacherNet,
+                            method: effective.method,
+                            amount: effective.teacherNet,
                           );
                           waitingMethods = _addToMethodTotals(
                             current: waitingMethods,
-                            method: method,
-                            amount: alloc.waitingAmount,
+                            method: effective.method,
+                            amount: effective.waitingAmount,
                           );
 
                           final uid = (p['uid'] ?? '').toString().trim();
-                          final n = _learnerNameFrom(p);
-                          final k = uid.isNotEmpty ? uid : n;
-                          if (k.isNotEmpty) learners.add(k);
+                          final learnerName = _learnerNameFrom(p);
+                          final learnerKey = uid.isNotEmpty ? uid : learnerName;
+                          if (learnerKey.isNotEmpty) learners.add(learnerKey);
 
                           final pushedStatus = (p['financePushedStatus'] ?? '')
                               .toString()
@@ -865,51 +957,115 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                             p['financeSplitPaidStatus'],
                                           ) ==
                                           'done'));
-                          if (doneLike && k.isNotEmpty) doneLearners.add(k);
+                          if (doneLike && learnerKey.isNotEmpty) {
+                            doneLearners.add(learnerKey);
+                          }
                         }
 
-                        teacherCards.add(
-                          _TeacherCardData(
-                            teacherId: entry.value.isEmpty
-                                ? ''
-                                : _teacherIdFrom(entry.value.first),
-                            teacherScopeKey: _teacherScopeKey(
-                              teacherId: entry.value.isEmpty
-                                  ? ''
-                                  : _teacherIdFrom(entry.value.first),
-                              teacherName: entry.key,
-                            ),
-                            teacherName: entry.key,
-                            originalTotal: original,
-                            payoutTotal: payout,
-                            waitingTotal: waiting,
-                            originalByMethod: originalMethods,
-                            payoutByMethod: payoutMethods,
-                            waitingByMethod: waitingMethods,
-                            learnersCount: () {
-                              final teacherId = entry.value.isEmpty
-                                  ? ''
-                                  : _teacherIdFrom(entry.value.first);
-                              final scope = _teacherScopeKey(
-                                teacherId: teacherId,
-                                teacherName: entry.key,
-                              );
-                              final rosterCount =
-                                  rosterCountsByScope[scope] ?? 0;
-                              return learners.length > rosterCount
-                                  ? learners.length
-                                  : rosterCount;
-                            }(),
-                            doneLearnersCount: doneLearners.length,
-                            paymentsCount: entry.value.length,
-                            schoolTotal: school,
-                            payments: entry.value,
-                          ),
+                        final teacherId = rows.isEmpty
+                            ? ''
+                            : _teacherIdFrom(rows.first);
+                        final scope = _teacherScopeKey(
+                          teacherId: teacherId,
+                          teacherName: name,
+                        );
+                        final rosterCount = includeRoster
+                            ? (rosterCountsByScope[scope] ?? 0)
+                            : 0;
+
+                        return _TeacherCardData(
+                          teacherId: teacherId,
+                          teacherScopeKey: scope,
+                          teacherName: name,
+                          originalTotal: original,
+                          payoutTotal: payout,
+                          waitingTotal: waiting,
+                          originalByMethod: originalMethods,
+                          payoutByMethod: payoutMethods,
+                          waitingByMethod: waitingMethods,
+                          learnersCount: learners.length > rosterCount
+                              ? learners.length
+                              : rosterCount,
+                          doneLearnersCount: doneLearners.length,
+                          paymentsCount: rows.length,
+                          schoolTotal: school,
+                          payments: rows,
                         );
                       }
 
+                      for (final p in visible) {
+                        final effective = _effectiveFinanceFromPayment(p);
+                        originalIncome += effective.originalAmount;
+                        originalByMethod = _addToMethodTotals(
+                          current: originalByMethod,
+                          method: effective.method,
+                          amount: effective.originalAmount,
+                        );
+                      }
+
+                      for (final p in financeRows) {
+                        final effective = _effectiveFinanceFromPayment(p);
+                        final teacher = _teacherNameFrom(p);
+                        final isVariantPseudoTeacher =
+                            (teacher == 'Flexible' || teacher == 'Recorded') &&
+                            _teacherIdFrom(p).isEmpty;
+                        if (!isVariantPseudoTeacher) {
+                          teacherMap
+                              .putIfAbsent(
+                                teacher,
+                                () => <Map<String, dynamic>>[],
+                              )
+                              .add(p);
+                        }
+                        waitingTotal += effective.waitingAmount;
+                        waitingByMethod = _addToMethodTotals(
+                          current: waitingByMethod,
+                          method: effective.method,
+                          amount: effective.waitingAmount,
+                        );
+
+                        if (effective.waitingAmount > 0) {
+                          waitingRows.add(p);
+                        }
+
+                        final schoolNet = effective.schoolNet;
+                        if (schoolNet > 0) {
+                          schoolTotal += schoolNet;
+                          schoolRows.add(p);
+                          schoolByMethod = _addToMethodTotals(
+                            current: schoolByMethod,
+                            method: effective.method,
+                            amount: schoolNet,
+                          );
+                        }
+                      }
+
+                      final variantCards = <_TeacherCardData>[];
+                      final flexibleCard = buildCardData(
+                        name: 'Flexible',
+                        rows: flexibleRows,
+                      );
+                      if (flexibleCard != null) variantCards.add(flexibleCard);
+                      final recordedCard = buildCardData(
+                        name: 'Recorded',
+                        rows: recordedRows,
+                      );
+                      if (recordedCard != null) variantCards.add(recordedCard);
+
+                      final teacherCards = <_TeacherCardData>[];
+                      for (final entry in teacherMap.entries) {
+                        final card = buildCardData(
+                          name: entry.key,
+                          rows: entry.value,
+                          includeRoster: true,
+                        );
+                        if (card != null) teacherCards.add(card);
+                      }
+
                       teacherCards.sort(
-                        (a, b) => b.originalTotal.compareTo(a.originalTotal),
+                        (a, b) => a.teacherName.toLowerCase().compareTo(
+                          b.teacherName.toLowerCase(),
+                        ),
                       );
 
                       return ListView(
@@ -934,7 +1090,8 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             waitingTotal: _money(waitingTotal),
                             originalByMethod: originalByMethod,
                             waitingByMethod: waitingByMethod,
-                            teachersCount: teacherCards.length,
+                            teachersCount:
+                                teacherCards.length + variantCards.length,
                           ),
                           const SizedBox(height: 12),
                           _WaitingCard(
@@ -951,44 +1108,94 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             onTap: () => _openSchoolDetailsDialog(schoolRows),
                           ),
                           const SizedBox(height: 10),
-                          if (teacherCards.isEmpty)
+                          if (variantCards.isEmpty && teacherCards.isEmpty)
                             const Card(
                               child: Padding(
                                 padding: EdgeInsets.all(16),
                                 child: Text(
-                                  'No teacher cards in this date range.',
+                                  'No finance cards in this date range.',
                                 ),
                               ),
                             )
-                          else
-                            ...teacherCards.map(
-                              (card) => Padding(
+                          else ...[
+                            if (variantCards.isNotEmpty)
+                              Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
-                                child: _TeacherSquareCard(
-                                  data: card,
-                                  money: _money,
-                                  onTap: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            _TeacherFinanceDetailsScreen(
-                                              teacherId: card.teacherId,
-                                              teacherScopeKey:
-                                                  card.teacherScopeKey,
-                                              teacherName: card.teacherName,
-                                              initialPayments: card.payments,
-                                              paymentsRef: _paymentsRef,
-                                              classesRef: _classesRef,
-                                              financeDoneRef: _financeDoneRef,
-                                              money: _money,
-                                              onSetMethod: _setPaymentMethod,
-                                            ),
-                                      ),
-                                    );
-                                  },
+                                child: Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: variantCards
+                                      .map(
+                                        (card) => SizedBox(
+                                          width: 520,
+                                          child: _TeacherSquareCard(
+                                            data: card,
+                                            money: _money,
+                                            onTap: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      _TeacherFinanceDetailsScreen(
+                                                        teacherId:
+                                                            card.teacherId,
+                                                        teacherScopeKey: card
+                                                            .teacherScopeKey,
+                                                        teacherName:
+                                                            card.teacherName,
+                                                        initialPayments:
+                                                            card.payments,
+                                                        paymentsRef:
+                                                            _paymentsRef,
+                                                        classesRef: _classesRef,
+                                                        usersRef: _usersRef,
+                                                        financeDoneRef:
+                                                            _financeDoneRef,
+                                                        money: _money,
+                                                        onSetMethod:
+                                                            _setPaymentMethod,
+                                                        showNoPaymentRows:
+                                                            false,
+                                                      ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                                 ),
                               ),
+                          ],
+                          ...teacherCards.map(
+                            (card) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _TeacherSquareCard(
+                                data: card,
+                                money: _money,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          _TeacherFinanceDetailsScreen(
+                                            teacherId: card.teacherId,
+                                            teacherScopeKey:
+                                                card.teacherScopeKey,
+                                            teacherName: card.teacherName,
+                                            initialPayments: card.payments,
+                                            paymentsRef: _paymentsRef,
+                                            classesRef: _classesRef,
+                                            usersRef: _usersRef,
+                                            financeDoneRef: _financeDoneRef,
+                                            money: _money,
+                                            onSetMethod: _setPaymentMethod,
+                                            showNoPaymentRows: true,
+                                          ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
+                          ),
                         ],
                       );
                     },
@@ -1008,9 +1215,11 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
     required this.initialPayments,
     required this.paymentsRef,
     required this.classesRef,
+    required this.usersRef,
     required this.financeDoneRef,
     required this.money,
     required this.onSetMethod,
+    this.showNoPaymentRows = true,
   });
 
   final String teacherId;
@@ -1019,8 +1228,10 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
   final List<Map<String, dynamic>> initialPayments;
   final DatabaseReference paymentsRef;
   final DatabaseReference classesRef;
+  final DatabaseReference usersRef;
   final DatabaseReference financeDoneRef;
   final String Function(int amount) money;
+  final bool showNoPaymentRows;
   final Future<void> Function({
     required String paymentId,
     required String method,
@@ -1037,6 +1248,41 @@ class _TeacherFinanceDetailsScreenState
   late List<Map<String, dynamic>> _rows;
   Timer? _pulseTimer;
   bool _pulseOn = true;
+  bool _isPushingAll = false;
+
+  void _replacePaymentRow(Map<String, dynamic> payment) {
+    final paymentId = (payment['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+    final next = payment.map((k, v) => MapEntry(k.toString(), v));
+    final index = _rows.indexWhere(
+      (row) => (row['paymentId'] ?? '').toString().trim() == paymentId,
+    );
+    if (index < 0) return;
+    setState(() {
+      _rows[index] = next.cast<String, dynamic>();
+      _rows.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    });
+  }
+
+  void _applyLocalPaymentPatch(String paymentId, Map<String, dynamic> fields) {
+    if (paymentId.isEmpty) return;
+    setState(() {
+      for (var i = 0; i < _rows.length; i++) {
+        final rowPaymentId = (_rows[i]['paymentId'] ?? '').toString().trim();
+        if (rowPaymentId != paymentId) continue;
+        final next = Map<String, dynamic>.from(_rows[i]);
+        fields.forEach((key, value) {
+          if (value == null) {
+            next.remove(key);
+          } else {
+            next[key] = value;
+          }
+        });
+        _rows[i] = next;
+      }
+      _rows.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    });
+  }
 
   @override
   void initState() {
@@ -1128,10 +1374,434 @@ class _TeacherFinanceDetailsScreenState
   }
 
   int _teacherPercentFrom(Map<String, dynamic> row) {
+    if (row['isFinanceAllocation'] == true) {
+      final p = _asInt(row['financeTeacherPercent']);
+      if (p <= 0) return 100;
+      if (p > 100) return 100;
+      return p;
+    }
+    if (row['financeAllocations'] is Map) {
+      final allocations = financeAllocationsFromPayment(row);
+      if (allocations.length == 1) return allocations.first.teacherPercent;
+      if (allocations.isNotEmpty) return 0;
+    }
     final p = _asInt(row['financeTeacherPercent']);
     if (p <= 0) return 100;
     if (p > 100) return 100;
     return p;
+  }
+
+  bool _isTeacherRole(dynamic role) {
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
+  }
+
+  String _teacherLabelFor(String uid, Map<String, dynamic> row) {
+    final first = (row['first_name'] ?? row['firstName'] ?? '')
+        .toString()
+        .trim();
+    final last = (row['last_name'] ?? row['lastName'] ?? '').toString().trim();
+    final full = '$first $last'.trim();
+    if (full.isNotEmpty) return full;
+    final name = (row['name'] ?? row['full_name'] ?? row['fullName'] ?? '')
+        .toString()
+        .trim();
+    if (name.isNotEmpty) return name;
+    final email = (row['email'] ?? '').toString().trim();
+    if (email.isNotEmpty) return email;
+    return uid;
+  }
+
+  Future<List<Map<String, String>>> _loadTeachers() async {
+    final snap = await widget.usersRef.get();
+    final raw = snap.value;
+    final out = <Map<String, String>>[];
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (v is! Map) return;
+        final row = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+        if (!_isTeacherRole(row['role'])) return;
+        final uid = k.toString().trim();
+        if (uid.isEmpty) return;
+        out.add({'uid': uid, 'name': _teacherLabelFor(uid, row)});
+      });
+    }
+    out.sort(
+      (a, b) => (a['name'] ?? '').toLowerCase().compareTo(
+        (b['name'] ?? '').toLowerCase(),
+      ),
+    );
+    return out;
+  }
+
+  Future<void> _openAllocationEditor(Map<String, dynamic> row) async {
+    final paymentId = (row['paymentId'] ?? '').toString().trim();
+    if (paymentId.isEmpty) return;
+    final variantKey = _variantKeyFrom(row);
+    final isFlexible = variantKey == 'flexible';
+    final isRecorded = variantKey == 'recorded';
+    if (!isFlexible && !isRecorded) return;
+
+    final payout = _amountsFrom(row);
+    final totalAmount = payout.payoutAmount;
+    final totalSessions = _asInt(row['sessionsPaid']);
+    final existingAllocations = financeAllocationsFromPayment(
+      row,
+    ).where((a) => !a.isLegacy || row['financeAllocations'] is Map).toList();
+    final teachers = await _loadTeachers();
+    if (!mounted) return;
+
+    final entries = <Map<String, dynamic>>[];
+    if (existingAllocations.isNotEmpty && row['financeAllocations'] is Map) {
+      for (final alloc in existingAllocations) {
+        entries.add({
+          'teacherId': alloc.teacherId,
+          'teacherName': alloc.teacherName,
+          'assignedSessions': alloc.assignedSessions ?? 0,
+          'teacherPercent': alloc.teacherPercent,
+        });
+      }
+    } else {
+      entries.add({
+        'teacherId': (row['teacherId'] ?? '').toString().trim(),
+        'teacherName': _teacherLabelFrom(row),
+        'assignedSessions': isFlexible
+            ? (totalSessions > 0 ? totalSessions : 1)
+            : 0,
+        'teacherPercent': _initialTeacherPercentForPicker(row),
+      });
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setD) {
+            List<int> distributed = const [];
+            if (isFlexible) {
+              distributed = distributeAmountBySessions(
+                totalAmount: totalAmount,
+                assignedSessions: entries
+                    .map((e) => _asInt(e['assignedSessions']))
+                    .toList(),
+              );
+            } else {
+              distributed = [totalAmount];
+            }
+
+            return AlertDialog(
+              title: Text(
+                isFlexible ? 'Flexible allocations' : 'Recorded allocation',
+              ),
+              content: SizedBox(
+                width: 760,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isFlexible
+                            ? 'Assign teacher rows and session split. Money follows assigned sessions.'
+                            : 'Assign one teacher and percentage for this recorded payment.',
+                      ),
+                      const SizedBox(height: 12),
+                      ...entries.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final item = entry.value;
+                        final grossShare = distributed.length > index
+                            ? distributed[index]
+                            : 0;
+                        final percent = _pickerPercent(
+                          _asInt(item['teacherPercent']),
+                        );
+                        final teacherNet = ((grossShare * percent) / 100)
+                            .round();
+                        final schoolNet = grossShare - teacherNet;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.black.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                DropdownButtonFormField<String>(
+                                  initialValue:
+                                      (item['teacherId'] ?? '')
+                                          .toString()
+                                          .trim()
+                                          .isEmpty
+                                      ? null
+                                      : (item['teacherId'] ?? '')
+                                            .toString()
+                                            .trim(),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Teacher',
+                                  ),
+                                  items: teachers
+                                      .map(
+                                        (teacher) => DropdownMenuItem<String>(
+                                          value: teacher['uid'],
+                                          child: Text(teacher['name'] ?? ''),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) {
+                                    final selected = teachers.firstWhere(
+                                      (teacher) => teacher['uid'] == value,
+                                      orElse: () => const {
+                                        'uid': '',
+                                        'name': '',
+                                      },
+                                    );
+                                    setD(() {
+                                      item['teacherId'] = selected['uid'] ?? '';
+                                      item['teacherName'] =
+                                          selected['name'] ?? '';
+                                    });
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    if (isFlexible)
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue:
+                                              '${_asInt(item['assignedSessions'])}',
+                                          keyboardType: TextInputType.number,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Assigned sessions',
+                                          ),
+                                          onChanged: (value) =>
+                                              item['assignedSessions'] =
+                                                  int.tryParse(value.trim()) ??
+                                                  0,
+                                        ),
+                                      ),
+                                    if (isFlexible) const SizedBox(width: 10),
+                                    Expanded(
+                                      child: DropdownButtonFormField<int>(
+                                        initialValue: percent,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Teacher %',
+                                        ),
+                                        items:
+                                            List<int>.generate(
+                                                  66,
+                                                  (i) => i + 35,
+                                                )
+                                                .map(
+                                                  (value) =>
+                                                      DropdownMenuItem<int>(
+                                                        value: value,
+                                                        child: Text('$value%'),
+                                                      ),
+                                                )
+                                                .toList(),
+                                        onChanged: (value) {
+                                          if (value == null) return;
+                                          setD(
+                                            () =>
+                                                item['teacherPercent'] = value,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'Gross: ${widget.money(grossShare)} · Teacher: ${widget.money(teacherNet)} · School: ${widget.money(schoolNet)} · School %: ${100 - percent}%',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                if (entries.length > 1)
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton.icon(
+                                      onPressed: () =>
+                                          setD(() => entries.removeAt(index)),
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                      ),
+                                      label: const Text('Remove row'),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      if (isFlexible)
+                        Text(
+                          'Assigned total: ${entries.fold<int>(0, (sum, item) => sum + _asInt(item['assignedSessions']))} / $totalSessions sessions',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: isRecorded && entries.isNotEmpty
+                            ? null
+                            : () => setD(() {
+                                entries.add({
+                                  'teacherId': '',
+                                  'teacherName': '',
+                                  'assignedSessions': isFlexible ? 1 : 0,
+                                  'teacherPercent': 50,
+                                });
+                              }),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add row'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    if (entries.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Add at least one teacher row.'),
+                        ),
+                      );
+                      return;
+                    }
+                    if (isRecorded && entries.length != 1) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Recorded allows one teacher only.'),
+                        ),
+                      );
+                      return;
+                    }
+                    for (final item in entries) {
+                      if ((item['teacherId'] ?? '').toString().trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Each row needs a teacher.'),
+                          ),
+                        );
+                        return;
+                      }
+                    }
+                    if (isFlexible) {
+                      final assignedTotal = entries.fold<int>(
+                        0,
+                        (sum, item) => sum + _asInt(item['assignedSessions']),
+                      );
+                      if (assignedTotal != totalSessions) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Assigned sessions must equal $totalSessions.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                    }
+
+                    final grossShares = isFlexible
+                        ? distributeAmountBySessions(
+                            totalAmount: totalAmount,
+                            assignedSessions: entries
+                                .map((item) => _asInt(item['assignedSessions']))
+                                .toList(),
+                          )
+                        : <int>[totalAmount];
+
+                    final payload = <String, dynamic>{};
+                    var teacherTotal = 0;
+                    var schoolTotal = 0;
+                    for (var i = 0; i < entries.length; i++) {
+                      final item = entries[i];
+                      final grossShare = grossShares[i];
+                      final allocation = buildFinanceAllocationPayload(
+                        teacherId: (item['teacherId'] ?? '').toString().trim(),
+                        teacherName: (item['teacherName'] ?? '')
+                            .toString()
+                            .trim(),
+                        variantKey: variantKey,
+                        grossShare: grossShare,
+                        teacherPercent: _asInt(item['teacherPercent']),
+                        assignedSessions: isFlexible
+                            ? _asInt(item['assignedSessions'])
+                            : null,
+                      );
+                      teacherTotal += financeAsInt(allocation['teacherNet']);
+                      schoolTotal += financeAsInt(allocation['schoolNet']);
+                      payload['alloc_${i + 1}'] = allocation;
+                    }
+
+                    final first = entries.first;
+                    try {
+                      await widget.paymentsRef.child(paymentId).update({
+                        'financeAllocations': payload,
+                        'teacherId': isRecorded
+                            ? (first['teacherId'] ?? '').toString().trim()
+                            : '',
+                        'teacherName': isRecorded
+                            ? (first['teacherName'] ?? '').toString().trim()
+                            : (isFlexible ? 'Flexible' : ''),
+                        'financeTeacherGross': totalAmount,
+                        'financeTeacherNet': teacherTotal,
+                        'financeSchoolNet': schoolTotal,
+                        'financeTeacherPercent': isRecorded
+                            ? _asInt(first['teacherPercent'])
+                            : 0,
+                        'financePushedAt': null,
+                        'financePushedBy': null,
+                        'financePushedStatus': null,
+                        'financeUpdatedAt': ServerValue.timestamp,
+                      });
+                      final refreshedSnap = await widget.paymentsRef
+                          .child(paymentId)
+                          .get();
+                      if (refreshedSnap.value is Map && mounted) {
+                        final refreshed = (refreshedSnap.value as Map).map(
+                          (k, v) => MapEntry(k.toString(), v),
+                        );
+                        refreshed['paymentId'] = paymentId;
+                        _replacePaymentRow(refreshed.cast<String, dynamic>());
+                      }
+                      if (!context.mounted) return;
+                      Navigator.of(dialogCtx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Allocations saved successfully.'),
+                        ),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Could not save allocations: $e'),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Save allocations'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   int _initialTeacherPercentForPicker(Map<String, dynamic> row) {
@@ -1260,7 +1930,12 @@ class _TeacherFinanceDetailsScreenState
     if (paymentId.isEmpty) return;
     await widget.onSetMethod(paymentId: paymentId, method: method);
     if (!mounted) return;
-    setState(() => row['financeMethod'] = method);
+    _applyLocalPaymentPatch(paymentId, {
+      'financeMethod': method,
+      'financePushedAt': null,
+      'financePushedBy': null,
+      'financePushedStatus': null,
+    });
   }
 
   Future<void> _pickMethod(Map<String, dynamic> row) async {
@@ -1369,24 +2044,25 @@ class _TeacherFinanceDetailsScreenState
   }
 
   Future<void> _setTeacherPercent(Map<String, dynamic> row) async {
+    final variantKey = _variantKeyFrom(row);
+    if (variantKey == 'flexible' || variantKey == 'recorded') {
+      await _openAllocationEditor(row);
+      return;
+    }
     final paymentId = (row['paymentId'] ?? '').toString().trim();
     if (paymentId.isEmpty) return;
 
     if (_isEffectiveSchoolOnly(row)) {
       final alloc = _amountsFrom(row);
       final gross = alloc.payoutAmount;
-      final payoutStatus = _normalizeStatus(row['financePayoutStatus']);
-      final pushedStatus = payoutStatus == 'split'
-          ? ((alloc.splitPaidStatus ?? 'tbpaid') == 'done' ? 'done' : 'tbpaid')
-          : payoutStatus;
       await widget.paymentsRef.child(paymentId).update({
         'financeTeacherPercent': 0,
         'financeTeacherGross': gross,
         'financeTeacherNet': 0,
         'financeSchoolNet': gross,
-        'financePushedAt': ServerValue.timestamp,
-        'financePushedBy': 'admin',
-        'financePushedStatus': pushedStatus,
+        'financePushedAt': null,
+        'financePushedBy': null,
+        'financePushedStatus': null,
         'financeUpdatedAt': ServerValue.timestamp,
       });
       if (!mounted) return;
@@ -1395,8 +2071,9 @@ class _TeacherFinanceDetailsScreenState
         row['financeTeacherGross'] = gross;
         row['financeTeacherNet'] = 0;
         row['financeSchoolNet'] = gross;
-        row['financePushedAt'] = DateTime.now().millisecondsSinceEpoch;
-        row['financePushedStatus'] = pushedStatus;
+        row.remove('financePushedAt');
+        row.remove('financePushedBy');
+        row.remove('financePushedStatus');
       });
       return;
     }
@@ -1408,19 +2085,14 @@ class _TeacherFinanceDetailsScreenState
     final gross = alloc.payoutAmount;
     final teacherNet = ((gross * p) / 100).round();
     final schoolNet = gross - teacherNet;
-    final payoutStatus = _normalizeStatus(row['financePayoutStatus']);
-    final pushedStatus = payoutStatus == 'split'
-        ? ((alloc.splitPaidStatus ?? 'tbpaid') == 'done' ? 'done' : 'tbpaid')
-        : payoutStatus;
-
     await widget.paymentsRef.child(paymentId).update({
       'financeTeacherPercent': p,
       'financeTeacherGross': gross,
       'financeTeacherNet': teacherNet,
       'financeSchoolNet': schoolNet,
-      'financePushedAt': ServerValue.timestamp,
-      'financePushedBy': 'admin',
-      'financePushedStatus': pushedStatus,
+      'financePushedAt': null,
+      'financePushedBy': null,
+      'financePushedStatus': null,
       'financeUpdatedAt': ServerValue.timestamp,
     });
 
@@ -1430,8 +2102,9 @@ class _TeacherFinanceDetailsScreenState
       row['financeTeacherGross'] = gross;
       row['financeTeacherNet'] = teacherNet;
       row['financeSchoolNet'] = schoolNet;
-      row['financePushedAt'] = DateTime.now().millisecondsSinceEpoch;
-      row['financePushedStatus'] = pushedStatus;
+      row.remove('financePushedAt');
+      row.remove('financePushedBy');
+      row.remove('financePushedStatus');
     });
   }
 
@@ -1621,6 +2294,9 @@ class _TeacherFinanceDetailsScreenState
     final statusResult = _normalizeStatus(result['status']);
     final updates = <String, dynamic>{
       'financePayoutStatus': statusResult,
+      'financePushedAt': null,
+      'financePushedBy': null,
+      'financePushedStatus': null,
       'financeUpdatedAt': ServerValue.timestamp,
     };
 
@@ -1644,6 +2320,9 @@ class _TeacherFinanceDetailsScreenState
     if (!mounted) return;
     setState(() {
       row['financePayoutStatus'] = statusResult;
+      row.remove('financePushedAt');
+      row.remove('financePushedBy');
+      row.remove('financePushedStatus');
       if (statusResult == 'split') {
         row['financeSplitPaidAmount'] = _asInt(result['splitPaidAmount']);
         row['financeSplitWaitingAmount'] = _asInt(result['splitWaitingAmount']);
@@ -1675,6 +2354,114 @@ class _TeacherFinanceDetailsScreenState
     if (uid.isEmpty) return '';
     if (courseId.isEmpty) return uid;
     return '${uid}__$courseId';
+  }
+
+  String _derivedPushedStatus(Map<String, dynamic> row) {
+    final payout = _normalizeStatus(row['financePayoutStatus']);
+    if (payout != 'split') return payout;
+    final alloc = _amountsFrom(row);
+    return (alloc.splitPaidStatus ?? 'tbpaid') == 'done' ? 'done' : 'tbpaid';
+  }
+
+  bool _isPushEligibleRow(Map<String, dynamic> row) {
+    if (_isNoPaymentRow(row)) return false;
+    if (!_isMethodSet(row)) return false;
+    if (!_isStatusSet(row, isNoPayment: false)) return false;
+    final variantKey = _variantKeyFrom(row);
+    if (variantKey == 'flexible' || variantKey == 'recorded') {
+      if (row['financeAllocations'] is! Map) return false;
+      final allocations = financeAllocationsFromPayment(
+        row,
+      ).where((a) => !a.isLegacy || row['financeAllocations'] is Map).toList();
+      if (allocations.isEmpty) return false;
+      for (final allocation in allocations) {
+        if (allocation.teacherId.trim().isEmpty) return false;
+      }
+      return true;
+    }
+    return _isTeacherPercentSet(row);
+  }
+
+  Future<void> _pushAllEligibleRows() async {
+    if (_isPushingAll) return;
+    final eligible = _rows.where(_isPushEligibleRow).toList();
+    final eligiblePaymentIds = eligible
+        .map((row) => (row['paymentId'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (eligible.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No eligible rows to push yet.')),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Push all to teacher'),
+        content: Text(
+          'Push ${eligiblePaymentIds.length} eligible item${eligiblePaymentIds.length == 1 ? '' : 's'} for ${widget.teacherName}? Already pushed rows will be refreshed too.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Push all'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _isPushingAll = true);
+    try {
+      final processedPaymentIds = <String>{};
+      final localPatches = <String, Map<String, dynamic>>{};
+      final pushedAtMs = DateTime.now().millisecondsSinceEpoch;
+
+      for (final row in eligible) {
+        final paymentId = (row['paymentId'] ?? '').toString().trim();
+        if (paymentId.isEmpty || processedPaymentIds.contains(paymentId)) {
+          continue;
+        }
+        processedPaymentIds.add(paymentId);
+        final pushedStatus = _derivedPushedStatus(row);
+        await widget.paymentsRef.child(paymentId).update({
+          'financePushedAt': ServerValue.timestamp,
+          'financePushedBy': 'admin',
+          'financePushedStatus': pushedStatus,
+          'financeUpdatedAt': ServerValue.timestamp,
+        });
+        localPatches[paymentId] = {
+          'financePushedAt': pushedAtMs,
+          'financePushedBy': 'admin',
+          'financePushedStatus': pushedStatus,
+        };
+      }
+
+      if (!mounted) return;
+      for (final entry in localPatches.entries) {
+        _applyLocalPaymentPatch(entry.key, entry.value);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Pushed ${processedPaymentIds.length} item${processedPaymentIds.length == 1 ? '' : 's'} for ${widget.teacherName}.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not push items: $e')));
+    } finally {
+      if (mounted) setState(() => _isPushingAll = false);
+    }
   }
 
   List<Map<String, String>> _teacherClassRoster(dynamic raw) {
@@ -2526,6 +3313,9 @@ class _TeacherFinanceDetailsScreenState
       'financeMethod': method,
       'paidAt': paidAt,
       'notes': note,
+      'financePushedAt': null,
+      'financePushedBy': null,
+      'financePushedStatus': null,
       'financeUpdatedAt': ServerValue.timestamp,
       'updatedAt': ServerValue.timestamp,
     });
@@ -2537,6 +3327,9 @@ class _TeacherFinanceDetailsScreenState
       row['financeMethod'] = method;
       row['paidAt'] = paidAt;
       row['notes'] = note;
+      row.remove('financePushedAt');
+      row.remove('financePushedBy');
+      row.remove('financePushedStatus');
     });
   }
 
@@ -2546,11 +3339,12 @@ class _TeacherFinanceDetailsScreenState
     var payoutTotal = 0;
     var waitingTotal = 0;
     for (final row in _rows.where((r) => !_isNoPaymentRow(r))) {
-      final amount = _asInt(row['amount']);
-      final a = _amountsFrom(row);
-      originalTotal += amount;
-      payoutTotal += _AdminFinanceScreenState._teacherNetFromPayment(row);
-      waitingTotal += a.waitingAmount;
+      final effective = _AdminFinanceScreenState._effectiveFinanceFromPayment(
+        row,
+      );
+      originalTotal += effective.originalAmount;
+      payoutTotal += effective.teacherNet;
+      waitingTotal += effective.waitingAmount;
     }
 
     return Scaffold(
@@ -2593,33 +3387,35 @@ class _TeacherFinanceDetailsScreenState
               }
 
               final noPaymentRows = <Map<String, dynamic>>[];
-              for (final e in classRoster) {
-                final uid = (e['uid'] ?? '').toString().trim();
-                final courseId = (e['course_id'] ?? '').toString().trim();
-                if (uid.isEmpty || courseId.isEmpty) continue;
-                if (paymentLearnerCourse.contains(
-                  _sessionKey(uid: uid, courseId: courseId),
-                )) {
-                  continue;
+              if (widget.showNoPaymentRows) {
+                for (final e in classRoster) {
+                  final uid = (e['uid'] ?? '').toString().trim();
+                  final courseId = (e['course_id'] ?? '').toString().trim();
+                  if (uid.isEmpty || courseId.isEmpty) continue;
+                  if (paymentLearnerCourse.contains(
+                    _sessionKey(uid: uid, courseId: courseId),
+                  )) {
+                    continue;
+                  }
+                  final row = <String, dynamic>{
+                    'isNoPayment': true,
+                    'uid': uid,
+                    'learner_name': e['name'] ?? 'Unnamed learner',
+                    'learner_serial': e['serial'] ?? '',
+                    'class_id': e['class_id'] ?? '',
+                    'course_id': courseId,
+                    'course_title': e['course_title'] ?? '',
+                    'course_code': e['course_code'] ?? '',
+                  };
+                  final markKey = _doneMarkKey(row);
+                  noPaymentRows.add({
+                    ...row,
+                    'financePayoutStatus':
+                        manualDone.contains(markKey) || manualDone.contains(uid)
+                        ? 'done'
+                        : 'tbpaid',
+                  });
                 }
-                final row = <String, dynamic>{
-                  'isNoPayment': true,
-                  'uid': uid,
-                  'learner_name': e['name'] ?? 'Unnamed learner',
-                  'learner_serial': e['serial'] ?? '',
-                  'class_id': e['class_id'] ?? '',
-                  'course_id': courseId,
-                  'course_title': e['course_title'] ?? '',
-                  'course_code': e['course_code'] ?? '',
-                };
-                final markKey = _doneMarkKey(row);
-                noPaymentRows.add({
-                  ...row,
-                  'financePayoutStatus':
-                      manualDone.contains(markKey) || manualDone.contains(uid)
-                      ? 'done'
-                      : 'tbpaid',
-                });
               }
 
               final rowsToShow =
@@ -2664,6 +3460,20 @@ class _TeacherFinanceDetailsScreenState
                         icon: Icons.groups_rounded,
                         text: 'Learners listed: ${rowsToShow.length}',
                         strong: true,
+                      ),
+                      FilledButton.icon(
+                        onPressed: _isPushingAll ? null : _pushAllEligibleRows,
+                        icon: _isPushingAll
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.upload_rounded),
+                        label: Text(_isPushingAll ? 'Pushing...' : 'Push all'),
                       ),
                     ],
                   ),
@@ -2749,6 +3559,10 @@ class _TeacherFinanceDetailsScreenState
                       final payoutBase = a.payoutAmount;
                       int teacherPart = 0;
                       int schoolPart = 0;
+                      final effective =
+                          _AdminFinanceScreenState._effectiveFinanceFromPayment(
+                            row,
+                          );
                       if (!isNoPayment && payoutBase > 0) {
                         final hasTeacherNet =
                             row.containsKey('financeTeacherNet') &&
@@ -2773,6 +3587,13 @@ class _TeacherFinanceDetailsScreenState
 
                         if (teacherPart < 0) teacherPart = 0;
                         if (schoolPart < 0) schoolPart = 0;
+                      }
+
+                      if (!isNoPayment &&
+                          _normalizeStatus(row['financePayoutStatus']) ==
+                              'done') {
+                        teacherPart = effective.teacherNet;
+                        schoolPart = effective.schoolNet;
                       }
 
                       String statusText;
@@ -3706,6 +4527,14 @@ class _TeacherSquareCard extends StatelessWidget {
                   strong: true,
                 ),
                 _FinancePill(
+                  icon: Icons.schedule_send_rounded,
+                  text: 'Waiting: ${money(data.waitingTotal)}',
+                  bg: AdminFinanceScreen.waiting.withValues(alpha: 0.1),
+                  fg: const Color(0xFF8A5A00),
+                  border: AdminFinanceScreen.waiting.withValues(alpha: 0.28),
+                  strong: true,
+                ),
+                _FinancePill(
                   icon: Icons.swap_horiz_rounded,
                   text:
                       'Cash/CCP: ${money(data.originalByMethod.cash)} / ${money(data.originalByMethod.ccp)}',
@@ -3746,6 +4575,22 @@ class _VariantVisual {
   final String label;
   final IconData icon;
   final Color color;
+}
+
+class _EffectiveFinanceAmounts {
+  const _EffectiveFinanceAmounts({
+    required this.originalAmount,
+    required this.teacherNet,
+    required this.schoolNet,
+    required this.waitingAmount,
+    required this.method,
+  });
+
+  final int originalAmount;
+  final int teacherNet;
+  final int schoolNet;
+  final int waitingAmount;
+  final String method;
 }
 
 class _MethodTotals {

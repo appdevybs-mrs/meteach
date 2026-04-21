@@ -7,6 +7,8 @@ import '../shared/admin_web_layout.dart';
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 import '../shared/app_feedback.dart';
 
+const List<String> _genderOptions = ['Male', 'Female'];
+
 // =======================================================
 // ADMIN SUBSCRIPTIONS (FULL REPLACEMENT FILE)
 // - Supports new enrollment fields:
@@ -34,7 +36,6 @@ class AdminSubscriptionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -271,7 +272,6 @@ class SubscriptionDetailsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final split = splitFullName(sub.fullName);
 
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -330,6 +330,7 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                           prefill: LearnerPrefill(
                             firstName: split.first,
                             lastName: split.last,
+                            gender: sub.gender,
                             phone1: sub.phone,
                             dob: sub.dob,
                             email: sub.email,
@@ -361,6 +362,7 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                 _phoneLine(context, sub.phone),
                 _line('Course', sub.courseTitle),
                 _line('Study type', sub.studyTypeDisplay),
+                _line('Gender', sub.gender),
                 _line('Date of birth', sub.dob),
                 _line('Email', sub.email),
                 _line('Study mode', sub.studyModeLabel),
@@ -492,6 +494,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
   final phoneC = TextEditingController();
   final dobC = TextEditingController();
   final emailC = TextEditingController();
+  String? _gender;
 
   String? selectedCourseId;
   String selectedCourseTitle = '';
@@ -582,11 +585,20 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     final ph = phoneC.text.trim();
     final dob = dobC.text.trim();
     final email = emailC.text.trim();
+    final gender = (_gender ?? '').trim();
 
     if (fn.isEmpty || ln.isEmpty || ph.isEmpty) {
       AppToast.fromSnackBar(
         context,
         const SnackBar(content: Text('Fill first name, last name, phone')),
+      );
+      return;
+    }
+
+    if (!_genderOptions.contains(gender)) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Select gender')),
       );
       return;
     }
@@ -605,6 +617,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
         'lastName': ln,
         'fullName': '$fn $ln'.trim(),
         'phone': ph,
+        'gender': gender,
         'dob': dob,
         'dateOfBirth': dob,
         'email': email,
@@ -629,7 +642,6 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -704,6 +716,22 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
                         controller: phoneC,
                         decoration: const InputDecoration(labelText: 'Phone'),
                         keyboardType: TextInputType.phone,
+                      ),
+                    ),
+                    SizedBox(
+                      width: fieldWidth,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _gender,
+                        decoration: const InputDecoration(labelText: 'Gender'),
+                        items: _genderOptions
+                            .map(
+                              (value) => DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => _gender = v),
                       ),
                     ),
                     SizedBox(
@@ -829,6 +857,7 @@ class SubscriptionItem {
     required this.createdAt,
     required this.fullName,
     required this.phone,
+    required this.gender,
     required this.deliveryKey,
     required this.deliveryLabel,
     required this.studyMode,
@@ -848,6 +877,7 @@ class SubscriptionItem {
   final int createdAt;
   final String fullName;
   final String phone;
+  final String gender;
 
   final String deliveryKey;
   final String deliveryLabel;
@@ -949,6 +979,7 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
         createdAt: asInt(m['createdAt'] ?? m['created_at']),
         fullName: computedName,
         phone: readString(m, ['phone', 'phone1', 'phone_1']),
+        gender: readString(m, ['gender']),
         deliveryKey: normalizedDeliveryKey,
         deliveryLabel: normalizedDeliveryLabel,
         studyMode: normalizedStudyMode,

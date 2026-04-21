@@ -351,9 +351,6 @@ class _LearnerHomeState extends State<LearnerHome> {
       message: 'Logging out...',
       isLogout: true,
     );
-
-    if (!context.mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   Future<String> _myDisplayName() async {
