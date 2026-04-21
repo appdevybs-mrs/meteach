@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_thread_screen.dart';
 import '../shared/app_feedback.dart';
@@ -31,6 +32,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   _MailListFilter _filter = _MailListFilter.all;
+  String? _desktopSelectedThreadId;
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
@@ -528,10 +530,44 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     }
   }
 
+  Future<void> _openThread(_TopicRow row, {required bool desktop}) async {
+    if (desktop) {
+      setState(() => _desktopSelectedThreadId = row.threadId);
+      return;
+    }
+
+    final peerName = row.peerName.trim().isEmpty ? 'User' : row.peerName.trim();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LearnerMailThreadScreen(
+          threadId: row.threadId,
+          peerUid: row.peerUid,
+          peerName: peerName,
+          subject: row.subject,
+        ),
+      ),
+    );
+  }
+
+  _TopicRow? _desktopSelectedRow(List<_TopicRow> rows) {
+    if (rows.isEmpty) return null;
+    final selectedId = _desktopSelectedThreadId?.trim() ?? '';
+    if (selectedId.isNotEmpty) {
+      for (final row in rows) {
+        if (row.threadId == selectedId) return row;
+      }
+    }
+    return rows.first;
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = _meUid;
     final ref = _db.child('mail_index/$uid');
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -544,12 +580,23 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'Mail',
           style: TextStyle(color: _navy, fontWeight: FontWeight.w900),
         ),
+        actions: [
+          if (desktopWorkspace && uid.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: FilledButton.icon(
+                onPressed: _composeNewTopic,
+                icon: const Icon(Icons.edit_rounded),
+                label: const Text('New message'),
+              ),
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: _navy.withValues(alpha: 0.14)),
         ),
       ),
-      floatingActionButton: uid.isEmpty
+      floatingActionButton: desktopWorkspace || uid.isEmpty
           ? null
           : FloatingActionButton.extended(
               onPressed: _composeNewTopic,
@@ -602,7 +649,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                       );
                     }
 
-                    return Column(
+                    final selectedRow = desktopWorkspace
+                        ? _desktopSelectedRow(shown)
+                        : null;
+
+                    final inboxBody = Column(
                       children: [
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
@@ -664,7 +715,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                     final r = shown[i];
                                     final isHomework = _isHomeworkRow(r);
 
-                                    final threadId = r.threadId;
                                     final peerUid = r.peerUid;
                                     if (peerUid.trim().isNotEmpty) {
                                       _ensureUserPhotoCached(peerUid);
@@ -672,7 +722,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                     final peerName = r.peerName.trim().isEmpty
                                         ? 'User'
                                         : r.peerName.trim();
-                                    final subject = r.subject;
                                     final lastMessage = r.lastMessage;
                                     final unread = r.unreadCount;
                                     final updatedAt = r.updatedAtMs;
@@ -680,19 +729,10 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                     return InkWell(
                                       borderRadius: BorderRadius.circular(18),
                                       onLongPress: () => _showThreadActions(r),
-                                      onTap: () async {
-                                        await Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                LearnerMailThreadScreen(
-                                                  threadId: threadId,
-                                                  peerUid: peerUid,
-                                                  peerName: peerName,
-                                                  subject: subject,
-                                                ),
-                                          ),
-                                        );
-                                      },
+                                      onTap: () => _openThread(
+                                        r,
+                                        desktop: desktopWorkspace,
+                                      ),
                                       child: Container(
                                         padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
@@ -817,7 +857,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                     ],
                                                   ),
                                                   const SizedBox(height: 6),
-                                                  if (subject.trim().isNotEmpty)
+                                                  if (r.subject
+                                                      .trim()
+                                                      .isNotEmpty)
                                                     Container(
                                                       padding:
                                                           const EdgeInsets.symmetric(
@@ -853,7 +895,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                         ),
                                                       ),
                                                       child: Text(
-                                                        _short(subject, 60),
+                                                        _short(r.subject, 60),
                                                         maxLines: 1,
                                                         overflow: TextOverflow
                                                             .ellipsis,
@@ -910,6 +952,44 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                       ),
                                     );
                                   },
+                                ),
+                        ),
+                      ],
+                    );
+
+                    if (!desktopWorkspace) return inboxBody;
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(flex: 5, child: inboxBody),
+                        Container(
+                          width: 1,
+                          color: _navy.withValues(alpha: 0.10),
+                        ),
+                        Expanded(
+                          flex: 6,
+                          child: selectedRow == null
+                              ? Center(
+                                  child: Text(
+                                    'Select a conversation to use the larger desktop workspace.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _navyDark,
+                                    ),
+                                  ),
+                                )
+                              : LearnerMailThreadScreen(
+                                  key: ValueKey(
+                                    'desktop_learner_mail_${selectedRow.threadId}',
+                                  ),
+                                  threadId: selectedRow.threadId,
+                                  peerUid: selectedRow.peerUid,
+                                  peerName: selectedRow.peerName.trim().isEmpty
+                                      ? 'User'
+                                      : selectedRow.peerName.trim(),
+                                  subject: selectedRow.subject,
                                 ),
                         ),
                       ],

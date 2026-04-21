@@ -13,6 +13,7 @@ import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 
@@ -4527,6 +4528,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   Widget build(BuildContext context) {
     final cid = courseId;
     final busy = loading || booking || refreshing || progressLabel.isNotEmpty;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -4570,125 +4575,219 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     )
                   : (cid == null)
                   ? const Center(child: Text('No course selected.'))
-                  : ListView(
-                      padding: const EdgeInsets.all(12),
-                      children: [
-                        _buildCompactHeader(),
-                        const SizedBox(height: 12),
-                        _SectionCard(
-                          title: '',
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              InkWell(
-                                borderRadius: BorderRadius.circular(999),
-                                onTap: generatedSlots.isEmpty
-                                    ? null
-                                    : _openExpandedSchedule,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: uiBorder.withValues(alpha: 0.9),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
+                  : (desktopWorkspace
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 360,
+                                  child: ListView(
                                     children: [
-                                      Icon(
-                                        Icons.open_in_full_rounded,
-                                        size: 16,
-                                        color: primaryBlue,
-                                      ),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'Expand',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: primaryBlue,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              InkWell(
-                                borderRadius: BorderRadius.circular(999),
-                                onTap: () => setState(
-                                  () => filtersExpanded = !filtersExpanded,
-                                ),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: uiBorder.withValues(alpha: 0.9),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.tune_rounded,
-                                        size: 16,
-                                        color: primaryBlue,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        filtersExpanded
-                                            ? 'Hide filters'
-                                            : 'Filters',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: primaryBlue,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          child: generatedSlots.isEmpty
-                              ? const Text(
-                                  'No available slots found.\nAsk your teacher to set availability for this course.',
-                                  style: TextStyle(fontWeight: FontWeight.w800),
-                                )
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (filtersExpanded) ...[
-                                      _buildFiltersInline(),
+                                      _buildCompactHeader(),
                                       const SizedBox(height: 12),
+                                      _SectionCard(
+                                        title: 'Schedule filters',
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _buildFiltersInline(),
+                                            const SizedBox(height: 12),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: OutlinedButton.icon(
+                                                onPressed:
+                                                    generatedSlots.isEmpty
+                                                    ? null
+                                                    : _openExpandedSchedule,
+                                                icon: const Icon(
+                                                  Icons.open_in_full_rounded,
+                                                ),
+                                                label: const Text(
+                                                  'Open full schedule',
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ],
-                                    _buildTimetable(generatedSlots),
-                                    const SizedBox(height: 96),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ListView(
+                                    children: [
+                                      _SectionCard(
+                                        title: 'Available timetable',
+                                        subtitle:
+                                            'Choose a slot from the wider desktop schedule.',
+                                        child: generatedSlots.isEmpty
+                                            ? const Text(
+                                                'No available slots found.\nAsk your teacher to set availability for this course.',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              )
+                                            : Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  _buildTimetable(
+                                                    generatedSlots,
+                                                  ),
+                                                  const SizedBox(height: 96),
+                                                ],
+                                              ),
+                                      ),
+                                      if (booking || refreshing)
+                                        const Padding(
+                                          padding: EdgeInsets.only(top: 14),
+                                          child: Center(
+                                            child: BrandedInlineLoader(
+                                              message: 'Updating...',
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView(
+                            padding: const EdgeInsets.all(12),
+                            children: [
+                              _buildCompactHeader(),
+                              const SizedBox(height: 12),
+                              _SectionCard(
+                                title: '',
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: generatedSlots.isEmpty
+                                          ? null
+                                          : _openExpandedSchedule,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: uiBorder.withValues(
+                                              alpha: 0.9,
+                                            ),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.open_in_full_rounded,
+                                              size: 16,
+                                              color: primaryBlue,
+                                            ),
+                                            SizedBox(width: 6),
+                                            Text(
+                                              'Expand',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: primaryBlue,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: () => setState(
+                                        () =>
+                                            filtersExpanded = !filtersExpanded,
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: uiBorder.withValues(
+                                              alpha: 0.9,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.tune_rounded,
+                                              size: 16,
+                                              color: primaryBlue,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              filtersExpanded
+                                                  ? 'Hide filters'
+                                                  : 'Filters',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: primaryBlue,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
-                        ),
-                        if (booking || refreshing)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 14),
-                            child: Center(
-                              child: BrandedInlineLoader(
-                                message: 'Updating...',
+                                child: generatedSlots.isEmpty
+                                    ? const Text(
+                                        'No available slots found.\nAsk your teacher to set availability for this course.',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (filtersExpanded) ...[
+                                            _buildFiltersInline(),
+                                            const SizedBox(height: 12),
+                                          ],
+                                          _buildTimetable(generatedSlots),
+                                          const SizedBox(height: 96),
+                                        ],
+                                      ),
                               ),
-                            ),
-                          ),
-                      ],
-                    ),
+                              if (booking || refreshing)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 14),
+                                  child: Center(
+                                    child: BrandedInlineLoader(
+                                      message: 'Updating...',
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          )),
             ),
             if (busy)
               Positioned.fill(

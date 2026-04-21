@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../shared/human_error.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
@@ -33,6 +34,7 @@ class _TeacherHomeworkInboxScreenState
   String _rowsSignature = '';
   final Set<String> _locallyDeletedThreadIds = <String>{};
   final Map<String, bool> _localReviewedOverrideByHwRef = <String, bool>{};
+  String? _desktopSelectedKey;
 
   @override
   void initState() {
@@ -1011,8 +1013,130 @@ class _TeacherHomeworkInboxScreenState
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
+  String _desktopViewKey(_HomeworkThreadView v) {
+    final tid = v.row.threadId.trim();
+    if (tid.isNotEmpty) return tid;
+    return v.homeworkRefPath;
+  }
+
+  _HomeworkThreadView? _desktopSelectedView(List<_HomeworkThreadView> views) {
+    if (views.isEmpty) return null;
+    final selectedKey = _desktopSelectedKey?.trim() ?? '';
+    if (selectedKey.isNotEmpty) {
+      for (final view in views) {
+        if (_desktopViewKey(view) == selectedKey) return view;
+      }
+    }
+    return views.first;
+  }
+
+  Widget _buildDesktopSelectionPlaceholder() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Select a homework thread to review it in the larger desktop workspace.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopHomeworkSummary(_HomeworkThreadView v) {
+    final statusColor = v.reviewed
+        ? Colors.green.shade700
+        : Colors.orange.shade700;
+    return Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            v.row.peerName,
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(label: Text(v.reviewed ? 'Reviewed' : 'Not reviewed')),
+              Chip(
+                label: Text(
+                  v.source == _HomeworkSource.sent ? 'Sent' : 'Inbox',
+                ),
+              ),
+              if (v.courseTitle.trim().isNotEmpty)
+                Chip(label: Text(v.courseTitle)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: v.reviewed ? null : () => _markReviewed(v),
+                icon: const Icon(Icons.check_circle_rounded),
+                label: const Text('Mark reviewed'),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: v.reviewed ? () => _markUnreviewed(v) : null,
+                icon: const Icon(Icons.undo_rounded),
+                label: const Text('Mark not reviewed'),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: () => _showDetails(v),
+                icon: const Icon(Icons.info_outline_rounded),
+                label: const Text('Details'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  v.reviewed ? 'Review status' : 'Homework text',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: statusColor,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  v.homeworkText.trim().isEmpty
+                      ? 'No homework text available.'
+                      : v.homeworkText.trim(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Homework Inbox'),
@@ -1106,6 +1230,9 @@ class _TeacherHomeworkInboxScreenState
                           .where((v) => v.row.deletedAtMs == null)
                           .toList();
                       final views = _applyFilter(activeViews);
+                      final selectedView = desktopWorkspace
+                          ? _desktopSelectedView(views)
+                          : null;
 
                       if (views.isEmpty) {
                         return RefreshIndicator(
@@ -1120,7 +1247,7 @@ class _TeacherHomeworkInboxScreenState
                         );
                       }
 
-                      return RefreshIndicator(
+                      final inboxList = RefreshIndicator(
                         onRefresh: _refreshInbox,
                         child: ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
@@ -1320,6 +1447,13 @@ class _TeacherHomeworkInboxScreenState
                                       ? null
                                       : () => _deleteForMe(v),
                                   onTap: () {
+                                    if (desktopWorkspace) {
+                                      setState(
+                                        () => _desktopSelectedKey =
+                                            _desktopViewKey(v),
+                                      );
+                                      return;
+                                    }
                                     if (v.row.threadId.isNotEmpty) {
                                       Navigator.push(
                                         context,
@@ -1618,6 +1752,37 @@ class _TeacherHomeworkInboxScreenState
                             );
                           },
                         ),
+                      );
+
+                      if (!desktopWorkspace) return inboxList;
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(flex: 5, child: inboxList),
+                          Container(
+                            width: 1,
+                            color: Colors.black.withValues(alpha: 0.08),
+                          ),
+                          Expanded(
+                            flex: 6,
+                            child: selectedView == null
+                                ? _buildDesktopSelectionPlaceholder()
+                                : (selectedView.row.threadId.isNotEmpty
+                                      ? TeacherMailThreadScreen(
+                                          key: ValueKey(
+                                            'desktop_hw_${selectedView.row.threadId}',
+                                          ),
+                                          threadId: selectedView.row.threadId,
+                                          peerUid: selectedView.row.peerUid,
+                                          peerName: selectedView.row.peerName,
+                                          subject: selectedView.row.subject,
+                                        )
+                                      : _buildDesktopHomeworkSummary(
+                                          selectedView,
+                                        )),
+                          ),
+                        ],
                       );
                     },
                   );

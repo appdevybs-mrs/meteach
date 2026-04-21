@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherOnlineBookingScreen extends StatefulWidget {
@@ -1119,6 +1120,10 @@ class _TeacherOnlineBookingScreenState
     final weeklySlots = _totalWeeklySlots();
     final blockedSlots = _totalWeeklyBlockedSlots();
     final selectedCount = _selectedCoursesCount();
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1174,227 +1179,412 @@ class _TeacherOnlineBookingScreenState
         maxWidth: 1320,
         child: loading
             ? Center(child: CircularProgressIndicator(color: p.accent))
-            : ListView(
-                padding: const EdgeInsets.all(14),
-                children: [
-                  _HeroAvailabilityCard(
-                    palette: p,
-                    teacherName: myName,
-                    selectedCourseTitle: _selectedCoursesSummary,
-                    teacherOnlineEnabled: teacherOnlineEnabled,
-                    selectedCourseCount: selectedCount,
-                    weeklySlots: weeklySlots,
-                  ),
-                  const SizedBox(height: 12),
-                  _CardBox(
-                    palette: p,
-                    title: '1) Status',
-                    child: Column(
-                      children: [
-                        _ToggleRowCard(
-                          palette: p,
-                          title: 'Teacher booking',
-                          subtitle: teacherOnlineEnabled ? 'ON' : 'OFF',
-                          value: teacherOnlineEnabled,
-                          busy: togglingTeacher,
-                          onChanged: _toggleTeacherOnline,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _CardBox(
-                    palette: p,
-                    title: '2) Courses',
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: () {
-                            setState(() {
-                              _coursesExpanded = !_coursesExpanded;
-                            });
-                          },
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: p.soft.withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: p.border.withValues(alpha: 0.85),
-                              ),
-                            ),
-                            child: Icon(
-                              _coursesExpanded
-                                  ? Icons.keyboard_arrow_up_rounded
-                                  : Icons.keyboard_arrow_down_rounded,
-                              size: 20,
-                              color: p.primary,
+            : (desktopWorkspace
+                  ? Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 420,
+                            child: ListView(
+                              children: [
+                                _HeroAvailabilityCard(
+                                  palette: p,
+                                  teacherName: myName,
+                                  selectedCourseTitle: _selectedCoursesSummary,
+                                  teacherOnlineEnabled: teacherOnlineEnabled,
+                                  selectedCourseCount: selectedCount,
+                                  weeklySlots: weeklySlots,
+                                ),
+                                const SizedBox(height: 12),
+                                _CardBox(
+                                  palette: p,
+                                  title: '1) Status',
+                                  child: Column(
+                                    children: [
+                                      _ToggleRowCard(
+                                        palette: p,
+                                        title: 'Teacher booking',
+                                        subtitle: teacherOnlineEnabled
+                                            ? 'ON'
+                                            : 'OFF',
+                                        value: teacherOnlineEnabled,
+                                        busy: togglingTeacher,
+                                        onChanged: _toggleTeacherOnline,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                _CardBox(
+                                  palette: p,
+                                  title: '2) Courses',
+                                  child: myCourses.isEmpty
+                                      ? _InfoBox(
+                                          palette: p,
+                                          text:
+                                              'No booking-enabled courses assigned to you.',
+                                        )
+                                      : _CoursesChecklist(
+                                          palette: p,
+                                          courses: myCourses,
+                                          selectedCourseIds: selectedCourseIds,
+                                          enabled: !saving,
+                                          onChanged: _toggleCourseSelection,
+                                        ),
+                                ),
+                                const SizedBox(height: 10),
+                                _CardBox(
+                                  palette: p,
+                                  title: '3) Session setup',
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _MeetLinkCard(
+                                        palette: p,
+                                        controller: _meetCtrl,
+                                        durationMinutes: _durationMinutes,
+                                        enabled: _slotEditingEnabled,
+                                        onDurationChanged: (v) => setState(
+                                          () => _durationMinutes = v,
+                                        ),
+                                      ),
+                                      if (!_slotEditingEnabled) ...[
+                                        const SizedBox(height: 8),
+                                        _InfoBox(
+                                          palette: p,
+                                          text: teacherOnlineEnabled
+                                              ? 'Select at least one course to edit the schedule.'
+                                              : 'Turn ON teacher booking first.',
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ListView(
+                              children: [
+                                _CardBox(
+                                  palette: p,
+                                  title: '4) Weekly timetable',
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _DayChips(
+                                        palette: p,
+                                        dayKeys: dayKeys,
+                                        dayLabels: dayLabels,
+                                        weekSlots: weekSlots,
+                                        enabled: _slotEditingEnabled,
+                                        onTapDay: saving
+                                            ? null
+                                            : (dk, label) =>
+                                                  _openDayEditor(dk, label),
+                                      ),
+                                      if (blockedSlots > 0) ...[
+                                        const SizedBox(height: 8),
+                                        _InfoBox(
+                                          palette: p,
+                                          text:
+                                              '$blockedSlots weekly hour${blockedSlots == 1 ? '' : 's'} locked by in-class schedule.',
+                                        ),
+                                      ],
+                                      const SizedBox(height: 10),
+                                      ...List.generate(7, (i) {
+                                        final dk = dayKeys[i];
+                                        final label = dayLabels[i];
+                                        return _DayCard(
+                                          palette: p,
+                                          label: label,
+                                          slotCount:
+                                              (weekSlots[dk] ?? <int>{}).length,
+                                          preview: _previewSlots(
+                                            weekSlots[dk] ?? <int>{},
+                                          ),
+                                          enabled: _slotEditingEnabled,
+                                          onTap:
+                                              (saving || !_slotEditingEnabled)
+                                              ? null
+                                              : () => _openDayEditor(dk, label),
+                                        );
+                                      }),
+                                      const SizedBox(height: 6),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: FilledButton.icon(
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: p.accent,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 14,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                            ),
+                                          ),
+                                          onPressed: saving
+                                              ? null
+                                              : _saveAvailability,
+                                          icon: const Icon(
+                                            Icons.check_circle_rounded,
+                                          ),
+                                          label: Text(
+                                            saving ? 'Saving…' : 'Save',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.all(14),
+                      children: [
+                        _HeroAvailabilityCard(
+                          palette: p,
+                          teacherName: myName,
+                          selectedCourseTitle: _selectedCoursesSummary,
+                          teacherOnlineEnabled: teacherOnlineEnabled,
+                          selectedCourseCount: selectedCount,
+                          weeklySlots: weeklySlots,
                         ),
-                      ],
-                    ),
-                    child: myCourses.isEmpty
-                        ? _InfoBox(
-                            palette: p,
-                            text: 'No booking-enabled courses assigned to you.',
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(height: 12),
+                        _CardBox(
+                          palette: p,
+                          title: '1) Status',
+                          child: Column(
+                            children: [
+                              _ToggleRowCard(
+                                palette: p,
+                                title: 'Teacher booking',
+                                subtitle: teacherOnlineEnabled ? 'ON' : 'OFF',
+                                value: teacherOnlineEnabled,
+                                busy: togglingTeacher,
+                                onChanged: _toggleTeacherOnline,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _CardBox(
+                          palette: p,
+                          title: '2) Courses',
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               InkWell(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(999),
                                 onTap: () {
                                   setState(() {
                                     _coursesExpanded = !_coursesExpanded;
                                   });
                                 },
                                 child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 12,
-                                  ),
+                                  width: 32,
+                                  height: 32,
                                   decoration: BoxDecoration(
-                                    color: p.cardBg,
-                                    borderRadius: BorderRadius.circular(14),
+                                    color: p.soft.withValues(alpha: 0.65),
+                                    borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
                                       color: p.border.withValues(alpha: 0.85),
                                     ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          _selectedCoursesLabel(),
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: p.primary,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Icon(
-                                        _coursesExpanded
-                                            ? Icons.keyboard_arrow_up_rounded
-                                            : Icons.keyboard_arrow_down_rounded,
-                                        color: p.primary,
-                                      ),
-                                    ],
+                                  child: Icon(
+                                    _coursesExpanded
+                                        ? Icons.keyboard_arrow_up_rounded
+                                        : Icons.keyboard_arrow_down_rounded,
+                                    size: 20,
+                                    color: p.primary,
                                   ),
                                 ),
                               ),
-                              if (_coursesExpanded) ...[
-                                const SizedBox(height: 8),
-                                _CoursesChecklist(
+                            ],
+                          ),
+                          child: myCourses.isEmpty
+                              ? _InfoBox(
                                   palette: p,
-                                  courses: myCourses,
-                                  selectedCourseIds: selectedCourseIds,
-                                  enabled: !saving,
-                                  onChanged: _toggleCourseSelection,
+                                  text:
+                                      'No booking-enabled courses assigned to you.',
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(14),
+                                      onTap: () {
+                                        setState(() {
+                                          _coursesExpanded = !_coursesExpanded;
+                                        });
+                                      },
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: p.cardBg,
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          border: Border.all(
+                                            color: p.border.withValues(
+                                              alpha: 0.85,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _selectedCoursesLabel(),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  color: p.primary,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Icon(
+                                              _coursesExpanded
+                                                  ? Icons
+                                                        .keyboard_arrow_up_rounded
+                                                  : Icons
+                                                        .keyboard_arrow_down_rounded,
+                                              color: p.primary,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    if (_coursesExpanded) ...[
+                                      const SizedBox(height: 8),
+                                      _CoursesChecklist(
+                                        palette: p,
+                                        courses: myCourses,
+                                        selectedCourseIds: selectedCourseIds,
+                                        enabled: !saving,
+                                        onChanged: _toggleCourseSelection,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                        ),
+                        const SizedBox(height: 10),
+                        _CardBox(
+                          palette: p,
+                          title: '3) Session setup',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _MeetLinkCard(
+                                palette: p,
+                                controller: _meetCtrl,
+                                durationMinutes: _durationMinutes,
+                                enabled: _slotEditingEnabled,
+                                onDurationChanged: (v) =>
+                                    setState(() => _durationMinutes = v),
+                              ),
+                              if (!_slotEditingEnabled) ...[
+                                const SizedBox(height: 8),
+                                _InfoBox(
+                                  palette: p,
+                                  text: teacherOnlineEnabled
+                                      ? 'Select at least one course to edit the schedule.'
+                                      : 'Turn ON teacher booking first.',
                                 ),
                               ],
                             ],
                           ),
-                  ),
-                  const SizedBox(height: 10),
-                  _CardBox(
-                    palette: p,
-                    title: '3) Session setup',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _MeetLinkCard(
-                          palette: p,
-                          controller: _meetCtrl,
-                          durationMinutes: _durationMinutes,
-                          enabled: _slotEditingEnabled,
-                          onDurationChanged: (v) =>
-                              setState(() => _durationMinutes = v),
                         ),
-                        if (!_slotEditingEnabled) ...[
-                          const SizedBox(height: 8),
-                          _InfoBox(
-                            palette: p,
-                            text: teacherOnlineEnabled
-                                ? 'Select at least one course to edit the schedule.'
-                                : 'Turn ON teacher booking first.',
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _CardBox(
-                    palette: p,
-                    title: '4) Weekly timetable',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _DayChips(
-                          palette: p,
-                          dayKeys: dayKeys,
-                          dayLabels: dayLabels,
-                          weekSlots: weekSlots,
-                          enabled: _slotEditingEnabled,
-                          onTapDay: saving
-                              ? null
-                              : (dk, label) => _openDayEditor(dk, label),
-                        ),
-                        if (blockedSlots > 0) ...[
-                          const SizedBox(height: 8),
-                          _InfoBox(
-                            palette: p,
-                            text:
-                                '$blockedSlots weekly hour${blockedSlots == 1 ? '' : 's'} locked by in-class schedule.',
-                          ),
-                        ],
                         const SizedBox(height: 10),
-                        ...List.generate(7, (i) {
-                          final dk = dayKeys[i];
-                          final label = dayLabels[i];
-                          return _DayCard(
-                            palette: p,
-                            label: label,
-                            slotCount: (weekSlots[dk] ?? <int>{}).length,
-                            preview: _previewSlots(weekSlots[dk] ?? <int>{}),
-                            enabled: _slotEditingEnabled,
-                            onTap: (saving || !_slotEditingEnabled)
-                                ? null
-                                : () => _openDayEditor(dk, label),
-                          );
-                        }),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: p.accent,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                        _CardBox(
+                          palette: p,
+                          title: '4) Weekly timetable',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _DayChips(
+                                palette: p,
+                                dayKeys: dayKeys,
+                                dayLabels: dayLabels,
+                                weekSlots: weekSlots,
+                                enabled: _slotEditingEnabled,
+                                onTapDay: saving
+                                    ? null
+                                    : (dk, label) => _openDayEditor(dk, label),
                               ),
-                            ),
-                            onPressed: saving ? null : _saveAvailability,
-                            icon: const Icon(Icons.check_circle_rounded),
-                            label: Text(
-                              saving ? 'Saving…' : 'Save',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                              if (blockedSlots > 0) ...[
+                                const SizedBox(height: 8),
+                                _InfoBox(
+                                  palette: p,
+                                  text:
+                                      '$blockedSlots weekly hour${blockedSlots == 1 ? '' : 's'} locked by in-class schedule.',
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              ...List.generate(7, (i) {
+                                final dk = dayKeys[i];
+                                final label = dayLabels[i];
+                                return _DayCard(
+                                  palette: p,
+                                  label: label,
+                                  slotCount: (weekSlots[dk] ?? <int>{}).length,
+                                  preview: _previewSlots(
+                                    weekSlots[dk] ?? <int>{},
+                                  ),
+                                  enabled: _slotEditingEnabled,
+                                  onTap: (saving || !_slotEditingEnabled)
+                                      ? null
+                                      : () => _openDayEditor(dk, label),
+                                );
+                              }),
+                              const SizedBox(height: 6),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: p.accent,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  onPressed: saving ? null : _saveAvailability,
+                                  icon: const Icon(Icons.check_circle_rounded),
+                                  label: Text(
+                                    saving ? 'Saving…' : 'Save',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ],
-              ),
+                    )),
       ),
     );
   }

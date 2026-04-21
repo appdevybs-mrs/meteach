@@ -6,6 +6,7 @@ import 'dart:async';
 import '../services/mail_consistency_service.dart';
 import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 
 import 'teacher_mail_thread_screen.dart';
@@ -29,6 +30,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   String _q = '';
   _MailViewMode _viewMode = _MailViewMode.latestFirst;
   bool _searchMode = false;
+  String? _desktopSelectedThreadId;
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
@@ -1084,6 +1086,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   Widget _buildTab(_InboxTabRole tabRole, List<_TopicRow> allRows) {
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
+
     if (allRows.isEmpty) {
       return _buildEmptyState(
         icon: Icons.mail_outline_rounded,
@@ -1126,19 +1133,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             onDelete: () => _deleteThreadForMe(r),
             onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
             onLongPress: () => _showThreadActions(r),
-            onOpen: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
-                  builder: (_) => TeacherMailThreadScreen(
-                    threadId: r.threadId,
-                    peerUid: r.peerUid,
-                    peerName: _bestName(r),
-                    subject: _displaySubject(r.subject),
-                  ),
-                ),
-              );
-            },
+            onOpen: () => _openThread(r, desktop: desktopWorkspace),
           );
         },
       );
@@ -1190,27 +1185,48 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 onDelete: () => _deleteThreadForMe(r),
                 onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
                 onLongPress: () => _showThreadActions(r),
-                onOpen: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      settings: RouteSettings(
-                        name: '/mail/thread/${r.threadId}',
-                      ),
-                      builder: (_) => TeacherMailThreadScreen(
-                        threadId: r.threadId,
-                        peerUid: r.peerUid,
-                        peerName: _bestName(r),
-                        subject: _displaySubject(r.subject),
-                      ),
-                    ),
-                  );
-                },
+                onOpen: () => _openThread(r, desktop: desktopWorkspace),
               );
             }).toList(),
           );
         }),
       ],
     );
+  }
+
+  Future<void> _openThread(_TopicRow row, {required bool desktop}) async {
+    if (desktop) {
+      setState(() => _desktopSelectedThreadId = row.threadId);
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        settings: RouteSettings(name: '/mail/thread/${row.threadId}'),
+        builder: (_) => TeacherMailThreadScreen(
+          threadId: row.threadId,
+          peerUid: row.peerUid,
+          peerName: _bestName(row),
+          subject: _displaySubject(row.subject),
+        ),
+      ),
+    );
+  }
+
+  _TopicRow? _desktopSelectedRow(List<_TopicRow> allRows) {
+    if (allRows.isEmpty) return null;
+
+    final selectedId = _desktopSelectedThreadId?.trim() ?? '';
+    if (selectedId.isNotEmpty) {
+      for (final row in allRows) {
+        if (row.threadId == selectedId) return row;
+      }
+    }
+
+    for (final row in allRows) {
+      if (!row.isHomework) return row;
+    }
+    return allRows.first;
   }
 
   Widget _buildTopSearch() {
@@ -1404,6 +1420,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return DefaultTabController(
       length: 3,
@@ -1421,13 +1441,25 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             'Mailbox',
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: 21),
           ),
-          actions: [const SizedBox.shrink()],
+          actions: [
+            if (desktopWorkspace)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: FilledButton.icon(
+                  onPressed: _composeNewTopic,
+                  icon: const Icon(Icons.edit_rounded),
+                  label: const Text('New topic'),
+                ),
+              ),
+          ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _composeNewTopic,
-          icon: const Icon(Icons.edit_rounded),
-          label: const Text('New topic'),
-        ),
+        floatingActionButton: desktopWorkspace
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: _composeNewTopic,
+                icon: const Icon(Icons.edit_rounded),
+                label: const Text('New topic'),
+              ),
         body: teacherWebBodyFrame(
           context: context,
           maxWidth: 1500,
@@ -1464,8 +1496,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 _InboxTabRole.teachers,
               );
               final adminUnread = _unreadForTab(allRows, _InboxTabRole.admin);
-
-              return Column(
+              final selectedRow = desktopWorkspace
+                  ? _desktopSelectedRow(allRows)
+                  : null;
+              final mailboxBody = Column(
                 children: [
                   _buildTopSearch(),
                   _buildTabBarShell(
@@ -1485,6 +1519,38 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                         _buildTab(_InboxTabRole.admin, allRows),
                       ],
                     ),
+                  ),
+                ],
+              );
+
+              if (!desktopWorkspace) return mailboxBody;
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(flex: 5, child: mailboxBody),
+                  Container(
+                    width: 1,
+                    color: scheme.outline.withValues(alpha: 0.14),
+                  ),
+                  Expanded(
+                    flex: 6,
+                    child: selectedRow == null
+                        ? _buildEmptyState(
+                            icon: Icons.mark_email_read_rounded,
+                            title: 'Select a conversation',
+                            subtitle:
+                                'Choose a thread from the mailbox to use the larger desktop work area.',
+                          )
+                        : TeacherMailThreadScreen(
+                            key: ValueKey(
+                              'desktop_mail_${selectedRow.threadId}',
+                            ),
+                            threadId: selectedRow.threadId,
+                            peerUid: selectedRow.peerUid,
+                            peerName: _bestName(selectedRow),
+                            subject: _displaySubject(selectedRow.subject),
+                          ),
                   ),
                 ],
               );
