@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 
@@ -1611,6 +1612,10 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   Widget build(BuildContext context) {
     final selected = _selectedCourse;
     final showSpeaking = _section == _CoachSection.speaking;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -1639,57 +1644,140 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                     ? const _ErrorView(
                         message: 'No course vocabulary is available.',
                       )
-                    : ListView(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        children: [
-                          _buildSectionCards(),
-                          if (showSpeaking)
-                            _buildSpeakingPracticeCard()
-                          else if (_section == _CoachSection.grammar)
-                            const _ErrorView(
-                              message: 'Grammar content is coming soon.',
-                            )
-                          else ...[
-                            if (!_sessionStarted || !_isTestSession)
-                              _buildSetupCard(),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 240),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                final offset = Tween<Offset>(
-                                  begin: const Offset(0, 0.03),
-                                  end: Offset.zero,
-                                ).animate(animation);
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: offset,
-                                    child: child,
+                    : (desktopWorkspace
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  width: 360,
+                                  child: ListView(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    children: [
+                                      _buildSectionCards(),
+                                      if (!showSpeaking &&
+                                          _section != _CoachSection.grammar &&
+                                          (!_sessionStarted || !_isTestSession))
+                                        _buildSetupCard(),
+                                    ],
                                   ),
-                                );
-                              },
-                              child: !_sessionStarted
-                                  ? const SizedBox.shrink(
-                                      key: ValueKey('setup_idle'),
-                                    )
-                                  : _sessionDone
-                                  ? KeyedSubtree(
-                                      key: const ValueKey('result_panel'),
-                                      child: _buildResultCard(),
-                                    )
-                                  : _isTestSession
-                                  ? KeyedSubtree(
-                                      key: ValueKey('test_panel_$_index'),
-                                      child: _buildTestCard(_currentWord!),
-                                    )
-                                  : const SizedBox.shrink(
-                                      key: ValueKey('idle_non_test'),
-                                    ),
-                            ),
-                          ],
-                        ],
-                      ),
+                                ),
+                                Expanded(
+                                  child: ListView(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    children: [
+                                      if (showSpeaking)
+                                        _buildSpeakingPracticeCard()
+                                      else if (_section ==
+                                          _CoachSection.grammar)
+                                        const _ErrorView(
+                                          message:
+                                              'Grammar content is coming soon.',
+                                        )
+                                      else
+                                        AnimatedSwitcher(
+                                          duration: const Duration(
+                                            milliseconds: 240,
+                                          ),
+                                          switchInCurve: Curves.easeOutCubic,
+                                          switchOutCurve: Curves.easeInCubic,
+                                          transitionBuilder:
+                                              (child, animation) {
+                                                final offset = Tween<Offset>(
+                                                  begin: const Offset(0, 0.03),
+                                                  end: Offset.zero,
+                                                ).animate(animation);
+                                                return FadeTransition(
+                                                  opacity: animation,
+                                                  child: SlideTransition(
+                                                    position: offset,
+                                                    child: child,
+                                                  ),
+                                                );
+                                              },
+                                          child: !_sessionStarted
+                                              ? const SizedBox.shrink(
+                                                  key: ValueKey('setup_idle'),
+                                                )
+                                              : _sessionDone
+                                              ? KeyedSubtree(
+                                                  key: const ValueKey(
+                                                    'result_panel',
+                                                  ),
+                                                  child: _buildResultCard(),
+                                                )
+                                              : _isTestSession
+                                              ? KeyedSubtree(
+                                                  key: ValueKey(
+                                                    'test_panel_$_index',
+                                                  ),
+                                                  child: _buildTestCard(
+                                                    _currentWord!,
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(
+                                                  key: ValueKey(
+                                                    'idle_non_test',
+                                                  ),
+                                                ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              children: [
+                                _buildSectionCards(),
+                                if (showSpeaking)
+                                  _buildSpeakingPracticeCard()
+                                else if (_section == _CoachSection.grammar)
+                                  const _ErrorView(
+                                    message: 'Grammar content is coming soon.',
+                                  )
+                                else ...[
+                                  if (!_sessionStarted || !_isTestSession)
+                                    _buildSetupCard(),
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 240),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    transitionBuilder: (child, animation) {
+                                      final offset = Tween<Offset>(
+                                        begin: const Offset(0, 0.03),
+                                        end: Offset.zero,
+                                      ).animate(animation);
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: SlideTransition(
+                                          position: offset,
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: !_sessionStarted
+                                        ? const SizedBox.shrink(
+                                            key: ValueKey('setup_idle'),
+                                          )
+                                        : _sessionDone
+                                        ? KeyedSubtree(
+                                            key: const ValueKey('result_panel'),
+                                            child: _buildResultCard(),
+                                          )
+                                        : _isTestSession
+                                        ? KeyedSubtree(
+                                            key: ValueKey('test_panel_$_index'),
+                                            child: _buildTestCard(
+                                              _currentWord!,
+                                            ),
+                                          )
+                                        : const SizedBox.shrink(
+                                            key: ValueKey('idle_non_test'),
+                                          ),
+                                  ),
+                                ],
+                              ],
+                            )),
               ),
             ),
             _buildLearningDeckOverlay(),

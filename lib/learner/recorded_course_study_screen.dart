@@ -21,6 +21,7 @@ import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import 'recorded_video_player_screen.dart';
 
 const int _kYbsDeepBlueHex = 0xFF0B2545;
@@ -2902,6 +2903,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   @override
   Widget build(BuildContext context) {
     final Widget content;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     if (_busy) {
       content = const Center(
@@ -3018,19 +3023,38 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               ),
             ),
-            ListView(
-              padding: EdgeInsets.fromLTRB(
-                isNarrow ? 10 : 12,
-                isNarrow ? 8 : 10,
-                isNarrow ? 10 : 12,
-                isNarrow ? 16 : 18,
-              ),
-              children: [
-                _buildTopOverviewCard(),
-                const SizedBox(height: 10),
-                _buildUnitsList(),
-              ],
-            ),
+            desktopWorkspace
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 360,
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 8, 18),
+                          children: [_buildTopOverviewCard()],
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(8, 10, 12, 18),
+                          children: [_buildUnitsList()],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      isNarrow ? 10 : 12,
+                      isNarrow ? 8 : 10,
+                      isNarrow ? 10 : 12,
+                      isNarrow ? 16 : 18,
+                    ),
+                    children: [
+                      _buildTopOverviewCard(),
+                      const SizedBox(height: 10),
+                      _buildUnitsList(),
+                    ],
+                  ),
           ],
         ),
       );

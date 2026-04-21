@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/profile_avatar.dart';
 
 class LearnerGamesScreen extends StatefulWidget {
@@ -913,6 +914,11 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
+
     return Scaffold(
       body: learnerWebBodyFrame(
         context: context,
@@ -964,27 +970,59 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
             final grouped = _groupByCategory(filteredItems);
 
+            final gamesList = ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+              children: [
+                if (filteredItems.isEmpty)
+                  _buildEmptyState(context, filtered: true)
+                else
+                  ...grouped.entries.map(
+                    (entry) => _buildCategoryRow(
+                      context: context,
+                      title: entry.key,
+                      games: entry.value,
+                    ),
+                  ),
+              ],
+            );
+
             return RefreshIndicator(
               onRefresh: () async {
                 await _gamesRef.get();
               },
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                children: [
-                  _buildSearchAndFilter(context, tags),
-                  if (filteredItems.isEmpty)
-                    _buildEmptyState(context, filtered: true)
-                  else
-                    ...grouped.entries.map(
-                      (entry) => _buildCategoryRow(
-                        context: context,
-                        title: entry.key,
-                        games: entry.value,
-                      ),
+              child: desktopWorkspace
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 320,
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(12, 12, 0, 20),
+                            children: [_buildSearchAndFilter(context, tags)],
+                          ),
+                        ),
+                        Expanded(child: gamesList),
+                      ],
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                      children: [
+                        _buildSearchAndFilter(context, tags),
+                        if (filteredItems.isEmpty)
+                          _buildEmptyState(context, filtered: true)
+                        else
+                          ...grouped.entries.map(
+                            (entry) => _buildCategoryRow(
+                              context: context,
+                              title: entry.key,
+                              games: entry.value,
+                            ),
+                          ),
+                      ],
                     ),
-                ],
-              ),
             );
           },
         ),

@@ -9,6 +9,7 @@ import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/profile_avatar.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
@@ -1244,6 +1245,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1379,55 +1384,113 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 final availableWidth = constraints.maxWidth;
                 final pagePadding = _pagePaddingForWidth(availableWidth);
 
+                final storiesList = ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: pagePadding,
+                  children: [
+                    if (visibleItems.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: p.cardBg,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        child: Text(
+                          'No stories match your filters.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: p.text,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      )
+                    else
+                      ...groupedStories.entries.map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.only(bottom: 20),
+                          child: _buildGenreShelf(
+                            title: entry.key,
+                            stories: entry.value,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+
                 return RefreshIndicator(
                   onRefresh: () async {
                     await _storiesRef.get();
                   },
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: pagePadding,
-                    children: [
-                      if (_showFilters) ...[
-                        const SizedBox(height: 6),
-                        _buildCompactFilters(
-                          genres: allGenres,
-                          levels: allLevels,
-                          lengths: allLengths,
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      if (visibleItems.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(22),
-                          decoration: BoxDecoration(
-                            color: p.cardBg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
+                  child: desktopWorkspace
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: 310,
+                              child: ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: pagePadding,
+                                children: [
+                                  _buildCompactFilters(
+                                    genres: allGenres,
+                                    levels: allLevels,
+                                    lengths: allLengths,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            'No stories match your filters.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: p.text,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                            Expanded(child: storiesList),
+                          ],
                         )
-                      else
-                        ...groupedStories.entries.map(
-                          (entry) => Padding(
-                            padding: const EdgeInsets.only(bottom: 20),
-                            child: _buildGenreShelf(
-                              title: entry.key,
-                              stories: entry.value,
-                            ),
-                          ),
+                      : ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: pagePadding,
+                          children: [
+                            if (_showFilters) ...[
+                              const SizedBox(height: 6),
+                              _buildCompactFilters(
+                                genres: allGenres,
+                                levels: allLevels,
+                                lengths: allLengths,
+                              ),
+                            ],
+                            const SizedBox(height: 18),
+                            if (visibleItems.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(22),
+                                decoration: BoxDecoration(
+                                  color: p.cardBg,
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(
+                                    color: p.border.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                                child: Text(
+                                  'No stories match your filters.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: p.text,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              )
+                            else
+                              ...groupedStories.entries.map(
+                                (entry) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 20),
+                                  child: _buildGenreShelf(
+                                    title: entry.key,
+                                    stories: entry.value,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
                 );
               },
             );

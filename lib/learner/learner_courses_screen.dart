@@ -10,6 +10,7 @@ import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import 'learner_course_detail_screen.dart';
 import 'recorded_course_study_screen.dart';
@@ -1104,6 +1105,10 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -1160,17 +1165,86 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
               : RefreshIndicator(
                   color: p.primary,
                   onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                    children: [
-                      _CoursesHeroCard(
-                        palette: p,
-                        coursesCount: _courses.length,
-                      ),
-                      const SizedBox(height: 16),
-                      ..._courses.map(_courseCard),
-                    ],
-                  ),
+                  child: desktopWorkspace
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: 340,
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  16,
+                                  8,
+                                  20,
+                                ),
+                                children: [
+                                  _CoursesHeroCard(
+                                    palette: p,
+                                    coursesCount: _courses.length,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: p.cardBg,
+                                      borderRadius: BorderRadius.circular(22),
+                                      border: Border.all(
+                                        color: p.border.withValues(alpha: 0.85),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Desktop browsing',
+                                          style: TextStyle(
+                                            color: p.primary,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Use the wider list to compare your assigned courses without stretching each card too far across the screen.',
+                                          style: TextStyle(
+                                            color: p.text.withValues(
+                                              alpha: 0.72,
+                                            ),
+                                            fontWeight: FontWeight.w700,
+                                            height: 1.35,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  8,
+                                  16,
+                                  16,
+                                  20,
+                                ),
+                                children: _courses.map(_courseCard).toList(),
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                          children: [
+                            _CoursesHeroCard(
+                              palette: p,
+                              coursesCount: _courses.length,
+                            ),
+                            const SizedBox(height: 16),
+                            ..._courses.map(_courseCard),
+                          ],
+                        ),
                 ),
         ),
       ),

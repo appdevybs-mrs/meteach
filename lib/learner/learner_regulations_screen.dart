@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/watermark_background.dart';
 
 class LearnerRegulationsScreen extends StatefulWidget {
@@ -221,6 +222,10 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1180,
+    );
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -274,17 +279,66 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
                   : RefreshIndicator(
                       color: p.primary,
                       onRefresh: _loadAll,
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                        children: [
-                          _RegSectionCarousel(
-                            palette: p,
-                            sections: _sections,
-                            formatUpdatedAt: _formatUpdatedAt,
-                            onTapSection: _openSectionSheet,
-                          ),
-                        ],
-                      ),
+                      child: desktopWorkspace
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  width: 300,
+                                  child: ListView(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      16,
+                                      8,
+                                      20,
+                                    ),
+                                    children: [
+                                      _InfoBox(
+                                        palette: p,
+                                        title: 'القوانين',
+                                        message:
+                                            'استخدم اللوحة الواسعة لقراءة الأقسام ومراجعة التحديثات بدون تمدد المحتوى على كامل الشاشة.',
+                                        icon: Icons.menu_book_rounded,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: ListView(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      8,
+                                      16,
+                                      16,
+                                      20,
+                                    ),
+                                    children: [
+                                      _RegSectionCarousel(
+                                        palette: p,
+                                        sections: _sections,
+                                        formatUpdatedAt: _formatUpdatedAt,
+                                        onTapSection: _openSectionSheet,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                20,
+                              ),
+                              children: [
+                                _RegSectionCarousel(
+                                  palette: p,
+                                  sections: _sections,
+                                  formatUpdatedAt: _formatUpdatedAt,
+                                  onTapSection: _openSectionSheet,
+                                ),
+                              ],
+                            ),
                     ),
             ),
           ),

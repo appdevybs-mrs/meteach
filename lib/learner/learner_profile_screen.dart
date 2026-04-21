@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
@@ -2261,6 +2262,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
     final email = (_user['email'] ?? '').toString();
     final serial = (_user['serial'] ?? '').toString();
     final nationalIdNumber =
@@ -2355,19 +2360,86 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                     : Form(
                         key: _formKey,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
-                        child: TabBarView(
-                          children: [
-                            _buildCredentialsTab(
-                              email: email,
-                              serial: serial,
-                              nationalIdNumber: nationalIdNumber,
-                              gender: gender,
-                              role: role,
-                              status: status,
-                            ),
-                            _buildMediaTab(),
-                          ],
-                        ),
+                        child: desktopWorkspace
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SizedBox(
+                                    width: 320,
+                                    child: ListView(
+                                      padding: const EdgeInsets.all(16),
+                                      children: [
+                                        _SectionCard(
+                                          palette: p,
+                                          title: 'Profile Summary',
+                                          subtitle:
+                                              'Keep identity details visible while editing on wider screens.',
+                                          icon: Icons.person_rounded,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${_fn.text} ${_ln.text}'
+                                                        .trim()
+                                                        .isEmpty
+                                                    ? 'Learner'
+                                                    : '${_fn.text} ${_ln.text}'
+                                                          .trim(),
+                                                style: TextStyle(
+                                                  color: p.primary,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                email.isEmpty
+                                                    ? 'No email saved'
+                                                    : email,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                serial.isEmpty
+                                                    ? 'Serial unavailable'
+                                                    : 'Serial: $serial',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TabBarView(
+                                      children: [
+                                        _buildCredentialsTab(
+                                          email: email,
+                                          serial: serial,
+                                          nationalIdNumber: nationalIdNumber,
+                                          gender: gender,
+                                          role: role,
+                                          status: status,
+                                        ),
+                                        _buildMediaTab(),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : TabBarView(
+                                children: [
+                                  _buildCredentialsTab(
+                                    email: email,
+                                    serial: serial,
+                                    nationalIdNumber: nationalIdNumber,
+                                    gender: gender,
+                                    role: role,
+                                    status: status,
+                                  ),
+                                  _buildMediaTab(),
+                                ],
+                              ),
                       ),
               ),
             ),

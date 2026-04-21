@@ -37,6 +37,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/material_webview_screen.dart';
 import '../services/course_feedback_service.dart';
@@ -1770,6 +1771,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   @override
   Widget build(BuildContext context) {
     final counts = _attendanceCountsAll();
+    final desktopWorkspace = AppResponsive.isWebDesktop(
+      context,
+      minWidth: 1280,
+    );
 
     // ✅ Meetings = attendance records (in-class + online)
     final meetingsHeld = counts['total'] ?? 0;
@@ -1867,24 +1872,81 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ),
                   ),
                 )
-              : TabBarView(
-                  controller: _tab,
-                  children: [
-                    _paymentTab(
-                      sessionsPassed: sessionsConsumed,
-                      attPct: attPct,
-                      present: present,
-                      total: meetingsHeld,
-                    ),
-                    _progressTab(
-                      meetingsHeld: meetingsHeld,
-                      plannedMeetings: _plannedMeetings,
-                      syllabusPct: syllabusPct,
-                      coveredLessons: coveredLessons,
-                      totalLessons: totalLessons,
-                    ),
-                  ],
-                ),
+              : (desktopWorkspace
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: TabBarView(
+                              controller: _tab,
+                              children: [
+                                _paymentTab(
+                                  sessionsPassed: sessionsConsumed,
+                                  attPct: attPct,
+                                  present: present,
+                                  total: meetingsHeld,
+                                ),
+                                _progressTab(
+                                  meetingsHeld: meetingsHeld,
+                                  plannedMeetings: _plannedMeetings,
+                                  syllabusPct: syllabusPct,
+                                  coveredLessons: coveredLessons,
+                                  totalLessons: totalLessons,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            color: UiK.uiBorder.withValues(alpha: 0.8),
+                          ),
+                          SizedBox(
+                            width: 320,
+                            child: ListView(
+                              padding: const EdgeInsets.all(16),
+                              children: [
+                                _desktopSummaryCard(
+                                  title: 'Meetings held',
+                                  value: '$meetingsHeld',
+                                  subtitle:
+                                      '$present present • $attPct% attendance',
+                                ),
+                                const SizedBox(height: 12),
+                                _desktopSummaryCard(
+                                  title: 'Lessons covered',
+                                  value: '$coveredLessons/$totalLessons',
+                                  subtitle: 'Syllabus progress: $syllabusPct%',
+                                ),
+                                const SizedBox(height: 12),
+                                _desktopSummaryCard(
+                                  title: 'Sessions consumed',
+                                  value: '$sessionsConsumed',
+                                  subtitle:
+                                      'Used in payment and completion tracking',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      )
+                    : TabBarView(
+                        controller: _tab,
+                        children: [
+                          _paymentTab(
+                            sessionsPassed: sessionsConsumed,
+                            attPct: attPct,
+                            present: present,
+                            total: meetingsHeld,
+                          ),
+                          _progressTab(
+                            meetingsHeld: meetingsHeld,
+                            plannedMeetings: _plannedMeetings,
+                            syllabusPct: syllabusPct,
+                            coveredLessons: coveredLessons,
+                            totalLessons: totalLessons,
+                          ),
+                        ],
+                      )),
         ),
       ),
       floatingActionButton: _busy
@@ -1895,6 +1957,34 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               icon: const Icon(Icons.reviews_rounded),
               label: const Text('Write Review'),
             ),
+    );
+  }
+
+  Widget _desktopSummaryCard({
+    required String title,
+    required String value,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: UiK.labelText().copyWith(color: UiK.primaryBlue)),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: UiK.titleText(size: 28).copyWith(color: UiK.actionOrange),
+          ),
+          const SizedBox(height: 6),
+          Text(subtitle, style: UiK.subtleText().copyWith(height: 1.35)),
+        ],
+      ),
     );
   }
 
