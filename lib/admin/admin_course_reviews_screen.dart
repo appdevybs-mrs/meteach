@@ -243,7 +243,7 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
         children: [
           Expanded(
             child: DropdownButtonFormField<String>(
-              value: _courseFilter,
+              initialValue: _courseFilter,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Course',
@@ -272,7 +272,7 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
           SizedBox(
             width: 142,
             child: DropdownButtonFormField<String>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Status',

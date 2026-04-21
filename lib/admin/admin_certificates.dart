@@ -684,34 +684,27 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('All Statuses'),
-              leading: Radio<CertificateStatus?>(
-                value: null,
-                groupValue: _statusFilter,
-                onChanged: (v) {
-                  _setStatusFilter(null);
-                  Navigator.pop(context);
-                },
+        child: RadioGroup<CertificateStatus?>(
+          groupValue: _statusFilter,
+          onChanged: (value) {
+            _setStatusFilter(value);
+            Navigator.pop(context);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('All Statuses'),
+                leading: Radio<CertificateStatus?>(value: null),
               ),
-            ),
-            ...CertificateStatus.values.map(
-              (status) => ListTile(
-                title: Text(status.label),
-                leading: Radio<CertificateStatus?>(
-                  value: status,
-                  groupValue: _statusFilter,
-                  onChanged: (v) {
-                    _setStatusFilter(v);
-                    Navigator.pop(context);
-                  },
+              ...CertificateStatus.values.map(
+                (status) => ListTile(
+                  title: Text(status.label),
+                  leading: Radio<CertificateStatus?>(value: status),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -721,34 +714,27 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('All Titles'),
-              leading: Radio<String?>(
-                value: null,
-                groupValue: _titleFilter,
-                onChanged: (v) {
-                  _setTitleFilter(null);
-                  Navigator.pop(context);
-                },
+        child: RadioGroup<String?>(
+          groupValue: _titleFilter,
+          onChanged: (value) {
+            _setTitleFilter(value);
+            Navigator.pop(context);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('All Titles'),
+                leading: Radio<String?>(value: null),
               ),
-            ),
-            ...(_availableTitles.map(
-              (title) => ListTile(
-                title: Text(title),
-                leading: Radio<String?>(
-                  value: title,
-                  groupValue: _titleFilter,
-                  onChanged: (v) {
-                    _setTitleFilter(v);
-                    Navigator.pop(context);
-                  },
+              ...(_availableTitles.map(
+                (title) => ListTile(
+                  title: Text(title),
+                  leading: Radio<String?>(value: title),
                 ),
-              ),
-            )),
-          ],
+              )),
+            ],
+          ),
         ),
       ),
     );
@@ -758,43 +744,29 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('All'),
-              leading: Radio<String?>(
-                value: null,
-                groupValue: _examCourseFilter,
-                onChanged: (v) {
-                  _setExamCourseFilter(null);
-                  Navigator.pop(context);
-                },
+        child: RadioGroup<String?>(
+          groupValue: _examCourseFilter,
+          onChanged: (value) {
+            _setExamCourseFilter(value);
+            Navigator.pop(context);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              ListTile(
+                title: Text('All'),
+                leading: Radio<String?>(value: null),
               ),
-            ),
-            ListTile(
-              title: const Text('course'),
-              leading: Radio<String?>(
-                value: 'course',
-                groupValue: _examCourseFilter,
-                onChanged: (v) {
-                  _setExamCourseFilter(v);
-                  Navigator.pop(context);
-                },
+              ListTile(
+                title: Text('course'),
+                leading: Radio<String?>(value: 'course'),
               ),
-            ),
-            ListTile(
-              title: const Text('exam'),
-              leading: Radio<String?>(
-                value: 'exam',
-                groupValue: _examCourseFilter,
-                onChanged: (v) {
-                  _setExamCourseFilter(v);
-                  Navigator.pop(context);
-                },
+              ListTile(
+                title: Text('exam'),
+                leading: Radio<String?>(value: 'exam'),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1257,7 +1229,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
-                  value: durationYears,
+                  initialValue: durationYears,
                   decoration: const InputDecoration(labelText: 'Duration'),
                   items: List.generate(
                     10,
@@ -2115,7 +2087,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
                 const SizedBox(height: 12),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
-                  activeColor: _actionOrange,
+                  activeThumbColor: _actionOrange,
                   title: const Text(
                     'Allow learner PDF downloads',
                     style: TextStyle(

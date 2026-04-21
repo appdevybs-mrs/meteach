@@ -115,11 +115,9 @@ class AppThemeController extends ChangeNotifier {
       primary: p.primary,
       secondary: p.accent,
       surface: p.cardBg,
-      background: p.appBg,
       onPrimary: Colors.white,
       onSecondary: Colors.white,
       onSurface: p.text,
-      onBackground: p.text,
       outline: p.border,
       error: const Color(0xFFB00020),
     );

@@ -430,9 +430,8 @@ class _TeacherClassProgressScreenState
   Widget build(BuildContext context) {
     final p = palette;
     final mq = MediaQuery.of(context);
-    final scale = mq.textScaleFactor;
+    final scale = mq.textScaler.scale(1);
     final clampedScale = scale.clamp(0.85, 1.20);
-
 
     return MediaQuery(
       data: mq.copyWith(textScaler: TextScaler.linear(clampedScale.toDouble())),

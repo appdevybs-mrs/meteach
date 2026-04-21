@@ -1066,7 +1066,7 @@ class _BulkPricingDialogState extends State<_BulkPricingDialog> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
-                          value: _accessModes[variant],
+                          initialValue: _accessModes[variant],
                           decoration: InputDecoration(
                             labelText: '${_labels[variant]} access mode',
                             border: const OutlineInputBorder(),

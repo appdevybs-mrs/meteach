@@ -804,17 +804,21 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    RadioListTile<String>(
-                      value: 'pass',
+                    RadioGroup<String>(
                       groupValue: status,
                       onChanged: (v) => setLocal(() => status = v ?? 'pass'),
-                      title: const Text('Pass ✅'),
-                    ),
-                    RadioListTile<String>(
-                      value: 'redo',
-                      groupValue: status,
-                      onChanged: (v) => setLocal(() => status = v ?? 'redo'),
-                      title: const Text('Redo 🔁'),
+                      child: Column(
+                        children: const [
+                          RadioListTile<String>(
+                            value: 'pass',
+                            title: Text('Pass ✅'),
+                          ),
+                          RadioListTile<String>(
+                            value: 'redo',
+                            title: Text('Redo 🔁'),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
