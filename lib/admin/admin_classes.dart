@@ -1215,8 +1215,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final m = Map<String, dynamic>.from(v);
         final name = (m["name"] ?? "").toString().toLowerCase();
         final serial = (m["serial"] ?? "").toString().toLowerCase();
-        if (name.contains(_searchQuery) || serial.contains(_searchQuery))
+        if (name.contains(_searchQuery) || serial.contains(_searchQuery)) {
           return true;
+        }
       }
     }
 
@@ -2568,7 +2569,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
           for (final s in sessions) {
             if (s is! Map) continue;
-            final sm = Map<String, dynamic>.from(s as Map);
+            final sm = Map<String, dynamic>.from(s);
             int no = _asInt(sm['sessionNo']);
             if (no <= 0) no = _asInt(sm['sessionNumber']);
             if (no <= 0) no = _asInt(sm['order']);
@@ -2597,7 +2598,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           final keyNo = int.tryParse(entry.key.toString()) ?? 0;
           final raw = entry.value;
           if (raw is! Map) continue;
-          final sm = Map<String, dynamic>.from(raw as Map);
+          final sm = Map<String, dynamic>.from(raw);
           int no = _asInt(sm['sessionNo']);
           if (no <= 0) no = _asInt(sm['sessionNumber']);
           if (no <= 0) no = _asInt(sm['order']);

@@ -940,8 +940,9 @@ class PaymentDialogShared {
     }
 
     if (_variantIsFlexible(variantKey) && expiryMonths <= 0) expiryMonths = 1;
-    if (_variantIsRecorded(variantKey) && durationMonths <= 0)
+    if (_variantIsRecorded(variantKey) && durationMonths <= 0) {
       durationMonths = 1;
+    }
 
     String? teacherUid = (payment['teacherId'] ?? '').toString().trim();
     if (teacherUid.isEmpty) teacherUid = null;

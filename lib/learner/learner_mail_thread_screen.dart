@@ -2415,12 +2415,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                     final msgs = _applyLocalSearch(msgsAll);
                     _visibleMessages = msgs;
 
-                    if (msgsAll.isEmpty)
+                    if (msgsAll.isEmpty) {
                       return const Center(child: Text('No mail yet.'));
-                    if (msgs.isEmpty)
+                    }
+                    if (msgs.isEmpty) {
                       return const Center(
                         child: Text('No results in this thread.'),
                       );
+                    }
 
                     return ListView.builder(
                       reverse: true,

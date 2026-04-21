@@ -4466,12 +4466,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   final msgs = _applyLocalSearch(msgsAll);
                   _visibleMessages = msgs;
 
-                  if (msgsAll.isEmpty)
+                  if (msgsAll.isEmpty) {
                     return const Center(child: Text('No mail yet.'));
-                  if (msgs.isEmpty)
+                  }
+                  if (msgs.isEmpty) {
                     return const Center(
                       child: Text('No results in this thread.'),
                     );
+                  }
 
                   return ListView.builder(
                     reverse: true,
@@ -4483,8 +4485,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
                       final thisDateLabel = _dateLabel(m.createdAtMs);
                       String? nextDateLabel;
-                      if (i + 1 < msgs.length)
+                      if (i + 1 < msgs.length) {
                         nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
+                      }
                       final showDate =
                           (i == msgs.length - 1) ||
                           (nextDateLabel != thisDateLabel);

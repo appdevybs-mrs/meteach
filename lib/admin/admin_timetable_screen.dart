@@ -1180,8 +1180,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
               }
 
               final classes = _parseClasses(snap.data?.snapshot.value);
-              if (classes.isEmpty)
+              if (classes.isEmpty) {
                 return const Center(child: Text("No classes found."));
+              }
 
               final levelTitles = _extractLevelTitles(classes);
               final studyTypes = _extractStudyTypeFilters(classes);

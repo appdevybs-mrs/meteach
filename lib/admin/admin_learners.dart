@@ -4552,8 +4552,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                             variantKey)
                                         .toString(),
                                   );
-                                  if (!_variantUsesSessions(payVariant))
+                                  if (!_variantUsesSessions(payVariant)) {
                                     return 0;
+                                  }
 
                                   var sp = _asInt(pay['sessionsPaid']);
                                   final amount = _asInt(pay['amount']);

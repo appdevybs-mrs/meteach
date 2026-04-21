@@ -789,8 +789,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           .child('courses')
           .child(widget.courseKey)
           .get();
-      if (!snap.exists || snap.value == null || snap.value is! Map)
+      if (!snap.exists || snap.value == null || snap.value is! Map) {
         throw Exception('Course not found.');
+      }
       _course = Map<String, dynamic>.from(snap.value as Map);
 
       // ✅ planned meetings (recommendation feature)
@@ -1062,10 +1063,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           String taughtSummary = '';
           if (hasNewFormat) {
             final parts = <String>[];
-            if (taughtSyllabusTitles.isNotEmpty)
+            if (taughtSyllabusTitles.isNotEmpty) {
               parts.add(taughtSyllabusTitles.join(', '));
-            if (taughtCustomTitles.isNotEmpty)
+            }
+            if (taughtCustomTitles.isNotEmpty) {
               parts.add('Notes: ${taughtCustomTitles.join(', ')}');
+            }
             taughtSummary = parts.join(' • ');
           } else {
             taughtSummary = (taughtOld['title'] ?? '').toString().trim();
@@ -1234,8 +1237,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     covered.add(sid);
                   } else if (sn > 0) {
                     final mapped = _sessionIdByNumber[sn];
-                    if (mapped != null && mapped.isNotEmpty)
+                    if (mapped != null && mapped.isNotEmpty) {
                       covered.add(mapped);
+                    }
                   }
                 }
               } else {
@@ -1561,8 +1565,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       final t = l.trim();
       if (t.isEmpty) return false;
       final up = t.toUpperCase();
-      if (t.startsWith('📘') || t.startsWith('📤') || t.startsWith('✅'))
+      if (t.startsWith('📘') || t.startsWith('📤') || t.startsWith('✅')) {
         return true;
+      }
       if (up.startsWith('PART ')) return true;
       if (up.startsWith('SUBMISSION')) return true;
       if (up.startsWith('FOCUS:')) return true;
@@ -1619,8 +1624,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     pushCurrent();
 
     for (int i = 0; i < blocks.length; i++) {
-      if (blocks[i].title.isEmpty)
+      if (blocks[i].title.isEmpty) {
         blocks[i] = blocks[i].copyWith(title: 'Homework');
+      }
     }
 
     return blocks;
@@ -3598,10 +3604,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   List<Widget> _buildHomeworkBrief(List<_HwBlock> blocks) {
-    if (blocks.isEmpty)
+    if (blocks.isEmpty) {
       return [
         Text('Homework details are not available.', style: UiK.subtleText()),
       ];
+    }
 
     bool looksLikeSubmission(String t) {
       final up = t.toUpperCase();

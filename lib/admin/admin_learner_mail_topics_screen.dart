@@ -213,13 +213,15 @@ class _AdminLearnerMailTopicsScreenState
         child: StreamBuilder<DatabaseEvent>(
           stream: _stream,
           builder: (_, snap) {
-            if (snap.hasError)
+            if (snap.hasError) {
               return const Center(child: Text('Failed to load mail.'));
+            }
             final rows = _parseAndFilter(snap.data?.snapshot.value);
-            if (rows.isEmpty)
+            if (rows.isEmpty) {
               return const Center(
                 child: Text('No topics yet. Tap + to create one.'),
               );
+            }
 
             return ListView.builder(
               padding: const EdgeInsets.all(12),

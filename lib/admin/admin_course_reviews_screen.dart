@@ -230,8 +230,9 @@ class _AdminCourseReviewsScreenState extends State<AdminCourseReviewsScreen> {
       if (_courseFilter != 'all' && r.courseId != _courseFilter) return false;
       if (_binMode) return r.item.status == 'removed';
       if (r.item.status == 'removed') return false;
-      if (_statusFilter != 'all' && r.item.status != _statusFilter)
+      if (_statusFilter != 'all' && r.item.status != _statusFilter) {
         return false;
+      }
       return true;
     }).toList();
   }

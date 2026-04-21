@@ -1015,8 +1015,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final value = (v ?? '').trim();
     if (value.isEmpty) return 'Password is required';
     if (value.length < 8) return 'Must be at least 8 characters';
-    if (!_specialRegex.hasMatch(value))
+    if (!_specialRegex.hasMatch(value)) {
       return 'Add at least 1 special character';
+    }
     return null;
   }
 
@@ -1142,8 +1143,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 );
               } on FirebaseAuthException catch (e) {
                 String msg = e.message ?? 'Failed to update password.';
-                if (e.code == 'wrong-password')
+                if (e.code == 'wrong-password') {
                   msg = 'Current password is incorrect.';
+                }
                 if (e.code == 'requires-recent-login') {
                   msg =
                       'Please log in again, then retry changing your password.';
@@ -1229,8 +1231,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                         ),
                         validator: (v) {
                           final value = (v ?? '').trim();
-                          if (value.isEmpty)
+                          if (value.isEmpty) {
                             return 'Please confirm your new password';
+                          }
                           if (value != newCtrl.text.trim()) {
                             return 'Passwords do not match';
                           }

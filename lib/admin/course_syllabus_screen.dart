@@ -514,8 +514,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     required String confirmTitle,
     required String confirmMessage,
   }) async {
-    if (!_isRecordedVariant || unitIndexes.isEmpty || _recordedAssetBusy)
+    if (!_isRecordedVariant || unitIndexes.isEmpty || _recordedAssetBusy) {
       return;
+    }
 
     final ok = await _confirm(
       title: confirmTitle,
@@ -825,7 +826,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
       final serverPath = _resolveServerFolderPath(current).isNotEmpty
           ? _resolveServerFolderPath(current)
-          : '${courseFolderName}/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: current.sessionNumber > 0 ? current.sessionNumber : localNo, sessionTitle: current.title)}';
+          : '$courseFolderName/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: current.sessionNumber > 0 ? current.sessionNumber : localNo, sessionTitle: current.title)}';
 
       final url = await _SyllabusServerStorage.uploadPlatformFile(
         file: file,
@@ -1494,7 +1495,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${_recordedAssetDone}/${_recordedAssetTotal}',
+                            '$_recordedAssetDone/$_recordedAssetTotal',
                             style: TextStyle(
                               color: Colors.black.withValues(alpha: 0.6),
                               fontWeight: FontWeight.w700,
@@ -4138,8 +4139,9 @@ class _RecordedBulkSimpleUploadSheetState
     });
 
     final parts = <String>[];
-    if (nextHtml.isNotEmpty)
+    if (nextHtml.isNotEmpty) {
       parts.add('HTML ${nextHtml.length}/$totalSessions');
+    }
     if (nextVideo.isNotEmpty) {
       parts.add('Video ${nextVideo.length}/$totalSessions');
     }
@@ -4500,7 +4502,7 @@ class _RecordedBulkSimpleUploadSheetState
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '$progressPct% • ${_doneOps}/$_totalOps • ${_elapsedLabel()}',
+                      '$progressPct% • $_doneOps/$_totalOps • ${_elapsedLabel()}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,

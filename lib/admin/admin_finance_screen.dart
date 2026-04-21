@@ -1185,8 +1185,9 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                               final learnerKey = uid.isNotEmpty
                                   ? uid
                                   : learnerName;
-                              if (learnerKey.isNotEmpty)
+                              if (learnerKey.isNotEmpty) {
                                 learners.add(learnerKey);
+                              }
 
                               final pushedStatus =
                                   (p['financePushedStatus'] ?? '')
@@ -1294,14 +1295,16 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             name: 'Flexible',
                             rows: flexibleRows,
                           );
-                          if (flexibleCard != null)
+                          if (flexibleCard != null) {
                             variantCards.add(flexibleCard);
+                          }
                           final recordedCard = buildCardData(
                             name: 'Recorded',
                             rows: recordedRows,
                           );
-                          if (recordedCard != null)
+                          if (recordedCard != null) {
                             variantCards.add(recordedCard);
+                          }
 
                           final teacherCards = <_TeacherCardData>[];
                           for (final entry in teacherMap.entries) {

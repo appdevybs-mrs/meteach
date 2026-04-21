@@ -1099,10 +1099,12 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
         s == 'administrator') {
       return 'admin';
     }
-    if (s == 'teacher' || s == 'teach' || s == 'instructor' || s == 'prof')
+    if (s == 'teacher' || s == 'teach' || s == 'instructor' || s == 'prof') {
       return 'teacher';
-    if (s == 'learner' || s == 'lerner' || s == 'student' || s == 'pupil')
+    }
+    if (s == 'learner' || s == 'lerner' || s == 'student' || s == 'pupil') {
       return 'learner';
+    }
     return 'learner';
   }
 

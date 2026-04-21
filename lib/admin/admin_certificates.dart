@@ -149,8 +149,9 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       }
 
       if (_expirationDateFrom != null && _expirationDateFrom!.isNotEmpty) {
-        if (cert.expirationDate.compareTo(_expirationDateFrom!) < 0)
+        if (cert.expirationDate.compareTo(_expirationDateFrom!) < 0) {
           return false;
+        }
       }
 
       if (_expirationDateTo != null && _expirationDateTo!.isNotEmpty) {

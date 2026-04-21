@@ -1315,7 +1315,7 @@ class _CourseCard extends StatelessWidget {
               ],
             ),
 
-            if (trailing != null) trailing!,
+            ?trailing,
           ],
         ),
       ),
@@ -3112,8 +3112,9 @@ class _DeliveryConfigsEditor extends StatelessWidget {
                         onChanged: (_) => onChanged(),
                         validator: (v) {
                           if (!enabled) return null;
-                          if ((accessModes[key] ?? 'lifetime') != 'duration')
+                          if ((accessModes[key] ?? 'lifetime') != 'duration') {
                             return null;
+                          }
                           if (v == null || v.trim().isEmpty) {
                             return 'Months required';
                           }

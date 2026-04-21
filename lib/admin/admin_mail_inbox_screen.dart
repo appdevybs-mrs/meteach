@@ -179,7 +179,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
       if (!mounted) return;
       setState(() => _peerRoleCache[peerUid] = role);
       if (role != 'unknown') {
-        await _db.ref('mail_index/${_meUid}/${row.threadId}').update({
+        await _db.ref('mail_index/$_meUid/${row.threadId}').update({
           'peerRole': role,
         });
       }

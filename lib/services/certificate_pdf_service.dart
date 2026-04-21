@@ -55,9 +55,7 @@ class CertificatePdfService {
         'assets/images/DigitalCertificate.png',
       );
     }
-    if (template == null) {
-      template = await _loadPngTemplate('assets/images/DigitalCertificate.png');
-    }
+    template ??= await _loadPngTemplate('assets/images/DigitalCertificate.png');
     try {
       final bytes = await rootBundle.load(
         'assets/fonts/PlayfairDisplay-Regular.ttf',
