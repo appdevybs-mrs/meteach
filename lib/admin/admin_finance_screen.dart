@@ -615,7 +615,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                           await FirebaseDatabase.instance.ref().update(
                             rootUpdate,
                           );
-                          if (!mounted) return;
+                          if (!mounted || !dialogCtx.mounted) return;
                           Navigator.of(dialogCtx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -625,6 +625,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                         } catch (e) {
                           saveLocked = false;
                           setD(() => isSaving = false);
+                          if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(

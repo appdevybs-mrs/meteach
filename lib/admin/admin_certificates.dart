@@ -285,6 +285,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
 
     if (!mounted) return;
     await _loadCertificates();
+    if (!mounted) return;
     if (result != null) {
       AppToast.show(
         context,
@@ -305,6 +306,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
 
     if (!mounted) return;
     await _loadCertificates();
+    if (!mounted) return;
     if (result != null) {
       AppToast.show(
         context,
@@ -349,6 +351,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       try {
         await _service.deleteCertificate(cert.key!);
         await _loadCertificates();
+        if (!mounted) return;
         AppToast.show(
           context,
           'Certificate deleted',
@@ -1037,6 +1040,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       return;
     }
 
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1308,7 +1312,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
             FilledButton(
               onPressed: () async {
                 await save(setSheetState);
-                if (!mounted) return;
+                if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 await _loadRecordedCertificates();
                 if (!mounted) return;

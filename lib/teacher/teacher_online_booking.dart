@@ -751,8 +751,9 @@ class _TeacherOnlineBookingScreenState
     } catch (e) {
       _toast('Could not update teacher status: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => togglingTeacher = false);
+      if (mounted) {
+        setState(() => togglingTeacher = false);
+      }
     }
   }
 
@@ -832,8 +833,9 @@ class _TeacherOnlineBookingScreenState
     } catch (e) {
       _toast('Save failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => saving = false);
+      if (mounted) {
+        setState(() => saving = false);
+      }
     }
   }
 

@@ -811,10 +811,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     try {
       await action();
     } finally {
-      if (!mounted) return;
-      setState(() {
-        progressLabel = '';
-      });
+      if (mounted) {
+        setState(() {
+          progressLabel = '';
+        });
+      }
     }
   }
 
@@ -1744,8 +1745,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       );
       _toast('Booking failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => booking = false);
+      if (mounted) {
+        setState(() => booking = false);
+      }
     }
   }
 
@@ -1997,8 +1999,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       );
       _toast('Cancel failed: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => booking = false);
+      if (mounted) {
+        setState(() => booking = false);
+      }
     }
   }
 
@@ -2012,8 +2015,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } finally {
-      if (!mounted) return;
-      setState(() => refreshing = false);
+      if (mounted) {
+        setState(() => refreshing = false);
+      }
     }
   }
 

@@ -1200,6 +1200,7 @@ class _CourseCard extends StatelessWidget {
     );
 
     if (picked == null || picked.trim().isEmpty) return;
+    if (!context.mounted) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(

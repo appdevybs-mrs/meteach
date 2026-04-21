@@ -536,6 +536,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
     items.sort((a, b) => a['title']!.compareTo(b['title']!));
 
+    if (!mounted) return;
     final picked = await showDialog<Map<String, String>>(
       context: context,
       builder: (_) => AlertDialog(

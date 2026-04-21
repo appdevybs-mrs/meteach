@@ -568,13 +568,14 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         _error = toHumanError(e, fallback: 'Could not upload photo.');
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _uploadingPhoto = false;
-        _uploadPhotoProgress = null;
-        _uploadPhotoBatchCurrent = 0;
-        _uploadPhotoBatchTotal = 0;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingPhoto = false;
+          _uploadPhotoProgress = null;
+          _uploadPhotoBatchCurrent = 0;
+          _uploadPhotoBatchTotal = 0;
+        });
+      }
     }
   }
 
@@ -667,13 +668,14 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         _error = toHumanError(e, fallback: 'Could not upload video.');
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _uploadingVideo = false;
-        _uploadVideoProgress = null;
-        _uploadVideoBatchCurrent = 0;
-        _uploadVideoBatchTotal = 0;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingVideo = false;
+          _uploadVideoProgress = null;
+          _uploadVideoBatchCurrent = 0;
+          _uploadVideoBatchTotal = 0;
+        });
+      }
     }
   }
 
@@ -885,10 +887,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         );
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _bulkDeleting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _bulkDeleting = false;
+        });
+      }
     }
   }
 
@@ -955,10 +958,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         );
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _bulkDeleting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _bulkDeleting = false;
+        });
+      }
     }
   }
 
@@ -1025,10 +1029,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         );
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _bulkDeleting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _bulkDeleting = false;
+        });
+      }
     }
   }
 
@@ -1358,10 +1363,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       }
       progress.dispose();
 
-      if (!mounted) return;
-      setState(() {
-        _globalCleanupRunning = false;
-      });
+      if (mounted) {
+        setState(() {
+          _globalCleanupRunning = false;
+        });
+      }
     }
   }
 
@@ -3255,11 +3261,12 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
         _error = toHumanError(e, fallback: 'Could not upload photo.');
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _uploadingPhoto = false;
-        _uploadPhotoProgress = null;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingPhoto = false;
+          _uploadPhotoProgress = null;
+        });
+      }
     }
   }
 
@@ -3305,11 +3312,12 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
         _error = toHumanError(e, fallback: 'Could not upload video.');
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _uploadingVideo = false;
-        _uploadVideoProgress = null;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingVideo = false;
+          _uploadVideoProgress = null;
+        });
+      }
     }
   }
 

@@ -366,6 +366,7 @@ class _AdminTeacherRemindersScreenState
       return;
     }
 
+    if (!mounted) return;
     final selectedTeachers = await showDialog<List<_TeacherTarget>>(
       context: context,
       builder: (_) => _TeacherPickerDialog(teachers: teachers),
@@ -375,6 +376,7 @@ class _AdminTeacherRemindersScreenState
       return;
     }
 
+    if (!mounted) return;
     final created = await showDialog<_TeacherReminderDraft?>(
       context: context,
       builder: (_) =>

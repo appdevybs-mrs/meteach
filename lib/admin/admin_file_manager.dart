@@ -155,8 +155,9 @@ class _AdminFileManagerState extends State<AdminFileManager>
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => _globalCleanupRunning = false);
+      if (mounted) {
+        setState(() => _globalCleanupRunning = false);
+      }
     }
   }
 

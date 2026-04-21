@@ -366,8 +366,9 @@ class _AdminTeacherAvailabilityOverviewScreenState
     } catch (e) {
       _toast('Failed loading teacher availability: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -1567,7 +1568,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
   @override
   Widget build(BuildContext context) {
     final filteredTeachers = _filteredTeachers();
-
 
     return Scaffold(
       backgroundColor: appBg,

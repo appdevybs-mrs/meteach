@@ -3525,6 +3525,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       return title;
     }
 
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -3680,7 +3681,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                   studyModeByCourseId,
                 );
                 if (mounted) setState(() {});
-                if (mounted) Navigator.pop(dialogContext);
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
               },
               child: const Text('Save'),
             ),

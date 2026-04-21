@@ -4242,8 +4242,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -4289,8 +4290,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => saving = false);
+      if (mounted) {
+        setState(() => saving = false);
+      }
     }
   }
 
@@ -4315,8 +4317,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => saving = false);
+      if (mounted) {
+        setState(() => saving = false);
+      }
     }
   }
 

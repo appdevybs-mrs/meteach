@@ -76,6 +76,7 @@ class _AdminLearnerMailTopicsScreenState
 
   Future<void> _openThread(_InboxRow row) async {
     await _db.ref('mail_index/$_meUid/${row.threadId}/unreadCount').set(0);
+    if (!mounted) return;
 
     await Navigator.of(context).push(
       MaterialPageRoute(

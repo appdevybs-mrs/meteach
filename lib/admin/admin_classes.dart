@@ -1318,6 +1318,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     String q = "";
     Timer? pickerSearchDebounce;
 
+    if (!mounted) return;
     await showDialog(
       context: context,
       useRootNavigator: true,
@@ -1655,6 +1656,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     bool saving = false;
 
+    if (!mounted) return;
     final sheetFuture = showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -2375,6 +2377,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     );
 
                                     if (!mounted) return;
+                                    if (!context.mounted) return;
                                     Navigator.pop(context);
                                     _notify(
                                       isEdit

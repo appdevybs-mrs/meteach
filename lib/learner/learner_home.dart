@@ -4413,12 +4413,14 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
     if (context.mounted) {
       await showWindowMaintenanceDialog(context);
     }
+    if (!context.mounted) return;
     return;
   }
 
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
+    if (!context.mounted) return;
     AppToast.fromSnackBar(
       context,
       const SnackBar(content: Text('Not logged in.')),
@@ -4632,12 +4634,14 @@ Future<void> _openHomeworkCoursePicker(
     if (context.mounted) {
       await showWindowMaintenanceDialog(context);
     }
+    if (!context.mounted) return;
     return;
   }
 
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
+    if (!context.mounted) return;
     AppToast.fromSnackBar(
       context,
       const SnackBar(content: Text('Not logged in.')),

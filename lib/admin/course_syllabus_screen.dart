@@ -701,6 +701,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       ],
     );
     if (picked == null || picked.files.isEmpty) return;
+    if (!mounted) return;
 
     bool isHtmlExt(String ext) => ext == 'html' || ext == 'htm';
     bool isVideoExt(String ext) =>
@@ -4089,6 +4090,7 @@ class _RecordedBulkSimpleUploadSheetState
     }
 
     if (nextHtml.isEmpty && nextVideo.isEmpty) {
+      if (!mounted) return;
       AppToast.show(
         context,
         issues.isEmpty ? 'No valid files selected.' : issues.first,
@@ -4116,6 +4118,7 @@ class _RecordedBulkSimpleUploadSheetState
     hasCoverage(nextVideo, 'Video');
 
     if (issues.isNotEmpty) {
+      if (!mounted) return;
       AppToast.show(context, issues.first, type: AppToastType.error);
       return;
     }
@@ -4341,11 +4344,12 @@ class _RecordedBulkSimpleUploadSheetState
             );
           }
         } finally {
-          if (!mounted) return;
-          setState(() {
-            _doneOps += 1;
-            _currentOpProgress = 0;
-          });
+          if (mounted) {
+            setState(() {
+              _doneOps += 1;
+              _currentOpProgress = 0;
+            });
+          }
         }
       }
     } finally {
@@ -4801,6 +4805,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
         matched++;
       }
 
+      if (!mounted) return;
       final proceed =
           await showDialog<bool>(
             context: context,
@@ -4951,6 +4956,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
       matched++;
     }
 
+    if (!mounted) return;
     final proceed =
         await showDialog<bool>(
           context: context,
@@ -5067,16 +5073,17 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
         }
       }
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _serverHasVideo
-          ..clear()
-          ..addAll(nextVideo);
-        _serverHasHtml
-          ..clear()
-          ..addAll(nextHtml);
-        _checkingServerAssets = false;
-      });
+      if (mounted) {
+        setState(() {
+          _serverHasVideo
+            ..clear()
+            ..addAll(nextVideo);
+          _serverHasHtml
+            ..clear()
+            ..addAll(nextHtml);
+          _checkingServerAssets = false;
+        });
+      }
     }
   }
 
