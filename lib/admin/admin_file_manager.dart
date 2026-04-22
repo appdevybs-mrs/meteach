@@ -12,6 +12,7 @@ import '../services/backend_api.dart';
 import '../services/storage_existence.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
+import '../shared/media_download.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 
@@ -2811,7 +2812,10 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
     return url;
   }
 
-  Future<void> _showAddStorySheet() async {
+  Future<void> _showStorySheet({
+    String? storyId,
+    Map<String, dynamic>? existingStory,
+  }) async {
     final uid = _myUid;
     if (uid == null || uid.isEmpty) {
       AppToast.fromSnackBar(
@@ -2821,9 +2825,10 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
       return;
     }
 
-    final ref = _storiesRef.push();
-    final storyId = ref.key ?? '';
-    if (storyId.isEmpty) {
+    final isEdit = storyId != null && existingStory != null;
+    final ref = isEdit ? _storiesRef.child(storyId) : _storiesRef.push();
+    final resolvedStoryId = storyId ?? ref.key ?? '';
+    if (resolvedStoryId.isEmpty) {
       AppToast.fromSnackBar(
         context,
         const SnackBar(content: Text('Could not prepare story id.')),
@@ -2831,9 +2836,15 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
       return;
     }
 
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final genreController = TextEditingController();
+    final nameController = TextEditingController(
+      text: (existingStory?['name'] ?? '').toString(),
+    );
+    final descController = TextEditingController(
+      text: (existingStory?['description'] ?? '').toString(),
+    );
+    final genreController = TextEditingController(
+      text: (existingStory?['genre'] ?? '').toString(),
+    );
 
     await showModalBottomSheet<void>(
       context: context,
@@ -2841,19 +2852,31 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
       showDragHandle: true,
       builder: (ctx) {
         var uploadingStory = false;
+        var uploadingAudio = false;
+        var uploadingPdf = false;
         var uploadingThumb = false;
         var saving = false;
-        String storyUrl = '';
-        String thumbnailUrl = '';
+        String storyUrl = (existingStory?['link'] ?? '').toString().trim();
+        String audioUrl = (existingStory?['audioUrl'] ?? '').toString().trim();
+        String pdfUrl = (existingStory?['pdfUrl'] ?? '').toString().trim();
+        String thumbnailUrl = (existingStory?['thumbnail'] ?? '')
+            .toString()
+            .trim();
+        String status = (existingStory?['status'] ?? 'ready').toString().trim();
+        String serverFolderPath = (existingStory?['serverFolderPath'] ?? '')
+            .toString()
+            .trim();
 
         return StatefulBuilder(
           builder: (context, setLocalState) {
             final storyName = nameController.text.trim();
-            final folderPath = _buildServerFolderPath(
-              ownerUid: uid,
-              storyUid: storyId,
-              storyName: storyName.isEmpty ? 'story' : storyName,
-            );
+            final folderPath = serverFolderPath.isNotEmpty
+                ? serverFolderPath
+                : _buildServerFolderPath(
+                    ownerUid: uid,
+                    storyUid: resolvedStoryId,
+                    storyName: storyName.isEmpty ? 'story' : storyName,
+                  );
 
             Future<void> uploadStoryFile() async {
               setLocalState(() => uploadingStory = true);
@@ -2905,6 +2928,56 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
               }
             }
 
+            Future<void> uploadAudioFile() async {
+              setLocalState(() => uploadingAudio = true);
+              try {
+                final uploaded = await _uploadStoryAsset(
+                  folderPath: folderPath,
+                  imageOnly: false,
+                );
+                if (uploaded != null) {
+                  setLocalState(() => audioUrl = uploaded);
+                }
+              } catch (e) {
+                if (!context.mounted) return;
+                AppToast.fromSnackBar(
+                  context,
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload audio file.'),
+                    ),
+                  ),
+                );
+              } finally {
+                setLocalState(() => uploadingAudio = false);
+              }
+            }
+
+            Future<void> uploadPdfFile() async {
+              setLocalState(() => uploadingPdf = true);
+              try {
+                final uploaded = await _uploadStoryAsset(
+                  folderPath: folderPath,
+                  imageOnly: false,
+                );
+                if (uploaded != null) {
+                  setLocalState(() => pdfUrl = uploaded);
+                }
+              } catch (e) {
+                if (!context.mounted) return;
+                AppToast.fromSnackBar(
+                  context,
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload PDF file.'),
+                    ),
+                  ),
+                );
+              } finally {
+                setLocalState(() => uploadingPdf = false);
+              }
+            }
+
             Future<void> saveStory() async {
               final name = nameController.text.trim();
               if (name.isEmpty) {
@@ -2924,19 +2997,30 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
 
               setLocalState(() => saving = true);
               try {
+                final oldTeacherUid = (existingStory?['teacherUid'] ?? '')
+                    .toString()
+                    .trim();
+                final oldAdminUid = (existingStory?['adminUid'] ?? '')
+                    .toString()
+                    .trim();
+                serverFolderPath = folderPath;
                 await ref.update({
-                  'storyId': storyId,
-                  'storyUid': storyId,
-                  'teacherUid': uid,
-                  'adminUid': uid,
+                  'storyId': resolvedStoryId,
+                  'storyUid': resolvedStoryId,
+                  'teacherUid': oldTeacherUid.isNotEmpty ? oldTeacherUid : uid,
+                  'adminUid': oldAdminUid.isNotEmpty ? oldAdminUid : uid,
                   'name': name,
                   'description': descController.text.trim(),
                   'genre': genreController.text.trim(),
                   'link': storyUrl.trim(),
+                  'audioUrl': audioUrl.trim(),
+                  'pdfUrl': pdfUrl.trim(),
                   'thumbnail': thumbnailUrl.trim(),
-                  'status': 'ready',
+                  'status': status.isEmpty ? 'ready' : status,
                   'serverFolderPath': folderPath,
-                  'createdAt': ServerValue.timestamp,
+                  'createdAt': isEdit
+                      ? (existingStory['createdAt'] ?? ServerValue.timestamp)
+                      : ServerValue.timestamp,
                   'updatedAt': ServerValue.timestamp,
                 });
 
@@ -2945,7 +3029,13 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
                 if (!mounted) return;
                 AppToast.fromSnackBar(
                   context,
-                  const SnackBar(content: Text('Story added successfully.')),
+                  SnackBar(
+                    content: Text(
+                      isEdit
+                          ? 'Story updated successfully.'
+                          : 'Story added successfully.',
+                    ),
+                  ),
                 );
               } catch (e) {
                 if (!context.mounted) return;
@@ -2974,8 +3064,8 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Add Story',
+                      Text(
+                        isEdit ? 'Edit Story' : 'Add Story',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
@@ -3036,11 +3126,90 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
                       ),
                       const SizedBox(height: 8),
                       if (storyUrl.isNotEmpty)
-                        Text(
-                          storyUrl,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        _sheetAssetRow(
+                          label: 'Story file',
+                          url: storyUrl,
+                          icon: Icons.description_outlined,
+                          tooltip: 'Download story file',
+                          suggestedName: _downloadName(
+                            nameController.text,
+                            'story',
+                            storyUrl,
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: uploadingAudio
+                                  ? null
+                                  : uploadAudioFile,
+                              icon: uploadingAudio
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.audiotrack_rounded),
+                              label: Text(
+                                audioUrl.isEmpty
+                                    ? 'Upload Audio'
+                                    : 'Replace Audio',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (audioUrl.isNotEmpty)
+                        _sheetAssetRow(
+                          label: 'Audio',
+                          url: audioUrl,
+                          icon: Icons.audiotrack_rounded,
+                          tooltip: 'Download audio',
+                          suggestedName: _downloadName(
+                            nameController.text,
+                            'audio',
+                            audioUrl,
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: uploadingPdf ? null : uploadPdfFile,
+                              icon: uploadingPdf
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.picture_as_pdf_outlined),
+                              label: Text(
+                                pdfUrl.isEmpty ? 'Upload PDF' : 'Replace PDF',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (pdfUrl.isNotEmpty)
+                        _sheetAssetRow(
+                          label: 'PDF',
+                          url: pdfUrl,
+                          icon: Icons.picture_as_pdf_outlined,
+                          tooltip: 'Download PDF',
+                          suggestedName: _downloadName(
+                            nameController.text,
+                            'pdf',
+                            pdfUrl,
+                          ),
                         ),
                       const SizedBox(height: 10),
                       Row(
@@ -3070,11 +3239,16 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
                       ),
                       const SizedBox(height: 8),
                       if (thumbnailUrl.isNotEmpty)
-                        Text(
-                          thumbnailUrl,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        _sheetAssetRow(
+                          label: 'Thumbnail',
+                          url: thumbnailUrl,
+                          icon: Icons.image_outlined,
+                          tooltip: 'Download thumbnail',
+                          suggestedName: _downloadName(
+                            nameController.text,
+                            'thumbnail',
+                            thumbnailUrl,
+                          ),
                         ),
                       const SizedBox(height: 14),
                       Row(
@@ -3110,6 +3284,13 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
     descController.dispose();
     genreController.dispose();
   }
+
+  Future<void> _showAddStorySheet() => _showStorySheet();
+
+  Future<void> _showEditStorySheet(
+    String storyId,
+    Map<String, dynamic> story,
+  ) => _showStorySheet(storyId: storyId, existingStory: story);
 
   void toggleBulkMode() {
     setState(() {
@@ -3189,6 +3370,140 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  Color _storyStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'draft':
+        return Colors.orange;
+      case 'hidden':
+        return Colors.grey;
+      case 'archived':
+        return Colors.blueGrey;
+      case 'ready':
+      default:
+        return Colors.green;
+    }
+  }
+
+  String _downloadName(String title, String suffix, String url) {
+    final base = title.trim().isEmpty ? 'story' : title.trim();
+    final cleanedBase = base.replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
+    final uri = Uri.tryParse(url.trim());
+    final lastSegment = uri != null && uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.last
+        : '';
+    final dotIndex = lastSegment.lastIndexOf('.');
+    final ext = dotIndex > 0 && dotIndex < lastSegment.length - 1
+        ? lastSegment.substring(dotIndex + 1)
+        : '';
+    return ext.isEmpty
+        ? '${cleanedBase}_$suffix'
+        : '${cleanedBase}_$suffix.$ext';
+  }
+
+  Widget _storyMetaPill({required String text, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _downloadAssetButton({
+    required String tooltip,
+    required IconData icon,
+    required String url,
+    required String suggestedName,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 30,
+        height: 30,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          tooltip: tooltip,
+          iconSize: 17,
+          splashRadius: 18,
+          onPressed: () => MediaDownload.downloadUrl(
+            context,
+            url: url,
+            suggestedName: suggestedName,
+          ),
+          icon: Icon(icon, size: 17),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetAssetRow({
+    required String label,
+    required String url,
+    required IconData icon,
+    required String tooltip,
+    required String suggestedName,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey.shade700),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  url,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _downloadAssetButton(
+            tooltip: tooltip,
+            icon: Icons.download_rounded,
+            url: url,
+            suggestedName: suggestedName,
+          ),
+        ],
+      ),
+    );
+  }
+
   List<MapEntry<String, Map<String, dynamic>>> _applyFilters(
     List<MapEntry<String, Map<String, dynamic>>> items,
   ) {
@@ -3218,8 +3533,12 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
     final name = (story['name'] ?? '').toString().trim();
     final status = (story['status'] ?? 'ready').toString().trim();
     final genre = (story['genre'] ?? '').toString().trim();
+    final link = (story['link'] ?? '').toString().trim();
+    final audioUrl = (story['audioUrl'] ?? '').toString().trim();
+    final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final selected = _selectedStoryIds.contains(storyId);
+    final statusColor = _storyStatusColor(status);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -3234,7 +3553,10 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
       ),
       child: InkWell(
         onTap: () {
-          if (!_bulkModeEnabled) return;
+          if (!_bulkModeEnabled) {
+            _showEditStorySheet(storyId, story);
+            return;
+          }
           setState(() {
             if (selected) {
               _selectedStoryIds.remove(storyId);
@@ -3311,22 +3633,70 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
-                      runSpacing: 6,
+                      runSpacing: 4,
                       children: [
-                        Chip(
-                          label: Text(status),
-                          visualDensity: VisualDensity.compact,
-                        ),
+                        _storyMetaPill(text: status, color: statusColor),
                         if (genre.isNotEmpty)
-                          Chip(
-                            label: Text(genre),
-                            visualDensity: VisualDensity.compact,
-                          ),
+                          _storyMetaPill(text: genre, color: Colors.blueGrey),
                       ],
                     ),
+                    const SizedBox(height: 6),
+                    if (link.isNotEmpty ||
+                        audioUrl.isNotEmpty ||
+                        pdfUrl.isNotEmpty ||
+                        thumbnail.isNotEmpty)
+                      Row(
+                        children: [
+                          Text(
+                            'Files',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          if (link.isNotEmpty)
+                            _downloadAssetButton(
+                              tooltip: 'Download story file',
+                              icon: Icons.description_outlined,
+                              url: link,
+                              suggestedName: _downloadName(name, 'story', link),
+                            ),
+                          if (audioUrl.isNotEmpty)
+                            _downloadAssetButton(
+                              tooltip: 'Download audio',
+                              icon: Icons.audiotrack_rounded,
+                              url: audioUrl,
+                              suggestedName: _downloadName(
+                                name,
+                                'audio',
+                                audioUrl,
+                              ),
+                            ),
+                          if (pdfUrl.isNotEmpty)
+                            _downloadAssetButton(
+                              tooltip: 'Download PDF',
+                              icon: Icons.picture_as_pdf_outlined,
+                              url: pdfUrl,
+                              suggestedName: _downloadName(name, 'pdf', pdfUrl),
+                            ),
+                          if (thumbnail.isNotEmpty)
+                            _downloadAssetButton(
+                              tooltip: 'Download thumbnail',
+                              icon: Icons.image_outlined,
+                              url: thumbnail,
+                              suggestedName: _downloadName(
+                                name,
+                                'thumbnail',
+                                thumbnail,
+                              ),
+                            ),
+                        ],
+                      ),
                     const Spacer(),
                     Text(
                       'ID: $storyId',
@@ -3447,7 +3817,7 @@ class _AdminStoriesManagerState extends State<_AdminStoriesManager>
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 12,
                                 mainAxisSpacing: 12,
-                                childAspectRatio: 0.72,
+                                childAspectRatio: 0.68,
                               ),
                           itemCount: visible.length,
                           itemBuilder: (context, index) {

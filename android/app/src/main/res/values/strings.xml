@@ -3,4 +3,10 @@
     <string name="facebook_app_id">2503982553366513</string>
     <string name="facebook_client_token">90b0ac15b699e623966b2718aa641972</string>
     <string name="fb_login_protocol_scheme">fb2503982553366513</string>
+    <string name="widget_schedule_title">Schedule</string>
+    <string name="widget_next_classes">Next 3 classes</string>
+    <string name="widget_open_app_to_load">Open app to load schedule</string>
+    <string name="widget_no_upcoming_classes">No upcoming classes</string>
+    <string name="widget_online_badge">ONLINE</string>
+    <string name="widget_updated_format">Updated %1$s</string>
 </resources>

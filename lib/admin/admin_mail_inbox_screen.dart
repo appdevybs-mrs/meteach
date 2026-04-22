@@ -8,6 +8,7 @@ import '../services/mail_consistency_service.dart';
 import '../services/mail_thread_by_id_screen.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
+import 'admin_mail_person_list_navigation.dart';
 import 'mail_topic_thread_screen.dart';
 
 class AdminMailInboxScreen extends StatefulWidget {
@@ -292,6 +293,11 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                         'admin' => 'Admin',
                         _ => 'Unknown',
                       };
+                      final openListLabel = switch (role) {
+                        'learner' => 'Open learner list',
+                        'teacher' || 'staff' || 'admin' => 'Open staff list',
+                        _ => 'Open filtered list',
+                      };
 
                       return Card(
                         child: ListTile(
@@ -305,34 +311,50 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                                   : FontWeight.w600,
                             ),
                           ),
-                          subtitle: RichText(
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            text: TextSpan(
-                              style: DefaultTextStyle.of(context).style,
-                              children: [
-                                TextSpan(
-                                  text: item.peerName.isEmpty
-                                      ? 'User'
-                                      : item.peerName,
-                                  style: const TextStyle(
-                                    color: _personNameColor,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${item.peerName.isEmpty ? 'User' : item.peerName} • $roleLabel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _personNameColor,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  height: 1.2,
                                 ),
-                                TextSpan(text: ' • $roleLabel\n'),
-                                TextSpan(
-                                  text: item.lastMessage.isEmpty
-                                      ? 'No messages yet'
-                                      : item.lastMessage,
-                                ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                item.lastMessage.isEmpty
+                                    ? 'No messages yet'
+                                    : item.lastMessage,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: DefaultTextStyle.of(
+                                  context,
+                                ).style.copyWith(fontSize: 13, height: 1.2),
+                              ),
+                            ],
                           ),
                           isThreeLine: true,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              IconButton(
+                                tooltip: openListLabel,
+                                icon: const Icon(Icons.manage_search_rounded),
+                                onPressed: () => openAdminFilteredPeopleList(
+                                  context,
+                                  peerUid: item.peerUid,
+                                  peerName: item.peerName,
+                                  seedRole:
+                                      _peerRoleCache[item.peerUid] ??
+                                      item.peerRole,
+                                ),
+                              ),
                               if (hasUnread)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -355,12 +377,27 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                                 ),
                               PopupMenuButton<String>(
                                 onSelected: (v) async {
+                                  if (v == 'open_list') {
+                                    await openAdminFilteredPeopleList(
+                                      context,
+                                      peerUid: item.peerUid,
+                                      peerName: item.peerName,
+                                      seedRole:
+                                          _peerRoleCache[item.peerUid] ??
+                                          item.peerRole,
+                                    );
+                                    return;
+                                  }
                                   if (v == 'delete') {
                                     await _deleteForMe(row.threadId);
                                   }
                                 },
-                                itemBuilder: (_) => const [
+                                itemBuilder: (_) => [
                                   PopupMenuItem(
+                                    value: 'open_list',
+                                    child: Text(openListLabel),
+                                  ),
+                                  const PopupMenuItem(
                                     value: 'delete',
                                     child: Text('Delete (for me)'),
                                   ),

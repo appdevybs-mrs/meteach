@@ -12,6 +12,9 @@ import '../teacher/teacher_home.dart';
 import 'not_authorized.dart';
 import '../services/topic_service.dart';
 import '../services/fcm_service.dart';
+import '../services/app_launch_action_service.dart';
+import '../services/teacher_schedule_widget_service.dart';
+import '../services/teacher_schedule_widget_sync_service.dart';
 import '../shared/priority_alert_gate.dart';
 
 import 'deleted_action_screen.dart';
@@ -60,6 +63,7 @@ class _AuthGateState extends State<AuthGate> {
           _sessionStarted = false;
           _sessionUid = null;
           SessionManager.stopListening(); // stop session listener when signed out
+          unawaited(TeacherScheduleWidgetService.instance.clearSnapshot());
           if (previousUid != null && previousUid.isNotEmpty) {
             unawaited(TopicService.clearForUser(previousUid));
           }
@@ -286,15 +290,29 @@ class _AuthGateState extends State<AuthGate> {
                     role == 'teachers' ||
                     role == 'teacher(s)' ||
                     role == 'Teacher') {
+                  unawaited(
+                    TeacherScheduleWidgetSyncService.instance.syncForTeacher(
+                      uid,
+                    ),
+                  );
+                  unawaited(
+                    AppLaunchActionService.instance.onResolvedRole('teacher'),
+                  );
                   return const PriorityAlertGate(child: TeacherHomeScreen());
                 }
 
                 if (role == 'learner' ||
                     role == 'learners' ||
                     role == 'learner(s)') {
+                  unawaited(
+                    TeacherScheduleWidgetService.instance.clearSnapshot(),
+                  );
                   return const PriorityAlertGate(child: LearnerHome());
                 }
 
+                unawaited(
+                  TeacherScheduleWidgetService.instance.clearSnapshot(),
+                );
                 return NotAuthorized(role: role);
               },
             );

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'mail_topic_thread_screen.dart';
+import 'admin_mail_person_list_navigation.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 
@@ -219,7 +220,16 @@ class _AdminTeacherMailTopicsScreenState
       appBar: AppBar(
         title: Text('Mail — $teacherName'),
         actions: [
-          const SizedBox.shrink(),
+          IconButton(
+            tooltip: 'Open staff list',
+            onPressed: () => openAdminFilteredPeopleList(
+              context,
+              peerUid: widget.teacherUid,
+              peerName: teacherName,
+              seedRole: 'teacher',
+            ),
+            icon: const Icon(Icons.manage_search_rounded),
+          ),
           IconButton(
             tooltip: 'New topic',
             onPressed: _createNewTopic,

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import '../shared/human_error.dart';
 
+import 'admin_mail_person_list_navigation.dart';
 import 'mail_topic_thread_screen.dart'; // the topic thread screen you already have
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
@@ -199,7 +200,16 @@ class _AdminLearnerMailTopicsScreenState
           'Mail — ${widget.learnerName.isEmpty ? 'Learner' : widget.learnerName}',
         ),
         actions: [
-          const SizedBox.shrink(),
+          IconButton(
+            tooltip: 'Open learner list',
+            icon: const Icon(Icons.manage_search_rounded),
+            onPressed: () => openAdminFilteredPeopleList(
+              context,
+              peerUid: widget.learnerUid,
+              peerName: widget.learnerName,
+              seedRole: 'learner',
+            ),
+          ),
           IconButton(
             tooltip: 'New topic',
             icon: const Icon(Icons.add),

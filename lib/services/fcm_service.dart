@@ -22,7 +22,7 @@ import '../learner/learner_courses_screen.dart';
 import '../learner/learner_mail_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
-import '../main.dart'; // appNavigatorKey + messengerKey
+import '../shared/app_globals.dart';
 import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail.dart';

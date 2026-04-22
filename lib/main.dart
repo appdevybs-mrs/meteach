@@ -17,6 +17,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'enroll_screen.dart';
 import 'course_reviews_screen.dart';
 import 'services/fcm_service.dart';
+import 'services/app_launch_action_service.dart';
 import 'services/backend_api.dart';
 import 'services/course_feedback_service.dart';
 import 'services/push_dispatch_service.dart';
@@ -25,6 +26,7 @@ import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
+import 'shared/app_globals.dart';
 import 'shared/app_feedback.dart';
 import 'shared/app_connectivity.dart';
 import 'shared/course_join_rules.dart';
@@ -37,13 +39,6 @@ import 'package:video_player/video_player.dart';
 
 part 'home/home_shell.part.dart';
 part 'home/login.part.dart';
-
-/// App-level snackbar access for services outside widget tree.
-final GlobalKey<ScaffoldMessengerState> messengerKey =
-    GlobalKey<ScaffoldMessengerState>();
-
-/// App-level navigator access for notification deep-links.
-final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 String _formatCompactCountdown(int totalSeconds) {
   final total = totalSeconds.clamp(0, 864000);
@@ -75,6 +70,7 @@ Future<void> main() async {
   runApp(const YourBridgeSchoolApp());
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    AppLaunchActionService.instance.init();
     unawaited(AppConnectivity.instance.start());
     unawaited(FCMService.I.init());
   });
@@ -2048,7 +2044,7 @@ class _JoinOnlineCircleEntryButtonState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Join Online Meeting',
+                        'Join Online Circle',
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 17,

@@ -160,10 +160,10 @@ class PushDispatchService {
     }
 
     final type = _canonicalType(intent);
+    final effectiveRoute = (route ?? _defaultRoute(intent)).trim();
     final payload = <String, dynamic>{
       'type': type,
-      if ((route ?? _defaultRoute(intent)).trim().isNotEmpty)
-        'route': (route ?? _defaultRoute(intent)).trim(),
+      if (effectiveRoute.isNotEmpty) 'route': effectiveRoute,
       ...data,
     };
 
@@ -197,7 +197,12 @@ class PushDispatchService {
           targetUid: safeUid,
           token: token,
           eventId: eventId,
-          extra: {'topic': topic, 'type': type},
+          extra: {
+            'topic': topic,
+            'type': type,
+            'route': effectiveRoute,
+            'targetUid': safeUid,
+          },
         );
       }
     }
@@ -236,7 +241,7 @@ class PushDispatchService {
         targetUid: safeUid,
         topic: topic,
         eventId: eventId,
-        extra: {'type': type},
+        extra: {'type': type, 'route': effectiveRoute, 'targetUid': safeUid},
       );
       if (lastError != null) {
         await PushErrorLogger.logFailure(
@@ -246,7 +251,7 @@ class PushDispatchService {
           stackTrace: lastSt,
           targetUid: safeUid,
           eventId: eventId,
-          extra: {'type': type},
+          extra: {'type': type, 'route': effectiveRoute, 'targetUid': safeUid},
         );
       }
       rethrow;
@@ -276,10 +281,10 @@ class PushDispatchService {
     }
 
     final type = _canonicalType(intent);
+    final effectiveRoute = (route ?? _defaultRoute(intent)).trim();
     final payload = <String, dynamic>{
       'type': type,
-      if ((route ?? _defaultRoute(intent)).trim().isNotEmpty)
-        'route': (route ?? _defaultRoute(intent)).trim(),
+      if (effectiveRoute.isNotEmpty) 'route': effectiveRoute,
       ...data,
     };
 
@@ -308,7 +313,7 @@ class PushDispatchService {
         stackTrace: st,
         topic: safeTopic,
         eventId: eventId,
-        extra: {'type': type},
+        extra: {'type': type, 'route': effectiveRoute, 'topic': safeTopic},
       );
 
       if (fallbackUserUids.isNotEmpty) {
@@ -335,7 +340,12 @@ class PushDispatchService {
               targetUid: safeUid,
               topic: userTopic,
               eventId: eventId,
-              extra: {'type': type},
+              extra: {
+                'type': type,
+                'route': effectiveRoute,
+                'topic': userTopic,
+                'targetUid': safeUid,
+              },
             );
           }
         }

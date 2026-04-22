@@ -19,10 +19,14 @@ enum _SeenFilter { all, unseen, seen }
 
 enum _RoleFilter { all, learner, teacher, admin }
 
+enum _ArchiveScope { active, archived, all }
+
 class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
   String _search = '';
+  String _selectedTopicKey = '';
+  _ArchiveScope _archiveScope = _ArchiveScope.active;
   _SeenFilter _seenFilter = _SeenFilter.all;
   _RoleFilter _roleFilter = _RoleFilter.all;
 
@@ -207,6 +211,60 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     return '$a $b';
   }
 
+  String _topicLabel(String title) {
+    final trimmed = title.trim();
+    return trimmed.isEmpty ? '(No title)' : trimmed;
+  }
+
+  String _topicKey(String title) => _topicLabel(title).toLowerCase();
+
+  bool _isArchived(_FlashAlert alert) => alert.archivedAtMs > 0;
+
+  bool _scopeMatches(_FlashAlert alert) {
+    final archived = _isArchived(alert);
+    return switch (_archiveScope) {
+      _ArchiveScope.active => !archived,
+      _ArchiveScope.archived => archived,
+      _ArchiveScope.all => true,
+    };
+  }
+
+  List<_FlashAlertRow> _scopedRows(List<_FlashAlertRow> rows) {
+    return rows.where((row) => _scopeMatches(row.alert)).toList();
+  }
+
+  List<_TopicSummary> _buildTopicSummaries(List<_FlashAlertRow> rows) {
+    final byTopic = <String, _TopicSummaryBuilder>{};
+
+    for (final row in rows) {
+      final alert = row.alert;
+      final key = _topicKey(alert.title);
+      final label = _topicLabel(alert.title);
+      final seen = alert.seenAtMs > 0 || alert.status == 'seen';
+      final summary = byTopic.putIfAbsent(
+        key,
+        () => _TopicSummaryBuilder(label: label, key: key),
+      );
+      summary.total += 1;
+      if (seen) {
+        summary.seen += 1;
+      } else {
+        summary.unseen += 1;
+      }
+      if (alert.createdAtMs > summary.latestCreatedAtMs) {
+        summary.latestCreatedAtMs = alert.createdAtMs;
+      }
+    }
+
+    final topics = byTopic.values.map((summary) => summary.build()).toList();
+    topics.sort((a, b) {
+      final byDate = b.latestCreatedAtMs.compareTo(a.latestCreatedAtMs);
+      if (byDate != 0) return byDate;
+      return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+    });
+    return topics;
+  }
+
   List<_FlashAlertRow> _parseAlerts(dynamic raw) {
     if (raw is! Map) return <_FlashAlertRow>[];
     final out = <_FlashAlertRow>[];
@@ -234,6 +292,9 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
   bool _matches(_FlashAlertRow row) {
     final alert = row.alert;
     final search = _search.trim().toLowerCase();
+    final topicPass =
+        _selectedTopicKey.isEmpty ||
+        _topicKey(alert.title) == _selectedTopicKey;
 
     final seen = alert.seenAtMs > 0 || alert.status == 'seen';
     final seenPass = switch (_seenFilter) {
@@ -249,7 +310,9 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
       _RoleFilter.admin => alert.targetRole == 'admin',
     };
 
-    if (!seenPass || !rolePass) return false;
+    if (!_scopeMatches(alert) || !topicPass || !seenPass || !rolePass) {
+      return false;
+    }
     if (search.isEmpty) return true;
 
     final blob = [
@@ -395,7 +458,136 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     }
   }
 
-  Widget _topFilters() {
+  Future<void> _archiveRows(List<_FlashAlertRow> rows) async {
+    if (rows.isEmpty) {
+      _toast('No alerts selected for archive.');
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Archive alerts?'),
+        content: Text(
+          'Archive ${rows.length} filtered alert${rows.length == 1 ? '' : 's'}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      for (final row in rows) {
+        await _db.ref('flash_messages/${row.targetUid}/${row.alertId}').update({
+          'archivedAt': ServerValue.timestamp,
+          'archivedByUid': _myUid,
+        });
+      }
+      _toast('Archived ${rows.length} alert${rows.length == 1 ? '' : 's'}.');
+    } catch (e) {
+      _toast(
+        toHumanError(e, fallback: 'Could not archive filtered alerts.'),
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  Future<void> _deleteRows(List<_FlashAlertRow> rows) async {
+    if (rows.isEmpty) {
+      _toast('No archived alerts selected for deletion.');
+      return;
+    }
+
+    final archivedRows = rows.where((row) => _isArchived(row.alert)).toList();
+    if (archivedRows.isEmpty) {
+      _toast('Only archived alerts can be bulk deleted.');
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete archived alerts?'),
+        content: Text(
+          'Delete ${archivedRows.length} archived alert${archivedRows.length == 1 ? '' : 's'} permanently?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      for (final row in archivedRows) {
+        await _db
+            .ref('flash_messages/${row.targetUid}/${row.alertId}')
+            .remove();
+      }
+      _toast(
+        'Deleted ${archivedRows.length} archived alert${archivedRows.length == 1 ? '' : 's'}.',
+      );
+    } catch (e) {
+      _toast(
+        toHumanError(e, fallback: 'Could not delete archived alerts.'),
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  Future<void> _archiveSeenOlderThan(
+    List<_FlashAlertRow> rows,
+    int days,
+  ) async {
+    final cutoff = DateTime.now()
+        .subtract(Duration(days: days))
+        .millisecondsSinceEpoch;
+    final targets = rows.where((row) {
+      final alert = row.alert;
+      final seen = alert.seenAtMs > 0 || alert.status == 'seen';
+      return !_isArchived(alert) &&
+          seen &&
+          alert.createdAtMs > 0 &&
+          alert.createdAtMs < cutoff;
+    }).toList();
+    await _archiveRows(targets);
+  }
+
+  Future<void> _handleBulkAction(
+    String action,
+    List<_FlashAlertRow> rows,
+  ) async {
+    if (action == 'archive_filtered') {
+      await _archiveRows(rows.where((row) => !_isArchived(row.alert)).toList());
+      return;
+    }
+    if (action == 'archive_seen_30') {
+      await _archiveSeenOlderThan(rows, 30);
+      return;
+    }
+    if (action == 'delete_archived_filtered') {
+      await _deleteRows(rows);
+    }
+  }
+
+  Widget _topFilters(List<_TopicSummary> topics) {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -416,6 +608,58 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
                 horizontal: 12,
                 vertical: 12,
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                ChoiceChip(
+                  label: const Text('Active'),
+                  selected: _archiveScope == _ArchiveScope.active,
+                  onSelected: (_) =>
+                      setState(() => _archiveScope = _ArchiveScope.active),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Archived'),
+                  selected: _archiveScope == _ArchiveScope.archived,
+                  onSelected: (_) =>
+                      setState(() => _archiveScope = _ArchiveScope.archived),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('All records'),
+                  selected: _archiveScope == _ArchiveScope.all,
+                  onSelected: (_) =>
+                      setState(() => _archiveScope = _ArchiveScope.all),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                ChoiceChip(
+                  label: const Text('Any topic'),
+                  selected: _selectedTopicKey.isEmpty,
+                  onSelected: (_) => setState(() => _selectedTopicKey = ''),
+                ),
+                for (final topic in topics) ...[
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: Text(topic.label),
+                    selected: _selectedTopicKey == topic.key,
+                    onSelected: (_) =>
+                        setState(() => _selectedTopicKey = topic.key),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -480,72 +724,186 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     );
   }
 
-  Widget _buildList(List<_FlashAlertRow> rows) {
-    final filtered = rows.where(_matches).toList();
-    if (filtered.isEmpty) {
-      return const Center(child: Text('No priority alerts found.'));
-    }
+  Widget _buildTopicSummary(List<_TopicSummary> topics) {
+    if (topics.isEmpty) return const SizedBox.shrink();
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: filtered.length,
-      itemBuilder: (_, i) {
-        final row = filtered[i];
-        final a = row.alert;
-        final seen = a.seenAtMs > 0 || a.status == 'seen';
-        final preview = a.message.trim();
-
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              radius: 11,
-              backgroundColor: seen
-                  ? const Color(0xFF2E7D32)
-                  : const Color(0xFFC62828),
-            ),
-            title: Text(
-              a.title.isEmpty ? '(No title)' : a.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 6),
-                Text(
-                  '${_roleLabel(a.targetRole)}: ${a.targetName.isEmpty ? row.targetUid : a.targetName}',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                if (preview.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis),
-                ],
-                const SizedBox(height: 6),
-                Text('Sent: ${_formatDateTime(a.createdAtMs)}'),
-                Text(
-                  seen
-                      ? 'Seen: ${_formatDateTime(a.seenAtMs)}'
-                      : 'Seen: Not yet',
-                ),
-              ],
-            ),
-            trailing: PopupMenuButton<String>(
-              onSelected: (v) async {
-                if (v == 'resend') {
-                  await _resend(row);
-                }
-                if (v == 'delete') {
-                  await _delete(row);
-                }
+    return Container(
+      height: 132,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: topics.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final topic = topics[i];
+          final selected = _selectedTopicKey == topic.key;
+          return SizedBox(
+            width: 220,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                setState(() {
+                  _selectedTopicKey = selected ? '' : topic.key;
+                });
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'resend', child: Text('Resend')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: selected
+                      ? const Color(0xFFFFF3E0)
+                      : const Color(0xFFF7F8FA),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFFE67E22)
+                        : const Color(0xFFE3E7ED),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        topic.label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Recipients ${topic.total}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Seen ${topic.seen} • Unseen ${topic.unseen}',
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.66),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Latest ${_formatDateTime(topic.latestCreatedAtMs)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.54),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildList(List<_FlashAlertRow> rows) {
+    final scoped = _scopedRows(rows);
+    final topics = _buildTopicSummaries(scoped);
+    final filtered = scoped.where(_matches).toList();
+    return Column(
+      children: [
+        _buildTopicSummary(topics),
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(child: Text('No priority alerts found.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: filtered.length,
+                  itemBuilder: (_, i) {
+                    final row = filtered[i];
+                    final a = row.alert;
+                    final seen = a.seenAtMs > 0 || a.status == 'seen';
+                    final preview = a.message.trim();
+
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          radius: 11,
+                          backgroundColor: seen
+                              ? const Color(0xFF2E7D32)
+                              : const Color(0xFFC62828),
+                        ),
+                        title: Text(
+                          _topicLabel(a.title),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 6),
+                            Text(
+                              '${_roleLabel(a.targetRole)}: ${a.targetName.isEmpty ? row.targetUid : a.targetName}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (preview.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                preview,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            const SizedBox(height: 6),
+                            Text('Sent: ${_formatDateTime(a.createdAtMs)}'),
+                            if (_isArchived(a))
+                              Text(
+                                'Archived: ${_formatDateTime(a.archivedAtMs)}',
+                              ),
+                            Text(
+                              seen
+                                  ? 'Seen: ${_formatDateTime(a.seenAtMs)}'
+                                  : 'Seen: Not yet',
+                            ),
+                          ],
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (v) async {
+                            if (v == 'resend') {
+                              await _resend(row);
+                            }
+                            if (v == 'archive') {
+                              await _archiveRows([row]);
+                            }
+                            if (v == 'delete') {
+                              await _delete(row);
+                            }
+                          },
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                              value: 'resend',
+                              child: Text('Resend'),
+                            ),
+                            if (!_isArchived(a))
+                              const PopupMenuItem(
+                                value: 'archive',
+                                child: Text('Archive'),
+                              ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -572,29 +930,88 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
           body: adminWebBodyFrame(
             context: context,
             maxWidth: 1500,
-            child: Column(
-              children: [
-                _topFilters(),
-                Expanded(
-                  child: StreamBuilder<DatabaseEvent>(
-                    stream: _alertsStream,
-                    builder: (context, snap) {
-                      if (snap.hasError) {
-                        return const Center(
-                          child: Text('Could not load priority alerts.'),
-                        );
-                      }
-                      if (snap.connectionState == ConnectionState.waiting &&
-                          !snap.hasData) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+            child: StreamBuilder<DatabaseEvent>(
+              stream: _alertsStream,
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return const Center(
+                    child: Text('Could not load priority alerts.'),
+                  );
+                }
+                if (snap.connectionState == ConnectionState.waiting &&
+                    !snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                      final rows = _parseAlerts(snap.data?.snapshot.value);
-                      return _buildList(rows);
-                    },
-                  ),
-                ),
-              ],
+                final rows = _parseAlerts(snap.data?.snapshot.value);
+                final scoped = _scopedRows(rows);
+                final topics = _buildTopicSummaries(scoped);
+                if (_selectedTopicKey.isNotEmpty &&
+                    !topics.any((topic) => topic.key == _selectedTopicKey)) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    setState(() => _selectedTopicKey = '');
+                  });
+                }
+
+                return Column(
+                  children: [
+                    _topFilters(topics),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: PopupMenuButton<String>(
+                          tooltip: 'Bulk actions',
+                          onSelected: (value) => _handleBulkAction(
+                            value,
+                            scoped.where(_matches).toList(),
+                          ),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'archive_filtered',
+                              child: Text('Archive filtered'),
+                            ),
+                            PopupMenuItem(
+                              value: 'archive_seen_30',
+                              child: Text('Archive seen older than 30d'),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete_archived_filtered',
+                              child: Text('Delete archived filtered'),
+                            ),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF4F7F9),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFFE3E7ED),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.tune_rounded, size: 18),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Bulk actions',
+                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(child: _buildList(rows)),
+                  ],
+                );
+              },
             ),
           ),
           floatingActionButton: FloatingActionButton(
@@ -656,6 +1073,7 @@ class _FlashAlert {
     required this.status,
     required this.createdAtMs,
     required this.seenAtMs,
+    required this.archivedAtMs,
     required this.targetRole,
     required this.targetName,
     required this.targetEmail,
@@ -666,6 +1084,7 @@ class _FlashAlert {
   final String status;
   final int createdAtMs;
   final int seenAtMs;
+  final int archivedAtMs;
   final String targetRole;
   final String targetName;
   final String targetEmail;
@@ -709,11 +1128,50 @@ class _FlashAlert {
       status: (m['status'] ?? 'new').toString().trim().toLowerCase(),
       createdAtMs: _parseInt(m['createdAt']),
       seenAtMs: _parseInt(m['seenAt']),
+      archivedAtMs: _parseInt(m['archivedAt']),
       targetRole: _normalizeRole(m['targetRole']),
       targetName: (m['targetName'] ?? '').toString().trim(),
       targetEmail: (m['targetEmail'] ?? '').toString().trim(),
     );
   }
+}
+
+class _TopicSummaryBuilder {
+  _TopicSummaryBuilder({required this.label, required this.key});
+
+  final String label;
+  final String key;
+  int total = 0;
+  int seen = 0;
+  int unseen = 0;
+  int latestCreatedAtMs = 0;
+
+  _TopicSummary build() => _TopicSummary(
+    label: label,
+    key: key,
+    total: total,
+    seen: seen,
+    unseen: unseen,
+    latestCreatedAtMs: latestCreatedAtMs,
+  );
+}
+
+class _TopicSummary {
+  const _TopicSummary({
+    required this.label,
+    required this.key,
+    required this.total,
+    required this.seen,
+    required this.unseen,
+    required this.latestCreatedAtMs,
+  });
+
+  final String label;
+  final String key;
+  final int total;
+  final int seen;
+  final int unseen;
+  final int latestCreatedAtMs;
 }
 
 class _RecipientPickerDialog extends StatefulWidget {

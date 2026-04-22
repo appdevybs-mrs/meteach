@@ -257,6 +257,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return sessionNo <= 0 ? 'Session —' : 'Session $sessionNo';
   }
 
+  String _sessionFieldText(String value, String fallback) {
+    final text = value.trim();
+    return text.isEmpty ? fallback : text;
+  }
+
   double _sheetActionButtonWidth(double maxWidth) {
     if (maxWidth <= 440) return maxWidth;
     if (maxWidth <= 760) return (maxWidth - 8) / 2;
@@ -1052,16 +1057,32 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return out;
   }
 
-  Future<List<int>> _loadCourseSessionNumbers(String courseId) async {
+  Future<List<_SessionChoiceInfo>> _loadCourseSessionChoices(
+    String courseId,
+  ) async {
     final cid = courseId.trim();
-    if (cid.isEmpty) return const <int>[];
+    if (cid.isEmpty) return const <_SessionChoiceInfo>[];
 
-    final out = <int>{};
+    final out = <int, _SessionChoiceInfo>{};
 
-    void addSessionNo(int no) {
-      if (no > 0) {
-        out.add(no);
-      }
+    void addSessionInfo(
+      int no, {
+      String title = '',
+      String skillType = '',
+      String objective = '',
+    }) {
+      if (no <= 0) return;
+      final existing = out[no];
+      out[no] = _SessionChoiceInfo(
+        sessionNo: no,
+        title: title.trim().isNotEmpty ? title.trim() : (existing?.title ?? ''),
+        skillType: skillType.trim().isNotEmpty
+            ? skillType.trim()
+            : (existing?.skillType ?? ''),
+        objective: objective.trim().isNotEmpty
+            ? objective.trim()
+            : (existing?.objective ?? ''),
+      );
     }
 
     try {
@@ -1089,7 +1110,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               if (no <= 0) no = _toInt(session['sessionNo'], fallback: 0);
               if (no <= 0) no = _toInt(session['order'], fallback: 0);
               if (no <= 0) no = fallbackNo;
-              addSessionNo(no);
+              addSessionInfo(
+                no,
+                title: (session['sessionTitle'] ?? session['title'] ?? '')
+                    .toString(),
+                skillType: (session['skillType'] ?? '').toString(),
+                objective: (session['objective'] ?? '').toString(),
+              );
               fallbackNo += 1;
             }
           }
@@ -1104,7 +1131,12 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
           if (no <= 0) no = _toInt(m['order'], fallback: 0);
           if (no <= 0) no = keyNo;
-          addSessionNo(no);
+          addSessionInfo(
+            no,
+            title: (m['sessionTitle'] ?? m['title'] ?? '').toString(),
+            skillType: (m['skillType'] ?? '').toString(),
+            objective: (m['objective'] ?? '').toString(),
+          );
         }
       }
 
@@ -1115,8 +1147,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         );
         for (final entry in root.entries) {
           final keyNo = int.tryParse(entry.key.toString()) ?? 0;
-          addSessionNo(keyNo);
-
           final raw = entry.value;
           if (raw is! Map) continue;
 
@@ -1124,13 +1154,292 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           int no = _toInt(m['sessionNo'], fallback: 0);
           if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
           if (no <= 0) no = _toInt(m['order'], fallback: 0);
-          addSessionNo(no);
+          if (no <= 0) no = keyNo;
+          addSessionInfo(
+            no,
+            title: (m['sessionTitle'] ?? m['title'] ?? '').toString(),
+            skillType: (m['skillType'] ?? '').toString(),
+            objective: (m['objective'] ?? '').toString(),
+          );
         }
       }
     } catch (_) {}
 
-    final sorted = out.toList()..sort();
+    final sorted = out.values.toList()
+      ..sort((a, b) => a.sessionNo.compareTo(b.sessionNo));
     return sorted;
+  }
+
+  List<_SessionChoiceInfo> _ensureSessionChoiceIncluded(
+    List<_SessionChoiceInfo> choices,
+    int sessionNo,
+  ) {
+    if (sessionNo <= 0) return choices;
+    if (choices.any((choice) => choice.sessionNo == sessionNo)) {
+      return choices;
+    }
+    final next = [...choices, _SessionChoiceInfo(sessionNo: sessionNo)]
+      ..sort((a, b) => a.sessionNo.compareTo(b.sessionNo));
+    return next;
+  }
+
+  Future<int?> _showSessionChoiceSheet({
+    required String title,
+    required String description,
+    required List<_SessionChoiceInfo> sessionChoices,
+    required int selectedSessionNo,
+    String? helperText,
+  }) async {
+    if (sessionChoices.isEmpty) return null;
+
+    final initialIndex = sessionChoices.indexWhere(
+      (choice) => choice.sessionNo == selectedSessionNo,
+    );
+    final startIndex = initialIndex >= 0 ? initialIndex : 0;
+    final controller = PageController(
+      viewportFraction: 0.9,
+      initialPage: startIndex,
+    );
+    int activeIndex = startIndex;
+
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setInner) {
+            final active = sessionChoices[activeIndex];
+            final maxSheetHeight = MediaQuery.of(context).size.height * 0.88;
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxSheetHeight),
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      14,
+                      8,
+                      14,
+                      MediaQuery.of(context).padding.bottom + 24,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          description,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 400,
+                          child: PageView.builder(
+                            controller: controller,
+                            itemCount: sessionChoices.length,
+                            onPageChanged: (index) {
+                              setInner(() => activeIndex = index);
+                            },
+                            itemBuilder: (_, index) {
+                              final choice = sessionChoices[index];
+                              final isActive = index == activeIndex;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin: EdgeInsets.only(
+                                  right: index == sessionChoices.length - 1
+                                      ? 0
+                                      : 10,
+                                  top: isActive ? 0 : 8,
+                                  bottom: isActive ? 0 : 8,
+                                ),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? actionOrange.withValues(alpha: 0.10)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: isActive
+                                        ? actionOrange.withValues(alpha: 0.50)
+                                        : uiBorder,
+                                    width: isActive ? 1.4 : 1,
+                                  ),
+                                  boxShadow: isActive
+                                      ? [
+                                          BoxShadow(
+                                            color: actionOrange.withValues(
+                                              alpha: 0.10,
+                                            ),
+                                            blurRadius: 14,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isActive
+                                            ? actionOrange.withValues(
+                                                alpha: 0.16,
+                                              )
+                                            : const Color(0xFFF4F7F9),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _sessionLabel(choice.sessionNo),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: isActive
+                                              ? actionOrange
+                                              : primaryBlue,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _sessionFieldText(
+                                        choice.title,
+                                        'No title',
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16,
+                                        color: primaryBlue,
+                                        height: 1.2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: successGreen.withValues(
+                                          alpha: 0.10,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _sessionFieldText(
+                                          choice.skillType,
+                                          'Skill not set',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: successGreen,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Objective',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Expanded(
+                                      child: Text(
+                                        _sessionFieldText(
+                                          choice.objective,
+                                          'No objective added',
+                                        ),
+                                        maxLines: 6,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.35,
+                                          color: Colors.grey.shade800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(sessionChoices.length, (
+                            index,
+                          ) {
+                            final isActive = index == activeIndex;
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              width: isActive ? 18 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: isActive ? actionOrange : uiBorder,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                Navigator.pop(context, active.sessionNo),
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text(
+                              'Continue',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return chosen;
   }
 
   Future<void> _pickRescheduleTarget(
@@ -1160,7 +1469,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     }
 
     final available = await _buildAvailableSlotsForCourse(sourceSlot.courseId);
-    final sessionOptions = await _loadCourseSessionNumbers(sourceSlot.courseId);
+    var sessionChoices = await _loadCourseSessionChoices(sourceSlot.courseId);
 
     if (!mounted) return null;
 
@@ -1179,15 +1488,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return true;
     }).toList();
 
-    if (sourceSlot.sessionNo > 0 &&
-        !sessionOptions.contains(sourceSlot.sessionNo)) {
-      sessionOptions.add(sourceSlot.sessionNo);
-      sessionOptions.sort();
-    }
-
-    if (sessionOptions.isEmpty) {
-      sessionOptions.add(sourceSlot.sessionNo <= 0 ? 0 : sourceSlot.sessionNo);
-    }
+    sessionChoices = _ensureSessionChoiceIncluded(
+      sessionChoices,
+      sourceSlot.sessionNo,
+    );
 
     if (basePossible.isEmpty) {
       _toast('No valid target slots found.');
@@ -1197,7 +1501,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     String query = '';
     int selectedSessionNo = sourceSlot.sessionNo > 0
         ? sourceSlot.sessionNo
-        : sessionOptions.first;
+        : sessionChoices.first.sessionNo;
 
     return showModalBottomSheet<_RescheduleChoice>(
       context: context,
@@ -1246,41 +1550,75 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      initialValue: selectedSessionNo,
-                      isDense: true,
-                      decoration: InputDecoration(
-                        labelText: 'Study session',
-                        helperText: selectedSessionNo == sourceSlot.sessionNo
-                            ? 'Keeping the current session number.'
-                            : 'Changing the session number during reschedule.',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () async {
+                        final picked = await _showSessionChoiceSheet(
+                          title: 'Choose Session',
+                          description:
+                              'Swipe through the session cards, then keep the current session or choose another one before picking the new slot.',
+                          sessionChoices: sessionChoices,
+                          selectedSessionNo: selectedSessionNo,
+                          helperText: selectedSessionNo == sourceSlot.sessionNo
+                              ? 'Currently keeping the same session number.'
+                              : 'Currently changing the session number during reschedule.',
+                        );
+                        if (picked == null) return;
+                        setInner(() => selectedSessionNo = picked);
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: uiBorder),
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: uiBorder),
-                        ),
-                      ),
-                      items: sessionOptions
-                          .map(
-                            (no) => DropdownMenuItem<int>(
-                              value: no,
-                              child: Text(
-                                _sessionLabel(no),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Study session',
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
                               ),
                             ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) {
-                          return;
-                        }
-                        setInner(() => selectedSessionNo = v);
-                      },
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _sessionLabel(selectedSessionNo),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryBlue,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.swipe_rounded,
+                                  color: actionOrange,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              selectedSessionNo == sourceSlot.sessionNo
+                                  ? 'Keeping the current session number. Tap to browse session cards.'
+                                  : 'Changing the session number during reschedule. Tap to browse session cards.',
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -1557,112 +1895,22 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return;
     }
 
-    final sessionOptions = await _loadCourseSessionNumbers(slot.courseId);
+    var sessionChoices = await _loadCourseSessionChoices(slot.courseId);
     if (!mounted) return;
 
-    if (slot.sessionNo > 0 && !sessionOptions.contains(slot.sessionNo)) {
-      sessionOptions.add(slot.sessionNo);
-      sessionOptions.sort();
-    }
-    if (sessionOptions.isEmpty) {
-      sessionOptions.add(slot.sessionNo <= 0 ? 0 : slot.sessionNo);
-    }
+    sessionChoices = _ensureSessionChoiceIncluded(
+      sessionChoices,
+      slot.sessionNo,
+    );
 
-    int selectedSessionNo = slot.sessionNo > 0
-        ? slot.sessionNo
-        : sessionOptions.first;
-
-    final chosen = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        return StatefulBuilder(
-          builder: (context, setInner) {
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  14,
-                  8,
-                  14,
-                  MediaQuery.of(context).padding.bottom + 10,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Change Session Only',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                        color: primaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Keep date, time, and teacher the same. Only the session number will change.',
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      initialValue: selectedSessionNo,
-                      isDense: true,
-                      decoration: InputDecoration(
-                        labelText: 'Study session',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: uiBorder),
-                        ),
-                      ),
-                      items: sessionOptions
-                          .map(
-                            (no) => DropdownMenuItem<int>(
-                              value: no,
-                              child: Text(
-                                _sessionLabel(no),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setInner(() => selectedSessionNo = v);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () =>
-                            Navigator.pop(context, selectedSessionNo),
-                        icon: const Icon(Icons.check_rounded),
-                        label: const Text(
-                          'Continue',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+    final chosen = await _showSessionChoiceSheet(
+      title: 'Change Session Only',
+      description:
+          'Keep date, time, and teacher the same. Only the session number will change.',
+      sessionChoices: sessionChoices,
+      selectedSessionNo: slot.sessionNo > 0
+          ? slot.sessionNo
+          : sessionChoices.first.sessionNo,
     );
 
     if (chosen == null || chosen == slot.sessionNo) return;
@@ -1814,112 +2062,22 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return;
     }
 
-    final sessionOptions = await _loadCourseSessionNumbers(slot.courseId);
+    var sessionChoices = await _loadCourseSessionChoices(slot.courseId);
     if (!mounted) return;
 
-    if (slot.sessionNo > 0 && !sessionOptions.contains(slot.sessionNo)) {
-      sessionOptions.add(slot.sessionNo);
-      sessionOptions.sort();
-    }
-    if (sessionOptions.isEmpty) {
-      sessionOptions.add(slot.sessionNo <= 0 ? 0 : slot.sessionNo);
-    }
+    sessionChoices = _ensureSessionChoiceIncluded(
+      sessionChoices,
+      slot.sessionNo,
+    );
 
-    int selectedSessionNo = slot.sessionNo > 0
-        ? slot.sessionNo
-        : sessionOptions.first;
-
-    final chosen = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        return StatefulBuilder(
-          builder: (context, setInner) {
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  14,
-                  8,
-                  14,
-                  MediaQuery.of(context).padding.bottom + 10,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Change Session for Group',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                        color: primaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Keep date, time, and teacher the same. The session number will change for all learners in this slot.',
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      initialValue: selectedSessionNo,
-                      isDense: true,
-                      decoration: InputDecoration(
-                        labelText: 'Study session',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: uiBorder),
-                        ),
-                      ),
-                      items: sessionOptions
-                          .map(
-                            (no) => DropdownMenuItem<int>(
-                              value: no,
-                              child: Text(
-                                _sessionLabel(no),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setInner(() => selectedSessionNo = v);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () =>
-                            Navigator.pop(context, selectedSessionNo),
-                        icon: const Icon(Icons.check_rounded),
-                        label: const Text(
-                          'Continue',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+    final chosen = await _showSessionChoiceSheet(
+      title: 'Change Session for Group',
+      description:
+          'Keep date, time, and teacher the same. The session number will change for all learners in this slot.',
+      sessionChoices: sessionChoices,
+      selectedSessionNo: slot.sessionNo > 0
+          ? slot.sessionNo
+          : sessionChoices.first.sessionNo,
     );
 
     if (chosen == null || chosen == slot.sessionNo) return;
@@ -3694,6 +3852,20 @@ class _RescheduleChoice {
   final int sessionNo;
 
   _RescheduleChoice({required this.slot, required this.sessionNo});
+}
+
+class _SessionChoiceInfo {
+  final int sessionNo;
+  final String title;
+  final String skillType;
+  final String objective;
+
+  const _SessionChoiceInfo({
+    required this.sessionNo,
+    this.title = '',
+    this.skillType = '',
+    this.objective = '',
+  });
 }
 
 // ========================= Small UI Widgets =========================

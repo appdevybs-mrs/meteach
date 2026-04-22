@@ -76,6 +76,8 @@ class NotificationCounterService {
       alerts.forEach((_, rawAlert) {
         if (rawAlert is! Map) return;
         final m = rawAlert.map((k, v) => MapEntry(k.toString(), v));
+        final archivedAt = _toInt(m['archivedAt']);
+        if (archivedAt > 0) return;
         final status = (m['status'] ?? '').toString().trim().toLowerCase();
         final seenAt = _toInt(m['seenAt'] ?? m['seenAtMs']);
         if (status != 'seen' && seenAt <= 0) unseen += 1;

@@ -393,6 +393,12 @@
           "createdByName": {
             ".validate": "!newData.exists() || newData.isString()"
           },
+          "archivedAt": {
+            ".validate": "!newData.exists() || newData.isNumber() || newData.val() == null || newData.val() == now"
+          },
+          "archivedByUid": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
 
           "$other": {
             ".validate": false

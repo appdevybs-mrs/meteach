@@ -16,7 +16,9 @@ import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
 
 class AdminStaffScreen extends StatefulWidget {
-  const AdminStaffScreen({super.key});
+  const AdminStaffScreen({super.key, this.initialSearch = ''});
+
+  final String initialSearch;
 
   // Brand palette (match your style)
   static const primaryBlue = Color(0xFF1A2B48);
@@ -57,6 +59,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
   @override
   void initState() {
     super.initState();
+    _search = widget.initialSearch.trim();
     _tab = TabController(length: 3, vsync: this);
 
     _usersStream = _usersRef.onValue.asBroadcastStream();

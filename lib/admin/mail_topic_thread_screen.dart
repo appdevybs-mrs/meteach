@@ -14,6 +14,7 @@ import '../services/backend_api.dart';
 import '../services/mail_consistency_service.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/route_state.dart'; // ✅ ADD THIS
+import 'admin_mail_person_list_navigation.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
@@ -948,7 +949,15 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               icon: const Icon(Icons.close_rounded),
               onPressed: () => setState(() => _selectedMessageIds.clear()),
             ),
-          const SizedBox.shrink(),
+          IconButton(
+            tooltip: 'Open filtered list',
+            icon: const Icon(Icons.manage_search_rounded),
+            onPressed: () => openAdminFilteredPeopleList(
+              context,
+              peerUid: widget.peerUid,
+              peerName: widget.peerName,
+            ),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) async {
               if (v == 'delete_topic') await _deleteThreadForMe();

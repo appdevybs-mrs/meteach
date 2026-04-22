@@ -150,6 +150,52 @@ function push_channel_for_type(string $type): string
     return 'ch_default_v2';
 }
 
+function push_failure_category(Throwable $e): string
+{
+    $msg = strtolower(trim($e->getMessage()));
+    $code = (int) $e->getCode();
+
+    if (strpos($msg, 'timeout') !== false) {
+        return 'network_timeout';
+    }
+    if (strpos($msg, 'not a valid fcm registration token') !== false || strpos($msg, 'invalid registration token') !== false) {
+        return 'fcm_token_invalid';
+    }
+    if (strpos($msg, 'registration token is not registered') !== false || strpos($msg, 'requested entity was not found') !== false || strpos($msg, 'unregistered') !== false) {
+        return 'fcm_registration_not_found';
+    }
+    if (strpos($msg, 'authentication') !== false || strpos($msg, 'credentials') !== false) {
+        return 'fcm_auth_error';
+    }
+    if (strpos($msg, 'quota') !== false || strpos($msg, 'too many requests') !== false) {
+        return 'fcm_quota_error';
+    }
+    if ($code >= 400 && $code < 600) {
+        return 'backend_non_2xx';
+    }
+
+    return 'unknown_backend_error';
+}
+
+function push_recommended_fix(string $category): string
+{
+    switch ($category) {
+        case 'network_timeout':
+            return 'Retry the push and verify network connectivity between the app and secure API.';
+        case 'fcm_token_invalid':
+        case 'fcm_registration_not_found':
+            return 'Remove the stale token, let the device register again, and retry the push.';
+        case 'fcm_auth_error':
+            return 'Verify Firebase Admin credentials and server configuration.';
+        case 'fcm_quota_error':
+            return 'Retry later and review FCM quota usage or burst sending patterns.';
+        case 'backend_non_2xx':
+            return 'Inspect push_secure.php server logs and stored backend error for this eventId.';
+        default:
+            return 'Inspect the backend error message and stack for this eventId.';
+    }
+}
+
 $auth = require_auth(['admin', 'teacher', 'learner']);
 $payload = request_json();
 
@@ -247,6 +293,11 @@ try {
         'status' => 'pending',
         'mode' => $mode,
         'type' => $type,
+        'route' => (string) ($safeData['route'] ?? ''),
+        'targetUid' => (string) ($safeData['targetUid'] ?? ''),
+        'topic' => $mode === 'topic' ? $targetValue : '',
+        'requestType' => $type,
+        'attemptStage' => 'send',
         'actorUid' => (string) ($auth['uid'] ?? ''),
         'actorRole' => (string) ($auth['role'] ?? ''),
         'title' => $title,
@@ -308,9 +359,16 @@ try {
 } catch (Throwable $e) {
     try {
         if ($eventRef !== null) {
+            $category = push_failure_category($e);
             $eventRef->update([
                 'status' => 'failed',
                 'error' => mb_substr($e->getMessage(), 0, 500),
+                'errorType' => get_class($e),
+                'errorCode' => (string) $e->getCode(),
+                'failureCategory' => $category,
+                'recommendedFix' => push_recommended_fix($category),
+                'responseStatus' => is_int($e->getCode()) ? $e->getCode() : 0,
+                'responseSnippet' => '',
                 'updatedAt' => round(microtime(true) * 1000),
             ]);
         }
