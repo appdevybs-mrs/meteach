@@ -1057,7 +1057,57 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     if (cid.isEmpty) return const <int>[];
 
     final out = <int>{};
+
+    void addSessionNo(int no) {
+      if (no > 0) {
+        out.add(no);
+      }
+    }
+
     try {
+      final flexibleSnap = await _db.child('syllabi/$cid/flexible').get();
+      if (flexibleSnap.exists && flexibleSnap.value is Map) {
+        final root = (flexibleSnap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+
+        int fallbackNo = 1;
+        final units = root['units'];
+        if (units is List) {
+          for (final unitRaw in units) {
+            if (unitRaw is! Map) continue;
+            final unit = unitRaw.map((k, v) => MapEntry(k.toString(), v));
+            final sessions = unit['sessions'];
+            if (sessions is! List) continue;
+
+            for (final sessionRaw in sessions) {
+              if (sessionRaw is! Map) continue;
+              final session = sessionRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              int no = _toInt(session['sessionNumber'], fallback: 0);
+              if (no <= 0) no = _toInt(session['sessionNo'], fallback: 0);
+              if (no <= 0) no = _toInt(session['order'], fallback: 0);
+              if (no <= 0) no = fallbackNo;
+              addSessionNo(no);
+              fallbackNo += 1;
+            }
+          }
+        }
+
+        for (final entry in root.entries) {
+          final keyNo = int.tryParse(entry.key) ?? 0;
+          final raw = entry.value;
+          if (raw is! Map) continue;
+          final m = raw.map((k, v) => MapEntry(k.toString(), v));
+          int no = _toInt(m['sessionNo'], fallback: 0);
+          if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
+          if (no <= 0) no = _toInt(m['order'], fallback: 0);
+          if (no <= 0) no = keyNo;
+          addSessionNo(no);
+        }
+      }
+
       final snap = await _db.child('booking_curriculum/$cid/sessions').get();
       if (snap.exists && snap.value is Map) {
         final root = (snap.value as Map).map(
@@ -1065,7 +1115,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         );
         for (final entry in root.entries) {
           final keyNo = int.tryParse(entry.key.toString()) ?? 0;
-          if (keyNo > 0) out.add(keyNo);
+          addSessionNo(keyNo);
 
           final raw = entry.value;
           if (raw is! Map) continue;
@@ -1074,7 +1124,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           int no = _toInt(m['sessionNo'], fallback: 0);
           if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
           if (no <= 0) no = _toInt(m['order'], fallback: 0);
-          if (no > 0) out.add(no);
+          addSessionNo(no);
         }
       }
     } catch (_) {}
