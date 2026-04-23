@@ -4206,6 +4206,327 @@ class _JoinFabPayload {
   });
 }
 
+class _BookingPickerCourse {
+  final String courseId;
+  final String title;
+  final String code;
+  final int assignedAt;
+  final int totalSessions;
+  final int consumedSessions;
+  final String thumbnailUrl;
+
+  const _BookingPickerCourse({
+    required this.courseId,
+    required this.title,
+    required this.code,
+    required this.assignedAt,
+    required this.totalSessions,
+    required this.consumedSessions,
+    required this.thumbnailUrl,
+  });
+
+  bool get hasCreditInfo => totalSessions > 0;
+
+  int get sessionsLeft {
+    if (!hasCreditInfo) return 999;
+    final left = totalSessions - consumedSessions;
+    return left < 0 ? 0 : left;
+  }
+}
+
+class _SchoolContactInfo {
+  final String name;
+  final String phone;
+  final String email;
+
+  const _SchoolContactInfo({
+    required this.name,
+    required this.phone,
+    required this.email,
+  });
+
+  bool get hasPhone => phone.trim().isNotEmpty;
+  bool get hasEmail => email.trim().isNotEmpty;
+  bool get hasAnyContact => hasPhone || hasEmail;
+}
+
+int _bookingInt(dynamic v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse(v?.toString() ?? '') ?? 0;
+}
+
+int _countFlexibleSessions(dynamic units) {
+  if (units is! List) return 0;
+  var total = 0;
+  for (final u in units) {
+    if (u is! Map) continue;
+    final unit = u.map((k, vv) => MapEntry(k.toString(), vv));
+    final sessions = unit['sessions'];
+    if (sessions is List) total += sessions.length;
+  }
+  return total;
+}
+
+int _resolveTotalSessions({
+  required Map<String, dynamic> learnerCourse,
+  required Map<String, dynamic> syllabus,
+}) {
+  final fromLearner = [
+    learnerCourse['totalSessions'],
+    learnerCourse['sessionsPaidTotal'],
+    learnerCourse['sessions_total'],
+    learnerCourse['session_count'],
+  ];
+  for (final v in fromLearner) {
+    final n = _bookingInt(v);
+    if (n > 0) return n;
+  }
+
+  final fromSyllabus = [
+    syllabus['totalSessions'],
+    syllabus['sessionsCount'],
+    syllabus['session_count'],
+    syllabus['total_sessions'],
+  ];
+  for (final v in fromSyllabus) {
+    final n = _bookingInt(v);
+    if (n > 0) return n;
+  }
+
+  final counted = _countFlexibleSessions(syllabus['units']);
+  if (counted > 0) return counted;
+
+  return 0;
+}
+
+String _pickText(Map<String, dynamic> m, List<String> keys) {
+  for (final key in keys) {
+    final value = (m[key] ?? '').toString().trim();
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
+
+String _formatAssignedDate(int assignedAtMs) {
+  if (assignedAtMs <= 0) return 'Recently assigned';
+  try {
+    final dt = DateTime.fromMillisecondsSinceEpoch(assignedAtMs);
+    final mm = dt.month.toString().padLeft(2, '0');
+    final dd = dt.day.toString().padLeft(2, '0');
+    return 'Assigned ${dt.year}-$mm-$dd';
+  } catch (_) {
+    return 'Recently assigned';
+  }
+}
+
+const List<String> _schoolNodeCandidates = [
+  'appConfig/Company info',
+  'appConfig/companyInfo',
+  'company',
+  'companyProfile',
+  'appConfig/company',
+  'app/company',
+];
+
+Future<_SchoolContactInfo?> _loadSchoolContactInfo(DatabaseReference db) async {
+  for (final path in _schoolNodeCandidates) {
+    try {
+      final snap = await db.child(path).get();
+      if (!snap.exists || snap.value is! Map) continue;
+      final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+
+      final info = _SchoolContactInfo(
+        name: _pickText(m, [
+          'companyFullName',
+          'company full name',
+          'company_full_name',
+          'fullName',
+          'name',
+          'company_name',
+        ]),
+        phone: _pickText(m, [
+          'companyPhone',
+          'company phone',
+          'company_phone',
+          'phone',
+        ]),
+        email: _pickText(m, [
+          'companyEmail',
+          'company email',
+          'company_email',
+          'email',
+        ]),
+      );
+
+      if (info.name.isNotEmpty || info.hasAnyContact) return info;
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+Future<void> _openContactSchool(
+  BuildContext context,
+  _SchoolContactInfo? info,
+) async {
+  final phone = (info?.phone ?? '').trim();
+  final email = (info?.email ?? '').trim();
+
+  if (phone.isNotEmpty) {
+    final uri = Uri(scheme: 'tel', path: phone);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open phone app.')),
+      );
+    }
+    return;
+  }
+
+  if (email.isNotEmpty) {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: email,
+      queryParameters: {'subject': 'Credit refill request'},
+    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open email app.')),
+      );
+    }
+    return;
+  }
+
+  if (context.mounted) {
+    AppToast.fromSnackBar(
+      context,
+      const SnackBar(
+        content: Text('School contact is not available right now.'),
+      ),
+    );
+  }
+}
+
+Future<void> _showBookingRefillDialog(
+  BuildContext context, {
+  required _HomePalette p,
+  required _BookingPickerCourse course,
+  _SchoolContactInfo? school,
+}) async {
+  if (!context.mounted) return;
+
+  final schoolName = (school?.name ?? '').trim();
+  final phone = (school?.phone ?? '').trim();
+  final email = (school?.email ?? '').trim();
+  final hasContact = (school?.hasAnyContact ?? false);
+
+  await showDialog<void>(
+    context: context,
+    builder: (dCtx) {
+      return AlertDialog(
+        backgroundColor: p.cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1F1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.account_balance_wallet_rounded,
+                color: Color(0xFFD32F2F),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Credits needed / يلزم إعادة التعبئة',
+                style: TextStyle(
+                  color: p.text,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You have used all credits for ${course.title}. Please contact the school to refill your credits.',
+              style: TextStyle(
+                color: p.text,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'لقد استهلكت جميع الأرصدة المتاحة في ${course.title}. يرجى التواصل مع المدرسة لإعادة تعبئة الرصيد.',
+              textDirection: TextDirection.rtl,
+              style: TextStyle(
+                color: p.text.withValues(alpha: 0.95),
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+            if (schoolName.isNotEmpty || phone.isNotEmpty || email.isNotEmpty)
+              const SizedBox(height: 12),
+            if (schoolName.isNotEmpty)
+              Text(
+                schoolName,
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+              ),
+            if (phone.isNotEmpty)
+              Text(
+                'Phone: $phone',
+                style: TextStyle(
+                  color: p.text.withValues(alpha: 0.82),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            if (email.isNotEmpty)
+              Text(
+                'Email: $email',
+                style: TextStyle(
+                  color: p.text.withValues(alpha: 0.82),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dCtx).pop(),
+            child: const Text('Close / إغلاق'),
+          ),
+          FilledButton.icon(
+            onPressed: hasContact
+                ? () async {
+                    await _openContactSchool(context, school);
+                  }
+                : null,
+            icon: const Icon(Icons.call_rounded),
+            label: const Text('Contact School / تواصل مع المدرسة'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 Future<void> _openBookingCoursePicker(BuildContext context) async {
   final bookingEnabled = await WindowAccessService.instance.isWindowEnabled(
     role: AppWindowRole.learner,
@@ -4233,7 +4554,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   final db = FirebaseDatabase.instance.ref();
   final p = _paletteFromTheme();
 
-  List<Map<String, dynamic>> courses = [];
+  final courses = <_BookingPickerCourse>[];
 
   try {
     final snap = await db.child('users/$uid/courses').get();
@@ -4261,28 +4582,57 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
         final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
         final code = (m['course_code'] ?? '').toString();
-
-        int numVal(dynamic vv) =>
-            (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
-
-        final assignedAt = numVal(m['assignedAt']);
+        final assignedAt = _bookingInt(m['assignedAt']);
 
         final flexibleSyllabusSnap = await db
             .child('syllabi/$courseId/flexible')
             .get();
         if (!flexibleSyllabusSnap.exists) continue;
 
-        courses.add({
-          'courseKey': courseId,
-          'title': title,
-          'code': code,
-          'assignedAt': assignedAt,
-        });
+        final syllabus = (flexibleSyllabusSnap.value is Map)
+            ? (flexibleSyllabusSnap.value as Map).map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              )
+            : <String, dynamic>{};
+
+        final attendanceSnap = await db
+            .child('booking_progress/$uid/$courseId/online_attendance')
+            .get();
+        final consumed = countPresentOnlineAttendance(attendanceSnap.value);
+        final total = _resolveTotalSessions(
+          learnerCourse: m,
+          syllabus: syllabus,
+        );
+        final thumb = _pickText(m, [
+          'thumbnailUrl',
+          'thumbnail',
+          'image',
+          'imageUrl',
+        ]);
+        final syllabusThumb = _pickText(syllabus, [
+          'thumbnailUrl',
+          'thumbnail',
+          'image',
+          'imageUrl',
+        ]);
+        final finalTitle = _pickText(syllabus, ['title']).isEmpty
+            ? title
+            : _pickText(syllabus, ['title']);
+
+        courses.add(
+          _BookingPickerCourse(
+            courseId: courseId,
+            title: finalTitle,
+            code: code,
+            assignedAt: assignedAt,
+            totalSessions: total,
+            consumedSessions: consumed,
+            thumbnailUrl: thumb.isNotEmpty ? thumb : syllabusThumb,
+          ),
+        );
       }
 
-      courses.sort(
-        (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
-      );
+      courses.sort((a, b) => b.assignedAt.compareTo(a.assignedAt));
     }
   } catch (e) {
     if (!context.mounted) return;
@@ -4309,118 +4659,337 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
     return;
   }
 
-  showModalBottomSheet(
+  final schoolContact = await _loadSchoolContactInfo(db);
+  if (!context.mounted) return;
+  final pageController = PageController(viewportFraction: 0.94);
+  var currentPage = 0;
+
+  await showModalBottomSheet(
     context: context,
     backgroundColor: p.appBg,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (ctx) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Choose course to book',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                  color: p.primary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.60,
-                ),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: courses.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final c = courses[i];
-                    final courseKey = (c['courseKey'] ?? '').toString();
-                    final title = (c['title'] ?? 'Course').toString();
-                    final code = (c['code'] ?? '').toString();
-
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                LearnerBookingScreen(courseId: courseKey),
-                          ),
-                        );
+      return StatefulBuilder(
+        builder: (sheetCtx, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Choose course to book',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Swipe left or right to view all courses',
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.64),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 245,
+                    child: PageView.builder(
+                      controller: pageController,
+                      itemCount: courses.length,
+                      onPageChanged: (index) {
+                        setSheetState(() => currentPage = index);
                       },
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: p.soft,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: p.border.withValues(alpha: 0.85),
+                      itemBuilder: (_, i) {
+                        final c = courses[i];
+                        final hasCreditInfo = c.hasCreditInfo;
+                        final left = c.sessionsLeft;
+                        final progress = hasCreditInfo && c.totalSessions > 0
+                            ? (c.consumedSessions / c.totalSessions).clamp(
+                                0.0,
+                                1.0,
+                              )
+                            : 0.0;
+                        final statColor = !hasCreditInfo
+                            ? p.primary
+                            : left <= 0
+                            ? const Color(0xFFD32F2F)
+                            : left <= 3
+                            ? const Color(0xFFE09F1F)
+                            : const Color(0xFF2E7D32);
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () async {
+                              if (hasCreditInfo && left <= 0) {
+                                await _showBookingRefillDialog(
+                                  context,
+                                  p: p,
+                                  course: c,
+                                  school: schoolContact,
+                                );
+                                return;
+                              }
+
+                              Navigator.of(sheetCtx).pop();
+                              if (!context.mounted) return;
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => LearnerBookingScreen(
+                                    courseId: c.courseId,
+                                  ),
                                 ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    p.cardBg,
+                                    p.soft.withValues(alpha: 0.9),
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: p.border.withValues(alpha: 0.8),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.06),
+                                    blurRadius: 14,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
                               ),
-                              child: Icon(
-                                Icons.calendar_month_rounded,
-                                color: p.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: p.primary,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 52,
+                                        height: 52,
+                                        decoration: BoxDecoration(
+                                          color: p.appBg,
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          border: Border.all(
+                                            color: p.border.withValues(
+                                              alpha: 0.9,
+                                            ),
+                                          ),
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: c.thumbnailUrl.isNotEmpty
+                                            ? Image.network(
+                                                c.thumbnailUrl,
+                                                fit: BoxFit.cover,
+                                                errorBuilder:
+                                                    (
+                                                      _,
+                                                      error,
+                                                      stackTrace,
+                                                    ) => Icon(
+                                                      Icons.menu_book_rounded,
+                                                      color: p.primary,
+                                                    ),
+                                              )
+                                            : Icon(
+                                                Icons.menu_book_rounded,
+                                                color: p.primary,
+                                              ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              c.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.primary,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              c.code.isEmpty
+                                                  ? 'Code: —'
+                                                  : 'Code: ${c.code}',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: p.text.withValues(
+                                                  alpha: 0.65,
+                                                ),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: statColor.withValues(
+                                            alpha: 0.12,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: statColor.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          hasCreditInfo
+                                              ? (left <= 0
+                                                    ? 'Refill needed'
+                                                    : '$left left')
+                                              : 'Credits pending',
+                                          style: TextStyle(
+                                            color: statColor,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 12),
                                   Text(
-                                    code.isEmpty ? '—' : 'Code: $code',
+                                    _formatAssignedDate(c.assignedAt),
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.62),
+                                      color: p.text.withValues(alpha: 0.66),
                                       fontSize: 12,
                                     ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: LinearProgressIndicator(
+                                      minHeight: 8,
+                                      value: progress,
+                                      backgroundColor: p.border.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        statColor,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      _bookingStatChip(
+                                        p,
+                                        'Used',
+                                        '${c.consumedSessions}',
+                                      ),
+                                      const SizedBox(width: 6),
+                                      _bookingStatChip(
+                                        p,
+                                        'Total',
+                                        hasCreditInfo
+                                            ? '${c.totalSessions}'
+                                            : '—',
+                                      ),
+                                      const SizedBox(width: 6),
+                                      _bookingStatChip(
+                                        p,
+                                        'Left',
+                                        hasCreditInfo ? '$left' : '—',
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        left <= 0 && hasCreditInfo
+                                            ? 'Tap for refill info'
+                                            : 'Tap to book',
+                                        style: TextStyle(
+                                          color: p.primary,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-                            Icon(Icons.chevron_right_rounded, color: p.primary),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(courses.length, (index) {
+                        final selected = currentPage == index;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: selected ? 18 : 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? p.primary
+                                : p.border.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       );
     },
+  );
+
+  pageController.dispose();
+}
+
+Widget _bookingStatChip(_HomePalette p, String label, String value) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: p.appBg,
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: p.border.withValues(alpha: 0.8)),
+    ),
+    child: Text(
+      '$label: $value',
+      style: TextStyle(
+        color: p.text.withValues(alpha: 0.72),
+        fontWeight: FontWeight.w800,
+        fontSize: 11,
+      ),
+    ),
   );
 }
 
