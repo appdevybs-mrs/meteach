@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
@@ -20,6 +21,42 @@ import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
 
 enum _LeaveChoice { save, discard, cancel }
+
+class _SocialIconOption {
+  final String key;
+  final IconData icon;
+  final String label;
+
+  const _SocialIconOption({
+    required this.key,
+    required this.icon,
+    required this.label,
+  });
+}
+
+const List<_SocialIconOption> _socialIconOptions = [
+  _SocialIconOption(key: 'globe', icon: Icons.public_rounded, label: 'Globe'),
+  _SocialIconOption(
+    key: 'instagram',
+    icon: FontAwesomeIcons.instagram,
+    label: 'Instagram',
+  ),
+  _SocialIconOption(
+    key: 'youtube',
+    icon: FontAwesomeIcons.youtube,
+    label: 'YouTube',
+  ),
+  _SocialIconOption(
+    key: 'whatsapp',
+    icon: FontAwesomeIcons.whatsapp,
+    label: 'WhatsApp',
+  ),
+  _SocialIconOption(
+    key: 'telegram',
+    icon: FontAwesomeIcons.telegram,
+    label: 'Telegram',
+  ),
+];
 
 class TeacherProfileScreen extends StatefulWidget {
   const TeacherProfileScreen({super.key});
@@ -42,6 +79,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final _dobCtrl = TextEditingController();
   final _aboutMeCtrl = TextEditingController();
   final _googleMeetUrlCtrl = TextEditingController();
+  final _facebookUrlCtrl = TextEditingController();
+  final _linkedinUrlCtrl = TextEditingController();
+  final _tiktokUrlCtrl = TextEditingController();
+  final _extraUrlCtrl = TextEditingController();
+  String _extraIconKey = _socialIconOptions.first.key;
 
   bool _busy = false;
   bool _uploadingPhotos = false;
@@ -68,6 +110,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   String _initialDob = '';
   String _initialAboutMe = '';
   String _initialGoogleMeetUrl = '';
+  String _initialFacebookUrl = '';
+  String _initialLinkedinUrl = '';
+  String _initialTiktokUrl = '';
+  String _initialExtraUrl = '';
+  String _initialExtraIconKey = _socialIconOptions.first.key;
   List<String> _initialPhotoUrls = const [];
   String _initialIntroVideoUrl = '';
 
@@ -98,6 +145,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _aboutMeCtrl.dispose();
     _disposeVideoController();
     _googleMeetUrlCtrl.dispose();
+    _facebookUrlCtrl.dispose();
+    _linkedinUrlCtrl.dispose();
+    _tiktokUrlCtrl.dispose();
+    _extraUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -107,6 +158,69 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   AppPalette get p => appThemeController.palette;
+
+  Map<String, dynamic> _socialLinksFromRaw(dynamic raw) {
+    if (raw is! Map) return <String, dynamic>{};
+    return raw.map((key, value) => MapEntry(key.toString().trim(), value));
+  }
+
+  String _normalizeSocialIconKey(String raw) {
+    final value = raw.trim();
+    for (final option in _socialIconOptions) {
+      if (option.key == value) return value;
+    }
+    return _socialIconOptions.first.key;
+  }
+
+  bool _matchesAnyHost(String host, Set<String> allowedHosts) {
+    final normalizedHost = host.trim().toLowerCase();
+    if (normalizedHost.isEmpty) return false;
+    for (final domain in allowedHosts) {
+      final d = domain.trim().toLowerCase();
+      if (d.isEmpty) continue;
+      if (normalizedHost == d || normalizedHost.endsWith('.$d')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? _validateSocialUrl(
+    String? rawValue, {
+    Set<String>? allowedHosts,
+    String? invalidHostMessage,
+  }) {
+    final value = (rawValue ?? '').trim();
+    if (value.isEmpty) return null;
+
+    final uri = Uri.tryParse(value);
+    if (uri == null || !uri.isAbsolute) {
+      return 'Enter a valid URL';
+    }
+
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      return 'Use an http or https URL';
+    }
+
+    if (allowedHosts != null && allowedHosts.isNotEmpty) {
+      if (!_matchesAnyHost(uri.host, allowedHosts)) {
+        return invalidHostMessage ?? 'Use a valid profile link';
+      }
+    }
+
+    return null;
+  }
+
+  Map<String, String> _socialLinksPayload() {
+    return {
+      'facebook': _facebookUrlCtrl.text.trim(),
+      'linkedin': _linkedinUrlCtrl.text.trim(),
+      'tiktok': _tiktokUrlCtrl.text.trim(),
+      'extra_url': _extraUrlCtrl.text.trim(),
+      'extra_icon': _normalizeSocialIconKey(_extraIconKey),
+    };
+  }
 
   Future<void> _disposeVideoController() async {
     final controller = _videoController;
@@ -150,6 +264,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       _dobCtrl.text = (data['dob'] ?? '').toString();
       _aboutMeCtrl.text = (data['about_me'] ?? '').toString();
       _googleMeetUrlCtrl.text = (data['google_meet_url'] ?? '').toString();
+      final socialLinks = _socialLinksFromRaw(data['social_links']);
+      _facebookUrlCtrl.text = (socialLinks['facebook'] ?? '').toString();
+      _linkedinUrlCtrl.text = (socialLinks['linkedin'] ?? '').toString();
+      _tiktokUrlCtrl.text = (socialLinks['tiktok'] ?? '').toString();
+      _extraUrlCtrl.text = (socialLinks['extra_url'] ?? '').toString();
+      _extraIconKey = _normalizeSocialIconKey(
+        (socialLinks['extra_icon'] ?? '').toString(),
+      );
 
       _emailReadOnly = (data['email'] ?? user.email ?? '').toString();
       _roleReadOnly = (data['role'] ?? '').toString();
@@ -285,6 +407,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
       final rootRef = FirebaseDatabase.instance.ref();
       final aboutMe = _aboutMeCtrl.text.trim();
+      final socialLinks = _socialLinksPayload();
       final cleanPhotos = _photoUrls
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
@@ -299,6 +422,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'users/${user.uid}/profile_photos': cleanPhotos,
         'users/${user.uid}/intro_video_url': _introVideoUrl ?? '',
         'users/${user.uid}/google_meet_url': _googleMeetUrlCtrl.text.trim(),
+        'users/${user.uid}/social_links': socialLinks,
         'users/${user.uid}/updatedAt': ServerValue.timestamp,
         'website/teachers/${user.uid}/profile/about_me': aboutMe,
         'website/teachers/${user.uid}/profile/intro_video_url':
@@ -306,6 +430,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'website/teachers/${user.uid}/profile/profile_photos': cleanPhotos,
         'website/teachers/${user.uid}/profile/profile_photo':
             cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
+        'website/teachers/${user.uid}/profile/social_links': socialLinks,
       });
 
       await AuditLogService.logSuccess(
@@ -324,6 +449,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           'hasIntroVideo': (_introVideoUrl ?? '').trim().isNotEmpty,
           'photoCount': cleanPhotos.length,
           'hasGoogleMeet': _googleMeetUrlCtrl.text.trim().isNotEmpty,
+          'hasSocialLinks': socialLinks.values.any(
+            (value) => value.toString().trim().isNotEmpty,
+          ),
         },
       );
 
@@ -367,6 +495,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _initialDob = _dobCtrl.text.trim();
     _initialAboutMe = _aboutMeCtrl.text.trim();
     _initialGoogleMeetUrl = _googleMeetUrlCtrl.text.trim();
+    _initialFacebookUrl = _facebookUrlCtrl.text.trim();
+    _initialLinkedinUrl = _linkedinUrlCtrl.text.trim();
+    _initialTiktokUrl = _tiktokUrlCtrl.text.trim();
+    _initialExtraUrl = _extraUrlCtrl.text.trim();
+    _initialExtraIconKey = _normalizeSocialIconKey(_extraIconKey);
     _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
     _initialIntroVideoUrl = (_introVideoUrl ?? '').trim();
   }
@@ -379,6 +512,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (_dobCtrl.text.trim() != _initialDob) return true;
     if (_aboutMeCtrl.text.trim() != _initialAboutMe) return true;
     if (_googleMeetUrlCtrl.text.trim() != _initialGoogleMeetUrl) return true;
+    if (_facebookUrlCtrl.text.trim() != _initialFacebookUrl) return true;
+    if (_linkedinUrlCtrl.text.trim() != _initialLinkedinUrl) return true;
+    if (_tiktokUrlCtrl.text.trim() != _initialTiktokUrl) return true;
+    if (_extraUrlCtrl.text.trim() != _initialExtraUrl) return true;
+    if (_normalizeSocialIconKey(_extraIconKey) != _initialExtraIconKey) {
+      return true;
+    }
     if (!listEquals(
       _photoUrls.map((e) => e.trim()).toList(),
       _initialPhotoUrls,
@@ -974,7 +1114,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     confirmCtrl.dispose();
   }
 
-  InputDecoration _dec(String label, {Widget? suffixIcon, String? hintText}) {
+  InputDecoration _dec(
+    String label, {
+    Widget? suffixIcon,
+    Widget? prefixIcon,
+    String? hintText,
+  }) {
     return InputDecoration(
       labelText: label,
       hintText: hintText,
@@ -990,6 +1135,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: p.primary, width: 1.8),
       ),
+      prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
     );
   }
@@ -1085,6 +1231,157 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _socialUrlField({
+    required TextEditingController controller,
+    required String label,
+    required String hintText,
+    required IconData icon,
+    required String? Function(String?) validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: TextInputType.url,
+      decoration: _dec(
+        label,
+        hintText: hintText,
+        prefixIcon: Icon(icon, color: p.primary),
+      ),
+      onChanged: (_) => _formKey.currentState?.validate(),
+      validator: validator,
+    );
+  }
+
+  Widget _buildSocialLinksSection() {
+    final selectedOption = _socialIconOptions.firstWhere(
+      (option) => option.key == _normalizeSocialIconKey(_extraIconKey),
+      orElse: () => _socialIconOptions.first,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withValues(alpha: 0.95)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.share_rounded, color: p.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Social Links',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Add your public social media profiles (optional).',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.68),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _socialUrlField(
+            controller: _facebookUrlCtrl,
+            label: 'Facebook URL',
+            hintText: 'https://www.facebook.com/your-profile',
+            icon: FontAwesomeIcons.facebook,
+            validator: (value) => _validateSocialUrl(
+              value,
+              allowedHosts: const {'facebook.com', 'fb.com'},
+              invalidHostMessage: 'Use a valid Facebook link',
+            ),
+          ),
+          const SizedBox(height: 12),
+          _socialUrlField(
+            controller: _linkedinUrlCtrl,
+            label: 'LinkedIn URL',
+            hintText: 'https://www.linkedin.com/in/your-profile',
+            icon: FontAwesomeIcons.linkedin,
+            validator: (value) => _validateSocialUrl(
+              value,
+              allowedHosts: const {'linkedin.com'},
+              invalidHostMessage: 'Use a valid LinkedIn link',
+            ),
+          ),
+          const SizedBox(height: 12),
+          _socialUrlField(
+            controller: _tiktokUrlCtrl,
+            label: 'TikTok URL',
+            hintText: 'https://www.tiktok.com/@your-profile',
+            icon: FontAwesomeIcons.tiktok,
+            validator: (value) => _validateSocialUrl(
+              value,
+              allowedHosts: const {'tiktok.com'},
+              invalidHostMessage: 'Use a valid TikTok link',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _extraUrlCtrl,
+            keyboardType: TextInputType.url,
+            decoration: _dec(
+              'Extra URL',
+              hintText: 'https://example.com/your-link',
+              prefixIcon: Icon(selectedOption.icon, color: p.primary),
+            ),
+            onChanged: (_) => _formKey.currentState?.validate(),
+            validator: (value) => _validateSocialUrl(value),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Extra icon',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.76),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _socialIconOptions.map((option) {
+              final selected = option.key == _extraIconKey;
+              return ChoiceChip(
+                selected: selected,
+                onSelected: (_) {
+                  if (_extraIconKey == option.key) return;
+                  setState(() {
+                    _extraIconKey = option.key;
+                  });
+                },
+                label: Text(option.label),
+                avatar: Icon(
+                  option.icon,
+                  size: 16,
+                  color: selected ? Colors.white : p.primary,
+                ),
+                selectedColor: p.accent,
+                labelStyle: TextStyle(
+                  color: selected ? Colors.white : p.text,
+                  fontWeight: FontWeight.w700,
+                ),
+                side: BorderSide(
+                  color: selected ? p.accent : p.border.withValues(alpha: 0.9),
+                ),
+                backgroundColor: p.cardBg,
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -1589,6 +1886,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     return null;
                   },
                 ),
+                const SizedBox(height: 12),
+                _buildSocialLinksSection(),
               ],
             ),
           ),

@@ -3786,7 +3786,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         child: _ReportCardDiagramV2(
                           schoolTitle: 'Your Bridge School',
                           learnerName: _peerNameShown,
-                          courseKey: courseKey!,
+                          courseLabel: courseLabel,
                           createdAtMs: DateTime.now().millisecondsSinceEpoch,
                           teacherName: _meDisplayName,
                           behaviorItems: behaviorItems,
@@ -4728,7 +4728,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
   const _ReportCardDiagramV2({
     required this.schoolTitle,
     required this.learnerName,
-    required this.courseKey,
+    required this.courseLabel,
     required this.createdAtMs,
     required this.teacherName,
     required this.behaviorItems,
@@ -4745,7 +4745,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
 
   final String schoolTitle;
   final String learnerName;
-  final String courseKey;
+  final String courseLabel;
   final int createdAtMs;
   final String teacherName;
 
@@ -4766,7 +4766,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
   String _fmtDate(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)}';
+    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
   int _clamp15(dynamic v) {
@@ -4793,12 +4793,16 @@ class _ReportCardDiagramV2 extends StatelessWidget {
       children: [
         Icon(icon, size: 14, color: color),
         const SizedBox(width: 6),
-        Text(
-          t,
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 12,
-            color: color,
+        Expanded(
+          child: Text(
+            t,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+              color: color,
+            ),
           ),
         ),
       ],
@@ -4895,7 +4899,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
     const mint = Color(0xFFDDF6EA);
 
     const maxPerSection = 6;
-    final courseLabel = courseKey;
     final bShown = _capItems(behaviorItems, maxPerSection);
     final pShown = _capItems(progressItems, maxPerSection);
 
@@ -5141,7 +5144,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     _sectionTitle(
-                      'Auto Summary',
+                      'Summary',
                       icon: Icons.auto_awesome_rounded,
                       color: navy,
                     ),
@@ -5164,35 +5167,35 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _sectionTitle(
-                      'Teacher Notes',
-                      icon: Icons.mode_comment_outlined,
-                      color: amber,
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF8EC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFFD9A3)),
+                    if (commentText.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _sectionTitle(
+                        'Teacher Notes',
+                        icon: Icons.mode_comment_outlined,
+                        color: amber,
                       ),
-                      child: Text(
-                        commentText.trim().isEmpty
-                            ? 'No teacher note added.'
-                            : commentText.trim(),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          height: 1.28,
-                          color: Color(0xFF3F2A04),
-                          fontWeight: FontWeight.w700,
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF8EC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFFD9A3)),
                         ),
-                        maxLines: 6,
-                        overflow: TextOverflow.ellipsis,
+                        child: Text(
+                          commentText.trim(),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1.28,
+                            color: Color(0xFF3F2A04),
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 6,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import '../shared/app_theme.dart';
@@ -27,6 +28,42 @@ class _BioChoice {
 
   const _BioChoice({required this.ar, required this.en});
 }
+
+class _SocialIconOption {
+  final String key;
+  final IconData icon;
+  final String label;
+
+  const _SocialIconOption({
+    required this.key,
+    required this.icon,
+    required this.label,
+  });
+}
+
+const List<_SocialIconOption> _socialIconOptions = [
+  _SocialIconOption(key: 'globe', icon: Icons.public_rounded, label: 'Globe'),
+  _SocialIconOption(
+    key: 'instagram',
+    icon: FontAwesomeIcons.instagram,
+    label: 'Instagram',
+  ),
+  _SocialIconOption(
+    key: 'youtube',
+    icon: FontAwesomeIcons.youtube,
+    label: 'YouTube',
+  ),
+  _SocialIconOption(
+    key: 'whatsapp',
+    icon: FontAwesomeIcons.whatsapp,
+    label: 'WhatsApp',
+  ),
+  _SocialIconOption(
+    key: 'telegram',
+    icon: FontAwesomeIcons.telegram,
+    label: 'Telegram',
+  ),
+];
 
 const List<String> _genderOptions = ['Male', 'Female'];
 
@@ -64,6 +101,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final _phone2 = TextEditingController();
   final _dob = TextEditingController();
   final _aboutMe = TextEditingController();
+  final _facebookUrl = TextEditingController();
+  final _linkedinUrl = TextEditingController();
+  final _tiktokUrl = TextEditingController();
+  final _extraSocialUrl = TextEditingController();
+  String _extraSocialIcon = _socialIconOptions.first.key;
   String? _gender;
 
   String? _profilePhotoUrl;
@@ -76,6 +118,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   String _initialDob = '';
   String _initialGender = '';
   String _initialAboutMe = '';
+  String _initialFacebookUrl = '';
+  String _initialLinkedinUrl = '';
+  String _initialTiktokUrl = '';
+  String _initialExtraSocialUrl = '';
+  String _initialExtraSocialIcon = _socialIconOptions.first.key;
   String _initialProfilePhotoUrl = '';
   List<String> _initialPhotoUrls = const [];
   Set<String> _initialHobbiesAr = const <String>{};
@@ -163,6 +210,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _phone2.dispose();
     _dob.dispose();
     _aboutMe.dispose();
+    _facebookUrl.dispose();
+    _linkedinUrl.dispose();
+    _tiktokUrl.dispose();
+    _extraSocialUrl.dispose();
     super.dispose();
   }
 
@@ -190,6 +241,69 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
+  }
+
+  Map<String, dynamic> _socialLinksFromRaw(dynamic raw) {
+    if (raw is! Map) return <String, dynamic>{};
+    return raw.map((key, value) => MapEntry(key.toString().trim(), value));
+  }
+
+  String _normalizeSocialIcon(String raw) {
+    final value = raw.trim();
+    for (final option in _socialIconOptions) {
+      if (option.key == value) return value;
+    }
+    return _socialIconOptions.first.key;
+  }
+
+  bool _matchesAnyHost(String host, Set<String> allowedHosts) {
+    final normalizedHost = host.trim().toLowerCase();
+    if (normalizedHost.isEmpty) return false;
+    for (final domain in allowedHosts) {
+      final d = domain.trim().toLowerCase();
+      if (d.isEmpty) continue;
+      if (normalizedHost == d || normalizedHost.endsWith('.$d')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? _validateSocialUrl(
+    String? rawValue, {
+    Set<String>? allowedHosts,
+    String? invalidHostMessage,
+  }) {
+    final value = (rawValue ?? '').trim();
+    if (value.isEmpty) return null;
+
+    final uri = Uri.tryParse(value);
+    if (uri == null || !uri.isAbsolute) {
+      return 'Enter a valid URL';
+    }
+
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      return 'Use an http or https URL';
+    }
+
+    if (allowedHosts != null && allowedHosts.isNotEmpty) {
+      if (!_matchesAnyHost(uri.host, allowedHosts)) {
+        return invalidHostMessage ?? 'Use a valid profile link';
+      }
+    }
+
+    return null;
+  }
+
+  Map<String, String> _socialLinksPayload() {
+    return {
+      'facebook': _facebookUrl.text.trim(),
+      'linkedin': _linkedinUrl.text.trim(),
+      'tiktok': _tiktokUrl.text.trim(),
+      'extra_url': _extraSocialUrl.text.trim(),
+      'extra_icon': _normalizeSocialIcon(_extraSocialIcon),
+    };
   }
 
   String _learnerAppId(String uid) => 'learner_$uid';
@@ -741,6 +855,14 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       final rawGender = (_user['gender'] ?? '').toString().trim();
       _gender = _genderOptions.contains(rawGender) ? rawGender : null;
       _aboutMe.text = (_user['about_me'] ?? '').toString();
+      final socialLinks = _socialLinksFromRaw(_user['social_links']);
+      _facebookUrl.text = (socialLinks['facebook'] ?? '').toString();
+      _linkedinUrl.text = (socialLinks['linkedin'] ?? '').toString();
+      _tiktokUrl.text = (socialLinks['tiktok'] ?? '').toString();
+      _extraSocialUrl.text = (socialLinks['extra_url'] ?? '').toString();
+      _extraSocialIcon = _normalizeSocialIcon(
+        (socialLinks['extra_icon'] ?? '').toString(),
+      );
 
       _profilePhotoUrl = (_user['profile_photo'] ?? '').toString().trim();
       if (_profilePhotoUrl != null && _profilePhotoUrl!.isEmpty) {
@@ -791,6 +913,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     try {
       if (_uid.isEmpty) throw Exception('Missing uid');
 
+      final socialLinks = _socialLinksPayload();
+
       final updates = <String, dynamic>{
         'first_name': _fn.text.trim(),
         'last_name': _ln.text.trim(),
@@ -799,6 +923,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         'dob': _dob.text.trim(),
         'gender': (_gender ?? '').trim(),
         'about_me': _aboutMe.text.trim(),
+        'social_links': socialLinks,
         'profile_photo': _profilePhotoUrl ?? '',
         'profile_photos': _photoUrls.take(_maxExtraPhotos).toList(),
         'updatedAt': ServerValue.timestamp,
@@ -820,6 +945,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         meta: {
           'hasProfilePhoto': (_profilePhotoUrl ?? '').trim().isNotEmpty,
           'extraPhotos': _photoUrls.length,
+          'hasSocialLinks': socialLinks.values.any(
+            (value) => value.toString().trim().isNotEmpty,
+          ),
         },
       );
 
@@ -860,6 +988,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _initialDob = _dob.text.trim();
     _initialGender = (_gender ?? '').trim();
     _initialAboutMe = _aboutMe.text.trim();
+    _initialFacebookUrl = _facebookUrl.text.trim();
+    _initialLinkedinUrl = _linkedinUrl.text.trim();
+    _initialTiktokUrl = _tiktokUrl.text.trim();
+    _initialExtraSocialUrl = _extraSocialUrl.text.trim();
+    _initialExtraSocialIcon = _normalizeSocialIcon(_extraSocialIcon);
     _initialProfilePhotoUrl = (_profilePhotoUrl ?? '').trim();
     _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
     _initialHobbiesAr = Set<String>.from(_selectedHobbiesAr);
@@ -876,6 +1009,13 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     if (_dob.text.trim() != _initialDob) return true;
     if ((_gender ?? '').trim() != _initialGender) return true;
     if (_aboutMe.text.trim() != _initialAboutMe) return true;
+    if (_facebookUrl.text.trim() != _initialFacebookUrl) return true;
+    if (_linkedinUrl.text.trim() != _initialLinkedinUrl) return true;
+    if (_tiktokUrl.text.trim() != _initialTiktokUrl) return true;
+    if (_extraSocialUrl.text.trim() != _initialExtraSocialUrl) return true;
+    if (_normalizeSocialIcon(_extraSocialIcon) != _initialExtraSocialIcon) {
+      return true;
+    }
     if ((_profilePhotoUrl ?? '').trim() != _initialProfilePhotoUrl) return true;
     if (!listEquals(
       _photoUrls.map((e) => e.trim()).toList(),
@@ -1466,6 +1606,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     TextEditingController c, {
     TextInputType keyboard = TextInputType.text,
     String? hintText,
+    Widget? prefixIcon,
     int maxLines = 1,
     int? maxLength,
     bool enabled = true,
@@ -1494,6 +1635,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           onChanged: (_) => _formKey.currentState?.validate(),
           decoration: InputDecoration(
             hintText: hintText,
+            prefixIcon: prefixIcon,
             filled: true,
             fillColor: p.cardBg,
             contentPadding: const EdgeInsets.symmetric(
@@ -1748,6 +1890,141 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               ),
             ),
             onPressed: _clearBioSelections,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSocialLinksCard() {
+    final p = palette;
+    final selectedOption = _socialIconOptions.firstWhere(
+      (option) => option.key == _normalizeSocialIcon(_extraSocialIcon),
+      orElse: () => _socialIconOptions.first,
+    );
+
+    return _SectionCard(
+      palette: p,
+      title: 'Social Links',
+      subtitle:
+          'Add optional profile links for Facebook, LinkedIn, TikTok, and one extra account.',
+      icon: Icons.share_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _field(
+            'Facebook URL',
+            _facebookUrl,
+            keyboard: TextInputType.url,
+            hintText: 'https://www.facebook.com/your-profile',
+            prefixIcon: Icon(FontAwesomeIcons.facebook, color: p.primary),
+            validator: (value) => _validateSocialUrl(
+              value,
+              allowedHosts: const {'facebook.com', 'fb.com'},
+              invalidHostMessage: 'Use a valid Facebook link',
+            ),
+          ),
+          const SizedBox(height: 10),
+          _field(
+            'LinkedIn URL',
+            _linkedinUrl,
+            keyboard: TextInputType.url,
+            hintText: 'https://www.linkedin.com/in/your-profile',
+            prefixIcon: Icon(FontAwesomeIcons.linkedin, color: p.primary),
+            validator: (value) => _validateSocialUrl(
+              value,
+              allowedHosts: const {'linkedin.com'},
+              invalidHostMessage: 'Use a valid LinkedIn link',
+            ),
+          ),
+          const SizedBox(height: 10),
+          _field(
+            'TikTok URL',
+            _tiktokUrl,
+            keyboard: TextInputType.url,
+            hintText: 'https://www.tiktok.com/@your-profile',
+            prefixIcon: Icon(FontAwesomeIcons.tiktok, color: p.primary),
+            validator: (value) => _validateSocialUrl(
+              value,
+              allowedHosts: const {'tiktok.com'},
+              invalidHostMessage: 'Use a valid TikTok link',
+            ),
+          ),
+          const SizedBox(height: 10),
+          _field(
+            'Extra URL',
+            _extraSocialUrl,
+            keyboard: TextInputType.url,
+            hintText: 'https://example.com/your-link',
+            prefixIcon: Icon(selectedOption.icon, color: p.primary),
+            validator: _validateSocialUrl,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Extra icon',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.75),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _socialIconOptions.map((option) {
+              final selected = option.key == _extraSocialIcon;
+              return ChoiceChip(
+                selected: selected,
+                onSelected: (_) {
+                  if (_extraSocialIcon == option.key) return;
+                  setState(() => _extraSocialIcon = option.key);
+                },
+                label: Text(option.label),
+                avatar: Icon(
+                  option.icon,
+                  size: 16,
+                  color: selected ? Colors.white : p.primary,
+                ),
+                selectedColor: p.accent,
+                labelStyle: TextStyle(
+                  color: selected ? Colors.white : p.text,
+                  fontWeight: FontWeight.w700,
+                ),
+                side: BorderSide(
+                  color: selected ? p.accent : p.border.withValues(alpha: 0.9),
+                ),
+                backgroundColor: p.cardBg,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: p.soft.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.border.withValues(alpha: 0.9)),
+            ),
+            child: Row(
+              children: [
+                Icon(selectedOption.icon, color: p.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _extraSocialUrl.text.trim().isEmpty
+                        ? 'No extra URL set yet'
+                        : _extraSocialUrl.text.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -2209,6 +2486,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         _buildExtraPhotosCard(),
         const SizedBox(height: 16),
         _buildAboutMeCard(),
+        const SizedBox(height: 16),
+        _buildSocialLinksCard(),
       ],
     );
   }
