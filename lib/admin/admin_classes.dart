@@ -112,6 +112,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       <String, Future<_FlexCourseDetails>>{};
   final Map<String, List<Map<String, dynamic>>> _paymentsByUidCache =
       <String, List<Map<String, dynamic>>>{};
+  final Map<String, Future<_ClassTabMetrics>> _classTabMetricsFutureByKey =
+      <String, Future<_ClassTabMetrics>>{};
 
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
@@ -1240,6 +1242,306 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }).toList();
 
     return parts.join(" • ");
+  }
+
+  String _classMetricsKey(Map<String, dynamic> cls, int index) {
+    final id = (cls['class_id'] ?? '').toString().trim();
+    if (id.isNotEmpty) return id;
+    final courseId = (cls['course_id'] ?? '').toString().trim();
+    return 'idx_$index|$courseId';
+  }
+
+  Future<_ClassTabMetrics> _classTabMetricsFor({
+    required Map<String, dynamic> cls,
+    required int index,
+  }) {
+    final key = _classMetricsKey(cls, index);
+    return _classTabMetricsFutureByKey.putIfAbsent(
+      key,
+      () => _loadClassTabMetrics(cls),
+    );
+  }
+
+  int _parseSessionsCountFromDurationText(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return 0;
+    final match = RegExp(r'(\d+)').firstMatch(t);
+    if (match == null) return 0;
+    final n = int.tryParse(match.group(1) ?? '') ?? 0;
+    return n > 0 ? n : 0;
+  }
+
+  int _classHeldSessionsCount(Map<String, dynamic> cls) {
+    final attendanceRaw = cls['attendance'];
+    if (attendanceRaw is! Map) return 0;
+    final att = Map<dynamic, dynamic>.from(attendanceRaw);
+    var held = 0;
+    for (final v in att.values) {
+      if (v is Map) held += 1;
+    }
+    return held;
+  }
+
+  Set<String> _classCoveredSessionIds(Map<String, dynamic> cls) {
+    final attendanceRaw = cls['attendance'];
+    if (attendanceRaw is! Map) return <String>{};
+
+    final out = <String>{};
+    final att = Map<dynamic, dynamic>.from(attendanceRaw);
+    for (final value in att.values) {
+      if (value is! Map) continue;
+      final rec = Map<String, dynamic>.from(value);
+
+      final taughtItems = rec['taughtItems'];
+      if (taughtItems is List) {
+        for (final itemRaw in taughtItems) {
+          if (itemRaw is! Map) continue;
+          final item = Map<String, dynamic>.from(itemRaw);
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
+          if (type.isNotEmpty && type != 'syllabus') continue;
+          final sid = (item['sessionId'] ?? '').toString().trim();
+          if (sid.isNotEmpty) out.add(sid);
+        }
+      }
+
+      if (rec['taught'] is Map) {
+        final taught = Map<String, dynamic>.from(rec['taught'] as Map);
+        final sid = (taught['sessionId'] ?? '').toString().trim();
+        if (sid.isNotEmpty) out.add(sid);
+      }
+    }
+
+    return out;
+  }
+
+  int _classTotalSessionsFromScheduleOrCourse(Map<String, dynamic> cls) {
+    final schedule = (cls['schedule'] is Map)
+        ? Map<String, dynamic>.from(cls['schedule'])
+        : <String, dynamic>{};
+    final bySchedule = _asInt(schedule['sessions_count']);
+    if (bySchedule > 0) return bySchedule;
+
+    final byClass = _asInt(cls['sessions_count']);
+    if (byClass > 0) return byClass;
+
+    final durationText = (cls['course_duration'] ?? '').toString();
+    final byDuration = _parseSessionsCountFromDurationText(durationText);
+    if (byDuration > 0) return byDuration;
+
+    return 0;
+  }
+
+  int _classConsumedFromCourseMap({
+    required Map<String, dynamic> courseMap,
+    required String variantKey,
+  }) {
+    final v = _normalizeVariantKey(variantKey);
+    final attendance = courseMap['attendance'];
+    switch (v) {
+      case 'inclass':
+        return countHeldUniqueAttendanceDates(attendance);
+      case 'private':
+        return countPresentUniqueAttendanceDates(attendance);
+      case 'flexible':
+        final directOnline = countConsumedOnlineAttendance(
+          courseMap['online_attendance'],
+        );
+        if (directOnline > 0) return directOnline;
+        final bookingProgress = courseMap['booking_progress'];
+        if (bookingProgress is Map) {
+          final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
+          final nestedOnline = countConsumedOnlineAttendance(
+            bp['online_attendance'],
+          );
+          if (nestedOnline > 0) return nestedOnline;
+        }
+        return countHeldUniqueAttendanceDates(attendance);
+      default:
+        return countPresentUniqueAttendanceDates(attendance);
+    }
+  }
+
+  bool _hasPaymentHistory(Map<String, dynamic> summaryMap) {
+    return _asInt(summaryMap['totalPaid']) > 0 ||
+        _asInt(summaryMap['lastAmount']) > 0 ||
+        _asInt(summaryMap['lastPaymentAt']) > 0;
+  }
+
+  Map<String, dynamic>? _resolveLearnerCourseForClass({
+    required Map<String, dynamic> learner,
+    required String classId,
+    required String courseId,
+    required String variantKey,
+    required String studyMode,
+  }) {
+    final coursesRaw = learner['courses'];
+    if (coursesRaw is! Map) return null;
+    final courses = Map<dynamic, dynamic>.from(coursesRaw);
+
+    final wantedVariant = _normalizeVariantKey(variantKey);
+    final wantedStudyMode = _normalizeStudyMode(studyMode);
+
+    for (final entry in courses.entries) {
+      if (entry.value is! Map) continue;
+      final courseMap = Map<String, dynamic>.from(entry.value as Map);
+
+      final linkedClass = (courseMap['class'] is Map)
+          ? Map<String, dynamic>.from(courseMap['class'] as Map)
+          : <String, dynamic>{};
+      final linkedClassId = (linkedClass['class_id'] ?? '').toString().trim();
+      if (classId.isNotEmpty && linkedClassId == classId) {
+        return courseMap;
+      }
+
+      final enrolledCourseId =
+          (courseMap['id'] ??
+                  courseMap['courseId'] ??
+                  courseMap['course_id'] ??
+                  '')
+              .toString()
+              .trim();
+      if (courseId.isEmpty || enrolledCourseId != courseId) continue;
+
+      final enrolledVariant = _normalizeVariantKey(
+        (courseMap['variantKey'] ?? courseMap['variant'] ?? '').toString(),
+      );
+      if (wantedVariant.isNotEmpty && enrolledVariant != wantedVariant) {
+        continue;
+      }
+
+      if (enrolledVariant == 'private') {
+        final enrolledStudyMode = _normalizeStudyMode(
+          (courseMap['studyMode'] ?? '').toString(),
+        );
+        if (wantedStudyMode.isNotEmpty &&
+            enrolledStudyMode != wantedStudyMode) {
+          continue;
+        }
+      }
+
+      return courseMap;
+    }
+
+    return null;
+  }
+
+  Future<_ClassTabMetrics> _loadClassTabMetrics(
+    Map<String, dynamic> cls,
+  ) async {
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    final courseId = (cls['course_id'] ?? '').toString().trim();
+    final variantKey = _normalizeVariantKey(
+      (cls['variantKey'] ?? '').toString(),
+    );
+    final studyMode = _normalizeStudyMode((cls['studyMode'] ?? '').toString());
+
+    final heldSessions = _classHeldSessionsCount(cls);
+    final coveredSessions = _classCoveredSessionIds(cls).length;
+    final currentSessions = max(heldSessions, coveredSessions);
+
+    var totalSessions = _classTotalSessionsFromScheduleOrCourse(cls);
+    if (totalSessions <= 0 && courseId.isNotEmpty) {
+      totalSessions = await _loadSyllabusSessionCount(
+        courseId: courseId,
+        syllabusVariant: syllabusVariantForScheduledAttendance(variantKey),
+      );
+    }
+
+    final learnerUids = _classLearnersList(cls)
+        .map((e) => (e['uid'] ?? '').trim())
+        .where((uid) => uid.isNotEmpty)
+        .toList();
+    final learnerByUid = <String, Map<String, dynamic>>{};
+    for (final learner in _allLearners) {
+      final uid = (learner['uid'] ?? '').toString().trim();
+      if (uid.isNotEmpty) learnerByUid[uid] = learner;
+    }
+
+    final packageFreq = <int, int>{};
+    final consumedFreqByPackage = <int, Map<int, int>>{};
+
+    for (final uid in learnerUids) {
+      final learner = learnerByUid[uid];
+      if (learner == null) continue;
+
+      final courseMap = _resolveLearnerCourseForClass(
+        learner: learner,
+        classId: classId,
+        courseId: courseId,
+        variantKey: variantKey,
+        studyMode: studyMode,
+      );
+      if (courseMap == null) continue;
+
+      final summaryMap = (courseMap['payment_summary'] is Map)
+          ? Map<String, dynamic>.from(courseMap['payment_summary'])
+          : <String, dynamic>{};
+      final sessionsPaidRaw = _asInt(summaryMap['sessionsPaidTotal']);
+      final effectivePaid = sessionsPaidRaw > 0
+          ? sessionsPaidRaw
+          : (_hasPaymentHistory(summaryMap) &&
+                    (variantKey == 'inclass' || variantKey == 'private')
+                ? 8
+                : 0);
+      if (effectivePaid <= 0) continue;
+
+      final consumed = _classConsumedFromCourseMap(
+        courseMap: courseMap,
+        variantKey: variantKey,
+      );
+
+      packageFreq[effectivePaid] = (packageFreq[effectivePaid] ?? 0) + 1;
+      final bucket = consumedFreqByPackage.putIfAbsent(
+        effectivePaid,
+        () => <int, int>{},
+      );
+      bucket[consumed] = (bucket[consumed] ?? 0) + 1;
+    }
+
+    var paidSessions = 0;
+    var consumedSessions = 0;
+    var paymentVariesAcrossLearners = false;
+
+    if (packageFreq.isNotEmpty) {
+      final sorted = packageFreq.entries.toList()
+        ..sort((a, b) {
+          final byFreq = b.value.compareTo(a.value);
+          if (byFreq != 0) return byFreq;
+          return a.key.compareTo(b.key);
+        });
+
+      paidSessions = sorted.first.key;
+      paymentVariesAcrossLearners = sorted.length > 1;
+
+      final consumedFreq =
+          consumedFreqByPackage[paidSessions] ?? const <int, int>{};
+      if (consumedFreq.isNotEmpty) {
+        final consumedSorted = consumedFreq.entries.toList()
+          ..sort((a, b) {
+            final byFreq = b.value.compareTo(a.value);
+            if (byFreq != 0) return byFreq;
+            return a.key.compareTo(b.key);
+          });
+        consumedSessions = consumedSorted.first.key;
+      }
+    }
+
+    final courseProgressValue = totalSessions > 0
+        ? (currentSessions / totalSessions).clamp(0.0, 1.0)
+        : 0.0;
+    final paymentProgressValue = paidSessions > 0
+        ? (consumedSessions / paidSessions).clamp(0.0, 1.0)
+        : 0.0;
+
+    return _ClassTabMetrics(
+      currentSessions: currentSessions,
+      totalSessions: totalSessions,
+      courseProgressValue: courseProgressValue,
+      consumedSessions: consumedSessions,
+      paidSessions: paidSessions,
+      paymentProgressValue: paymentProgressValue,
+      paymentVariesAcrossLearners: paymentVariesAcrossLearners,
+    );
   }
 
   // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
@@ -2948,6 +3250,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         onPressed: () {
                           setState(() {
                             _classesFuture = _classesRef.get();
+                            _classTabMetricsFutureByKey.clear();
                           });
                         },
                         icon: const Icon(Icons.refresh_rounded),
@@ -2975,6 +3278,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         final classTypeLabel = _classTypeLabel(
                           variantKey: variantKey,
                           studyMode: studyMode,
+                        );
+                        final metricsFuture = _classTabMetricsFor(
+                          cls: cls,
+                          index: i,
                         );
 
                         final instructor = (cls["instructor"] ?? "").toString();
@@ -3148,6 +3455,109 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     color: Colors.grey.shade700,
                                     fontWeight: FontWeight.w700,
                                   ),
+                                ),
+                                const SizedBox(height: 10),
+                                FutureBuilder<_ClassTabMetrics>(
+                                  future: metricsFuture,
+                                  builder: (context, metricsSnap) {
+                                    if (!metricsSnap.hasData) {
+                                      return const LinearProgressIndicator(
+                                        minHeight: 2,
+                                      );
+                                    }
+
+                                    final metrics = metricsSnap.data!;
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          metrics.totalSessions > 0
+                                              ? 'Course progress: ${metrics.currentSessions} / ${metrics.totalSessions}'
+                                              : 'Course progress: ${metrics.currentSessions} / -',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade800,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          child: LinearProgressIndicator(
+                                            value: metrics.courseProgressValue,
+                                            minHeight: 9,
+                                            backgroundColor: const Color(
+                                              0xFFE5E7EB,
+                                            ),
+                                            valueColor:
+                                                const AlwaysStoppedAnimation<
+                                                  Color
+                                                >(Color(0xFF2563EB)),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          metrics.paidSessions > 0
+                                              ? 'Payment progress: ${metrics.consumedSessions} / ${metrics.paidSessions}'
+                                              : 'Payment progress: no package total',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade800,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          child: LinearProgressIndicator(
+                                            value: metrics.paymentProgressValue,
+                                            minHeight: 9,
+                                            backgroundColor: const Color(
+                                              0xFFE5E7EB,
+                                            ),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  metrics.paidSessions > 0
+                                                      ? const Color(0xFFD97706)
+                                                      : Colors
+                                                            .blueGrey
+                                                            .shade500,
+                                                ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          metrics.totalSessions > 0
+                                              ? 'Current sessions: ${metrics.currentSessions} / ${metrics.totalSessions}'
+                                              : 'Current sessions: ${metrics.currentSessions}',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade700,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        if (metrics.paymentVariesAcrossLearners)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Text(
+                                              'Payment package varies across learners.',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade700,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    );
+                                  },
                                 ),
                                 if (expanded) ...[
                                   const SizedBox(height: 6),
@@ -5356,5 +5766,25 @@ class _RecordedCourseSummary {
     required this.expiresAt,
     required this.durationMonths,
     required this.lastPaymentAt,
+  });
+}
+
+class _ClassTabMetrics {
+  final int currentSessions;
+  final int totalSessions;
+  final double courseProgressValue;
+  final int consumedSessions;
+  final int paidSessions;
+  final double paymentProgressValue;
+  final bool paymentVariesAcrossLearners;
+
+  const _ClassTabMetrics({
+    required this.currentSessions,
+    required this.totalSessions,
+    required this.courseProgressValue,
+    required this.consumedSessions,
+    required this.paidSessions,
+    required this.paymentProgressValue,
+    required this.paymentVariesAcrossLearners,
   });
 }

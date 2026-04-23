@@ -154,6 +154,7 @@ class _AdminTeacherMailThreadScreenState
   final _db = FirebaseDatabase.instance;
 
   final _bodyC = TextEditingController();
+  final ScrollController _messagesScrollC = ScrollController();
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get _meName =>
@@ -178,12 +179,16 @@ class _AdminTeacherMailThreadScreenState
   final Set<String> _selectedMessageIds = <String>{};
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
   final Set<String> _readReceiptWriteInFlight = <String>{};
+  bool _autoFollowLatest = true;
+  int _lastMessageCount = 0;
+  int _lastNewestMessageAt = 0;
 
   bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    _messagesScrollC.addListener(_handleMessagesScroll);
 
     _threadId = _pairThreadId(_meUid, widget.teacherUid);
     RouteState.enterMailThread(_threadId);
@@ -203,7 +208,68 @@ class _AdminTeacherMailThreadScreenState
   void dispose() {
     RouteState.exitMailThread(_threadId);
     _bodyC.dispose();
+    _messagesScrollC
+      ..removeListener(_handleMessagesScroll)
+      ..dispose();
     super.dispose();
+  }
+
+  void _handleMessagesScroll() {
+    if (!_messagesScrollC.hasClients) return;
+    final pos = _messagesScrollC.position;
+    final distanceToBottom = pos.maxScrollExtent - pos.pixels;
+    _autoFollowLatest = distanceToBottom <= 120;
+  }
+
+  void _scrollToLatest({required bool animated}) {
+    if (!_messagesScrollC.hasClients) return;
+    final target = _messagesScrollC.position.maxScrollExtent;
+    if (animated) {
+      _messagesScrollC.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _messagesScrollC.jumpTo(target);
+    }
+  }
+
+  void _scheduleScrollToLatest({required bool animated}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToLatest(animated: animated);
+    });
+  }
+
+  void _onMessagesChanged(List<_MailMsg> msgs) {
+    final count = msgs.length;
+    final newestAt = count == 0 ? 0 : msgs.last.createdAtMs;
+    final isChanged =
+        count != _lastMessageCount || newestAt != _lastNewestMessageAt;
+    final hasNewerContent =
+        count > _lastMessageCount || newestAt > _lastNewestMessageAt;
+
+    _lastMessageCount = count;
+    _lastNewestMessageAt = newestAt;
+
+    if (!isChanged) return;
+    if (hasNewerContent && _autoFollowLatest) {
+      _scheduleScrollToLatest(animated: true);
+    }
+  }
+
+  void _forceScrollToLatest() {
+    _autoFollowLatest = true;
+    _scheduleScrollToLatest(animated: true);
+  }
+
+  double _messageMaxWidth() {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width >= 1300) return 560;
+    if (width >= 900) return 500;
+    if (width >= 600) return 440;
+    return width * 0.84;
   }
 
   /// teacher display name
@@ -514,6 +580,7 @@ class _AdminTeacherMailThreadScreenState
       _sending = true;
       _attachments.clear();
     });
+    _forceScrollToLatest();
 
     try {
       await _setSubjectIfNeeded();
@@ -610,6 +677,7 @@ class _AdminTeacherMailThreadScreenState
       });
 
       unawaited(_markRead());
+      _forceScrollToLatest();
 
       // notify teacher (do not block UI)
       unawaited(() async {
@@ -1097,12 +1165,14 @@ class _AdminTeacherMailThreadScreenState
                   builder: (_, snap) {
                     final msgs = _parseMessages(snap.data?.snapshot.value);
                     unawaited(_markMessagesSeen(msgs));
+                    _onMessagesChanged(msgs);
                     _visibleMessages = msgs;
                     if (msgs.isEmpty) {
                       return const Center(child: Text('No mail yet.'));
                     }
 
                     return ListView.builder(
+                      controller: _messagesScrollC,
                       padding: const EdgeInsets.all(12),
                       itemCount: msgs.length,
                       itemBuilder: (_, i) {
@@ -1119,10 +1189,12 @@ class _AdminTeacherMailThreadScreenState
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 340),
+                              constraints: BoxConstraints(
+                                maxWidth: _messageMaxWidth(),
+                              ),
                               child: Container(
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(16),
                                   border: _selectedMessageIds.contains(m.id)
                                       ? Border.all(
                                           color: Colors.orange,
@@ -1130,85 +1202,106 @@ class _AdminTeacherMailThreadScreenState
                                         )
                                       : null,
                                 ),
-                                child: Card(
-                                  elevation: 0,
-                                  color: mine
-                                      ? Colors.blue.withValues(alpha: 0.12)
-                                      : Colors.black.withValues(alpha: 0.05),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      crossAxisAlignment: mine
-                                          ? CrossAxisAlignment.end
-                                          : CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                mine ? 'Me' : 'Teacher',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color: _personNameColor,
-                                                  fontSize: 12,
+                                child: Container(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    10,
+                                    12,
+                                    10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: mine
+                                        ? const Color(0xFFE3F2FD)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Flexible(
+                                            child: Wrap(
+                                              spacing: 8,
+                                              runSpacing: 4,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              children: [
+                                                Text(
+                                                  mine ? 'Me' : 'Teacher',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    color: _personNameColor,
+                                                    fontSize: 12,
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              _fmt(m.createdAtMs),
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.55,
+                                                Text(
+                                                  _fmt(m.createdAtMs),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.55,
+                                                        ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            if (!_selectionMode)
-                                              SizedBox(
-                                                width: 32,
-                                                height: 32,
-                                                child: PopupMenuButton<String>(
-                                                  padding: EdgeInsets.zero,
-                                                  tooltip: 'Message actions',
-                                                  onSelected: (v) async {
-                                                    if (v == 'delete_for_me') {
-                                                      await _deleteMessageForMe(
-                                                        m,
-                                                      );
-                                                    }
-                                                  },
-                                                  itemBuilder: (_) => const [
-                                                    PopupMenuItem(
-                                                      value: 'delete_for_me',
-                                                      child: Text(
-                                                        'Delete (for me)',
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                        if (m.body.trim().isNotEmpty) ...[
-                                          const SizedBox(height: 6),
-                                          SelectableText(m.body),
-                                        ],
-                                        if (m.attachments.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          ...m.attachments.map(
-                                            (a) => _buildAttachmentWidget(
-                                              a: a,
-                                              mine: mine,
+                                              ],
                                             ),
                                           ),
+                                          if (!_selectionMode) ...[
+                                            const SizedBox(width: 2),
+                                            SizedBox(
+                                              width: 32,
+                                              height: 32,
+                                              child: PopupMenuButton<String>(
+                                                padding: EdgeInsets.zero,
+                                                tooltip: 'Message actions',
+                                                onSelected: (v) async {
+                                                  if (v == 'delete_for_me') {
+                                                    await _deleteMessageForMe(
+                                                      m,
+                                                    );
+                                                  }
+                                                },
+                                                itemBuilder: (_) => const [
+                                                  PopupMenuItem(
+                                                    value: 'delete_for_me',
+                                                    child: Text(
+                                                      'Delete (for me)',
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                         ],
+                                      ),
+                                      if (m.body.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        SelectableText(m.body),
                                       ],
-                                    ),
+                                      if (m.attachments.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        ...m.attachments.map(
+                                          (a) => _buildAttachmentWidget(
+                                            a: a,
+                                            mine: mine,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                               ),

@@ -1418,21 +1418,31 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Future<_AvailMeta> _loadAvailMeta(String teacherId, String courseId) async {
     try {
-      if (teacherId.isEmpty || courseId.isEmpty) {
+      if (teacherId.isEmpty) {
         return const _AvailMeta.empty();
       }
+
+      String meetUrl = '';
+      try {
+        final meetSnap = await _db
+            .child('users/$teacherId/google_meet_url')
+            .get();
+        meetUrl = _safeStr(meetSnap.value);
+      } catch (_) {}
+
+      if (courseId.isEmpty) {
+        return _AvailMeta(
+          meetUrl: meetUrl,
+          durationMinutes: 60,
+          teacherName: '',
+        );
+      }
+
       final snap = await _db
           .child('$bookingAvailabilityNode/$teacherId/$courseId')
           .get();
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-
-        final meetUrl = _safeStr(
-          m['meetUrl'] ??
-              m['meet_url'] ??
-              m['googleMeetUrl'] ??
-              m['google_meet_url'],
-        );
         int dur = _asInt(
           m['durationMinutes'] ?? m['durationMin'] ?? m['duration'],
         );
@@ -1443,6 +1453,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           meetUrl: meetUrl,
           durationMinutes: dur,
           teacherName: teacherName,
+        );
+      }
+
+      if (meetUrl.isNotEmpty) {
+        return _AvailMeta(
+          meetUrl: meetUrl,
+          durationMinutes: 60,
+          teacherName: '',
         );
       }
     } catch (_) {}

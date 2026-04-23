@@ -146,6 +146,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
+  final ScrollController _messagesScrollC = ScrollController();
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get _meName =>
@@ -171,6 +172,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
   final Set<String> _readReceiptWriteInFlight = <String>{};
   StreamSubscription<DatabaseEvent>? _peerStateSub;
+  bool _autoFollowLatest = true;
+  int _lastMessageCount = 0;
+  int _lastNewestMessageAt = 0;
 
   bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
@@ -178,6 +182,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   void initState() {
     super.initState();
     RouteState.enterMailThread(widget.threadId);
+    _messagesScrollC.addListener(_handleMessagesScroll);
 
     _msgStream = _msgsRef
         .orderByChild('createdAt')
@@ -193,8 +198,69 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
     _bodyC.dispose();
+    _messagesScrollC
+      ..removeListener(_handleMessagesScroll)
+      ..dispose();
     _peerStateSub?.cancel();
     super.dispose();
+  }
+
+  void _handleMessagesScroll() {
+    if (!_messagesScrollC.hasClients) return;
+    final pos = _messagesScrollC.position;
+    final distanceToBottom = pos.maxScrollExtent - pos.pixels;
+    _autoFollowLatest = distanceToBottom <= 120;
+  }
+
+  void _scrollToLatest({required bool animated}) {
+    if (!_messagesScrollC.hasClients) return;
+    final target = _messagesScrollC.position.maxScrollExtent;
+    if (animated) {
+      _messagesScrollC.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _messagesScrollC.jumpTo(target);
+    }
+  }
+
+  void _scheduleScrollToLatest({required bool animated}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToLatest(animated: animated);
+    });
+  }
+
+  void _onMessagesChanged(List<_MailMsg> msgs) {
+    final count = msgs.length;
+    final newestAt = count == 0 ? 0 : msgs.last.createdAtMs;
+    final isChanged =
+        count != _lastMessageCount || newestAt != _lastNewestMessageAt;
+    final hasNewerContent =
+        count > _lastMessageCount || newestAt > _lastNewestMessageAt;
+
+    _lastMessageCount = count;
+    _lastNewestMessageAt = newestAt;
+
+    if (!isChanged) return;
+    if (hasNewerContent && _autoFollowLatest) {
+      _scheduleScrollToLatest(animated: true);
+    }
+  }
+
+  void _forceScrollToLatest() {
+    _autoFollowLatest = true;
+    _scheduleScrollToLatest(animated: true);
+  }
+
+  double _messageMaxWidth() {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width >= 1300) return 560;
+    if (width >= 900) return 500;
+    if (width >= 600) return 440;
+    return width * 0.84;
   }
 
   void _snack(String msg) {
@@ -790,6 +856,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       _sending = true;
       _attachments.clear();
     });
+    _forceScrollToLatest();
 
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -882,6 +949,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
       // ✅ 4) mark read for me (don’t block UI if slow)
       unawaited(_markRead());
+      _forceScrollToLatest();
 
       // ✅ 5) push notify (don’t block UI)
       unawaited(() async {
@@ -983,12 +1051,14 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                   builder: (_, snap) {
                     final msgs = _parseMessages(snap.data?.snapshot.value);
                     unawaited(_markMessagesSeen(msgs));
+                    _onMessagesChanged(msgs);
                     _visibleMessages = msgs;
                     if (msgs.isEmpty) {
                       return const Center(child: Text('No messages yet.'));
                     }
 
                     return ListView.builder(
+                      controller: _messagesScrollC,
                       padding: const EdgeInsets.all(12),
                       itemCount: msgs.length,
                       itemBuilder: (_, i) {
@@ -1008,10 +1078,12 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 340),
+                              constraints: BoxConstraints(
+                                maxWidth: _messageMaxWidth(),
+                              ),
                               child: Container(
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(16),
                                   border: _selectedMessageIds.contains(m.id)
                                       ? Border.all(
                                           color: Colors.orange,
@@ -1019,128 +1091,125 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                         )
                                       : null,
                                 ),
-                                child: Card(
-                                  elevation: 0,
-                                  color: mine
-                                      ? Colors.blue.withValues(alpha: 0.12)
-                                      : Colors.black.withValues(alpha: 0.05),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      crossAxisAlignment: mine
-                                          ? CrossAxisAlignment.end
-                                          : CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Flexible(
-                                                    child: Text(
-                                                      mine
-                                                          ? 'Me'
-                                                          : widget.peerName,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        color: _personNameColor,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
+                                child: Container(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    10,
+                                    12,
+                                    10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: mine
+                                        ? const Color(0xFFE3F2FD)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Flexible(
+                                            child: Wrap(
+                                              spacing: 8,
+                                              runSpacing: 4,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              children: [
+                                                Text(
+                                                  mine ? 'Me' : widget.peerName,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    color: _personNameColor,
+                                                    fontSize: 12,
                                                   ),
-                                                  const SizedBox(width: 8),
+                                                ),
+                                                Text(
+                                                  _fmt(m.createdAtMs),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontStyle: FontStyle.italic,
+                                                    color:
+                                                        scheme.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                                if (receiptLevel > 0)
+                                                  Icon(
+                                                    receiptLevel == 2
+                                                        ? Icons.done_all_rounded
+                                                        : Icons.done_rounded,
+                                                    size: 15,
+                                                    color: receiptLevel == 2
+                                                        ? scheme.primary
+                                                        : scheme
+                                                              .onSurfaceVariant,
+                                                  ),
+                                                if (receiptLabel.isNotEmpty)
                                                   Text(
-                                                    _fmt(m.createdAtMs),
+                                                    receiptLabel,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontStyle:
-                                                          FontStyle.italic,
-                                                      color: scheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                                  if (receiptLevel > 0) ...[
-                                                    const SizedBox(width: 6),
-                                                    Icon(
-                                                      receiptLevel == 2
-                                                          ? Icons
-                                                                .done_all_rounded
-                                                          : Icons.done_rounded,
-                                                      size: 15,
+                                                      fontSize: 10.5,
+                                                      fontWeight:
+                                                          FontWeight.w700,
                                                       color: receiptLevel == 2
                                                           ? scheme.primary
                                                           : scheme
                                                                 .onSurfaceVariant,
                                                     ),
-                                                    if (receiptLabel
-                                                        .isNotEmpty) ...[
-                                                      const SizedBox(width: 4),
-                                                      Flexible(
-                                                        child: Text(
-                                                          receiptLabel,
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style: TextStyle(
-                                                            fontSize: 10.5,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            color:
-                                                                receiptLevel ==
-                                                                    2
-                                                                ? scheme.primary
-                                                                : scheme
-                                                                      .onSurfaceVariant,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            if (!_selectionMode)
-                                              PopupMenuButton<String>(
-                                                tooltip: 'Message actions',
-                                                onSelected: (v) async {
-                                                  if (v == 'delete_for_me') {
-                                                    await _deleteMessageForMe(
-                                                      m,
-                                                    );
-                                                  }
-                                                },
-                                                itemBuilder: (_) => const [
-                                                  PopupMenuItem(
-                                                    value: 'delete_for_me',
-                                                    child: Text(
-                                                      'Delete (for me)',
-                                                    ),
                                                   ),
-                                                ],
-                                              ),
-                                          ],
-                                        ),
-                                        if (m.body.trim().isNotEmpty) ...[
-                                          const SizedBox(height: 6),
-                                          SelectableText(m.body),
-                                        ],
-                                        if (m.attachments.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          ...m.attachments.map(
-                                            (a) => _buildAttachmentWidget(
-                                              a: a,
-                                              mine: mine,
+                                              ],
                                             ),
                                           ),
+                                          if (!_selectionMode) ...[
+                                            const SizedBox(width: 2),
+                                            PopupMenuButton<String>(
+                                              tooltip: 'Message actions',
+                                              onSelected: (v) async {
+                                                if (v == 'delete_for_me') {
+                                                  await _deleteMessageForMe(m);
+                                                }
+                                              },
+                                              itemBuilder: (_) => const [
+                                                PopupMenuItem(
+                                                  value: 'delete_for_me',
+                                                  child: Text(
+                                                    'Delete (for me)',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
                                         ],
+                                      ),
+                                      if (m.body.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        SelectableText(m.body),
                                       ],
-                                    ),
+                                      if (m.attachments.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        ...m.attachments.map(
+                                          (a) => _buildAttachmentWidget(
+                                            a: a,
+                                            mine: mine,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                               ),

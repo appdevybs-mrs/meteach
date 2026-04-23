@@ -32,6 +32,7 @@ import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
+import '../services/learner_join_signal_service.dart';
 import '../services/window_access_service.dart';
 
 class LearnerHome extends StatefulWidget {
@@ -875,29 +876,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     required String teacherId,
     required String courseId,
   }) async {
-    if (teacherId.trim().isEmpty || courseId.trim().isEmpty) return '';
+    if (teacherId.trim().isEmpty) return '';
     try {
-      final snap = await _db
-          .child('booking_availability/$teacherId/$courseId')
-          .get();
-      final v = snap.value;
-      if (v is Map) {
-        final m = Map<String, dynamic>.from(v);
-        final meetUrl =
-            (m['meetUrl'] ??
-                    m['meet_url'] ??
-                    m['googleMeetUrl'] ??
-                    m['google_meet_url'] ??
-                    '')
-                .toString()
-                .trim();
-        if (meetUrl.isNotEmpty) return meetUrl;
-      }
-
-      final fallback = await _db
-          .child('users/$teacherId/google_meet_url')
-          .get();
-      return (fallback.value ?? '').toString().trim();
+      final snap = await _db.child('users/$teacherId/google_meet_url').get();
+      return (snap.value ?? '').toString().trim();
     } catch (_) {
       return '';
     }
@@ -1895,6 +1877,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         int nextStartMs = 0;
         int sessionDurationMinutes = 60;
         String meetUrl = '';
+        String teacherUid = '';
         Map<String, dynamic> classNode = <String, dynamic>{};
         final cls = (course['class'] is Map)
             ? Map<String, dynamic>.from(course['class'] as Map)
@@ -1927,7 +1910,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         }
 
         if (isPrivateOnline) {
-          String teacherUid =
+          teacherUid =
               (classNode['teacherUid'] ??
                       classNode['teacher_uid'] ??
                       classNode['teacherId'] ??
@@ -2000,6 +1983,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             nextStartMs: nextStartMs,
             sessionDurationMinutes: sessionDurationMinutes,
             meetUrl: meetUrl,
+            teacherUid: teacherUid,
           ),
         );
       }
@@ -2318,6 +2302,7 @@ class _CourseProgressItem {
   final int nextStartMs;
   final int sessionDurationMinutes;
   final String meetUrl;
+  final String teacherUid;
 
   const _CourseProgressItem({
     required this.courseKey,
@@ -2334,6 +2319,7 @@ class _CourseProgressItem {
     required this.nextStartMs,
     required this.sessionDurationMinutes,
     required this.meetUrl,
+    required this.teacherUid,
   });
 }
 
@@ -2468,6 +2454,53 @@ class _ProgressCard extends StatelessWidget {
         const SnackBar(content: Text('Could not open the link.')),
       );
     }
+  }
+
+  Future<String> _myDisplayName() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    final emailPrefix = email.isNotEmpty ? email.split('@').first : '';
+    if (uid == null || uid.isEmpty) {
+      return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
+    }
+
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref()
+          .child('users/$uid')
+          .get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final full = ('$first $last').trim();
+        if (full.isNotEmpty) return full;
+
+        final dbEmail = (m['email'] ?? '').toString().trim();
+        if (dbEmail.isNotEmpty) return dbEmail.split('@').first;
+      }
+    } catch (_) {}
+
+    return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
+  }
+
+  Future<void> _notifyTeacherJoinTap(_CourseProgressItem item) async {
+    final learnerUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final teacherUid = item.teacherUid.trim();
+    if (learnerUid.isEmpty || teacherUid.isEmpty) return;
+    try {
+      final learnerName = await _myDisplayName();
+      await LearnerJoinSignalService.notifyTeacherJoinTap(
+        learnerUid: learnerUid,
+        teacherUid: teacherUid,
+        learnerName: learnerName,
+        source: 'learner/learner_home_progress',
+        courseId: item.courseKey,
+        courseTitle: item.title,
+        sessionStartMs: item.nextStartMs,
+      );
+    } catch (_) {}
   }
 
   String _variantBadgeText(String variantKey) {
@@ -2737,7 +2770,14 @@ class _ProgressCard extends StatelessWidget {
                               ),
                             ),
                             onPressed: canJoin
-                                ? () => _openExternalUrl(context, item.meetUrl)
+                                ? () async {
+                                    await _notifyTeacherJoinTap(item);
+                                    if (!context.mounted) return;
+                                    await _openExternalUrl(
+                                      context,
+                                      item.meetUrl,
+                                    );
+                                  }
                                 : null,
                             child: Text(
                               joinLabel,
@@ -3448,36 +3488,23 @@ class _BookingTopCardState extends State<_BookingTopCard>
     if (next.courseId.isEmpty) return null;
 
     try {
+      int dur = 60;
       final snap = await _db
           .child('booking_availability/${next.teacherId}/${next.courseId}')
           .get();
       final v = snap.value;
-      if (v is! Map) return null;
-
-      final m = Map<String, dynamic>.from(v);
-
-      final meetUrl =
-          (m['meetUrl'] ??
-                  m['meet_url'] ??
-                  m['googleMeetUrl'] ??
-                  m['google_meet_url'] ??
-                  '')
-              .toString()
-              .trim();
-
-      int dur = _toInt(m['durationMinutes'], fallback: 0);
-      if (dur <= 0) dur = _toInt(m['durationMin'], fallback: 0);
-      if (dur <= 0) dur = 60;
-
-      if (meetUrl.isEmpty) {
-        final userMeetSnap = await _db
-            .child('users/${next.teacherId}/google_meet_url')
-            .get();
-        final fallback = (userMeetSnap.value ?? '').toString().trim();
-        if (fallback.isEmpty) return null;
-        return _MeetInfo(meetUrl: fallback, durationMinutes: dur);
+      if (v is Map) {
+        final m = Map<String, dynamic>.from(v);
+        dur = _toInt(m['durationMinutes'], fallback: 0);
+        if (dur <= 0) dur = _toInt(m['durationMin'], fallback: 0);
+        if (dur <= 0) dur = 60;
       }
 
+      final userMeetSnap = await _db
+          .child('users/${next.teacherId}/google_meet_url')
+          .get();
+      final meetUrl = (userMeetSnap.value ?? '').toString().trim();
+      if (meetUrl.isEmpty) return null;
       return _MeetInfo(meetUrl: meetUrl, durationMinutes: dur);
     } catch (_) {
       return null;
@@ -3635,6 +3662,48 @@ class _BookingTopCardState extends State<_BookingTopCard>
         const SnackBar(content: Text('Could not open the link.')),
       );
     }
+  }
+
+  Future<String> _myDisplayName() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    final emailPrefix = email.isNotEmpty ? email.split('@').first : '';
+    if (uid.isEmpty) return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
+
+    try {
+      final snap = await _db.child('users/$uid').get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final full = ('$first $last').trim();
+        if (full.isNotEmpty) return full;
+
+        final dbEmail = (m['email'] ?? '').toString().trim();
+        if (dbEmail.isNotEmpty) return dbEmail.split('@').first;
+      }
+    } catch (_) {}
+
+    return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
+  }
+
+  Future<void> _notifyTeacherJoinTap(_NextBooking next) async {
+    final learnerUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (learnerUid.isEmpty || next.teacherId.trim().isEmpty) return;
+    try {
+      final learnerName = await _myDisplayName();
+      await LearnerJoinSignalService.notifyTeacherJoinTap(
+        learnerUid: learnerUid,
+        teacherUid: next.teacherId,
+        learnerName: learnerName,
+        source: 'learner/learner_home_booking_top',
+        courseId: next.courseId,
+        dayKey: next.dayKey,
+        time: next.time,
+        sessionStartMs: next.start.millisecondsSinceEpoch,
+      );
+    } catch (_) {}
   }
 
   String _bookingKey(String courseId, String dayKey, String hhmm) =>
@@ -4133,6 +4202,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
                           final uid =
                               FirebaseAuth.instance.currentUser?.uid ?? '';
 
+                          await _notifyTeacherJoinTap(next);
+                          if (!context.mounted) return;
                           await _openExternalUrl(context, meet.meetUrl);
 
                           if (uid.isNotEmpty && next.source == 'flexible') {

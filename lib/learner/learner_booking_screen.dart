@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../services/push_dispatch_service.dart';
+import '../services/learner_join_signal_service.dart';
 import '../services/notification_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
@@ -645,6 +646,37 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok) _toast('Could not open the link.');
+  }
+
+  Future<String> _loadTeacherProfileMeetUrl(String teacherId) async {
+    final id = teacherId.trim();
+    if (id.isEmpty) return '';
+    try {
+      final snap = await _db.child('users/$id/google_meet_url').get();
+      return (snap.value ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<void> _notifyTeacherJoinTap(_Slot slot) async {
+    try {
+      final learnerUid = myUid.trim();
+      if (learnerUid.isEmpty) return;
+
+      final learnerName = await _getMyFullName();
+      await LearnerJoinSignalService.notifyTeacherJoinTap(
+        learnerUid: learnerUid,
+        teacherUid: slot.teacherId,
+        learnerName: learnerName,
+        source: 'learner/learner_booking',
+        courseId: slot.courseId,
+        courseTitle: courseTitle.trim(),
+        dayKey: slot.dayKey,
+        time: slot.time,
+        sessionStartMs: slot.start.millisecondsSinceEpoch,
+      );
+    } catch (_) {}
   }
 
   bool _isWithin24Hours(_Slot slot) {
@@ -1295,14 +1327,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 .toString()
                 .trim();
 
-        final meetUrl =
-            (effective['meetUrl'] ??
-                    effective['meet_url'] ??
-                    effective['googleMeetUrl'] ??
-                    effective['google_meet_url'] ??
-                    '')
-                .toString()
-                .trim();
+        final meetUrl = await _loadTeacherProfileMeetUrl(teacherId);
 
         int durationMin = _toInt(effective['durationMinutes'], fallback: 0);
         if (durationMin <= 0) {
@@ -3147,6 +3172,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         onPressed: dynamicCanJoin
                             ? () {
                                 Navigator.pop(context);
+                                unawaited(_notifyTeacherJoinTap(slot));
                                 _openExternalUrl(slot.meetUrl);
                               }
                             : null,

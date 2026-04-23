@@ -31,16 +31,19 @@ import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'learner_homework_screen.dart';
+import 'learner_mail_thread_screen.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/material_webview_screen.dart';
 import '../services/course_feedback_service.dart';
+import '../services/learner_join_signal_service.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2 ...
@@ -103,6 +106,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   bool _derivedSessionsReady = false;
   Future<_DetailPrivateMeta?>? _privateMetaFuture;
   Timer? _joinTicker;
+  _TeacherMiniProfile? _teacherProfile;
+  bool _mailingTeacher = false;
 
   @override
   void initState() {
@@ -556,25 +561,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     }
   }
 
-  Future<_DetailPrivateMeta?> _loadPrivateJoinMeta() async {
-    if (!_isPrivateOnlineCourse) return null;
-    if (_classId.trim().isEmpty) return null;
-
-    Map<String, dynamic> classNode = <String, dynamic>{};
-    try {
-      final cs = await _classesRef.child(_classId).get();
-      if (cs.exists && cs.value is Map) {
-        classNode = Map<String, dynamic>.from(cs.value as Map);
-      }
-    } catch (_) {}
-
-    final scheduleRaw = _cls['schedule'] ?? classNode['schedule'];
-    if (scheduleRaw is! Map) return null;
-    final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
-
-    final scheduleLine = _weeklyScheduleLine(schedule['sessions']);
-    final next = _nextOccurrenceFromSchedule(schedule);
-
+  String _bestTeacherUidFromClassNode(Map<String, dynamic> classNode) {
     String teacherUid =
         (classNode['teacherUid'] ??
                 classNode['teacher_uid'] ??
@@ -621,6 +608,614 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       if (bestUid.isNotEmpty) teacherUid = bestUid;
     }
 
+    return teacherUid;
+  }
+
+  Future<_TeacherMiniProfile?> _loadTeacherProfile() async {
+    Map<String, dynamic> classNode = <String, dynamic>{};
+    if (_classId.trim().isNotEmpty) {
+      try {
+        final cs = await _classesRef.child(_classId).get();
+        if (cs.exists && cs.value is Map) {
+          classNode = Map<String, dynamic>.from(cs.value as Map);
+        }
+      } catch (_) {}
+    }
+
+    final teacherUid = _bestTeacherUidFromClassNode(classNode);
+    if (teacherUid.isEmpty) return null;
+
+    String displayName =
+        (classNode['teacherName'] ??
+                classNode['teacher_name'] ??
+                classNode['instructor'] ??
+                '')
+            .toString()
+            .trim();
+
+    String photoUrl = '';
+    String aboutMe = '';
+    String introVideoUrl = '';
+    bool socialVisible = true;
+    final socialLinks = <String, String>{};
+
+    try {
+      final snap = await _usersRef.child(teacherUid).get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry('$k', v));
+        final first = (m['first_name'] ?? m['firstName'] ?? '')
+            .toString()
+            .trim();
+        final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+        final full = '$first $last'.trim();
+        final email = (m['email'] ?? '').toString().trim();
+        if (displayName.isEmpty) {
+          displayName = full.isNotEmpty
+              ? full
+              : (email.isNotEmpty ? email : 'Teacher');
+        }
+
+        photoUrl = ProfileAvatar.resolvePhotoFromMap(m);
+        aboutMe = (m['about_me'] ?? '').toString().trim();
+        introVideoUrl = (m['intro_video_url'] ?? '').toString().trim();
+        socialVisible = m['social_links_visible_to_learners'] != false;
+
+        final rawSocial = m['social_links'];
+        if (socialVisible && rawSocial is Map) {
+          rawSocial.forEach((k, v) {
+            final key = k.toString().trim().toLowerCase();
+            final val = (v ?? '').toString().trim();
+            if (key.isNotEmpty && val.isNotEmpty) {
+              socialLinks[key] = val;
+            }
+          });
+        }
+      }
+    } catch (_) {}
+
+    if (displayName.isEmpty) displayName = 'Teacher';
+
+    return _TeacherMiniProfile(
+      uid: teacherUid,
+      name: displayName,
+      photoUrl: photoUrl,
+      aboutMe: aboutMe,
+      introVideoUrl: introVideoUrl,
+      socialVisible: socialVisible,
+      socialLinks: socialLinks,
+    );
+  }
+
+  String _normalizeExternalUrl(String url) {
+    var out = url.trim();
+    if (out.isEmpty) return '';
+    if (!out.startsWith('http://') && !out.startsWith('https://')) {
+      out = 'https://$out';
+    }
+    return out;
+  }
+
+  Future<void> _openTeacherLink(String url, {String label = 'link'}) async {
+    final normalized = _normalizeExternalUrl(url);
+    if (normalized.isEmpty) return;
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(content: Text('Invalid $label URL.')),
+      );
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(content: Text('Could not open $label.')),
+      );
+    }
+  }
+
+  Future<String> _myDisplayName() async {
+    final authUser = FirebaseAuth.instance.currentUser;
+    final fromAuth = (authUser?.displayName ?? '').trim();
+    if (fromAuth.isNotEmpty) return fromAuth;
+
+    try {
+      final snap = await _usersRef.child(_uid).get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry('$k', v));
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final full = '$first $last'.trim();
+        if (full.isNotEmpty) return full;
+      }
+    } catch (_) {}
+
+    final email = (authUser?.email ?? '').trim();
+    if (email.isNotEmpty) return email;
+    return 'Learner';
+  }
+
+  Future<void> _notifyTeacherJoinTap(_DetailPrivateMeta meta) async {
+    final learnerUid = _uid.trim();
+    final teacherUid = meta.teacherUid.trim();
+    if (learnerUid.isEmpty || teacherUid.isEmpty) return;
+
+    try {
+      final learnerName = await _myDisplayName();
+      await LearnerJoinSignalService.notifyTeacherJoinTap(
+        learnerUid: learnerUid,
+        teacherUid: teacherUid,
+        learnerName: learnerName,
+        source: 'learner/learner_course_detail',
+        courseId: _courseId,
+        courseTitle: _courseTitle,
+        sessionStartMs: meta.nextStart?.millisecondsSinceEpoch ?? 0,
+      );
+    } catch (_) {}
+  }
+
+  Future<String?> _findExistingThreadWithTeacher(String teacherUid) async {
+    try {
+      final snap = await _db.child('mail_index/$_uid').get();
+      if (!snap.exists || snap.value is! Map) return null;
+      final root = Map<dynamic, dynamic>.from(snap.value as Map);
+      String? bestThreadId;
+      int bestUpdatedAt = 0;
+
+      for (final e in root.entries) {
+        final threadId = e.key.toString().trim();
+        if (threadId.isEmpty || e.value is! Map) continue;
+        final row = Map<dynamic, dynamic>.from(e.value as Map);
+        final peerUid = (row['peerUid'] ?? '').toString().trim();
+        final deletedAt = row['deletedAt'];
+        if (peerUid != teacherUid) continue;
+        if (deletedAt != null) continue;
+
+        final updatedAt = _asInt(row['updatedAt']);
+        if (bestThreadId == null || updatedAt >= bestUpdatedAt) {
+          bestThreadId = threadId;
+          bestUpdatedAt = updatedAt;
+        }
+      }
+
+      return bestThreadId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> _createThreadWithTeacher(_TeacherMiniProfile teacher) async {
+    final threadId = _db.child('mail_threads').push().key;
+    if (threadId == null || threadId.trim().isEmpty) {
+      throw Exception('Failed to create thread.');
+    }
+
+    final subject =
+        'Course: ${_courseTitle.trim().isEmpty ? 'Message' : _courseTitle.trim()}';
+    const placeholderLastMessage = '(No messages yet)';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final myName = await _myDisplayName();
+
+    final Map<String, dynamic> updates = {
+      'mail_threads/$threadId/subject': subject,
+      'mail_threads/$threadId/type': 'mail',
+      'mail_threads/$threadId/createdAt': now,
+      'mail_threads/$threadId/updatedAt': now,
+      'mail_threads/$threadId/lastMessage': placeholderLastMessage,
+      'mail_threads/$threadId/participants/$_uid': true,
+      'mail_threads/$threadId/participants/${teacher.uid}': true,
+
+      'mail_index/$_uid/$threadId/subject': subject,
+      'mail_index/$_uid/$threadId/type': 'mail',
+      'mail_index/$_uid/$threadId/updatedAt': now,
+      'mail_index/$_uid/$threadId/lastMessage': placeholderLastMessage,
+      'mail_index/$_uid/$threadId/unreadCount': 0,
+      'mail_index/$_uid/$threadId/peerUid': teacher.uid,
+      'mail_index/$_uid/$threadId/peerName': teacher.name,
+      'mail_index/$_uid/$threadId/peerRole': 'teacher',
+      'mail_index/$_uid/$threadId/deletedAt': null,
+
+      'mail_index/${teacher.uid}/$threadId/subject': subject,
+      'mail_index/${teacher.uid}/$threadId/type': 'mail',
+      'mail_index/${teacher.uid}/$threadId/updatedAt': now,
+      'mail_index/${teacher.uid}/$threadId/lastMessage': placeholderLastMessage,
+      'mail_index/${teacher.uid}/$threadId/unreadCount': 1,
+      'mail_index/${teacher.uid}/$threadId/peerUid': _uid,
+      'mail_index/${teacher.uid}/$threadId/peerName': myName,
+      'mail_index/${teacher.uid}/$threadId/peerRole': 'learner',
+      'mail_index/${teacher.uid}/$threadId/deletedAt': null,
+
+      'mail_state/$_uid/$threadId/lastReadAt': now,
+      'mail_state/$_uid/$threadId/lastDeliveredAt': now,
+      'mail_state/${teacher.uid}/$threadId/lastDeliveredAt': now,
+    };
+
+    await _db.update(updates);
+    return threadId;
+  }
+
+  Future<void> _mailTeacherDirectly() async {
+    final teacher = _teacherProfile;
+    if (teacher == null || teacher.uid.trim().isEmpty) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Teacher is not available yet.')),
+      );
+      return;
+    }
+    if (_mailingTeacher) return;
+
+    setState(() => _mailingTeacher = true);
+
+    try {
+      String? threadId = await _findExistingThreadWithTeacher(teacher.uid);
+      threadId ??= await _createThreadWithTeacher(teacher);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => LearnerMailThreadScreen(
+            threadId: threadId!,
+            peerUid: teacher.uid,
+            peerName: teacher.name,
+            subject:
+                'Course: ${_courseTitle.trim().isEmpty ? 'Message' : _courseTitle.trim()}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(content: Text('Could not open teacher mail: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _mailingTeacher = false);
+      }
+    }
+  }
+
+  List<_TeacherSocialAction> _socialActions(_TeacherMiniProfile teacher) {
+    final actions = <_TeacherSocialAction>[];
+    final social = teacher.socialLinks;
+    final facebook = (social['facebook'] ?? '').trim();
+    final linkedin = (social['linkedin'] ?? '').trim();
+    final tiktok = (social['tiktok'] ?? '').trim();
+    final extra = (social['extra_url'] ?? '').trim();
+    final extraIcon = (social['extra_icon'] ?? '').trim().toLowerCase();
+
+    if (facebook.isNotEmpty) {
+      actions.add(
+        const _TeacherSocialAction(
+          key: 'facebook',
+          label: 'Facebook',
+          icon: Icons.facebook_rounded,
+        ).copyWith(url: facebook),
+      );
+    }
+    if (linkedin.isNotEmpty) {
+      actions.add(
+        const _TeacherSocialAction(
+          key: 'linkedin',
+          label: 'LinkedIn',
+          icon: Icons.business_center_rounded,
+        ).copyWith(url: linkedin),
+      );
+    }
+    if (tiktok.isNotEmpty) {
+      actions.add(
+        const _TeacherSocialAction(
+          key: 'tiktok',
+          label: 'TikTok',
+          icon: Icons.music_note_rounded,
+        ).copyWith(url: tiktok),
+      );
+    }
+    if (extra.isNotEmpty) {
+      IconData icon = Icons.public_rounded;
+      if (extraIcon == 'youtube') icon = Icons.ondemand_video_rounded;
+      if (extraIcon == 'instagram') icon = Icons.photo_camera_rounded;
+      if (extraIcon == 'telegram') icon = Icons.send_rounded;
+      if (extraIcon == 'whatsapp') icon = Icons.chat_rounded;
+
+      actions.add(
+        _TeacherSocialAction(
+          key: 'extra',
+          label: 'More',
+          icon: icon,
+          url: extra,
+        ),
+      );
+    }
+
+    if (teacher.introVideoUrl.trim().isNotEmpty) {
+      actions.add(
+        _TeacherSocialAction(
+          key: 'intro',
+          label: 'Intro Video',
+          icon: Icons.play_circle_fill_rounded,
+          url: teacher.introVideoUrl,
+        ),
+      );
+    }
+
+    return actions;
+  }
+
+  Future<void> _openTeacherFloatingCard() async {
+    final teacher = _teacherProfile;
+    if (teacher == null) return;
+    final actions = teacher.socialVisible
+        ? _socialActions(teacher)
+        : const <_TeacherSocialAction>[];
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Teacher profile',
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, _, _) {
+        final width = MediaQuery.of(ctx).size.width;
+        final maxCardWidth = width >= 980 ? 520.0 : 460.0;
+        return SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxCardWidth),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: UiK.uiBorder.withValues(alpha: 0.9),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.14),
+                          blurRadius: 28,
+                          offset: const Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ProfileAvatar(
+                                name: teacher.name,
+                                photoUrl: teacher.photoUrl,
+                                radius: 30,
+                                fallbackBg: UiK.primaryBlue.withValues(
+                                  alpha: 0.12,
+                                ),
+                                fallbackFg: UiK.primaryBlue,
+                                borderColor: UiK.uiBorder.withValues(
+                                  alpha: 0.9,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      teacher.name,
+                                      style: const TextStyle(
+                                        color: UiK.mainText,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Teacher profile',
+                                      style: UiK.subtleText(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () => Navigator.of(ctx).pop(),
+                              ),
+                            ],
+                          ),
+                          if (teacher.aboutMe.trim().isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: UiK.uiBorder.withValues(alpha: 0.8),
+                                ),
+                                color: UiK.primaryBlue.withValues(alpha: 0.04),
+                              ),
+                              child: Text(
+                                teacher.aboutMe,
+                                style: UiK.subtleText(),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Text(
+                            'Social & Links',
+                            style: UiK.labelText().copyWith(
+                              color: UiK.mainText,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (!teacher.socialVisible)
+                            Text(
+                              'This teacher has hidden social links.',
+                              style: UiK.subtleText(),
+                            )
+                          else if (actions.isEmpty)
+                            Text(
+                              'No public links yet.',
+                              style: UiK.subtleText(),
+                            )
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: actions
+                                  .map<Widget>(
+                                    (a) => OutlinedButton.icon(
+                                      onPressed: () => _openTeacherLink(
+                                        a.url,
+                                        label: a.label,
+                                      ),
+                                      icon: Icon(a.icon, size: 18),
+                                      label: Text(a.label),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, animation, _, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.94, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _teacherContactSection() {
+    final teacher = _teacherProfile;
+    if (teacher == null || teacher.uid.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+        color: Colors.white,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _openTeacherFloatingCard,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    ProfileAvatar(
+                      name: teacher.name,
+                      photoUrl: teacher.photoUrl,
+                      radius: 18,
+                      fallbackBg: UiK.primaryBlue.withValues(alpha: 0.12),
+                      fallbackFg: UiK.primaryBlue,
+                      borderColor: UiK.uiBorder.withValues(alpha: 0.9),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Teacher',
+                            style: TextStyle(
+                              color: UiK.mainText,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            teacher.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: UiK.subtleText(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton.icon(
+            onPressed: _mailingTeacher ? null : _mailTeacherDirectly,
+            icon: _mailingTeacher
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.mail_rounded),
+            label: const Text('Mail'),
+            style: FilledButton.styleFrom(
+              backgroundColor: UiK.actionOrange,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<_DetailPrivateMeta?> _loadPrivateJoinMeta() async {
+    if (!_isPrivateOnlineCourse) return null;
+    if (_classId.trim().isEmpty) return null;
+
+    Map<String, dynamic> classNode = <String, dynamic>{};
+    try {
+      final cs = await _classesRef.child(_classId).get();
+      if (cs.exists && cs.value is Map) {
+        classNode = Map<String, dynamic>.from(cs.value as Map);
+      }
+    } catch (_) {}
+
+    final scheduleRaw = _cls['schedule'] ?? classNode['schedule'];
+    if (scheduleRaw is! Map) return null;
+    final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
+
+    final scheduleLine = _weeklyScheduleLine(schedule['sessions']);
+    final next = _nextOccurrenceFromSchedule(schedule);
+
+    final teacherUid = _bestTeacherUidFromClassNode(classNode);
+
     String meetUrl = '';
     if (teacherUid.isNotEmpty) {
       try {
@@ -637,6 +1232,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       nextStart: next?.start,
       durationMinutes: next?.duration ?? 60,
       meetUrl: meetUrl,
+      teacherUid: teacherUid,
     );
   }
 
@@ -750,6 +1346,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       _derivedSessionsPaidTotal = 0;
       _derivedSessionsReady = false;
       _privateMetaFuture = null;
+      _teacherProfile = null;
+      _mailingTeacher = false;
     });
 
     try {
@@ -793,6 +1391,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         throw Exception('Course not found.');
       }
       _course = Map<String, dynamic>.from(snap.value as Map);
+      _teacherProfile = await _loadTeacherProfile();
 
       // ✅ planned meetings (recommendation feature)
       _plannedMeetings = _plannedMeetingsFromCourseOrClass(_course);
@@ -2191,7 +2790,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
                                   return ElevatedButton.icon(
                                     onPressed: canJoin
-                                        ? () => _openExternalUrl(meta.meetUrl)
+                                        ? () async {
+                                            await _notifyTeacherJoinTap(meta);
+                                            await _openExternalUrl(
+                                              meta.meetUrl,
+                                            );
+                                          }
                                         : null,
                                     icon: const Icon(Icons.video_call_rounded),
                                     label: Text(joinLabel),
@@ -2217,6 +2821,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       );
                     },
                   ),
+                if (_teacherProfile != null) _teacherContactSection(),
                 if (overdue || dueSoon)
                   _dueBanner(overdue: overdue, left: leftSafe),
                 if (expiryDue || expirySoon)
@@ -3868,17 +4473,62 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
 // -------------------- Small UI model + ReadMore widget --------------------
 
+class _TeacherMiniProfile {
+  final String uid;
+  final String name;
+  final String photoUrl;
+  final String aboutMe;
+  final String introVideoUrl;
+  final bool socialVisible;
+  final Map<String, String> socialLinks;
+
+  const _TeacherMiniProfile({
+    required this.uid,
+    required this.name,
+    required this.photoUrl,
+    required this.aboutMe,
+    required this.introVideoUrl,
+    required this.socialVisible,
+    required this.socialLinks,
+  });
+}
+
+class _TeacherSocialAction {
+  final String key;
+  final String label;
+  final IconData icon;
+  final String url;
+
+  const _TeacherSocialAction({
+    required this.key,
+    required this.label,
+    required this.icon,
+    this.url = '',
+  });
+
+  _TeacherSocialAction copyWith({String? url}) {
+    return _TeacherSocialAction(
+      key: key,
+      label: label,
+      icon: icon,
+      url: url ?? this.url,
+    );
+  }
+}
+
 class _DetailPrivateMeta {
   final String scheduleLine;
   final DateTime? nextStart;
   final int durationMinutes;
   final String meetUrl;
+  final String teacherUid;
 
   const _DetailPrivateMeta({
     required this.scheduleLine,
     required this.nextStart,
     required this.durationMinutes,
     required this.meetUrl,
+    required this.teacherUid,
   });
 }
 
