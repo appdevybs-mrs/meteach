@@ -334,6 +334,7 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     await ref.set({
       'title': draft.title,
       'message': draft.message,
+      'tone': draft.tone,
       'status': 'new',
       'createdAt': ServerValue.timestamp,
       'seenAt': null,
@@ -406,7 +407,7 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
       status: 'active',
       learnerAssignment: '',
     );
-    final draft = _AlertDraft(title: a.title, message: a.message);
+    final draft = _AlertDraft(title: a.title, message: a.message, tone: a.tone);
 
     try {
       await _createAlert(
@@ -1048,10 +1049,22 @@ class _RecipientLite {
 }
 
 class _AlertDraft {
-  const _AlertDraft({required this.title, required this.message});
+  const _AlertDraft({
+    required this.title,
+    required this.message,
+    required this.tone,
+  });
 
   final String title;
   final String message;
+  final String tone;
+
+  static String normalizeTone(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+    if (s == 'info') return 'info';
+    if (s == 'critical') return 'critical';
+    return 'warning';
+  }
 }
 
 class _FlashAlertRow {
@@ -1070,6 +1083,7 @@ class _FlashAlert {
   const _FlashAlert({
     required this.title,
     required this.message,
+    required this.tone,
     required this.status,
     required this.createdAtMs,
     required this.seenAtMs,
@@ -1081,6 +1095,7 @@ class _FlashAlert {
 
   final String title;
   final String message;
+  final String tone;
   final String status;
   final int createdAtMs;
   final int seenAtMs;
@@ -1125,6 +1140,7 @@ class _FlashAlert {
     return _FlashAlert(
       title: (m['title'] ?? '').toString().trim(),
       message: (m['message'] ?? '').toString().trim(),
+      tone: _AlertDraft.normalizeTone(m['tone']),
       status: (m['status'] ?? 'new').toString().trim().toLowerCase(),
       createdAtMs: _parseInt(m['createdAt']),
       seenAtMs: _parseInt(m['seenAt']),
@@ -1371,6 +1387,7 @@ class _ComposeAlertDialogState extends State<_ComposeAlertDialog> {
   final _formKey = GlobalKey<FormState>();
   final titleC = TextEditingController();
   final messageC = TextEditingController();
+  String _tone = 'warning';
 
   @override
   void dispose() {
@@ -1415,6 +1432,43 @@ class _ComposeAlertDialogState extends State<_ComposeAlertDialog> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Tone',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Info'),
+                        selected: _tone == 'info',
+                        onSelected: (_) => setState(() => _tone = 'info'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Warning'),
+                        selected: _tone == 'warning',
+                        onSelected: (_) => setState(() => _tone = 'warning'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Critical'),
+                        selected: _tone == 'critical',
+                        onSelected: (_) => setState(() => _tone = 'critical'),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -1444,6 +1498,7 @@ class _ComposeAlertDialogState extends State<_ComposeAlertDialog> {
               _AlertDraft(
                 title: titleC.text.trim(),
                 message: messageC.text.trim(),
+                tone: _tone,
               ),
             );
           },

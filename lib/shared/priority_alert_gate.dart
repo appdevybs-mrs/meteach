@@ -53,6 +53,54 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  String _normalizeTone(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+    if (s == 'info') return 'info';
+    if (s == 'critical') return 'critical';
+    return 'warning';
+  }
+
+  _AlertToneStyle _toneStyle(String tone) {
+    switch (tone) {
+      case 'info':
+        return const _AlertToneStyle(
+          label: 'Info',
+          bannerIcon: Icons.info_outline_rounded,
+          headerIconColor: Color(0xFF1D4ED8),
+          buttonColor: Color(0xFF1D4ED8),
+          borderColor: Color(0xFF93C5FD),
+          titleColor: Color(0xFF1E3A8A),
+          messageBorder: Color(0xFFBFDBFE),
+          surfaceGradient: [Color(0xFFEFF6FF), Color(0xFFDBEAFE)],
+          headerGradient: [Color(0xFF2563EB), Color(0xFF3B82F6)],
+        );
+      case 'critical':
+        return const _AlertToneStyle(
+          label: 'Critical',
+          bannerIcon: Icons.warning_amber_rounded,
+          headerIconColor: Color(0xFFB91C1C),
+          buttonColor: Color(0xFFB91C1C),
+          borderColor: Color(0xFFFCA5A5),
+          titleColor: Color(0xFF7F1D1D),
+          messageBorder: Color(0xFFFECACA),
+          surfaceGradient: [Color(0xFFFEF2F2), Color(0xFFFEE2E2)],
+          headerGradient: [Color(0xFFB91C1C), Color(0xFFDC2626)],
+        );
+      default:
+        return const _AlertToneStyle(
+          label: 'Warning',
+          bannerIcon: Icons.notification_important_rounded,
+          headerIconColor: Color(0xFFD9480F),
+          buttonColor: Color(0xFFD9480F),
+          borderColor: Color(0xFFF59E0B),
+          titleColor: Color(0xFF7C2D12),
+          messageBorder: Color(0xFFFED7AA),
+          surfaceGradient: [Color(0xFFFFF7ED), Color(0xFFFFEDD5)],
+          headerGradient: [Color(0xFFD9480F), Color(0xFFF97316)],
+        );
+    }
+  }
+
   String _fmtAlertTime(int ms) {
     if (ms <= 0) return '';
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -84,6 +132,7 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
           id: id,
           title: title.isEmpty ? 'Priority alert' : title,
           message: message,
+          tone: _normalizeTone(m['tone']),
           createdAtMs: _parseInt(m['createdAt']),
         ),
       );
@@ -139,6 +188,7 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                     : 560.0;
                 final dialogHeight = maxHeight.clamp(320.0, 560.0);
                 final createdLabel = _fmtAlertTime(alert.createdAtMs);
+                final toneStyle = _toneStyle(alert.tone);
 
                 return SizedBox(
                   width: 460,
@@ -146,13 +196,13 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(24),
-                      gradient: const LinearGradient(
+                      gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFFFFF7ED), Color(0xFFFFEDD5)],
+                        colors: toneStyle.surfaceGradient,
                       ),
                       border: Border.all(
-                        color: const Color(0xFFF59E0B),
+                        color: toneStyle.borderColor,
                         width: 1.2,
                       ),
                       boxShadow: const [
@@ -192,11 +242,8 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                                 ),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(16),
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFFD9480F),
-                                      Color(0xFFF97316),
-                                    ],
+                                  gradient: LinearGradient(
+                                    colors: toneStyle.headerGradient,
                                   ),
                                 ),
                                 child: Row(
@@ -214,27 +261,27 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                                       child: Image.asset(
                                         'assets/images/ybs_logo.png',
                                         fit: BoxFit.contain,
-                                        errorBuilder: (_, _, _) => const Icon(
+                                        errorBuilder: (_, _, _) => Icon(
                                           Icons.school_rounded,
-                                          color: Color(0xFFD9480F),
+                                          color: toneStyle.headerIconColor,
                                         ),
                                       ),
                                     ),
                                     const SizedBox(width: 10),
-                                    const Expanded(
+                                    Expanded(
                                       child: Text(
-                                        'Priority Message',
+                                        'Priority Message • ${toneStyle.label}',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w900,
                                           letterSpacing: 0.2,
                                         ),
                                       ),
                                     ),
-                                    const Icon(
-                                      Icons.notification_important_rounded,
+                                    Icon(
+                                      toneStyle.bannerIcon,
                                       color: Colors.white,
                                     ),
                                   ],
@@ -249,10 +296,10 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                                     children: [
                                       Text(
                                         alert.title,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 19,
                                           fontWeight: FontWeight.w900,
-                                          color: Color(0xFF7C2D12),
+                                          color: toneStyle.titleColor,
                                           height: 1.2,
                                         ),
                                       ),
@@ -286,7 +333,7 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                                             14,
                                           ),
                                           border: Border.all(
-                                            color: const Color(0xFFFED7AA),
+                                            color: toneStyle.messageBorder,
                                           ),
                                         ),
                                         child: Text(
@@ -313,7 +360,7 @@ class _PriorityAlertGateState extends State<PriorityAlertGate> {
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 12,
                                     ),
-                                    backgroundColor: const Color(0xFFD9480F),
+                                    backgroundColor: toneStyle.buttonColor,
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
@@ -381,11 +428,37 @@ class _PendingAlert {
     required this.id,
     required this.title,
     required this.message,
+    required this.tone,
     required this.createdAtMs,
   });
 
   final String id;
   final String title;
   final String message;
+  final String tone;
   final int createdAtMs;
+}
+
+class _AlertToneStyle {
+  const _AlertToneStyle({
+    required this.label,
+    required this.bannerIcon,
+    required this.headerIconColor,
+    required this.buttonColor,
+    required this.borderColor,
+    required this.titleColor,
+    required this.messageBorder,
+    required this.surfaceGradient,
+    required this.headerGradient,
+  });
+
+  final String label;
+  final IconData bannerIcon;
+  final Color headerIconColor;
+  final Color buttonColor;
+  final Color borderColor;
+  final Color titleColor;
+  final Color messageBorder;
+  final List<Color> surfaceGradient;
+  final List<Color> headerGradient;
 }
