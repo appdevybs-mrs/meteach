@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
 
@@ -28,6 +30,14 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
   String _teacherName = '';
   List<String> _photos = [];
   String? _videoUrl;
+  bool _socialLinksVisibleToLearners = true;
+  final Map<String, String> _socialLinks = <String, String>{
+    'facebook': '',
+    'linkedin': '',
+    'tiktok': '',
+    'extra_url': '',
+    'extra_icon': 'globe',
+  };
 
   VideoPlayerController? _videoController;
   bool _videoReady = false;
@@ -58,6 +68,34 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
     final uri = Uri.tryParse(input.trim());
     if (uri == null) return false;
     return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is! Map) return <String, dynamic>{};
+    return value.map((key, data) => MapEntry(key.toString().trim(), data));
+  }
+
+  IconData _iconForExtraKey(String key) {
+    return switch (key.trim()) {
+      'instagram' => FontAwesomeIcons.instagram,
+      'youtube' => FontAwesomeIcons.youtube,
+      'whatsapp' => FontAwesomeIcons.whatsapp,
+      'telegram' => FontAwesomeIcons.telegram,
+      _ => Icons.public_rounded,
+    };
+  }
+
+  Future<void> _openExternalUrl(String rawUrl) async {
+    final url = _normalizeUrl(rawUrl);
+    if (!_isHttpUrl(url)) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this link.')),
+      );
+    }
   }
 
   static String _urlFromUnknown(dynamic raw) {
@@ -178,12 +216,27 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
         }
       }
 
+      final socialRaw = _asMap(profile['social_links']);
+      final socialLinks = <String, String>{
+        'facebook': _normalizeUrl((socialRaw['facebook'] ?? '').toString()),
+        'linkedin': _normalizeUrl((socialRaw['linkedin'] ?? '').toString()),
+        'tiktok': _normalizeUrl((socialRaw['tiktok'] ?? '').toString()),
+        'extra_url': _normalizeUrl((socialRaw['extra_url'] ?? '').toString()),
+        'extra_icon': (socialRaw['extra_icon'] ?? 'globe').toString().trim(),
+      };
+      final visibleToLearners =
+          profile['social_links_visible_to_learners'] != false;
+
       if (!mounted) return;
 
       setState(() {
         _teacherName = dbName.isNotEmpty ? dbName : widget.teacherName;
         _photos = photos;
         _videoUrl = video;
+        _socialLinksVisibleToLearners = visibleToLearners;
+        _socialLinks
+          ..clear()
+          ..addAll(socialLinks);
       });
 
       if (_videoUrl != null && _videoUrl!.trim().isNotEmpty) {
@@ -327,6 +380,103 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
     );
   }
 
+  Widget _socialAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: appBg,
+            shape: BoxShape.circle,
+            border: Border.all(color: uiBorder),
+          ),
+          child: Icon(icon, color: primaryBlue, size: 18),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialLinks() {
+    if (!_socialLinksVisibleToLearners) return const SizedBox.shrink();
+
+    final actions = <Widget>[];
+    final facebook = _socialLinks['facebook'] ?? '';
+    final linkedin = _socialLinks['linkedin'] ?? '';
+    final tiktok = _socialLinks['tiktok'] ?? '';
+    final extraUrl = _socialLinks['extra_url'] ?? '';
+    final extraIconKey = _socialLinks['extra_icon'] ?? 'globe';
+
+    if (_isHttpUrl(facebook)) {
+      actions.add(
+        _socialAction(
+          icon: FontAwesomeIcons.facebook,
+          tooltip: 'Facebook',
+          onTap: () => _openExternalUrl(facebook),
+        ),
+      );
+    }
+    if (_isHttpUrl(linkedin)) {
+      actions.add(
+        _socialAction(
+          icon: FontAwesomeIcons.linkedin,
+          tooltip: 'LinkedIn',
+          onTap: () => _openExternalUrl(linkedin),
+        ),
+      );
+    }
+    if (_isHttpUrl(tiktok)) {
+      actions.add(
+        _socialAction(
+          icon: FontAwesomeIcons.tiktok,
+          tooltip: 'TikTok',
+          onTap: () => _openExternalUrl(tiktok),
+        ),
+      );
+    }
+    if (_isHttpUrl(extraUrl)) {
+      actions.add(
+        _socialAction(
+          icon: _iconForExtraKey(extraIconKey),
+          tooltip: 'Extra link',
+          onTap: () => _openExternalUrl(extraUrl),
+        ),
+      );
+    }
+
+    if (actions.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Connect',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w900,
+            color: primaryBlue,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(spacing: 10, runSpacing: 10, children: actions),
+      ],
+    );
+  }
+
+  bool _hasVisibleSocialLinks() {
+    if (!_socialLinksVisibleToLearners) return false;
+    return _isHttpUrl(_socialLinks['facebook'] ?? '') ||
+        _isHttpUrl(_socialLinks['linkedin'] ?? '') ||
+        _isHttpUrl(_socialLinks['tiktok'] ?? '') ||
+        _isHttpUrl(_socialLinks['extra_url'] ?? '');
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -373,6 +523,10 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
                 if (_videoUrl != null) ...[
                   const SizedBox(height: 18),
                   _buildVideo(),
+                ],
+                if (_hasVisibleSocialLinks()) ...[
+                  const SizedBox(height: 18),
+                  _buildSocialLinks(),
                 ],
               ],
             ],

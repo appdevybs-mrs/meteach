@@ -156,11 +156,21 @@ class WebsiteMirrorBackfillService {
 
     if (role == 'teacher') {
       final photos = _stringList(userMap['profile_photos']);
+      final socialLinks = _asMap(userMap['social_links']);
       out['profile_photos'] = photos;
       if (photos.isNotEmpty && out['profile_photo'].toString().isEmpty) {
         out['profile_photo'] = photos.first;
       }
       out['intro_video_url'] = _asString(userMap['intro_video_url']);
+      out['social_links'] = {
+        'facebook': _asString(socialLinks['facebook']),
+        'linkedin': _asString(socialLinks['linkedin']),
+        'tiktok': _asString(socialLinks['tiktok']),
+        'extra_url': _asString(socialLinks['extra_url']),
+        'extra_icon': _asString(socialLinks['extra_icon']),
+      };
+      out['social_links_visible_to_learners'] =
+          userMap['social_links_visible_to_learners'] != false;
     }
 
     return out;

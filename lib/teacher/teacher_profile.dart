@@ -84,6 +84,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final _tiktokUrlCtrl = TextEditingController();
   final _extraUrlCtrl = TextEditingController();
   String _extraIconKey = _socialIconOptions.first.key;
+  bool _socialLinksVisibleToLearners = true;
 
   bool _busy = false;
   bool _uploadingPhotos = false;
@@ -115,6 +116,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   String _initialTiktokUrl = '';
   String _initialExtraUrl = '';
   String _initialExtraIconKey = _socialIconOptions.first.key;
+  bool _initialSocialLinksVisibleToLearners = true;
   List<String> _initialPhotoUrls = const [];
   String _initialIntroVideoUrl = '';
 
@@ -272,6 +274,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       _extraIconKey = _normalizeSocialIconKey(
         (socialLinks['extra_icon'] ?? '').toString(),
       );
+      _socialLinksVisibleToLearners =
+          data['social_links_visible_to_learners'] != false;
 
       _emailReadOnly = (data['email'] ?? user.email ?? '').toString();
       _roleReadOnly = (data['role'] ?? '').toString();
@@ -423,6 +427,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'users/${user.uid}/intro_video_url': _introVideoUrl ?? '',
         'users/${user.uid}/google_meet_url': _googleMeetUrlCtrl.text.trim(),
         'users/${user.uid}/social_links': socialLinks,
+        'users/${user.uid}/social_links_visible_to_learners':
+            _socialLinksVisibleToLearners,
         'users/${user.uid}/updatedAt': ServerValue.timestamp,
         'website/teachers/${user.uid}/profile/about_me': aboutMe,
         'website/teachers/${user.uid}/profile/intro_video_url':
@@ -431,6 +437,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'website/teachers/${user.uid}/profile/profile_photo':
             cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
         'website/teachers/${user.uid}/profile/social_links': socialLinks,
+        'website/teachers/${user.uid}/profile/social_links_visible_to_learners':
+            _socialLinksVisibleToLearners,
       });
 
       await AuditLogService.logSuccess(
@@ -452,6 +460,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           'hasSocialLinks': socialLinks.values.any(
             (value) => value.toString().trim().isNotEmpty,
           ),
+          'socialLinksVisibleToLearners': _socialLinksVisibleToLearners,
         },
       );
 
@@ -500,6 +509,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _initialTiktokUrl = _tiktokUrlCtrl.text.trim();
     _initialExtraUrl = _extraUrlCtrl.text.trim();
     _initialExtraIconKey = _normalizeSocialIconKey(_extraIconKey);
+    _initialSocialLinksVisibleToLearners = _socialLinksVisibleToLearners;
     _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
     _initialIntroVideoUrl = (_introVideoUrl ?? '').trim();
   }
@@ -517,6 +527,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (_tiktokUrlCtrl.text.trim() != _initialTiktokUrl) return true;
     if (_extraUrlCtrl.text.trim() != _initialExtraUrl) return true;
     if (_normalizeSocialIconKey(_extraIconKey) != _initialExtraIconKey) {
+      return true;
+    }
+    if (_socialLinksVisibleToLearners != _initialSocialLinksVisibleToLearners) {
       return true;
     }
     if (!listEquals(
@@ -1257,7 +1270,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
-  Widget _buildSocialLinksSection() {
+  Widget _buildSocialLinksSection({bool showVisibilityToggle = false}) {
     final selectedOption = _socialIconOptions.firstWhere(
       (option) => option.key == _normalizeSocialIconKey(_extraIconKey),
       orElse: () => _socialIconOptions.first,
@@ -1295,6 +1308,30 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (showVisibilityToggle) ...[
+            const SizedBox(height: 10),
+            SwitchListTile.adaptive(
+              value: _socialLinksVisibleToLearners,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              activeThumbColor: p.accent,
+              title: Text(
+                'Show my social links to learners',
+                style: TextStyle(
+                  color: p.text,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+              onChanged: _busy
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _socialLinksVisibleToLearners = value;
+                      });
+                    },
+            ),
+          ],
           const SizedBox(height: 12),
           _socialUrlField(
             controller: _facebookUrlCtrl,
@@ -1886,8 +1923,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
-                _buildSocialLinksSection(),
               ],
             ),
           ),
@@ -1902,7 +1937,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       children: [
         _sectionCard(
           title: 'Profile Media',
-          subtitle: 'Manage photos and introduction video',
+          subtitle: 'Manage photos, introduction video, and social links',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1911,6 +1946,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               Divider(color: p.border),
               const SizedBox(height: 22),
               _buildVideoSection(),
+              const SizedBox(height: 22),
+              Divider(color: p.border),
+              const SizedBox(height: 22),
+              _buildSocialLinksSection(showVisibilityToggle: true),
             ],
           ),
         ),
