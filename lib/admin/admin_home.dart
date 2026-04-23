@@ -247,18 +247,22 @@ class _AdminHomeState extends State<AdminHome> {
         // ✅ stop "single device" listener
         await SessionManager.stopListening();
 
-        // ✅ remove FCM token record
-        try {
-          if (userId != null && userId.isNotEmpty) {
-            await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-          }
-        } catch (_) {}
-
-        try {
-          await appThemeController.resetToDefault();
-        } catch (_) {}
-
         await FirebaseAuth.instance.signOut();
+
+        unawaited(() async {
+          // ✅ remove FCM token record
+          try {
+            if (userId != null && userId.isNotEmpty) {
+              await FirebaseDatabase.instance
+                  .ref('fcm_tokens/$userId')
+                  .remove();
+            }
+          } catch (_) {}
+
+          try {
+            await appThemeController.resetToDefault();
+          } catch (_) {}
+        }());
       },
       message: 'Logging out...',
       isLogout: true,

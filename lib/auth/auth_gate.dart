@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
+import '../shared/app_globals.dart';
 import '../shared/session_manager.dart';
 
 import '../learner/learner_home.dart';
@@ -32,6 +33,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool _sessionStarted = false;
   String? _sessionUid;
+  bool _signedOutCleanupQueued = false;
 
   void log(String msg) {}
 
@@ -67,8 +69,23 @@ class _AuthGateState extends State<AuthGate> {
           if (previousUid != null && previousUid.isNotEmpty) {
             unawaited(TopicService.clearForUser(previousUid));
           }
+          if (!_signedOutCleanupQueued) {
+            _signedOutCleanupQueued = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              try {
+                final nav = appNavigatorKey.currentState;
+                if (nav != null && nav.mounted) {
+                  nav.popUntil((route) => route.isFirst);
+                }
+              } catch (_) {
+              } finally {
+                _signedOutCleanupQueued = false;
+              }
+            });
+          }
           return widget.signedOutHome;
         }
+        _signedOutCleanupQueued = false;
 
         final uid = user.uid;
 

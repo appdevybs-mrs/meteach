@@ -331,27 +331,29 @@ class _LearnerHomeState extends State<LearnerHome> {
 
         await SessionManager.stopListening();
 
-        if (uid != null && uid.isNotEmpty) {
-          try {
-            // intentionally empty (your original)
-          } catch (_) {}
-        }
-
-        try {
-          await FirebaseMessaging.instance.deleteToken();
-        } catch (_) {}
-
-        if (uid != null && uid.isNotEmpty) {
-          try {
-            await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
-          } catch (_) {}
-        }
-
-        try {
-          await appThemeController.resetToDefault();
-        } catch (_) {}
-
         await FirebaseAuth.instance.signOut();
+
+        unawaited(() async {
+          if (uid != null && uid.isNotEmpty) {
+            try {
+              // intentionally empty (your original)
+            } catch (_) {}
+          }
+
+          try {
+            await FirebaseMessaging.instance.deleteToken();
+          } catch (_) {}
+
+          if (uid != null && uid.isNotEmpty) {
+            try {
+              await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+            } catch (_) {}
+          }
+
+          try {
+            await appThemeController.resetToDefault();
+          } catch (_) {}
+        }());
       },
       message: 'Logging out...',
       isLogout: true,
