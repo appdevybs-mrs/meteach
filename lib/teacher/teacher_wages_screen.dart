@@ -84,34 +84,6 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
     return '${uid.trim()}|${courseId.trim()}';
   }
 
-  static String _deliveryLabelFromPayment(
-    Map<String, dynamic> payment, {
-    _TeacherClassMeta? fallback,
-  }) {
-    final variantKey = normalizeVariantKey(
-      (payment['variantKey'] ??
-              payment['variant'] ??
-              fallback?.variantKey ??
-              '')
-          .toString(),
-      fallback: fallback?.variantKey ?? 'inclass',
-    );
-    final studyMode = normalizeStudyMode(
-      (payment['studyMode'] ??
-              payment['study_mode'] ??
-              payment['privateStudyMode'] ??
-              payment['private_study_mode'] ??
-              fallback?.studyMode ??
-              '')
-          .toString(),
-      variantKey: variantKey,
-    );
-    return variantLabelWithStudyMode(
-      variantKey: variantKey,
-      studyMode: studyMode,
-    );
-  }
-
   static Map<String, _TeacherClassMeta> _classMetaByCourse(dynamic raw) {
     final out = <String, _TeacherClassMeta>{};
     if (raw is! Map) return out;
@@ -123,6 +95,17 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final cls = value.map((k, v) => MapEntry(k.toString(), v));
       final courseId = (cls['course_id'] ?? '').toString().trim();
       if (courseId.isEmpty || out.containsKey(courseId)) continue;
+      final courseCode = (cls['course_code'] ?? '').toString().trim();
+      final courseTitle = (cls['course_title'] ?? cls['title'] ?? '')
+          .toString()
+          .trim();
+      var firstSessionDate = '';
+      final schedule = cls['schedule'];
+      if (schedule is Map) {
+        firstSessionDate = (schedule['first_session_date'] ?? '')
+            .toString()
+            .trim();
+      }
 
       final variantKey = normalizeVariantKey(
         (cls['variantKey'] ?? cls['variant'] ?? '').toString(),
@@ -140,9 +123,88 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       out[courseId] = _TeacherClassMeta(
         variantKey: variantKey,
         studyMode: studyMode,
+        courseCode: courseCode,
+        courseTitle: courseTitle,
+        firstSessionDate: firstSessionDate,
       );
     }
 
+    return out;
+  }
+
+  static String _courseLabelFromPayment(
+    Map<String, dynamic> payment, {
+    _TeacherClassMeta? fallback,
+  }) {
+    final code = (payment['course_code'] ?? fallback?.courseCode ?? '')
+        .toString()
+        .trim();
+    final title =
+        (payment['course_title'] ??
+                payment['courseTitle'] ??
+                fallback?.courseTitle ??
+                '')
+            .toString()
+            .trim();
+    if (code.isNotEmpty && title.isNotEmpty) return '$code - $title';
+    if (title.isNotEmpty) return title;
+    if (code.isNotEmpty) return code;
+    return 'Course';
+  }
+
+  static Map<String, int> _monthIndexByPaymentId(dynamic raw) {
+    final out = <String, int>{};
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    if (raw is! Map) return out;
+    final items = Map<dynamic, dynamic>.from(raw);
+    for (final e in items.entries) {
+      final paymentId = e.key.toString().trim();
+      if (paymentId.isEmpty) continue;
+      final v = e.value;
+      if (v is! Map) continue;
+      final m = v.map((k, val) => MapEntry(k.toString(), val));
+      final uid = _learnerUidFromPayment(m.cast<String, dynamic>());
+      final courseId = _courseIdFromPayment(m.cast<String, dynamic>());
+      if (uid.isEmpty || courseId.isEmpty) continue;
+      final key = _sessionKey(uid: uid, courseId: courseId);
+      grouped.putIfAbsent(key, () => <Map<String, dynamic>>[]).add({
+        'paymentId': paymentId,
+        'paidAt': TeacherWagesScreen.asInt(m['paidAt']),
+      });
+    }
+
+    for (final bucket in grouped.values) {
+      bucket.sort((a, b) {
+        final byDate = TeacherWagesScreen.asInt(
+          a['paidAt'],
+        ).compareTo(TeacherWagesScreen.asInt(b['paidAt']));
+        if (byDate != 0) return byDate;
+        return (a['paymentId'] ?? '').toString().compareTo(
+          (b['paymentId'] ?? '').toString(),
+        );
+      });
+      for (var i = 0; i < bucket.length; i++) {
+        final pid = (bucket[i]['paymentId'] ?? '').toString().trim();
+        if (pid.isEmpty) continue;
+        out[pid] = i + 1;
+      }
+    }
+    return out;
+  }
+
+  static Map<String, int> _monthOverrideByPaymentId(dynamic raw) {
+    final out = <String, int>{};
+    if (raw is! Map) return out;
+    final items = Map<dynamic, dynamic>.from(raw);
+    for (final e in items.entries) {
+      final paymentId = e.key.toString().trim();
+      if (paymentId.isEmpty) continue;
+      final v = e.value;
+      if (v is! Map) continue;
+      final m = Map<dynamic, dynamic>.from(v);
+      final monthOverride = TeacherWagesScreen.asInt(m['monthOverride']);
+      if (monthOverride > 0) out[paymentId] = monthOverride;
+    }
     return out;
   }
 
@@ -269,9 +331,24 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
         false;
 
     if (!ok) return;
+    if (!context.mounted) return;
+
+    await _confirmPaymentRefs(
+      context: context,
+      paymentRefs: row.readyPaymentIds,
+      fallbackError: 'Could not confirm this payment.',
+    );
+  }
+
+  Future<void> _confirmPaymentRefs({
+    required BuildContext context,
+    required List<String> paymentRefs,
+    required String fallbackError,
+  }) async {
+    if (paymentRefs.isEmpty) return;
 
     try {
-      for (final refKey in row.readyPaymentIds) {
+      for (final refKey in paymentRefs) {
         final parts = refKey.split('|');
         final paymentId = parts.isNotEmpty ? parts.first : '';
         final allocationId = parts.length > 1 ? parts[1] : '';
@@ -306,11 +383,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       if (!context.mounted) return;
       AppToast.fromSnackBar(
         context,
-        SnackBar(
-          content: Text(
-            toHumanError(e, fallback: 'Could not confirm this payment.'),
-          ),
-        ),
+        SnackBar(content: Text(toHumanError(e, fallback: fallbackError))),
       );
     }
   }
@@ -421,235 +494,353 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
                   );
                 }
 
+                final raw = snap.data?.snapshot.value;
+                if (raw is! Map) {
+                  return _EmptyWagesState(
+                    palette: p,
+                    text: 'No pushed wage items found.',
+                  );
+                }
+                final monthByPaymentId = _monthIndexByPaymentId(raw);
                 return StreamBuilder<DatabaseEvent>(
                   stream: myUid.isEmpty
                       ? const Stream<DatabaseEvent>.empty()
-                      : FirebaseDatabase.instance.ref('classes').onValue,
-                  builder: (context, classesSnap) {
-                    if (classesSnap.hasError) {
-                      return Center(
-                        child: Text(
-                          'Could not load classes.',
-                          style: TextStyle(
-                            color: p.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      );
-                    }
-
-                    if (!classesSnap.hasData) {
-                      return Center(
-                        child: CircularProgressIndicator(color: p.accent),
-                      );
-                    }
-
-                    final raw = snap.data?.snapshot.value;
-                    if (raw is! Map) {
-                      return _EmptyWagesState(
-                        palette: p,
-                        text: 'No pushed wage items found.',
-                      );
-                    }
-
-                    final classesRaw = classesSnap.data?.snapshot.value;
-                    final classMetaByCourse = _classMetaByCourse(classesRaw);
-                    final attendanceCounts = _attendanceCountsByLearnerCourse(
-                      raw: classesRaw,
-                      teacherId: myUid,
+                      : FirebaseDatabase.instance
+                            .ref('finance_payment_meta')
+                            .onValue,
+                  builder: (context, financeMetaSnap) {
+                    final monthOverrides = _monthOverrideByPaymentId(
+                      financeMetaSnap.data?.snapshot.value,
                     );
+                    return StreamBuilder<DatabaseEvent>(
+                      stream: myUid.isEmpty
+                          ? const Stream<DatabaseEvent>.empty()
+                          : FirebaseDatabase.instance.ref('classes').onValue,
+                      builder: (context, classesSnap) {
+                        if (classesSnap.hasError) {
+                          return Center(
+                            child: Text(
+                              'Could not load classes.',
+                              style: TextStyle(
+                                color: p.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          );
+                        }
 
-                    final grouped = <String, _TeacherWageRowAccumulator>{};
-                    raw.forEach((k, v) {
-                      if (k == null || v == null || v is! Map) return;
-                      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-                      final payment = m.cast<String, dynamic>();
-                      payment['paymentId'] = k.toString();
-                      if ((payment['financePeriodId'] ?? '')
-                              .toString()
-                              .trim() !=
-                          currentFinancePeriod.id) {
-                        return;
-                      }
-                      final allocations = financeAllocationsFromPayment(
-                        payment,
-                      );
-                      for (final allocation in allocations) {
-                        if (allocation.teacherId.trim() != myUid) continue;
-                        if (allocation.pushedAt <= 0) continue;
+                        if (!classesSnap.hasData) {
+                          return Center(
+                            child: CircularProgressIndicator(color: p.accent),
+                          );
+                        }
 
-                        final learnerName = financeLearnerNameFrom(payment);
-                        final learnerUid = _learnerUidFromPayment(payment);
-                        final courseId = _courseIdFromPayment(payment);
-                        final groupingKey = learnerUid.isNotEmpty
-                            ? '$learnerUid|$courseId'
-                            : '${learnerName.toLowerCase()}|$courseId';
-                        final deliveryLabel = _deliveryLabelFromPayment(
-                          payment,
-                          fallback: classMetaByCourse[courseId],
+                        final classesRaw = classesSnap.data?.snapshot.value;
+                        final classMetaByCourse = _classMetaByCourse(
+                          classesRaw,
                         );
-                        final acc = grouped.putIfAbsent(
-                          groupingKey,
-                          () => _TeacherWageRowAccumulator(
-                            learnerName: learnerName.isEmpty
-                                ? '(No name)'
-                                : learnerName,
-                            learnerSerial: (payment['learner_serial'] ?? '')
+                        final attendanceCounts =
+                            _attendanceCountsByLearnerCourse(
+                              raw: classesRaw,
+                              teacherId: myUid,
+                            );
+
+                        final grouped = <String, _TeacherWageRowAccumulator>{};
+                        raw.forEach((k, v) {
+                          if (k == null || v == null || v is! Map) return;
+                          final m = v.map(
+                            (kk, vv) => MapEntry(kk.toString(), vv),
+                          );
+                          final payment = m.cast<String, dynamic>();
+                          payment['paymentId'] = k.toString();
+                          if ((payment['financePeriodId'] ?? '')
+                                  .toString()
+                                  .trim() !=
+                              currentFinancePeriod.id) {
+                            return;
+                          }
+                          final allocations = financeAllocationsFromPayment(
+                            payment,
+                          );
+                          for (final allocation in allocations) {
+                            if (allocation.teacherId.trim() != myUid) continue;
+                            if (allocation.pushedAt <= 0) continue;
+
+                            final learnerName = financeLearnerNameFrom(payment);
+                            final learnerUid = _learnerUidFromPayment(payment);
+                            final courseId = _courseIdFromPayment(payment);
+                            final classMeta = classMetaByCourse[courseId];
+                            final courseLabel = _courseLabelFromPayment(
+                              payment,
+                              fallback: classMeta,
+                            );
+                            final groupingKey = learnerUid.isNotEmpty
+                                ? '$learnerUid|$courseId'
+                                : '${learnerName.toLowerCase()}|$courseId';
+                            final paymentId = (payment['paymentId'] ?? '')
                                 .toString()
-                                .trim(),
-                            learnerUid: learnerUid,
-                            courseId: courseId,
-                            deliveryLabel: deliveryLabel,
-                          ),
-                        );
+                                .trim();
+                            final monthComputed =
+                                monthByPaymentId[paymentId] ?? 0;
+                            final monthOverride =
+                                monthOverrides[paymentId] ?? 0;
+                            final monthNumber = monthOverride > 0
+                                ? monthOverride
+                                : monthComputed;
+                            final classFirstSession =
+                                (classMeta?.firstSessionDate ?? '').trim();
+                            final paymentStartDate =
+                                (payment['startDate'] ?? '').toString().trim();
+                            final paymentDate = TeacherWagesScreen.fmtYmdFromMs(
+                              TeacherWagesScreen.asInt(payment['paidAt']),
+                            );
+                            final acc = grouped.putIfAbsent(
+                              groupingKey,
+                              () => _TeacherWageRowAccumulator(
+                                learnerName: learnerName.isEmpty
+                                    ? '(No name)'
+                                    : learnerName,
+                                learnerSerial: (payment['learner_serial'] ?? '')
+                                    .toString()
+                                    .trim(),
+                                learnerUid: learnerUid,
+                                courseId: courseId,
+                                courseLabel: courseLabel,
+                                firstSessionDate: classFirstSession.isNotEmpty
+                                    ? classFirstSession
+                                    : (paymentStartDate.isNotEmpty
+                                          ? paymentStartDate
+                                          : paymentDate),
+                                firstSessionFallback: classFirstSession.isEmpty,
+                                monthNumber: monthNumber,
+                              ),
+                            );
 
-                        acc.paidAtMs =
-                            TeacherWagesScreen.asInt(payment['paidAt']) >
-                                acc.paidAtMs
-                            ? TeacherWagesScreen.asInt(payment['paidAt'])
-                            : acc.paidAtMs;
-                        if (acc.learnerSerial.isEmpty) {
-                          acc.learnerSerial = (payment['learner_serial'] ?? '')
-                              .toString()
-                              .trim();
-                        }
-                        if (acc.deliveryLabel.isEmpty) {
-                          acc.deliveryLabel = deliveryLabel;
-                        }
-                        acc.netTotal += allocation.teacherNet;
-                        acc.readyGross += allocation.payoutStatus == 'tbpaid'
-                            ? allocation.grossShare
-                            : 0;
-                        acc.pendingGross += allocation.payoutStatus == 'waiting'
-                            ? allocation.grossShare
-                            : 0;
-                        acc.receivedGross += allocation.payoutStatus == 'done'
-                            ? allocation.grossShare
-                            : 0;
-                        acc.assignedSessions +=
-                            allocation.assignedSessions ?? 0;
-                        acc.allocationCount += 1;
-                        acc.teacherPercentLabels.add(
-                          '${allocation.teacherPercent}%',
-                        );
-                        if (allocation.payoutStatus == 'tbpaid') {
-                          acc.readyPaymentIds.add(
-                            allocation.isLegacy
-                                ? allocation.paymentId
-                                : '${allocation.paymentId}|${allocation.allocationId}',
+                            final paidAtMs = TeacherWagesScreen.asInt(
+                              payment['paidAt'],
+                            );
+                            if (paidAtMs > acc.paidAtMs) {
+                              acc.paidAtMs = paidAtMs;
+                              acc.monthNumber = monthNumber;
+                            } else if (acc.monthNumber <= 0 &&
+                                monthNumber > 0) {
+                              acc.monthNumber = monthNumber;
+                            }
+                            if (acc.learnerSerial.isEmpty) {
+                              acc.learnerSerial =
+                                  (payment['learner_serial'] ?? '')
+                                      .toString()
+                                      .trim();
+                            }
+                            if (acc.courseLabel.isEmpty) {
+                              acc.courseLabel = courseLabel;
+                            }
+                            if (!acc.firstSessionFallback &&
+                                acc.firstSessionDate.isNotEmpty) {
+                              // Keep class-derived first session when already present.
+                            } else if (classFirstSession.isNotEmpty) {
+                              acc.firstSessionDate = classFirstSession;
+                              acc.firstSessionFallback = false;
+                            } else if (acc.firstSessionDate.isEmpty) {
+                              if (paymentStartDate.isNotEmpty) {
+                                acc.firstSessionDate = paymentStartDate;
+                                acc.firstSessionFallback = true;
+                              } else if (paymentDate.isNotEmpty) {
+                                acc.firstSessionDate = paymentDate;
+                                acc.firstSessionFallback = true;
+                              }
+                            }
+                            acc.netTotal += allocation.teacherNet;
+                            acc.readyGross +=
+                                allocation.payoutStatus == 'tbpaid'
+                                ? allocation.grossShare
+                                : 0;
+                            acc.pendingGross +=
+                                allocation.payoutStatus == 'waiting'
+                                ? allocation.grossShare
+                                : 0;
+                            acc.receivedGross +=
+                                allocation.payoutStatus == 'done'
+                                ? allocation.grossShare
+                                : 0;
+                            acc.assignedSessions +=
+                                allocation.assignedSessions ?? 0;
+                            acc.allocationCount += 1;
+                            acc.teacherPercentLabels.add(
+                              '${allocation.teacherPercent}%',
+                            );
+                            if (allocation.payoutStatus == 'tbpaid') {
+                              acc.readyPaymentIds.add(
+                                allocation.isLegacy
+                                    ? allocation.paymentId
+                                    : '${allocation.paymentId}|${allocation.allocationId}',
+                              );
+                            }
+                          }
+                        });
+
+                        final rows = grouped.values.map((acc) {
+                          final sess =
+                              (acc.learnerUid.isNotEmpty &&
+                                  acc.courseId.isNotEmpty)
+                              ? (attendanceCounts[_sessionKey(
+                                      uid: acc.learnerUid,
+                                      courseId: acc.courseId,
+                                    )] ??
+                                    const _SessionCounts())
+                              : const _SessionCounts();
+                          final absentCount = sess.held - sess.present;
+                          return _TeacherWageRowData(
+                            learnerName: acc.learnerName,
+                            learnerSerial: acc.learnerSerial,
+                            courseLabel: acc.courseLabel,
+                            firstSessionDate: acc.firstSessionDate,
+                            firstSessionFallback: acc.firstSessionFallback,
+                            monthNumber: acc.monthNumber,
+                            paidAtMs: acc.paidAtMs,
+                            percentLabel: acc.teacherPercentLabels.length == 1
+                                ? acc.teacherPercentLabels.first
+                                : 'Mixed',
+                            assignedSessions: acc.assignedSessions,
+                            sessionTotal: sess.held,
+                            presentCount: sess.present,
+                            absentCount: absentCount < 0 ? 0 : absentCount,
+                            netTotal: acc.netTotal,
+                            statusLabel: _statusLabelFromParts(
+                              readyGross: acc.readyGross,
+                              pendingGross: acc.pendingGross,
+                              receivedGross: acc.receivedGross,
+                            ),
+                            readyPaymentIds: List<String>.from(
+                              acc.readyPaymentIds,
+                            ),
+                          );
+                        }).toList();
+
+                        if (rows.isEmpty) {
+                          return _EmptyWagesState(
+                            palette: p,
+                            text: 'No pushed items right now.',
                           );
                         }
-                      }
-                    });
 
-                    final rows = grouped.values.map((acc) {
-                      final sess =
-                          (acc.learnerUid.isNotEmpty && acc.courseId.isNotEmpty)
-                          ? (attendanceCounts[_sessionKey(
-                                  uid: acc.learnerUid,
-                                  courseId: acc.courseId,
-                                )] ??
-                                const _SessionCounts())
-                          : const _SessionCounts();
-                      final absentCount = sess.held - sess.present;
-                      return _TeacherWageRowData(
-                        learnerName: acc.learnerName,
-                        learnerSerial: acc.learnerSerial,
-                        paidAtMs: acc.paidAtMs,
-                        percentLabel: acc.teacherPercentLabels.length == 1
-                            ? acc.teacherPercentLabels.first
-                            : 'Mixed',
-                        deliveryLabel: acc.deliveryLabel.isEmpty
-                            ? 'Class'
-                            : acc.deliveryLabel,
-                        assignedSessions: acc.assignedSessions,
-                        sessionTotal: sess.held,
-                        presentCount: sess.present,
-                        absentCount: absentCount < 0 ? 0 : absentCount,
-                        netTotal: acc.netTotal,
-                        statusLabel: _statusLabelFromParts(
-                          readyGross: acc.readyGross,
-                          pendingGross: acc.pendingGross,
-                          receivedGross: acc.receivedGross,
-                        ),
-                        readyPaymentIds: List<String>.from(acc.readyPaymentIds),
-                      );
-                    }).toList();
+                        rows.sort((a, b) => b.paidAtMs.compareTo(a.paidAtMs));
+                        var netTotal = 0;
+                        final allReadyRefs = <String>{};
+                        for (final row in rows) {
+                          netTotal += row.netTotal;
+                          allReadyRefs.addAll(row.readyPaymentIds);
+                        }
 
-                    if (rows.isEmpty) {
-                      return _EmptyWagesState(
-                        palette: p,
-                        text: 'No pushed items right now.',
-                      );
-                    }
-
-                    rows.sort((a, b) => b.paidAtMs.compareTo(a.paidAtMs));
-                    var netTotal = 0;
-                    var readyCount = 0;
-                    var pendingCount = 0;
-                    var receivedCount = 0;
-                    for (final row in rows) {
-                      netTotal += row.netTotal;
-                      if (row.statusLabel == 'Ready') {
-                        readyCount += 1;
-                      } else if (row.statusLabel == 'Received') {
-                        receivedCount += 1;
-                      } else {
-                        pendingCount += 1;
-                      }
-                    }
-
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                        return ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                           children: [
-                            _WageChip(
-                              label: 'Cycle',
-                              value: currentFinancePeriod.displayLabel,
-                              color: const Color(0xFF1A2B48),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _WageChip(
+                                  label: 'Total',
+                                  value: _money(netTotal),
+                                  color: const Color(0xFF22945A),
+                                ),
+                                FilledButton.icon(
+                                  onPressed: allReadyRefs.isEmpty
+                                      ? null
+                                      : () async {
+                                          final ok =
+                                              await showDialog<bool>(
+                                                context: context,
+                                                builder: (_) => AlertDialog(
+                                                  backgroundColor: p.cardBg,
+                                                  title: Text(
+                                                    'Confirm received?',
+                                                    style: TextStyle(
+                                                      color: p.primary,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                  content: Text(
+                                                    'This will mark all ready payments as received.',
+                                                    style: TextStyle(
+                                                      color: p.text.withValues(
+                                                        alpha: 0.82,
+                                                      ),
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            context,
+                                                            false,
+                                                          ),
+                                                      child: Text(
+                                                        'Cancel',
+                                                        style: TextStyle(
+                                                          color: p.primary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    FilledButton(
+                                                      style:
+                                                          FilledButton.styleFrom(
+                                                            backgroundColor:
+                                                                Colors.green,
+                                                          ),
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            context,
+                                                            true,
+                                                          ),
+                                                      child: const Text(
+                                                        'Confirm',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ) ??
+                                              false;
+                                          if (!ok) return;
+                                          if (!context.mounted) return;
+                                          await _confirmPaymentRefs(
+                                            context: context,
+                                            paymentRefs: allReadyRefs.toList(),
+                                            fallbackError:
+                                                'Could not confirm payments.',
+                                          );
+                                        },
+                                  icon: const Icon(Icons.verified_rounded),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  label: const Text('Confirm Received'),
+                                ),
+                              ],
                             ),
-                            _WageChip(
-                              label: 'Net total',
-                              value: _money(netTotal),
-                              color: const Color(0xFF22945A),
-                            ),
-                            _WageChip(
-                              label: 'Ready',
-                              value: '$readyCount',
-                              color: const Color(0xFF3666D8),
-                            ),
-                            _WageChip(
-                              label: 'Pending',
-                              value: '$pendingCount',
-                              color: const Color(0xFFF0A526),
-                            ),
-                            _WageChip(
-                              label: 'Received',
-                              value: '$receivedCount',
-                              color: const Color(0xFF22945A),
-                            ),
+                            const SizedBox(height: 12),
+                            ...rows.map((row) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _TeacherWageRow(
+                                  palette: p,
+                                  row: row,
+                                  onConfirm: row.readyPaymentIds.isNotEmpty
+                                      ? () => _confirmReceived(
+                                          context: context,
+                                          row: row,
+                                        )
+                                      : null,
+                                ),
+                              );
+                            }),
                           ],
-                        ),
-                        const SizedBox(height: 12),
-                        ...rows.map((row) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _TeacherWageRow(
-                              palette: p,
-                              row: row,
-                              onConfirm: row.readyPaymentIds.isNotEmpty
-                                  ? () => _confirmReceived(
-                                      context: context,
-                                      row: row,
-                                    )
-                                  : null,
-                            ),
-                          );
-                        }),
-                      ],
+                        );
+                      },
                     );
                   },
                 );
@@ -703,9 +894,12 @@ class _TeacherWageRowData {
   const _TeacherWageRowData({
     required this.learnerName,
     required this.learnerSerial,
+    required this.courseLabel,
+    required this.firstSessionDate,
+    required this.firstSessionFallback,
+    required this.monthNumber,
     required this.paidAtMs,
     required this.percentLabel,
-    required this.deliveryLabel,
     required this.assignedSessions,
     required this.sessionTotal,
     required this.presentCount,
@@ -717,9 +911,12 @@ class _TeacherWageRowData {
 
   final String learnerName;
   final String learnerSerial;
+  final String courseLabel;
+  final String firstSessionDate;
+  final bool firstSessionFallback;
+  final int monthNumber;
   final int paidAtMs;
   final String percentLabel;
-  final String deliveryLabel;
   final int assignedSessions;
   final int sessionTotal;
   final int presentCount;
@@ -742,12 +939,7 @@ class _TeacherWageRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final paidAt = TeacherWagesScreen.fmtYmdFromMs(row.paidAtMs);
-    final statusColor = row.statusLabel == 'Ready'
-        ? const Color(0xFF3666D8)
-        : row.statusLabel == 'Received'
-        ? const Color(0xFF22945A)
-        : const Color(0xFFF0A526);
+    final monthLabel = 'M${row.monthNumber > 0 ? row.monthNumber : '-'}';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -778,90 +970,43 @@ class _TeacherWageRow extends StatelessWidget {
                         fontSize: 15,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      [
-                        if (paidAt.isNotEmpty) paidAt,
-                        row.deliveryLabel,
-                      ].join(' • '),
-                      style: TextStyle(
-                        color: palette.text.withValues(alpha: 0.72),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (row.learnerSerial.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Serial: ${row.learnerSerial}',
-                        style: TextStyle(
-                          color: palette.text.withValues(alpha: 0.66),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _WageChip(
+                          label: 'Month',
+                          value: monthLabel,
+                          color: const Color(0xFF4B67D1),
                         ),
-                      ),
-                    ],
+                        _WageChip(
+                          label: 'Share',
+                          value: row.percentLabel,
+                          color: const Color(0xFF3666D8),
+                        ),
+                        _WageChip(
+                          label: 'Amount',
+                          value: '${row.netTotal} DA',
+                          color: const Color(0xFF22945A),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${row.netTotal} DA',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: palette.text,
-                      fontSize: 15,
-                    ),
+              if (onConfirm != null)
+                FilledButton.icon(
+                  onPressed: onConfirm,
+                  icon: const Icon(Icons.verified_rounded),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
                   ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: statusColor.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Text(
-                      row.statusLabel,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                  label: const Text('Received'),
+                ),
             ],
           ),
-          if (row.sessionTotal > 0) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Sessions: ${row.presentCount}/${row.sessionTotal} present',
-              style: TextStyle(
-                color: palette.text.withValues(alpha: 0.78),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-          if (onConfirm != null) ...[
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: onConfirm,
-              icon: const Icon(Icons.verified_rounded),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              label: const Text('Mark as received'),
-            ),
-          ],
         ],
       ),
     );
@@ -951,10 +1096,19 @@ class _EmptyWagesState extends StatelessWidget {
 }
 
 class _TeacherClassMeta {
-  const _TeacherClassMeta({required this.variantKey, required this.studyMode});
+  const _TeacherClassMeta({
+    required this.variantKey,
+    required this.studyMode,
+    required this.courseCode,
+    required this.courseTitle,
+    required this.firstSessionDate,
+  });
 
   final String variantKey;
   final String studyMode;
+  final String courseCode;
+  final String courseTitle;
+  final String firstSessionDate;
 }
 
 class _SessionCounts {
@@ -970,14 +1124,20 @@ class _TeacherWageRowAccumulator {
     required this.learnerSerial,
     required this.learnerUid,
     required this.courseId,
-    required this.deliveryLabel,
+    required this.courseLabel,
+    required this.firstSessionDate,
+    required this.firstSessionFallback,
+    required this.monthNumber,
   });
 
   final String learnerName;
   String learnerSerial;
   final String learnerUid;
   final String courseId;
-  String deliveryLabel;
+  String courseLabel;
+  String firstSessionDate;
+  bool firstSessionFallback;
+  int monthNumber;
   int paidAtMs = 0;
   int netTotal = 0;
   int assignedSessions = 0;

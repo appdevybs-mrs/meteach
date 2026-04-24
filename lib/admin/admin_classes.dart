@@ -39,6 +39,7 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
+import '../services/mail_consistency_service.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/reminder_consistency_service.dart';
 import 'admin_learner_mail_topics_screen.dart';
@@ -1014,12 +1015,415 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   // -------------------- Class actions --------------------
 
-  Future<void> _setClassStatus(String classId, String status) async {
+  void _refreshClassesSnapshot() {
+    if (!mounted) return;
+    setState(() {
+      _classesFuture = _classesRef.get();
+      _classTabMetricsFutureByKey.clear();
+    });
+  }
+
+  Future<_PauseWindowSelection?> _showPauseWindowDialog({
+    required String classId,
+    required String classTitle,
+  }) async {
+    DateTime? fromDate;
+    DateTime? toDate;
+    String errorText = '';
+
+    Future<void> pickDate(
+      BuildContext dialogContext,
+      void Function(void Function()) setDialogState,
+      bool isFrom,
+    ) async {
+      final now = DateTime.now();
+      final initial = isFrom ? (fromDate ?? now) : (toDate ?? fromDate ?? now);
+      final picked = await showDatePicker(
+        context: dialogContext,
+        initialDate: initial,
+        firstDate: DateTime(now.year - 1),
+        lastDate: DateTime(now.year + 3),
+      );
+      if (picked == null) return;
+      setDialogState(() {
+        if (isFrom) {
+          fromDate = picked;
+          if (toDate != null && toDate!.isBefore(fromDate!)) {
+            toDate = fromDate;
+          }
+        } else {
+          toDate = picked;
+        }
+        errorText = '';
+      });
+    }
+
+    return showDialog<_PauseWindowSelection>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Pause class'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  classTitle.isEmpty ? classId : '$classTitle ($classId)',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                const Text('Pause this class and notify teacher + learners.'),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      pickDate(dialogContext, setDialogState, true),
+                  icon: const Icon(Icons.event_available_rounded),
+                  label: Text(
+                    fromDate == null
+                        ? 'From date'
+                        : 'From: ${_formatDate(fromDate!)}',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      pickDate(dialogContext, setDialogState, false),
+                  icon: const Icon(Icons.event_busy_rounded),
+                  label: Text(
+                    toDate == null ? 'To date' : 'To: ${_formatDate(toDate!)}',
+                  ),
+                ),
+                if (errorText.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    errorText,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, null),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (fromDate == null || toDate == null) {
+                    setDialogState(
+                      () => errorText = 'Please choose both from and to dates.',
+                    );
+                    return;
+                  }
+                  if (toDate!.isBefore(fromDate!)) {
+                    setDialogState(
+                      () =>
+                          errorText = 'To date must be on or after from date.',
+                    );
+                    return;
+                  }
+                  Navigator.pop(
+                    dialogContext,
+                    _PauseWindowSelection(fromDate: fromDate!, toDate: toDate!),
+                  );
+                },
+                child: const Text('Pause and notify'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool> _sendClassPauseMailToUser({
+    required String recipientUid,
+    required String recipientName,
+    required String recipientRoleSeed,
+    required String subject,
+    required String body,
+  }) async {
+    final meUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final meName = (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+    if (meUid.trim().isEmpty || recipientUid.trim().isEmpty) return false;
+
+    final db = FirebaseDatabase.instance;
+    final indexRef = db.ref('mail_index');
+    final threadsRef = db.ref('mail_threads');
+    final stateRef = db.ref('mail_state');
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cleanRecipientName = recipientName.trim().isEmpty
+        ? 'User'
+        : recipientName.trim();
+    final cleanSenderName = meName.isEmpty ? 'Admin' : meName;
+    final preview80 = body.length > 80 ? body.substring(0, 80) : body;
+
+    final myRole = await MailConsistencyService.resolveUserRole(
+      db,
+      meUid,
+      seedRole: 'admin',
+    );
+    final peerRole = await MailConsistencyService.resolveUserRole(
+      db,
+      recipientUid,
+      seedRole: recipientRoleSeed,
+    );
+
+    String? threadId;
+    final myIndexSnap = await indexRef.child(meUid).get();
+    final myIndexRaw = myIndexSnap.value;
+
+    if (myIndexRaw is Map) {
+      for (final entry in myIndexRaw.entries) {
+        final tid = entry.key.toString();
+        final rowRaw = entry.value;
+        if (rowRaw is! Map) continue;
+        final row = rowRaw.map((k, v) => MapEntry(k.toString(), v));
+        final peerUid = (row['peerUid'] ?? '').toString().trim();
+        final rowSubject = (row['subject'] ?? '').toString().trim();
+        final deletedAt = row['deletedAt'];
+        if (deletedAt != null) continue;
+        if (peerUid == recipientUid && rowSubject == subject) {
+          threadId = tid;
+          break;
+        }
+      }
+    }
+
+    if (threadId == null) {
+      threadId = threadsRef.push().key!;
+      await threadsRef.child(threadId).set({
+        'subject': subject,
+        'type': 'mail',
+        'createdAt': now,
+        'updatedAt': now,
+        'lastMessage': '',
+        'participants': {meUid: true, recipientUid: true},
+      });
+
+      await indexRef.child(meUid).child(threadId).set({
+        'subject': subject,
+        'type': 'mail',
+        'updatedAt': now,
+        'lastMessage': '',
+        'unreadCount': 0,
+        'peerUid': recipientUid,
+        'peerName': cleanRecipientName,
+        'peerRole': peerRole,
+        'deletedAt': null,
+      });
+
+      await indexRef.child(recipientUid).child(threadId).set({
+        'subject': subject,
+        'type': 'mail',
+        'updatedAt': now,
+        'lastMessage': '',
+        'unreadCount': 0,
+        'peerUid': meUid,
+        'peerName': cleanSenderName,
+        'peerRole': myRole,
+        'deletedAt': null,
+      });
+    }
+
+    final msgRef = db.ref('mail_messages/$threadId').push();
+    await msgRef.set({
+      'fromUid': meUid,
+      'body': body,
+      'toUids': {recipientUid: true},
+      'ccUids': {},
+      'bccUids': {},
+      'attachments': [],
+      'createdAt': now,
+      'deletedFor': {},
+    });
+
+    await db.ref('mail_threads/$threadId').update({
+      'updatedAt': now,
+      'lastMessage': preview80,
+      'participants/$meUid': true,
+      'participants/$recipientUid': true,
+    });
+
+    await indexRef.child(meUid).child(threadId).update({
+      'subject': subject,
+      'type': 'mail',
+      'updatedAt': now,
+      'lastMessage': preview80,
+      'unreadCount': 0,
+      'peerUid': recipientUid,
+      'peerName': cleanRecipientName,
+      'peerRole': peerRole,
+      'deletedAt': null,
+    });
+
+    await indexRef.child(recipientUid).child(threadId).runTransaction((cur) {
+      final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+      final oldUnread = (m['unreadCount'] is num)
+          ? (m['unreadCount'] as num).toInt()
+          : 0;
+      m['subject'] = subject;
+      m['type'] = 'mail';
+      m['updatedAt'] = now;
+      m['lastMessage'] = preview80;
+      m['unreadCount'] = oldUnread + 1;
+      m['peerUid'] = meUid;
+      m['peerName'] = cleanSenderName;
+      m['peerRole'] = myRole;
+      m['deletedAt'] = null;
+      return Transaction.success(m);
+    });
+
+    await stateRef.child(meUid).child(threadId).update({
+      'lastReadAt': now,
+      'lastDeliveredAt': now,
+    });
+    await stateRef.child(recipientUid).child(threadId).update({
+      'lastDeliveredAt': now,
+    });
+
+    await MailConsistencyService.verifyMailWriteOnce(
+      db: db,
+      threadId: threadId,
+      senderUid: meUid,
+      receiverUid: recipientUid,
+      senderName: cleanSenderName,
+      receiverName: cleanRecipientName,
+      senderRole: myRole,
+      receiverRole: peerRole,
+      subject: subject,
+      lastMessage: preview80,
+      now: now,
+      type: 'mail',
+    );
+    return true;
+  }
+
+  Future<void> _pauseClassWithWindow(Map<String, dynamic> cls) async {
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    if (classId.isEmpty) {
+      _notify('Could not pause class: missing class id.', error: true);
+      return;
+    }
+
+    final classTitle = (cls['course_title'] ?? '').toString().trim();
+    final picked = await _showPauseWindowDialog(
+      classId: classId,
+      classTitle: classTitle,
+    );
+    if (picked == null) return;
+
+    final fromYmd = _formatDate(picked.fromDate);
+    final toYmd = _formatDate(picked.toDate);
+
     try {
       await _classesRef.child(classId).update({
+        'status': 'paused',
+        'pause_window': {
+          'from': fromYmd,
+          'to': toYmd,
+          'updated_at': ServerValue.timestamp,
+          'updated_by': FirebaseAuth.instance.currentUser?.uid ?? '',
+        },
+        'updated_at': ServerValue.timestamp,
+      });
+      _refreshClassesSnapshot();
+    } catch (e) {
+      _notify('Failed to pause class: $e', error: true);
+      return;
+    }
+
+    final recipientRoleByUid = <String, String>{};
+    final recipientNameByUid = <String, String>{};
+
+    final teacherUid = _classInstructorUid(cls).trim();
+    if (teacherUid.isNotEmpty) {
+      recipientRoleByUid[teacherUid] = 'teacher';
+      recipientNameByUid[teacherUid] = (cls['instructor'] ?? '')
+          .toString()
+          .trim();
+    }
+
+    final learners = _classLearnersList(cls);
+    for (final learner in learners) {
+      final uid = (learner['uid'] ?? '').trim();
+      if (uid.isEmpty) continue;
+      recipientRoleByUid[uid] = 'learner';
+      recipientNameByUid[uid] = (learner['name'] ?? '').trim();
+    }
+
+    final meUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (meUid.isNotEmpty) {
+      recipientRoleByUid.remove(meUid);
+      recipientNameByUid.remove(meUid);
+    }
+
+    final totalRecipients = recipientRoleByUid.length;
+    if (totalRecipients == 0) {
+      _notify('Class paused from $fromYmd to $toYmd. No recipients found.');
+      return;
+    }
+
+    final effectiveTitle = classTitle.isEmpty ? classId : classTitle;
+    final subject = 'Class paused notice';
+    final body =
+        'Class pause notice\n'
+        'Class: $effectiveTitle\n'
+        'Class ID: $classId\n'
+        'Paused from: $fromYmd\n'
+        'Paused to: $toYmd\n'
+        'Please follow the updated schedule from the admin.';
+
+    var sentCount = 0;
+    for (final entry in recipientRoleByUid.entries) {
+      final uid = entry.key;
+      final seedRole = entry.value;
+      final receiverName = (recipientNameByUid[uid] ?? '').trim().isEmpty
+          ? (seedRole == 'teacher' ? 'Teacher' : 'Learner')
+          : (recipientNameByUid[uid] ?? '').trim();
+      try {
+        final ok = await _sendClassPauseMailToUser(
+          recipientUid: uid,
+          recipientName: receiverName,
+          recipientRoleSeed: seedRole,
+          subject: subject,
+          body: body,
+        );
+        if (ok) sentCount += 1;
+      } catch (_) {}
+    }
+
+    if (sentCount == totalRecipients) {
+      _notify(
+        'Class paused from $fromYmd to $toYmd. Mail sent to $sentCount recipient(s).',
+      );
+      return;
+    }
+
+    _notify(
+      'Class paused from $fromYmd to $toYmd. Mail sent to $sentCount/$totalRecipients recipient(s).',
+      error: true,
+    );
+  }
+
+  Future<void> _setClassStatus(String classId, String status) async {
+    try {
+      final normalizedStatus = status.trim().toLowerCase();
+      final updates = <String, dynamic>{
         "status": status,
         "updated_at": ServerValue.timestamp,
-      });
+      };
+      if (normalizedStatus != 'paused') {
+        updates['pause_window'] = null;
+      }
+      await _classesRef.child(classId).update(updates);
+      _refreshClassesSnapshot();
       _notify("Updated $classId → $status");
     } catch (e) {
       _notify("Failed to update: $e", error: true);
@@ -3247,12 +3651,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       ),
                       IconButton(
                         tooltip: 'Refresh classes',
-                        onPressed: () {
-                          setState(() {
-                            _classesFuture = _classesRef.get();
-                            _classTabMetricsFutureByKey.clear();
-                          });
-                        },
+                        onPressed: _refreshClassesSnapshot,
                         icon: const Icon(Icons.refresh_rounded),
                       ),
                     ],
@@ -3270,6 +3669,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         final classKey = id.isEmpty ? 'class_$i' : id;
                         final expanded = _expandedClassIds.contains(classKey);
                         final status = (cls["status"] ?? "active").toString();
+                        final isPaused = status.toLowerCase() == 'paused';
+                        final pauseWindowRaw = cls['pause_window'];
+                        final pauseWindow = pauseWindowRaw is Map
+                            ? pauseWindowRaw.map((k, v) => MapEntry('$k', v))
+                            : <String, dynamic>{};
+                        final pauseFrom = (pauseWindow['from'] ?? '')
+                            .toString()
+                            .trim();
+                        final pauseTo = (pauseWindow['to'] ?? '')
+                            .toString()
+                            .trim();
 
                         final courseTitle = (cls["course_title"] ?? "")
                             .toString();
@@ -3294,11 +3704,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         final learners = _classLearnersList(cls);
 
                         return Card(
+                          color: isPaused ? const Color(0xFFFFF3E0) : null,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                             side: BorderSide(
-                              color: Colors.grey.withValues(alpha: 0.25),
+                              color: isPaused
+                                  ? Colors.orange.shade300
+                                  : Colors.grey.withValues(alpha: 0.25),
+                              width: isPaused ? 1.4 : 1,
                             ),
                           ),
                           child: Padding(
@@ -3329,7 +3743,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                           return;
                                         }
                                         if (value == 'pause') {
-                                          _setClassStatus(id, 'paused');
+                                          _pauseClassWithWindow(cls);
                                           return;
                                         }
                                         if (value == 'block') {
@@ -3437,6 +3851,18 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
+                                if (isPaused &&
+                                    pauseFrom.isNotEmpty &&
+                                    pauseTo.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Paused: $pauseFrom → $pauseTo',
+                                    style: TextStyle(
+                                      color: Colors.orange.shade900,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
 
                                 const SizedBox(height: 6),
                                 Text(
@@ -5759,4 +6185,11 @@ class _ClassTabMetrics {
     required this.paymentProgressValue,
     required this.paymentVariesAcrossLearners,
   });
+}
+
+class _PauseWindowSelection {
+  final DateTime fromDate;
+  final DateTime toDate;
+
+  const _PauseWindowSelection({required this.fromDate, required this.toDate});
 }
