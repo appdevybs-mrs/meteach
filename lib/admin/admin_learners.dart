@@ -3647,19 +3647,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   @override
   Widget build(BuildContext context) {
-    String middleTabText() {
-      final courseKey = _selectedCourseKey;
-      if (courseKey == null) return 'Attendance';
-
-      final courseNode = (_userCourses[courseKey] ?? {}) as Map;
-      final variantKey = _normalizeVariantKey(
-        (courseNode['variantKey'] ?? courseNode['variant'] ?? 'inclass')
-            .toString(),
-      );
-
-      return _variantIsRecorded(variantKey) ? 'Progress' : 'Attendance';
-    }
-
     return Column(
       children: [
         Align(
@@ -3680,7 +3667,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
           indicatorColor: AdminLearnersScreen.primaryBlue,
           tabs: [
             const Tab(text: 'Payment'),
-            Tab(text: middleTabText()),
+            const Tab(text: 'Progress'),
             const Tab(text: 'Report'),
           ],
         ),
@@ -3808,6 +3795,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   String _normToken(String s) => s.trim().toLowerCase();
 
+  bool _isServicePayment(Map<String, dynamic> payment) {
+    final teacher = (payment['teacherName'] ?? payment['teacher_name'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return teacher == 'service';
+  }
+
   bool _paymentMatchesCourse({
     required Map<String, dynamic> payment,
     required String courseKey,
@@ -3818,25 +3813,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     final payCourseKey = (payment['courseKey'] ?? '').toString();
     final payCourseId = (payment['course_id'] ?? payment['courseId'] ?? '')
         .toString();
-    final payCourseTitle =
-        (payment['course_title'] ?? payment['courseTitle'] ?? '').toString();
-    final payCourseCode =
-        (payment['course_code'] ?? payment['courseCode'] ?? '').toString();
-
     final keyMatch =
         courseKey.trim().isNotEmpty &&
         _normToken(payCourseKey) == _normToken(courseKey);
     final idMatch =
         courseId.trim().isNotEmpty &&
         _normToken(payCourseId) == _normToken(courseId);
-    final titleMatch =
-        courseTitle.trim().isNotEmpty &&
-        _normToken(payCourseTitle) == _normToken(courseTitle);
-    final codeMatch =
-        courseCode.trim().isNotEmpty &&
-        _normToken(payCourseCode) == _normToken(courseCode);
 
-    return keyMatch || idMatch || titleMatch || codeMatch;
+    return keyMatch || idMatch;
   }
 
   Future<Map<String, int>> _latestPaymentExpiryForCourse({
@@ -3872,6 +3856,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         )) {
           continue;
         }
+
+        if (_isServicePayment(p)) continue;
 
         final payVariant = _normalizeVariantKey(
           (p['variantKey'] ?? p['variant'] ?? '').toString(),
@@ -3933,6 +3919,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         )) {
           return;
         }
+
+        if (_isServicePayment(pay)) return;
 
         final payVariant = _normalizeVariantKey(
           (pay['variantKey'] ?? pay['deliveryKey'] ?? pay['variant'] ?? '')
@@ -4188,8 +4176,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             final courseCodeForMatch =
                 (courseNode['course_code'] ?? courseMap['course_code'] ?? '')
                     .toString();
-            final pricePerLevel = _asInt(courseMap['price_per_level']);
-            final pricePerMonth = _asInt(courseMap['price_per_month']);
             final latestPaymentMetaFuture = _latestPaymentExpiryForCourse(
               uid: widget.uid,
               courseKey: courseKey,
@@ -4277,13 +4263,34 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                     final sessionsLeft =
                         effectiveSessionsPaidTotal - sessionsDone;
                     final overSessions = sessionsLeft < 0 ? -sessionsLeft : 0;
-
                     final effectivePaidTotalForDisplay =
                         effectiveSessionsPaidTotal > 0
                         ? effectiveSessionsPaidTotal
                         : (paymentSessionsPaidTotal > 0
                               ? paymentSessionsPaidTotal
                               : effectiveSessionsPaidTotal);
+                    final sessionUsageDenominator =
+                        effectivePaidTotalForDisplay > 0
+                        ? effectivePaidTotalForDisplay
+                        : 0;
+                    final sessionUsageRatio = sessionUsageDenominator > 0
+                        ? (sessionsDone / sessionUsageDenominator).clamp(
+                            0.0,
+                            1.0,
+                          )
+                        : 0.0;
+                    final sessionWarnThreshold = remindBeforeSession > 0
+                        ? remindBeforeSession
+                        : 1;
+                    final sessionUsageColor = overSessions > 0 || due
+                        ? Colors.red
+                        : (sessionsLeft > 0 &&
+                                  sessionsLeft <= sessionWarnThreshold
+                              ? const Color(0xFFB45309)
+                              : const Color(0xFF157A3D));
+                    final sessionUsageValueText = overSessions > 0
+                        ? '$sessionsDone / $sessionUsageDenominator • Over $overSessions'
+                        : '$sessionsDone / $sessionUsageDenominator • Left $sessionsLeft';
 
                     final expiresAt = _variantIsRecorded(variantKey)
                         ? (recordedExpiresAt > 0
@@ -4316,6 +4323,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                     final nearExpiry = usesExpiry
                         ? _isNearExpiryMs(expiresAt)
                         : false;
+                    final String compactVariant = variantText.trim().isEmpty
+                        ? '-'
+                        : variantText.trim().toLowerCase();
+                    final String compactSessions = usesSessions
+                        ? (totalSessions > 0
+                              ? 'S: $sessionsDone/$totalSessions'
+                              : 'S: $sessionsDone')
+                        : 'S: -';
 
                     return _miniCard(
                       bg: Colors.white,
@@ -4327,28 +4342,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              _miniPill('Type: $variantText'),
-                              if (usesSessions)
-                                _miniPill(
-                                  totalSessions > 0
-                                      ? 'Sessions: $sessionsDone / $totalSessions'
-                                      : 'Sessions done: $sessionsDone',
-                                ),
-                              if (!usesSessions &&
-                                  _variantIsRecorded(variantKey))
-                                _miniPill('Recorded access'),
-                              if (pricePerMonth > 0)
-                                _miniPill('Month fee: $pricePerMonth'),
-                              if (pricePerLevel > 0)
-                                _miniPill('Level fee: $pricePerLevel'),
-                              if (totalPaid > 0)
-                                _miniPill('Total paid: $totalPaid'),
+                              _miniPill(compactVariant),
+                              _miniPill(compactSessions),
+                              _miniPill('Total: $totalPaid'),
                             ],
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 6),
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: AdminLearnersScreen.appBg,
                               borderRadius: BorderRadius.circular(14),
@@ -4359,26 +4364,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Payment summary',
-                                  style: TextStyle(fontWeight: FontWeight.w900),
-                                ),
-                                const SizedBox(height: 6),
-                                if (usesSessions)
-                                  Text(
-                                    overSessions > 0
-                                        ? 'Paid $effectivePaidTotalForDisplay • Left $sessionsLeft (Over $overSessions)'
-                                        : 'Paid $effectivePaidTotalForDisplay • Left $sessionsLeft',
-                                    style: TextStyle(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.75,
-                                      ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                if (usesSessions) ...[
+                                  _compactProgressMetric(
+                                    title: 'Session usage',
+                                    valueText: sessionUsageValueText,
+                                    value: sessionUsageRatio,
+                                    valueColor: sessionUsageColor,
                                   ),
+                                ],
                                 if (usesSessions &&
                                     sessionsPaidTotal <= 0 &&
-                                    hasPaymentHistory)
+                                    hasPaymentHistory) ...[
+                                  const SizedBox(height: 6),
                                   Text(
                                     'Sessions are restored from payment history (legacy rows without sessions).',
                                     style: TextStyle(
@@ -4389,6 +4386,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                       fontSize: 12,
                                     ),
                                   ),
+                                ],
+                                if (usesExpiry) const SizedBox(height: 6),
                                 if (usesExpiry)
                                   Text(
                                     _variantIsRecorded(variantKey)
@@ -4405,6 +4404,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
+                                if (usesExpiry) const SizedBox(height: 2),
                                 if (usesExpiry)
                                   Text(
                                     'Expires on: $expiryText',
@@ -4416,7 +4416,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                     ),
                                   ),
                                 if (due) ...[
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   const Text(
                                     '⚠️ Payment is due now (all paid sessions consumed).',
                                     style: TextStyle(
@@ -4425,7 +4425,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                   ),
                                 ],
                                 if (expired) ...[
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   const Text(
                                     '⛔ Access expired.',
                                     style: TextStyle(
@@ -4433,7 +4433,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                     ),
                                   ),
                                 ] else if (nearExpiry) ...[
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   const Text(
                                     '⚠️ Access is near expiry.',
                                     style: TextStyle(
@@ -4444,7 +4444,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           const Text(
                             'History',
                             style: TextStyle(fontWeight: FontWeight.w900),
@@ -4499,6 +4499,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 int effectiveSessionsForPayment(
                                   Map<String, dynamic> pay,
                                 ) {
+                                  if (_isServicePayment(pay)) return 0;
+
                                   final payVariant = _normalizeVariantKey(
                                     (pay['variantKey'] ??
                                             pay['deliveryKey'] ??
@@ -4543,11 +4545,19 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                   if (pid.isEmpty) continue;
 
                                   final sp = effectiveSessionsForPayment(pay);
-                                  derivedSessionsPaidTotal += sp;
+                                  final isServicePayment = _isServicePayment(
+                                    pay,
+                                  );
+                                  if (!isServicePayment) {
+                                    derivedSessionsPaidTotal += sp;
+                                  }
                                   final amount = _asInt(pay['amount']);
-                                  derivedTotalPaid += amount;
+                                  if (!isServicePayment) {
+                                    derivedTotalPaid += amount;
+                                  }
                                   final paidAt = _asInt(pay['paidAt']);
-                                  if (paidAt >= derivedLastPaymentAt) {
+                                  if (!isServicePayment &&
+                                      paidAt >= derivedLastPaymentAt) {
                                     derivedLastPaymentAt = paidAt;
                                     derivedLastAmount = amount;
                                     derivedLastExpiresAt = _asInt(
@@ -4650,56 +4660,54 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                               spacing: 8,
                                               runSpacing: 8,
                                               children: [
+                                                _miniPill(variantBadge),
+                                                _miniPill('Amt: $fee'),
                                                 _miniPill(
-                                                  'Type: $variantBadge',
-                                                ),
-                                                _miniPill('Fee: $fee'),
-                                                _miniPill(
-                                                  'Paid: ${paidAt.isEmpty ? '-' : paidAt}',
+                                                  paidAt.isEmpty ? '-' : paidAt,
                                                 ),
                                                 if (_variantUsesSessions(
-                                                  payVariant,
-                                                ))
-                                                  _miniPill('Sessions: $sp'),
+                                                      payVariant,
+                                                    ) &&
+                                                    !_isServicePayment(p))
+                                                  _miniPill('S: $sp'),
                                                 if (_variantUsesReminder(
-                                                  payVariant,
-                                                ))
-                                                  _miniPill(
-                                                    'Left in this payment: $left',
-                                                  ),
+                                                      payVariant,
+                                                    ) &&
+                                                    !_isServicePayment(p))
+                                                  _miniPill('L: $left'),
                                                 if (_variantUsesStartDate(
                                                   payVariant,
                                                 ))
                                                   _miniPill(
-                                                    'Start: ${startDate.isEmpty ? '-' : startDate}',
+                                                    'St: ${startDate.isEmpty ? '-' : startDate}',
                                                   ),
                                                 if (_variantIsFlexible(
                                                   payVariant,
                                                 ))
                                                   _miniPill(
-                                                    'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                                    'Exp: ${expiresAt.isEmpty ? '-' : expiresAt}',
                                                   ),
                                                 if (_variantIsFlexible(
                                                   payVariant,
                                                 ))
                                                   _miniPill(
                                                     expiryMonths > 0
-                                                        ? 'Window: $expiryMonths months'
-                                                        : 'Window: -',
+                                                        ? 'Win: $expiryMonths m'
+                                                        : 'Win: -',
                                                   ),
                                                 if (_variantIsRecorded(
                                                   payVariant,
                                                 ))
                                                   _miniPill(
                                                     durationMonths > 0
-                                                        ? 'Duration: $durationMonths months'
-                                                        : 'Duration: -',
+                                                        ? 'Dur: $durationMonths m'
+                                                        : 'Dur: -',
                                                   ),
                                                 if (_variantIsRecorded(
                                                   payVariant,
                                                 ))
                                                   _miniPill(
-                                                    'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                                    'Exp: ${expiresAt.isEmpty ? '-' : expiresAt}',
                                                   ),
                                               ],
                                             ),
@@ -5355,6 +5363,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                 final boundaries = boundariesSnap.data ?? const <int>[];
                 final attendanceTiles = <Widget>[];
                 var consumedCount = 0;
+                var learnerPresentInTaught = 0;
                 var boundaryIndex = 0;
 
                 for (final entry in classSessions.asMap().entries) {
@@ -5401,6 +5410,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                   final shownStatus = statusRaw.isEmpty
                       ? 'not registered'
                       : statusRaw;
+                  if (status == 'present') {
+                    learnerPresentInTaught += 1;
+                  }
 
                   attendanceTiles.add(
                     Padding(
@@ -5479,15 +5491,50 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                   }
                 }
 
+                final taughtProgressValue = totalSessions > 0
+                    ? (taughtCount / totalSessions).clamp(0.0, 1.0)
+                    : 0.0;
+                final learnerPresentValue = taughtCount > 0
+                    ? (learnerPresentInTaught / taughtCount).clamp(0.0, 1.0)
+                    : 0.0;
+
                 return ListView(
                   padding: EdgeInsets.zero,
                   children: [
                     _coursePicker(keys),
                     const SizedBox(height: 8),
                     _miniCard(
-                      child: Text(
-                        'Lessons taught: $label',
-                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Progress overview',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _compactProgressMetric(
+                                  title: 'Lessons taught',
+                                  valueText: label,
+                                  value: taughtProgressValue,
+                                  valueColor: AdminLearnersScreen.primaryBlue,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _compactProgressMetric(
+                                  title: 'Learner present',
+                                  valueText:
+                                      '$learnerPresentInTaught / $taughtCount',
+                                  value: learnerPresentValue,
+                                  valueColor: const Color(0xFF157A3D),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -5693,6 +5740,47 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _compactProgressMetric({
+    required String title,
+    required String valueText,
+    required double value,
+    required Color valueColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: AdminLearnersScreen.appBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdminLearnersScreen.uiBorders),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.68),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(valueText, style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: value,
+              minHeight: 6,
+              backgroundColor: Colors.white,
+              valueColor: AlwaysStoppedAnimation<Color>(valueColor),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

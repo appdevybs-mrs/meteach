@@ -264,6 +264,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     return t == 'waiting' || t == 'service';
   }
 
+  static bool _isServiceTeacherLabel(String teacherName) {
+    return teacherName.trim().toLowerCase() == 'service';
+  }
+
+  static bool _isServicePayment(Map<String, dynamic> row) {
+    return _isServiceTeacherLabel(_teacherLabelFrom(row));
+  }
+
   static bool _hasAssignedTeacher(Map<String, dynamic> row) {
     final teacherId = _readFirstNonEmpty(row, [
       'teacherId',
@@ -507,6 +515,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             payCourseKey == courseKey ||
             (expectedCourseId.isNotEmpty && payCourseId == expectedCourseId);
         if (!matchesCourse) continue;
+        if (_isServicePayment(m.cast<String, dynamic>())) continue;
 
         final amount = _asInt(m['amount']);
         final rawVariant = (m['variantKey'] ?? m['deliveryKey'] ?? m['variant'])
@@ -2063,18 +2072,21 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                           studyMode: (p['studyMode'] ?? '')
                                               .toString(),
                                         );
+                                        final isServicePayment =
+                                            _isServicePayment(p);
 
-                                        final detail =
-                                            _variantIsRecorded(
-                                              (p['variantKey'] ?? '')
-                                                  .toString(),
-                                            )
-                                            ? 'Months: ${_asInt(p['durationMonths'])}'
+                                        final detail = isServicePayment
+                                            ? 'Service'
+                                            : _variantIsRecorded(
+                                                (p['variantKey'] ?? '')
+                                                    .toString(),
+                                              )
+                                            ? 'M: ${_asInt(p['durationMonths'])}'
                                             : _variantUsesSessions(
                                                 (p['variantKey'] ?? '')
                                                     .toString(),
                                               )
-                                            ? 'Sessions: ${_asInt(p['sessionsPaid'])}'
+                                            ? 'S: ${_asInt(p['sessionsPaid'])}'
                                             : '—';
 
                                         final baseRowBg = (i % 2 == 0)
@@ -2294,10 +2306,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         studyMode: (p['studyMode'] ?? '').toString(),
       );
       final detail = _variantIsRecorded((p['variantKey'] ?? '').toString())
-          ? 'Months: ${_asInt(p['durationMonths'])}'
+          ? 'M: ${_asInt(p['durationMonths'])}'
           : _variantUsesSessions((p['variantKey'] ?? '').toString())
-          ? 'Sessions: ${_asInt(p['sessionsPaid'])}'
+          ? 'S: ${_asInt(p['sessionsPaid'])}'
           : '—';
+      final safeDetail = _isServicePayment(p) ? 'Service' : detail;
       final baseRowBg = (i % 2 == 0)
           ? Colors.white
           : AdminPaymentsScreen.appBg.withValues(alpha: 0.7);
@@ -2312,7 +2325,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             children: [
               rowCell(variantText, 126),
               rowCell('$amount', 118, strong: true),
-              rowCell(detail, 150),
+              rowCell(safeDetail, 150),
               rowCell(teacher.isEmpty ? '—' : teacher, 160),
               rowCell(courseTitle.isEmpty ? '—' : courseTitle, 200),
               rowCell(
@@ -2569,6 +2582,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           final usesStartDate = _variantUsesStartDate(pickedVariantKey);
           final usesExpiry = _variantUsesExpiry(pickedVariantKey);
           final isRecorded = _variantIsRecorded(pickedVariantKey);
+          final isServicePayment =
+              usesTeacher && _isServiceTeacherLabel(selectedTeacherName ?? '');
+          final effectiveUsesSessions = usesSessions && !isServicePayment;
+          final effectiveUsesReminder = usesReminder && !isServicePayment;
 
           final expiryPreviewBaseMs = _variantIsFlexible(pickedVariantKey)
               ? _ymdToMs(startDateYmd)
@@ -2849,7 +2866,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    if (usesSessions) ...[
+                    if (effectiveUsesSessions) ...[
                       _NumberPickerRow(
                         label: 'Sessions paid',
                         value: sessionsPaid,
@@ -2857,7 +2874,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: maxSessions,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder) {
+                          if (effectiveUsesReminder) {
                             remindBeforeSession = normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
                               remindBeforeSession: remindBeforeSession,
@@ -2869,9 +2886,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 10),
                     ],
 
-                    if (usesReminder) ...[
+                    if (effectiveUsesReminder) ...[
                       _NumberPickerRow(
-                        label: 'Reminder when left',
+                        label: 'Reminder left',
                         value: normalizeReminderForSessions(
                           sessionsPaidTotal: sessionsPaid,
                           remindBeforeSession: remindBeforeSession,
@@ -3013,6 +3030,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           pickedVariantKey,
                         );
                         final usesExpiry = _variantUsesExpiry(pickedVariantKey);
+                        final isServicePayment =
+                            usesTeacher &&
+                            _isServiceTeacherLabel(selectedTeacherName ?? '');
+                        final effectiveUsesSessions =
+                            usesSessions && !isServicePayment;
+                        final effectiveUsesReminder =
+                            usesReminder && !isServicePayment;
 
                         final startDateMs = _ymdToMs(startDateYmd);
                         final monthsForExpiry =
@@ -3035,7 +3059,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             uid: pickedUid!,
                             courseKey: pickedCourseKey!,
                             variantKey: pickedVariantKey,
-                            sessionsPaid: usesSessions ? sessionsPaid : 0,
+                            sessionsPaid: effectiveUsesSessions
+                                ? sessionsPaid
+                                : 0,
                             durationMonths: _variantIsRecorded(pickedVariantKey)
                                 ? durationMonths
                                 : 0,
@@ -3062,7 +3088,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           final learnerSerial = (pickedLearner['serial'] ?? '')
                               .toString();
 
-                          final remind = usesReminder
+                          final remind = effectiveUsesReminder
                               ? normalizeReminderForSessions(
                                   sessionsPaidTotal: sessionsPaid,
                                   remindBeforeSession: remindBeforeSession,
@@ -3084,8 +3110,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             ),
                             'studyMode': pickedStudyMode,
                             'studyModeLabel': pickedStudyModeLabel,
-                            'sessionsPaid': usesSessions ? sessionsPaid : null,
-                            'remindBeforeSession': usesReminder ? remind : null,
+                            'sessionsPaid': effectiveUsesSessions
+                                ? sessionsPaid
+                                : null,
+                            'remindBeforeSession': effectiveUsesReminder
+                                ? remind
+                                : null,
                             'durationMonths':
                                 _variantIsRecorded(pickedVariantKey)
                                 ? durationMonths
@@ -3147,7 +3177,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                     : learnerName,
                                 courseTitle: courseTitle,
                                 amount: fee,
-                                sessionsPaid: usesSessions ? sessionsPaid : 0,
+                                sessionsPaid: effectiveUsesSessions
+                                    ? sessionsPaid
+                                    : 0,
                                 paidDateYmd: paidDateYmd,
                                 variantKey: pickedVariantKey,
                                 durationMonths:
@@ -3256,6 +3288,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           final usesStartDate = _variantUsesStartDate(variantKey);
           final usesExpiry = _variantUsesExpiry(variantKey);
           final isRecorded = _variantIsRecorded(variantKey);
+          final isServicePayment =
+              usesTeacher && _isServiceTeacherLabel(selectedTeacherName ?? '');
+          final effectiveUsesSessions = usesSessions && !isServicePayment;
+          final effectiveUsesReminder = usesReminder && !isServicePayment;
           final previewExpiryBaseMs = _variantIsFlexible(variantKey)
               ? _ymdToMs(startDateYmd)
               : _ymdToMs(paidDateYmd);
@@ -3331,7 +3367,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    if (usesSessions) ...[
+                    if (effectiveUsesSessions) ...[
                       _NumberPickerRow(
                         label: 'Sessions paid',
                         value: sessionsPaid,
@@ -3339,7 +3375,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: 60,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder) {
+                          if (effectiveUsesReminder) {
                             remindBeforeSession = normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
                               remindBeforeSession: remindBeforeSession,
@@ -3351,9 +3387,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 10),
                     ],
 
-                    if (usesReminder) ...[
+                    if (effectiveUsesReminder) ...[
                       _NumberPickerRow(
-                        label: 'Reminder when left',
+                        label: 'Reminder left',
                         value: remindBeforeSession,
                         min: 1,
                         max: (sessionsPaid > 0 ? sessionsPaid : 1),
@@ -3466,11 +3502,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               : 0;
 
                           await _paymentsRef.child(paymentId).update({
-                            'sessionsPaid': _variantUsesSessions(variantKey)
+                            'sessionsPaid': effectiveUsesSessions
                                 ? sessionsPaid
                                 : null,
-                            'remindBeforeSession':
-                                _variantUsesReminder(variantKey)
+                            'remindBeforeSession': effectiveUsesReminder
                                 ? normalizeReminderForSessions(
                                     sessionsPaidTotal: sessionsPaid,
                                     remindBeforeSession: remindBeforeSession,

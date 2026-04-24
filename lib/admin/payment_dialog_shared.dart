@@ -165,6 +165,14 @@ class PaymentDialogShared {
     return name.trim().toLowerCase() == 'service';
   }
 
+  static bool _isServicePayment(Map<String, dynamic> payment) {
+    final teacher = (payment['teacherName'] ?? payment['teacher_name'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return teacher == 'service';
+  }
+
   static String? _teacherPickerValue({
     required String? teacherUid,
     required String teacherName,
@@ -448,6 +456,8 @@ class PaymentDialogShared {
             payCourseKey == courseKey ||
             (expectedCourseId.isNotEmpty && payCourseId == expectedCourseId);
         if (!matchesCourse) return;
+
+        if (_isServicePayment(p.cast<String, dynamic>())) return;
 
         final amount = _asInt(p['amount']);
         final rawVariant = (p['variantKey'] ?? p['deliveryKey'] ?? p['variant'])
@@ -918,6 +928,9 @@ class PaymentDialogShared {
           final usesExpiry = _variantUsesExpiry(variantKey);
           final usesStartDate = _variantUsesStartDate(variantKey);
           final isRecorded = _variantIsRecorded(variantKey);
+          final isServicePayment = usesTeacher && _isServiceLabel(teacherName);
+          final effectiveUsesSessions = usesSessions && !isServicePayment;
+          final effectiveUsesReminder = usesReminder && !isServicePayment;
 
           final expiryPreviewBaseMs = _variantIsFlexible(variantKey)
               ? _ymdToMs(startDateYmd)
@@ -1019,7 +1032,7 @@ class PaymentDialogShared {
                       const SizedBox(height: 12),
                     ],
 
-                    if (usesSessions) ...[
+                    if (effectiveUsesSessions) ...[
                       _NumberPickerRow(
                         label: 'Sessions paid',
                         value: sessionsPaid,
@@ -1027,7 +1040,7 @@ class PaymentDialogShared {
                         max: 60,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder) {
+                          if (effectiveUsesReminder) {
                             remindBeforeSession = normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
                               remindBeforeSession: remindBeforeSession,
@@ -1039,9 +1052,9 @@ class PaymentDialogShared {
                       const SizedBox(height: 10),
                     ],
 
-                    if (usesReminder) ...[
+                    if (effectiveUsesReminder) ...[
                       _NumberPickerRow(
-                        label: 'Reminder (how many sessions left)',
+                        label: 'Reminder left',
                         value: remindBeforeSession <= 0
                             ? 1
                             : normalizeReminderForSessions(
@@ -1139,6 +1152,12 @@ class PaymentDialogShared {
                   final usesReminder = _variantUsesReminder(variantKey);
                   final usesExpiry = _variantUsesExpiry(variantKey);
                   final usesStartDate = _variantUsesStartDate(variantKey);
+                  final isServicePayment =
+                      usesTeacher && _isServiceLabel(teacherName);
+                  final effectiveUsesSessions =
+                      usesSessions && !isServicePayment;
+                  final effectiveUsesReminder =
+                      usesReminder && !isServicePayment;
 
                   final startDateMs = _ymdToMs(startDateYmd);
                   final monthsForExpiry = _variantIsRecorded(variantKey)
@@ -1172,8 +1191,10 @@ class PaymentDialogShared {
                       'studyModeLabel': resolvedStudyModeLabel.isNotEmpty
                           ? resolvedStudyModeLabel
                           : null,
-                      'sessionsPaid': usesSessions ? sessionsPaid : null,
-                      'remindBeforeSession': usesReminder
+                      'sessionsPaid': effectiveUsesSessions
+                          ? sessionsPaid
+                          : null,
+                      'remindBeforeSession': effectiveUsesReminder
                           ? normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
                               remindBeforeSession: remindBeforeSession,
@@ -1389,6 +1410,10 @@ class PaymentDialogShared {
           final usesStartDate = _variantUsesStartDate(variantKey);
           final isRecorded = _variantIsRecorded(variantKey);
           final isFlexible = _variantIsFlexible(variantKey);
+          final isServicePayment =
+              usesTeacher && _isServiceLabel(selectedTeacherName);
+          final effectiveUsesSessions = usesSessions && !isServicePayment;
+          final effectiveUsesReminder = usesReminder && !isServicePayment;
 
           final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
           final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '')
@@ -1714,7 +1739,7 @@ class PaymentDialogShared {
                       const SizedBox(height: 12),
                     ],
 
-                    if (usesSessions) ...[
+                    if (effectiveUsesSessions) ...[
                       _NumberPickerRow(
                         label: 'Sessions paid',
                         value: sessionsPaid,
@@ -1722,7 +1747,7 @@ class PaymentDialogShared {
                         max: maxSessions,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder) {
+                          if (effectiveUsesReminder) {
                             remindBeforeSession = normalizeReminderForSessions(
                               sessionsPaidTotal: sessionsPaid,
                               remindBeforeSession: remindBeforeSession,
@@ -1735,9 +1760,9 @@ class PaymentDialogShared {
                       const SizedBox(height: 10),
                     ],
 
-                    if (usesReminder) ...[
+                    if (effectiveUsesReminder) ...[
                       _NumberPickerRow(
-                        label: 'Reminder (before session)',
+                        label: 'Reminder left',
                         value: normalizeReminderForSessions(
                           sessionsPaidTotal: sessionsPaid,
                           remindBeforeSession: remindBeforeSession,
@@ -1881,6 +1906,12 @@ class PaymentDialogShared {
                   final usesStartDate = _variantUsesStartDate(
                     normalizedVariantKey,
                   );
+                  final isServicePayment =
+                      usesTeacher && _isServiceLabel(selectedTeacherName);
+                  final effectiveUsesSessions =
+                      usesSessions && !isServicePayment;
+                  final effectiveUsesReminder =
+                      usesReminder && !isServicePayment;
 
                   final startDateMs = _ymdToMs(startDateYmd);
                   final monthsForExpiry =
@@ -1899,7 +1930,7 @@ class PaymentDialogShared {
                     return;
                   }
 
-                  final remind = usesReminder
+                  final remind = effectiveUsesReminder
                       ? normalizeReminderForSessions(
                           sessionsPaidTotal: sessionsPaid,
                           remindBeforeSession: remindBeforeSession,
@@ -1917,8 +1948,12 @@ class PaymentDialogShared {
                       'course_code': courseCode,
                       'course_title': courseTitle,
 
-                      'sessionsPaid': usesSessions ? sessionsPaid : null,
-                      'remindBeforeSession': usesReminder ? remind : null,
+                      'sessionsPaid': effectiveUsesSessions
+                          ? sessionsPaid
+                          : null,
+                      'remindBeforeSession': effectiveUsesReminder
+                          ? remind
+                          : null,
 
                       'amount': fee,
                       'method': method,

@@ -3772,8 +3772,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     String norm(String s) => s.trim().toLowerCase();
     final wantedKey = norm(courseKey);
     final wantedId = norm(courseId);
-    final wantedTitle = norm(courseTitle);
-    final wantedCode = norm(courseCode);
 
     int ymdToMs(String ymd) {
       final t = ymd.trim();
@@ -3805,21 +3803,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
           .toString()
           .trim();
-      final payCourseTitle = (p['course_title'] ?? p['courseTitle'] ?? '')
-          .toString()
-          .trim();
-      final payCourseCode = (p['course_code'] ?? p['courseCode'] ?? '')
-          .toString()
-          .trim();
-
       final keyMatch = wantedKey.isNotEmpty && norm(payCourseKey) == wantedKey;
       final idMatch = wantedId.isNotEmpty && norm(payCourseId) == wantedId;
-      final titleMatch =
-          wantedTitle.isNotEmpty && norm(payCourseTitle) == wantedTitle;
-      final codeMatch =
-          wantedCode.isNotEmpty && norm(payCourseCode) == wantedCode;
 
-      if (!(keyMatch || idMatch || titleMatch || codeMatch)) continue;
+      if (!(keyMatch || idMatch)) continue;
 
       final paidAt = _asInt(p['paidAt']);
       final startDate = (p['startDate'] ?? '').toString();
@@ -3855,23 +3842,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     final payCourseId = (payment['course_id'] ?? payment['courseId'] ?? '')
         .toString()
         .trim();
-    final payCourseTitle =
-        (payment['course_title'] ?? payment['courseTitle'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
-    final payCourseCode =
-        (payment['course_code'] ?? payment['courseCode'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
-
     return (payCourseKey.isNotEmpty && payCourseKey == item.courseKey) ||
-        (payCourseId.isNotEmpty && payCourseId == item.courseId) ||
-        (payCourseTitle.isNotEmpty &&
-            payCourseTitle == item.courseTitle.toLowerCase()) ||
-        (payCourseCode.isNotEmpty &&
-            payCourseCode == item.courseCode.toLowerCase());
+        (payCourseId.isNotEmpty && payCourseId == item.courseId);
   }
 
   Future<_FlexCourseDetails> _loadFlexCourseDetails(
