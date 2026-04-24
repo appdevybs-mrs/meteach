@@ -2019,7 +2019,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                     TextField(
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search),
-                        hintText: "Search by name or serial",
+                        hintText: "Search by full name",
                       ),
                       onChanged: (v) {
                         pickerSearchDebounce?.cancel();
@@ -2039,7 +2039,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         itemBuilder: (_, i) {
                           final l = filtered[i];
                           final uid = l["uid"].toString();
-                          final serial = l["serial"].toString();
                           final name = l["name"].toString();
 
                           final isEnrolled = enrolledUids.contains(uid);
@@ -2063,10 +2062,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                               setDState(() {
                                 if (val == true) {
-                                  selectedLearnersByUid[uid] = {
-                                    "serial": serial,
-                                    "name": name,
-                                  };
+                                  selectedLearnersByUid[uid] = {"name": name};
                                 } else {
                                   selectedLearnersByUid.remove(uid);
                                 }
@@ -2121,7 +2117,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 ),
                               ],
                             ),
-                            subtitle: Text("Serial: $serial"),
                           );
                         },
                       ),
@@ -2332,6 +2327,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             final bool requiresFixedSchedule = _isScheduledClassType(
               selectedVariantKey,
             );
+            final selectedInstructorUid = (selectedInstructorObj?["uid"] ?? '')
+                .trim();
+            final selectedInstructorName =
+                (selectedInstructorObj?["name"] ?? '').trim().toLowerCase();
+            final bool isWaitingInstructorSelected =
+                selectedInstructorUid.isEmpty ||
+                selectedInstructorName == 'waiting';
             final learnersCount = selectedLearnersByUid.length;
             final courseId = selectedCourse["id"].toString();
 
@@ -2630,7 +2632,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                       const SizedBox(height: 12),
 
-                      if (requiresFixedSchedule) ...[
+                      if (requiresFixedSchedule &&
+                          !isWaitingInstructorSelected) ...[
                         OutlinedButton.icon(
                           onPressed: saving
                               ? null
@@ -2675,7 +2678,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         ),
                       ),
 
-                      if (requiresFixedSchedule) ...[
+                      if (requiresFixedSchedule &&
+                          !isWaitingInstructorSelected) ...[
                         const SizedBox(height: 16),
                         const Text(
                           "Weekly schedule",
@@ -2817,6 +2821,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   final isWaitingInstructor =
                                       pickedUid.isEmpty ||
                                       pickedNameRaw.toLowerCase() == 'waiting';
+                                  final shouldRequireSchedule =
+                                      requiresFixedSchedule &&
+                                      !isWaitingInstructor;
                                   final pickedName = isWaitingInstructor
                                       ? 'Waiting'
                                       : pickedNameRaw;
@@ -2839,7 +2846,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     );
                                   }
 
-                                  if (requiresFixedSchedule &&
+                                  if (shouldRequireSchedule &&
                                       firstSessionDate == null) {
                                     return _notify(
                                       "Pick the first session date.",
@@ -2849,7 +2856,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                                   final sessions = <Map<String, dynamic>>[];
 
-                                  if (requiresFixedSchedule) {
+                                  if (shouldRequireSchedule) {
                                     for (final row in scheduleRows) {
                                       if (row.startTime == null) {
                                         return _notify(
@@ -2978,7 +2985,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                                     "schedule": {
                                       "first_session_date":
-                                          requiresFixedSchedule &&
+                                          shouldRequireSchedule &&
                                               firstSessionDate != null
                                           ? _formatDate(firstSessionDate!)
                                           : "",
@@ -3996,55 +4003,55 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                       ),
                                     )
                                   else
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxHeight: 220,
-                                      ),
-                                      child: ListView.separated(
-                                        shrinkWrap: true,
-                                        itemCount: learners.length,
-                                        separatorBuilder: (_, _) =>
-                                            const Divider(height: 1),
-                                        itemBuilder: (_, idx) {
-                                          final l = learners[idx];
-                                          final serial = (l['serial'] ?? '')
-                                              .trim();
-                                          final name = (l['name'] ?? '').trim();
-                                          final title = name.isNotEmpty
-                                              ? name
-                                              : (serial.isNotEmpty
-                                                    ? serial
-                                                    : l['uid'] ?? '-');
-                                          final subtitle = serial.isNotEmpty
-                                              ? 'Serial: $serial'
-                                              : null;
+                                    Column(
+                                      children: learners.asMap().entries.map((
+                                        entry,
+                                      ) {
+                                        final idx = entry.key;
+                                        final l = entry.value;
+                                        final serial = (l['serial'] ?? '')
+                                            .trim();
+                                        final name = (l['name'] ?? '').trim();
+                                        final title = name.isNotEmpty
+                                            ? name
+                                            : (serial.isNotEmpty
+                                                  ? serial
+                                                  : l['uid'] ?? '-');
+                                        final subtitle = serial.isNotEmpty
+                                            ? 'Serial: $serial'
+                                            : null;
 
-                                          return ListTile(
-                                            dense: true,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                ),
-                                            leading: const Icon(
-                                              Icons.person_rounded,
+                                        return Column(
+                                          children: [
+                                            ListTile(
+                                              dense: true,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                  ),
+                                              leading: const Icon(
+                                                Icons.person_rounded,
+                                              ),
+                                              title: Text(
+                                                title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              subtitle: subtitle == null
+                                                  ? null
+                                                  : Text(subtitle),
+                                              trailing: const Icon(
+                                                Icons.open_in_new_rounded,
+                                                size: 18,
+                                              ),
+                                              onTap: () =>
+                                                  _openLearnerFromClass(l),
                                             ),
-                                            title: Text(
-                                              title,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            subtitle: subtitle == null
-                                                ? null
-                                                : Text(subtitle),
-                                            trailing: const Icon(
-                                              Icons.open_in_new_rounded,
-                                              size: 18,
-                                            ),
-                                            onTap: () =>
-                                                _openLearnerFromClass(l),
-                                          );
-                                        },
-                                      ),
+                                            if (idx != learners.length - 1)
+                                              const Divider(height: 1),
+                                          ],
+                                        );
+                                      }).toList(),
                                     ),
                                 ],
                               ],
