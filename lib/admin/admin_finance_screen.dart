@@ -69,6 +69,17 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     return int.tryParse(cleaned) ?? 0;
   }
 
+  static double _asDouble(dynamic v) {
+    if (v == null) return 0;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    if (v is num) return v.toDouble();
+    final raw = v.toString().trim();
+    if (raw.isEmpty) return 0;
+    final normalized = raw.replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
+  }
+
   static String _two(int n) => n.toString().padLeft(2, '0');
 
   static String _ymd(DateTime d) {
@@ -125,11 +136,6 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     return p;
   }
 
-  static int _percentOf(int amount, int percent) {
-    if (amount <= 0) return 0;
-    return ((amount * percent) / 100).round();
-  }
-
   static _MethodTotals _methodTotalsZero() {
     return const _MethodTotals(cash: 0, ccp: 0, unspecified: 0);
   }
@@ -137,7 +143,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   static _MethodTotals _addToMethodTotals({
     required _MethodTotals current,
     required String method,
-    required int amount,
+    required double amount,
   }) {
     if (method == 'cash') {
       return _MethodTotals(
@@ -458,16 +464,23 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     return true;
   }
 
-  String _money(int amount) {
-    final neg = amount < 0;
-    final s = (neg ? -amount : amount).toString();
+  String _money(num amount) {
+    final value = amount.toDouble();
+    final neg = value < 0;
+    final abs = neg ? -value : value;
+    final fixed = abs.toStringAsFixed(2);
+    final parts = fixed.split('.');
+    final s = parts.first;
     final out = StringBuffer();
     for (int i = 0; i < s.length; i++) {
       final posFromEnd = s.length - i;
       out.write(s[i]);
       if (posFromEnd > 1 && posFromEnd % 3 == 1) out.write(' ');
     }
-    return '${neg ? '-' : ''}${out.toString()} DA';
+    var decimals = parts.length > 1 ? parts[1] : '00';
+    decimals = decimals.replaceFirst(RegExp(r'0+$'), '');
+    final suffix = decimals.isEmpty ? '' : '.$decimals';
+    return '${neg ? '-' : ''}${out.toString()}$suffix DA';
   }
 
   String _fmtDate(DateTime d) {
@@ -667,6 +680,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
         'financeSplitWaitingAmount': null,
         'financeSplitPaidStatus': null,
         'financeTeacherPercent': null,
+        'financeSchoolFixedAmount': null,
         'financeTeacherGross': null,
         'financeTeacherNet': null,
         'financeSchoolNet': null,
@@ -884,14 +898,14 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     );
   }
 
-  static int _schoolNetFromPayment(Map<String, dynamic> p) {
+  static double _schoolNetFromPayment(Map<String, dynamic> p) {
     if (p['isFinanceAllocation'] == true) {
       if (_asInt(p['financePushedAt']) <= 0) return 0;
-      final saved = _asInt(p['financeSchoolNet']);
+      final saved = _asDouble(p['financeSchoolNet']);
       return saved < 0 ? 0 : saved;
     }
     if (p['financeAllocations'] is Map) {
-      var total = 0;
+      var total = 0.0;
       for (final allocation in financeAllocationsFromPayment(p)) {
         if (allocation.pushedAt <= 0) continue;
         total += allocation.schoolNet;
@@ -910,36 +924,48 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     final schoolOnlyType =
         teacherLabel == 'service' || teacherLabel == 'waiting';
     if (schoolOnlyType && !unlocked) {
-      final gross = _amountsFrom(p).payoutAmount;
+      final gross = _asDouble(_amountsFrom(p).payoutAmount);
       return gross < 0 ? 0 : gross;
     }
 
-    final saved = _asInt(p['financeSchoolNet']);
+    final status = _normalizeStatus(p['financePayoutStatus']);
+    if (status == 'split' && p.containsKey('financeSchoolFixedAmount')) {
+      final total = _asDouble(p['amount']);
+      final fixed = _asDouble(p['financeSchoolFixedAmount']).clamp(0.0, total);
+      final waiting = _asDouble(
+        p['financeSplitWaitingAmount'],
+      ).clamp(0.0, (total - fixed).clamp(0.0, total));
+      final distributable = (total - fixed - waiting).clamp(0.0, total);
+      final teacherPercent = _asDouble(
+        p['financeTeacherPercent'],
+      ).clamp(0.0, 100.0);
+      final teacherNet = distributable * teacherPercent / 100.0;
+      return fixed + (distributable - teacherNet);
+    }
+
+    final saved = _asDouble(p['financeSchoolNet']);
     if (saved > 0) return saved;
 
-    var gross = _asInt(p['financeTeacherGross']);
+    var gross = _asDouble(p['financeTeacherGross']);
     if (gross <= 0) {
-      gross = _amountsFrom(p).payoutAmount;
+      gross = _asDouble(_amountsFrom(p).payoutAmount);
     }
-    var teacherNet = _asInt(p['financeTeacherNet']);
+    var teacherNet = _asDouble(p['financeTeacherNet']);
     if (teacherNet <= 0 && gross > 0) {
-      teacherNet = _percentOf(
-        gross,
-        _normalizePercent(p['financeTeacherPercent']),
-      );
+      teacherNet = gross * _normalizePercent(p['financeTeacherPercent']) / 100;
     }
     final net = gross - teacherNet;
     return net < 0 ? 0 : net;
   }
 
-  static int _teacherNetFromPayment(Map<String, dynamic> p) {
+  static double _teacherNetFromPayment(Map<String, dynamic> p) {
     if (p['isFinanceAllocation'] == true) {
       if (_asInt(p['financePushedAt']) <= 0) return 0;
-      final saved = _asInt(p['financeTeacherNet']);
+      final saved = _asDouble(p['financeTeacherNet']);
       return saved < 0 ? 0 : saved;
     }
     if (p['financeAllocations'] is Map) {
-      var total = 0;
+      var total = 0.0;
       for (final allocation in financeAllocationsFromPayment(p)) {
         if (allocation.pushedAt <= 0) continue;
         total += allocation.teacherNet;
@@ -961,16 +987,30 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
       return 0;
     }
 
+    final status = _normalizeStatus(p['financePayoutStatus']);
+    if (status == 'split' && p.containsKey('financeSchoolFixedAmount')) {
+      final total = _asDouble(p['amount']);
+      final fixed = _asDouble(p['financeSchoolFixedAmount']).clamp(0.0, total);
+      final waiting = _asDouble(
+        p['financeSplitWaitingAmount'],
+      ).clamp(0.0, (total - fixed).clamp(0.0, total));
+      final distributable = (total - fixed - waiting).clamp(0.0, total);
+      final teacherPercent = _asDouble(
+        p['financeTeacherPercent'],
+      ).clamp(0.0, 100.0);
+      return distributable * teacherPercent / 100.0;
+    }
+
     final hasSavedTeacherNet =
         p.containsKey('financeTeacherNet') && p['financeTeacherNet'] != null;
     if (hasSavedTeacherNet) {
-      final saved = _asInt(p['financeTeacherNet']);
+      final saved = _asDouble(p['financeTeacherNet']);
       return saved < 0 ? 0 : saved;
     }
 
-    var gross = _asInt(p['financeTeacherGross']);
+    var gross = _asDouble(p['financeTeacherGross']);
     if (gross <= 0) {
-      gross = _amountsFrom(p).payoutAmount;
+      gross = _asDouble(_amountsFrom(p).payoutAmount);
     }
 
     final rawPercent = p['financeTeacherPercent'];
@@ -983,7 +1023,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
       if (percent > 100) percent = 100;
     }
 
-    final net = _percentOf(gross, percent);
+    final net = gross * percent / 100.0;
     return net < 0 ? 0 : net;
   }
 
@@ -1003,10 +1043,10 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     }
     final alloc = _amountsFrom(p);
     return _EffectiveFinanceAmounts(
-      originalAmount: _asInt(p['amount']),
+      originalAmount: _asDouble(p['amount']),
       teacherNet: _teacherNetFromPayment(p),
       schoolNet: _schoolNetFromPayment(p),
-      waitingAmount: alloc.waitingAmount,
+      waitingAmount: _asDouble(alloc.waitingAmount),
       method: method,
     );
   }
@@ -1083,8 +1123,8 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogCtx) {
-        var totalTeacherIncome = 0;
-        final byTeacher = <String, Map<String, int>>{};
+        var totalTeacherIncome = 0.0;
+        final byTeacher = <String, Map<String, double>>{};
         for (final row in rows) {
           final teacher = _teacherNameFrom(row);
           final schoolNet = _schoolNetFromPayment(row);
@@ -1158,12 +1198,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                       final percent = _normalizePercent(
                         p['financeTeacherPercent'],
                       );
-                      final gross = _asInt(p['financeTeacherGross']) > 0
-                          ? _asInt(p['financeTeacherGross'])
-                          : _asInt(p['amount']);
-                      final teacherNet = _asInt(p['financeTeacherNet']) > 0
-                          ? _asInt(p['financeTeacherNet'])
-                          : _percentOf(gross, percent);
+                      final gross = _asDouble(p['financeTeacherGross']) > 0
+                          ? _asDouble(p['financeTeacherGross'])
+                          : _asDouble(p['amount']);
+                      final teacherNet = _asDouble(p['financeTeacherNet']) > 0
+                          ? _asDouble(p['financeTeacherNet'])
+                          : (gross * percent / 100.0);
                       final schoolNet = _schoolNetFromPayment(p);
                       final pushedStatus = (p['financePushedStatus'] ?? '')
                           .toString()
@@ -1374,9 +1414,9 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             }
                           }
 
-                          var originalIncome = 0;
-                          var waitingTotal = 0;
-                          var schoolTotal = 0;
+                          var originalIncome = 0.0;
+                          var waitingTotal = 0.0;
+                          var schoolTotal = 0.0;
                           var originalByMethod = _methodTotalsZero();
                           var waitingByMethod = _methodTotalsZero();
                           var schoolByMethod = _methodTotalsZero();
@@ -1391,10 +1431,10 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                             bool includeRoster = false,
                           }) {
                             if (rows.isEmpty) return null;
-                            var original = 0;
-                            var payout = 0;
-                            var waiting = 0;
-                            var school = 0;
+                            var original = 0.0;
+                            var payout = 0.0;
+                            var waiting = 0.0;
+                            var school = 0.0;
                             var originalMethods = _methodTotalsZero();
                             var payoutMethods = _methodTotalsZero();
                             var waitingMethods = _methodTotalsZero();
@@ -1823,7 +1863,7 @@ class _TeacherFinanceDetailsScreen extends StatefulWidget {
   final DatabaseReference financeDoneRef;
   final DatabaseReference financePaymentMetaRef;
   final _FinancePayoutPeriodRecord? activeFinancePeriod;
-  final String Function(int amount) money;
+  final String Function(num amount) money;
   final bool showNoPaymentRows;
   final Future<void> Function({
     required String paymentId,
@@ -1890,6 +1930,17 @@ class _TeacherFinanceDetailsScreenState
     final cleaned = raw.replaceAll(RegExp(r'[^0-9-]'), '');
     if (cleaned.isEmpty || cleaned == '-') return 0;
     return int.tryParse(cleaned) ?? 0;
+  }
+
+  static double _asDouble(dynamic v) {
+    if (v == null) return 0;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    if (v is num) return v.toDouble();
+    final raw = v.toString().trim();
+    if (raw.isEmpty) return 0;
+    final normalized = raw.replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
   }
 
   static String _normalizeStatus(dynamic v) {
@@ -2140,6 +2191,7 @@ class _TeacherFinanceDetailsScreenState
       'financeSplitPaidAmount': null,
       'financeSplitWaitingAmount': null,
       'financeSplitPaidStatus': null,
+      'financeSchoolFixedAmount': null,
     });
   }
 
@@ -2150,6 +2202,8 @@ class _TeacherFinanceDetailsScreenState
       'financeSplitPaidAmount': 0,
       'financeSplitWaitingAmount': amount,
       'financeSplitPaidStatus': 'tbpaid',
+      'financeSchoolFixedAmount': 0,
+      'financeTeacherGross': 0,
       'financeTeacherNet': 0,
       'financeSchoolNet': 0,
       'financeTeacherPercent': 0,
@@ -2157,43 +2211,39 @@ class _TeacherFinanceDetailsScreenState
   }
 
   Future<void> _editSplitBreakdown(Map<String, dynamic> row) async {
-    final amount = _asInt(row['amount']);
+    final amount = _asDouble(row['amount']);
     if (amount <= 0) return;
 
-    int initialWaiting = _asInt(row['financeSplitWaitingAmount']);
-    if (initialWaiting < 0 || initialWaiting > amount) initialWaiting = 0;
-    int initialPaid = _asInt(row['financeSplitPaidAmount']);
-    if (initialPaid <= 0 || initialPaid > amount) {
-      initialPaid = amount - initialWaiting;
-    }
-    if (initialPaid < 0) initialPaid = amount;
+    final initialFixed = _asDouble(
+      row['financeSchoolFixedAmount'],
+    ).clamp(0.0, amount);
+    final initialWaiting = _asDouble(
+      row['financeSplitWaitingAmount'],
+    ).clamp(0.0, amount);
+    final initialPercent = _asDouble(
+      row['financeTeacherPercent'],
+    ).clamp(0.0, 100.0);
 
-    int initialClass = _asInt(row['financeTeacherNet']);
-    int initialSchool = _asInt(row['financeSchoolNet']);
-    if (initialClass < 0 ||
-        initialSchool < 0 ||
-        initialClass + initialSchool != initialPaid) {
-      final p = _asInt(row['financeTeacherPercent']).clamp(0, 100);
-      initialClass = ((initialPaid * p) / 100).round();
-      initialSchool = initialPaid - initialClass;
-    }
-
-    final classCtrl = TextEditingController(text: '$initialClass');
-    final schoolCtrl = TextEditingController(text: '$initialSchool');
+    final fixedCtrl = TextEditingController(text: '$initialFixed');
     final waitingCtrl = TextEditingController(text: '$initialWaiting');
+    final percentCtrl = TextEditingController(text: '$initialPercent');
 
-    final result = await showDialog<Map<String, int>>(
+    double parseDecimal(String raw) {
+      final normalized = raw.trim().replaceAll(',', '.');
+      return double.tryParse(normalized) ?? 0.0;
+    }
+
+    final result = await showDialog<Map<String, double>>(
       context: context,
       builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (_, setD) {
-            int classAmount() => int.tryParse(classCtrl.text.trim()) ?? 0;
-            int schoolAmount() => int.tryParse(schoolCtrl.text.trim()) ?? 0;
-            int waitingAmount() => int.tryParse(waitingCtrl.text.trim()) ?? 0;
-            final classAmountNow = classAmount();
-            final percent = amount > 0
-                ? ((classAmountNow * 100) / amount).round().clamp(0, 100)
-                : 0;
+            final fixed = parseDecimal(fixedCtrl.text).clamp(0.0, amount);
+            final waiting = parseDecimal(waitingCtrl.text).clamp(0.0, amount);
+            final percent = parseDecimal(percentCtrl.text).clamp(0.0, 100.0);
+            final distributable = (amount - fixed - waiting).clamp(0.0, amount);
+            final teacher = distributable * percent / 100.0;
+            final school = fixed + (distributable - teacher);
 
             return AlertDialog(
               title: const Text('Split payment'),
@@ -2208,55 +2258,64 @@ class _TeacherFinanceDetailsScreenState
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: classCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Class (teacher)',
-                            ),
-                            onChanged: (_) => setD(() {}),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDCE8FF),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$percent%',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: AdminFinanceScreen.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
                     TextField(
-                      controller: schoolCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'School'),
+                      controller: fixedCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'School fixed amount',
+                      ),
                       onChanged: (_) => setD(() {}),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: waitingCtrl,
-                      keyboardType: TextInputType.number,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: const InputDecoration(labelText: 'Waiting'),
                       onChanged: (_) => setD(() {}),
                     ),
                     const SizedBox(height: 10),
+                    TextField(
+                      controller: percentCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(labelText: 'Teacher %'),
+                      onChanged: (_) => setD(() {}),
+                    ),
+                    const SizedBox(height: 10),
                     Text(
-                      'Check: ${classAmount()} + ${schoolAmount()} + ${waitingAmount()} = ${classAmount() + schoolAmount() + waitingAmount()}',
+                      'Distributable after fixed + waiting: ${widget.money(distributable)}',
+                      style: TextStyle(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Teacher: ${widget.money(teacher)} · School: ${widget.money(school)}',
+                      style: const TextStyle(
+                        color: AdminFinanceScreen.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        labelText: 'Check',
+                        hintText:
+                            '${widget.money(fixed)} + ${widget.money(waiting)} <= ${widget.money(amount)}',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Rule: total -> remove school fixed -> remove waiting -> apply teacher % on the rest.',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         color: Colors.black.withValues(alpha: 0.7),
@@ -2273,30 +2332,27 @@ class _TeacherFinanceDetailsScreenState
                 ),
                 FilledButton(
                   onPressed: () {
-                    final classAmount =
-                        int.tryParse(classCtrl.text.trim()) ?? -1;
-                    final schoolAmount =
-                        int.tryParse(schoolCtrl.text.trim()) ?? -1;
-                    final waitingAmount =
-                        int.tryParse(waitingCtrl.text.trim()) ?? -1;
-                    final sum = classAmount + schoolAmount + waitingAmount;
-                    if (classAmount < 0 ||
-                        schoolAmount < 0 ||
-                        waitingAmount < 0 ||
-                        sum != amount) {
+                    final fixed = parseDecimal(fixedCtrl.text);
+                    final waiting = parseDecimal(waitingCtrl.text);
+                    final percent = parseDecimal(percentCtrl.text);
+                    if (fixed < 0 ||
+                        waiting < 0 ||
+                        percent < 0 ||
+                        percent > 100 ||
+                        fixed + waiting > amount) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            'Class + School + Waiting must equal total amount.',
+                            'Use valid numbers. Keep School fixed + Waiting <= Total and % between 0 and 100.',
                           ),
                         ),
                       );
                       return;
                     }
                     Navigator.of(dialogCtx).pop({
-                      'class': classAmount,
-                      'school': schoolAmount,
-                      'waiting': waitingAmount,
+                      'fixed': fixed,
+                      'waiting': waiting,
+                      'percent': percent,
                     });
                   },
                   child: const Text('Save'),
@@ -2309,22 +2365,23 @@ class _TeacherFinanceDetailsScreenState
     );
 
     if (result == null) return;
-    final classAmount = result['class'] ?? 0;
-    final schoolAmount = result['school'] ?? 0;
-    final waitingAmount = result['waiting'] ?? 0;
-    final paidPart = classAmount + schoolAmount;
-    final percent = amount > 0
-        ? ((classAmount * 100) / amount).round().clamp(0, 100)
-        : 0;
+    final fixed = (result['fixed'] ?? 0.0).clamp(0.0, amount);
+    final waitingAmount = (result['waiting'] ?? 0.0).clamp(0.0, amount);
+    final percent = (result['percent'] ?? 0.0).clamp(0.0, 100.0);
+    final paidPart = (amount - waitingAmount).clamp(0.0, amount);
+    final distributable = (amount - fixed - waitingAmount).clamp(0.0, amount);
+    final teacherAmount = distributable * percent / 100.0;
+    final schoolAmount = fixed + (distributable - teacherAmount);
 
     await _applyStatusUpdate(row, {
       'financePayoutStatus': 'split',
       'financeSplitPaidAmount': paidPart,
       'financeSplitWaitingAmount': waitingAmount,
       'financeSplitPaidStatus': waitingAmount == 0 ? 'done' : 'tbpaid',
+      'financeSchoolFixedAmount': fixed,
       'financeTeacherPercent': percent,
-      'financeTeacherGross': paidPart,
-      'financeTeacherNet': classAmount,
+      'financeTeacherGross': distributable,
+      'financeTeacherNet': teacherAmount,
       'financeSchoolNet': schoolAmount,
     });
   }
@@ -2523,6 +2580,7 @@ class _TeacherFinanceDetailsScreenState
         'financeSplitWaitingAmount': null,
         'financeSplitPaidStatus': null,
         'financeTeacherPercent': null,
+        'financeSchoolFixedAmount': null,
         'financeTeacherGross': null,
         'financeTeacherNet': null,
         'financeSchoolNet': null,
@@ -3415,10 +3473,10 @@ class _TeacherFinanceDetailsScreenState
                             );
                           });
 
-                      var originalTotal = 0;
-                      var payoutTotal = 0;
-                      var waitingTotal = 0;
-                      var schoolTotal = 0;
+                      var originalTotal = 0.0;
+                      var payoutTotal = 0.0;
+                      var waitingTotal = 0.0;
+                      var schoolTotal = 0.0;
                       for (final row in rowsToShow.where(
                         (r) => !_isNoPaymentRow(r),
                       )) {
@@ -4082,16 +4140,16 @@ class _TeacherCardData {
   final String teacherId;
   final String teacherScopeKey;
   final String teacherName;
-  final int originalTotal;
-  final int payoutTotal;
-  final int waitingTotal;
+  final double originalTotal;
+  final double payoutTotal;
+  final double waitingTotal;
   final _MethodTotals originalByMethod;
   final _MethodTotals payoutByMethod;
   final _MethodTotals waitingByMethod;
   final int learnersCount;
   final int doneLearnersCount;
   final int paymentsCount;
-  final int schoolTotal;
+  final double schoolTotal;
   final int progressDoneSessions;
   final int progressTotalSessions;
   final List<Map<String, dynamic>> payments;
@@ -4158,9 +4216,9 @@ class _WaitingCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final int totalWaiting;
+  final double totalWaiting;
   final _MethodTotals byMethod;
-  final String Function(int amount) money;
+  final String Function(num amount) money;
   final VoidCallback onTap;
 
   @override
@@ -4185,9 +4243,9 @@ class _SchoolCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final int totalSchool;
+  final double totalSchool;
   final _MethodTotals byMethod;
-  final String Function(int amount) money;
+  final String Function(num amount) money;
   final VoidCallback onTap;
 
   @override
@@ -4317,7 +4375,7 @@ class _TeacherSquareCard extends StatelessWidget {
   });
 
   final _TeacherCardData data;
-  final String Function(int amount) money;
+  final String Function(num amount) money;
   final VoidCallback onTap;
   final VoidCallback onClearSetup;
   final bool isClearingSetup;
@@ -4499,10 +4557,10 @@ class _EffectiveFinanceAmounts {
     required this.method,
   });
 
-  final int originalAmount;
-  final int teacherNet;
-  final int schoolNet;
-  final int waitingAmount;
+  final double originalAmount;
+  final double teacherNet;
+  final double schoolNet;
+  final double waitingAmount;
   final String method;
 }
 
@@ -4513,7 +4571,7 @@ class _MethodTotals {
     required this.unspecified,
   });
 
-  final int cash;
-  final int ccp;
-  final int unspecified;
+  final double cash;
+  final double ccp;
+  final double unspecified;
 }
