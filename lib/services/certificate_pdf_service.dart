@@ -7,6 +7,22 @@ import 'package:printing/printing.dart';
 
 import '../models/certificate_model.dart';
 
+class HardcopyCertificateInput {
+  final String directorName;
+  final DateTime examinationDate;
+  final String grade;
+  final String councilLevel;
+  final int overallScore;
+
+  const HardcopyCertificateInput({
+    required this.directorName,
+    required this.examinationDate,
+    required this.grade,
+    required this.councilLevel,
+    required this.overallScore,
+  });
+}
+
 class CertificatePdfService {
   static const int _templateRasterDpi = 300;
 
@@ -17,6 +33,15 @@ class CertificatePdfService {
     );
     final cvn = _sanitizeFileNamePart(cert.cvn, fallback: 'cvn');
     return 'YBS_${title}_$cvn.pdf';
+  }
+
+  static String buildHardcopyPdfFileName(Certificate cert) {
+    final title = _sanitizeFileNamePart(
+      cert.certificateTitle,
+      fallback: 'certificate',
+    );
+    final cvn = _sanitizeFileNamePart(cert.cvn, fallback: 'cvn');
+    return 'YBS_${title}_${cvn}_hardcopy.pdf';
   }
 
   static String _sanitizeFileNamePart(String raw, {required String fallback}) {
@@ -204,6 +229,168 @@ class CertificatePdfService {
                     style: pw.TextStyle(
                       fontSize: 12,
                       font: playfairRegular,
+                      color: PdfColor.fromInt(0xFF111827),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc.save();
+  }
+
+  Future<Uint8List> generateHardcopyCertificatePdfBytes({
+    required Certificate cert,
+    required HardcopyCertificateInput input,
+  }) async {
+    final doc = pw.Document();
+    final template = await _loadPdfTemplate(
+      'assets/images/certificate_template.pdf',
+    );
+
+    pw.Font? playfairRegular;
+    pw.Font? playfairBold;
+    try {
+      final bytes = await rootBundle.load(
+        'assets/fonts/PlayfairDisplay-Regular.ttf',
+      );
+      playfairRegular = pw.Font.ttf(bytes);
+    } catch (_) {}
+    try {
+      final bytes = await rootBundle.load(
+        'assets/fonts/PlayfairDisplay-Bold.ttf',
+      );
+      playfairBold = pw.Font.ttf(bytes);
+    } catch (_) {}
+
+    final issueDate = cert.createdAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
+        : DateTime.now();
+
+    const double pageWidth = 595.32;
+    const double pageHeight = 841.92;
+    const double hardcopyLearnerNameTop = 208;
+    const double hardcopyGradeTop = 276;
+    const double hardcopyCouncilLevelTop = 407;
+    const double hardcopyOverallScoreTop = 441;
+    const double hardcopyExamDateTop = 586;
+    const double hardcopyCvnTop = 586;
+    const double hardcopyIssueDateTop = 586;
+    const double hardcopyDirectorTop = 694;
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(pageWidth, pageHeight),
+        margin: pw.EdgeInsets.zero,
+        build: (_) {
+          return pw.Stack(
+            children: [
+              if (template != null)
+                pw.Positioned.fill(
+                  child: pw.Image(template, fit: pw.BoxFit.fill),
+                ),
+              pw.Positioned(
+                left: 64,
+                top: hardcopyLearnerNameTop,
+                child: pw.SizedBox(
+                  width: 500,
+                  child: pw.Text(
+                    cert.fullName,
+                    style: pw.TextStyle(
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
+                      font: playfairBold,
+                      color: PdfColor.fromInt(0xFF111827),
+                    ),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 118,
+                top: hardcopyGradeTop,
+                child: pw.Text(
+                  input.grade.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    font: playfairBold,
+                    color: PdfColor.fromInt(0xFFD35400),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 208,
+                top: hardcopyCouncilLevelTop,
+                child: pw.Text(
+                  input.councilLevel,
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    font: playfairBold,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 142,
+                top: hardcopyOverallScoreTop,
+                child: pw.Text(
+                  '${input.overallScore}',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    font: playfairBold,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 150,
+                top: hardcopyExamDateTop,
+                child: pw.Text(
+                  _fmtDate(input.examinationDate),
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    font: playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 292,
+                top: hardcopyCvnTop,
+                child: pw.Text(
+                  cert.cvn,
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    font: playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 498,
+                top: hardcopyIssueDateTop,
+                child: pw.Text(
+                  _fmtDate(issueDate),
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    font: playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 64,
+                top: hardcopyDirectorTop,
+                child: pw.SizedBox(
+                  width: 220,
+                  child: pw.Text(
+                    input.directorName,
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      font: playfairBold,
                       color: PdfColor.fromInt(0xFF111827),
                     ),
                   ),

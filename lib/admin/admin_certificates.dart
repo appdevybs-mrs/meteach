@@ -19,6 +19,293 @@ const _appBg = Color(0xFFF4F7F9);
 const _softText = Color(0xFF6E7B8C);
 const _uiBorder = Color(0xFFE3EAF2);
 
+class _HardcopyDialogResult {
+  final String directorName;
+  final DateTime examinationDate;
+  final String grade;
+  final String councilLevel;
+  final int overallScore;
+
+  const _HardcopyDialogResult({
+    required this.directorName,
+    required this.examinationDate,
+    required this.grade,
+    required this.councilLevel,
+    required this.overallScore,
+  });
+}
+
+Future<_HardcopyDialogResult?> _showHardcopyInputDialog(
+  BuildContext context,
+) async {
+  final formKey = GlobalKey<FormState>();
+  final directorController = TextEditingController();
+  final examDateController = TextEditingController();
+  final councilLevelController = TextEditingController();
+  final overallScoreController = TextEditingController();
+
+  DateTime? examDate;
+  String? grade;
+
+  final result = await showModalBottomSheet<_HardcopyDialogResult>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (dialogContext) {
+      return _HardcopyFormSheet(
+        dialogContext: dialogContext,
+        formKey: formKey,
+        directorController: directorController,
+        examDateController: examDateController,
+        councilLevelController: councilLevelController,
+        overallScoreController: overallScoreController,
+        examDate: examDate,
+        grade: grade,
+      );
+    },
+  );
+
+  directorController.dispose();
+  examDateController.dispose();
+  councilLevelController.dispose();
+  overallScoreController.dispose();
+  return result;
+}
+
+class _HardcopyFormSheet extends StatefulWidget {
+  final BuildContext dialogContext;
+  final GlobalKey<FormState> formKey;
+  final TextEditingController directorController;
+  final TextEditingController examDateController;
+  final TextEditingController councilLevelController;
+  final TextEditingController overallScoreController;
+  final DateTime? examDate;
+  final String? grade;
+
+  const _HardcopyFormSheet({
+    required this.dialogContext,
+    required this.formKey,
+    required this.directorController,
+    required this.examDateController,
+    required this.councilLevelController,
+    required this.overallScoreController,
+    this.examDate,
+    this.grade,
+  });
+
+  @override
+  State<_HardcopyFormSheet> createState() => _HardcopyFormSheetState();
+}
+
+class _HardcopyFormSheetState extends State<_HardcopyFormSheet> {
+  late DateTime? examDate;
+  late String? grade;
+
+  @override
+  void initState() {
+    super.initState();
+    examDate = widget.examDate;
+    grade = widget.grade;
+  }
+
+  Future<void> _pickExamDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: examDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() {
+      examDate = DateTime(picked.year, picked.month, picked.day);
+      widget.examDateController.text = DateFormat(
+        'yyyy-MM-dd',
+      ).format(examDate!);
+    });
+  }
+
+  void _submit() {
+    if (!widget.formKey.currentState!.validate() || examDate == null) {
+      return;
+    }
+    Navigator.pop(
+      context,
+      _HardcopyDialogResult(
+        directorName: widget.directorController.text.trim(),
+        examinationDate: examDate!,
+        grade: grade!.trim().toUpperCase(),
+        councilLevel: widget.councilLevelController.text.trim(),
+        overallScore: int.parse(widget.overallScoreController.text.trim()),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, scrollController) => SingleChildScrollView(
+            controller: scrollController,
+            padding: const EdgeInsets.all(20),
+            child: Form(
+              key: widget.formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: _uiBorder,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Hardcopy Certificate',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: _primaryBlue,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: widget.directorController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Director name',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Director name is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: widget.examDateController,
+                    readOnly: true,
+                    onTap: _pickExamDate,
+                    decoration: InputDecoration(
+                      labelText: 'Date of examination',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        onPressed: _pickExamDate,
+                        icon: const Icon(Icons.calendar_today),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Date of examination is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: grade,
+                    decoration: const InputDecoration(
+                      labelText: 'Grade',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'A', child: Text('A')),
+                      DropdownMenuItem(value: 'B', child: Text('B')),
+                      DropdownMenuItem(value: 'C', child: Text('C')),
+                    ],
+                    onChanged: (value) {
+                      setState(() => grade = value);
+                    },
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Grade is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: widget.councilLevelController,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Council of Europe level',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Council level is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: widget.overallScoreController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Overall score (0-100)',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Overall score is required';
+                      }
+                      final parsed = int.tryParse(value.trim());
+                      if (parsed == null || parsed < 0 || parsed > 100) {
+                        return 'Enter a number between 0 and 100';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: _submit,
+                          child: const Text('Print Hardcopy'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AdminCertificatesScreen extends StatefulWidget {
   const AdminCertificatesScreen({super.key});
 
@@ -386,6 +673,39 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       AppToast.show(
         context,
         'Could not generate certificate PDF.',
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  Future<void> _printHardcopyCertificate(Certificate cert) async {
+    final input = await _showHardcopyInputDialog(context);
+    if (input == null) return;
+
+    try {
+      final bytes = await _pdfService.generateHardcopyCertificatePdfBytes(
+        cert: cert,
+        input: HardcopyCertificateInput(
+          directorName: input.directorName,
+          examinationDate: input.examinationDate,
+          grade: input.grade,
+          councilLevel: input.councilLevel,
+          overallScore: input.overallScore,
+        ),
+      );
+      final fileName = CertificatePdfService.buildHardcopyPdfFileName(cert);
+      await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Hardcopy certificate opened in print preview.',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Could not generate hardcopy certificate PDF.',
         type: AppToastType.error,
       );
     }
@@ -906,6 +1226,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           onEdit: () => _showEditCertificateForm(cert),
           onDelete: () => _deleteCertificate(cert),
           onPrint: () => _printCertificate(cert),
+          onHardcopy: () => _printHardcopyCertificate(cert),
         );
       },
     );
@@ -939,6 +1260,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           onEdit: () => _showEditRecordedCertificateForm(entry),
           onDelete: () => _deleteRecordedCertificateEntry(entry),
           onPrint: () => _printCertificate(cert),
+          onHardcopy: () => _printHardcopyCertificate(cert),
           onToggleDownloads: () => _toggleRecordedDownloads(entry),
           toggleDownloadsLabel: cert.downloadsEnabled
               ? 'Disable download'
@@ -1381,6 +1703,7 @@ class _CertificateListItem extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onPrint;
+  final VoidCallback onHardcopy;
   final VoidCallback? onToggleDownloads;
   final String? toggleDownloadsLabel;
 
@@ -1390,6 +1713,7 @@ class _CertificateListItem extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onPrint,
+    required this.onHardcopy,
     this.onToggleDownloads,
     this.toggleDownloadsLabel,
   });
@@ -1522,6 +1846,9 @@ class _CertificateListItem extends StatelessWidget {
                         case 'print':
                           onPrint();
                           break;
+                        case 'hardcopy':
+                          onHardcopy();
+                          break;
                         case 'toggle_download':
                           onToggleDownloads?.call();
                           break;
@@ -1537,6 +1864,10 @@ class _CertificateListItem extends StatelessWidget {
                         const PopupMenuItem(
                           value: 'print',
                           child: Text('Print'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'hardcopy',
+                          child: Text('Hardcopy'),
                         ),
                       ];
                       if (onToggleDownloads != null) {
@@ -2203,6 +2534,41 @@ class _CertificateViewSheet extends StatelessWidget {
     }
   }
 
+  Future<void> _printHardcopyPdf(BuildContext context) async {
+    final input = await _showHardcopyInputDialog(context);
+    if (input == null) return;
+
+    try {
+      final bytes = await _pdfService.generateHardcopyCertificatePdfBytes(
+        cert: certificate,
+        input: HardcopyCertificateInput(
+          directorName: input.directorName,
+          examinationDate: input.examinationDate,
+          grade: input.grade,
+          councilLevel: input.councilLevel,
+          overallScore: input.overallScore,
+        ),
+      );
+      final fileName = CertificatePdfService.buildHardcopyPdfFileName(
+        certificate,
+      );
+      await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
+      if (!context.mounted) return;
+      AppToast.show(
+        context,
+        'Hardcopy certificate opened in print preview.',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      AppToast.show(
+        context,
+        'Could not generate hardcopy certificate PDF.',
+        type: AppToastType.error,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -2303,6 +2669,11 @@ class _CertificateViewSheet extends StatelessWidget {
                       onPressed: () => _printPdf(context),
                       icon: const Icon(Icons.print_rounded, size: 18),
                       label: const Text('Print'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _printHardcopyPdf(context),
+                      icon: const Icon(Icons.description_outlined, size: 18),
+                      label: const Text('Hardcopy'),
                     ),
                   ],
                 ),
