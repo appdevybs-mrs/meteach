@@ -44,6 +44,7 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
   bool _loadingFilter = true;
   DateTime? _fromDate;
   DateTime? _toDate;
+  final Set<String> _clearingTeacherScopes = <String>{};
 
   @override
   void initState() {
@@ -463,6 +464,91 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
       'financePushedStatus': null,
       'financeUpdatedAt': ServerValue.timestamp,
     });
+  }
+
+  Future<void> _clearTeacherCardSetup(_TeacherCardData card) async {
+    final scope = card.teacherScopeKey;
+    if (_clearingTeacherScopes.contains(scope)) return;
+    final paymentIds = card.payments
+        .map((row) => (row['paymentId'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (paymentIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No payment rows to clear for ${card.teacherName}.'),
+        ),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Clear teacher setup'),
+        content: Text(
+          'Clear finance setup for ${paymentIds.length} payment item${paymentIds.length == 1 ? '' : 's'} for ${card.teacherName}? This will unpush and reset method, status, split, share, and allocations.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Clear setup'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _clearingTeacherScopes.add(scope));
+    try {
+      final patch = <String, dynamic>{
+        'financeMethod': '',
+        'financePayoutStatus': null,
+        'financeSplitPaidAmount': null,
+        'financeSplitWaitingAmount': null,
+        'financeSplitPaidStatus': null,
+        'financeTeacherPercent': null,
+        'financeTeacherGross': null,
+        'financeTeacherNet': null,
+        'financeSchoolNet': null,
+        'financeAllocations': null,
+        'financeTeacherShareUnlocked': null,
+        'financePushedAt': null,
+        'financePushedBy': null,
+        'financePushedStatus': null,
+        'financePeriodId': null,
+        'financePeriodStartDate': null,
+        'financePeriodStartAtMs': null,
+        'financePeriodEndDate': null,
+        'financePeriodEndAtMs': null,
+        'financeUpdatedAt': ServerValue.timestamp,
+      };
+      for (final paymentId in paymentIds) {
+        await _paymentsRef.child(paymentId).update(patch);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cleared setup for ${paymentIds.length} item${paymentIds.length == 1 ? '' : 's'} for ${card.teacherName}.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not clear setup: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _clearingTeacherScopes.remove(scope));
+      }
+    }
   }
 
   void _openLedger() {
@@ -1397,6 +1483,13 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                             (card) => _TeacherSquareCard(
                                               data: card,
                                               money: _money,
+                                              isClearingSetup:
+                                                  _clearingTeacherScopes
+                                                      .contains(
+                                                        card.teacherScopeKey,
+                                                      ),
+                                              onClearSetup: () =>
+                                                  _clearTeacherCardSetup(card),
                                               onTap: () {
                                                 Navigator.of(context).push(
                                                   MaterialPageRoute(
@@ -1443,6 +1536,12 @@ class _AdminFinanceScreenState extends State<AdminFinanceScreen> {
                                         (card) => _TeacherSquareCard(
                                           data: card,
                                           money: _money,
+                                          isClearingSetup:
+                                              _clearingTeacherScopes.contains(
+                                                card.teacherScopeKey,
+                                              ),
+                                          onClearSetup: () =>
+                                              _clearTeacherCardSetup(card),
                                           onTap: () {
                                             Navigator.of(context).push(
                                               MaterialPageRoute(
@@ -1531,6 +1630,7 @@ class _TeacherFinanceDetailsScreenState
   Timer? _pulseTimer;
   bool _pulseOn = true;
   bool _isPushingAll = false;
+  bool _isClearingSetup = false;
 
   void _replacePaymentRow(Map<String, dynamic> payment) {
     final paymentId = (payment['paymentId'] ?? '').toString().trim();
@@ -2208,6 +2308,25 @@ class _TeacherFinanceDetailsScreenState
   }
 
   Future<void> _setMethod(Map<String, dynamic> row, String method) async {
+    if (row['isFinanceDoneMarkEntry'] == true) {
+      final markKey = (row['financeDoneMarkKey'] ?? '').toString().trim();
+      if (markKey.isEmpty) return;
+      await widget.financeDoneRef
+          .child(widget.teacherScopeKey)
+          .child(markKey)
+          .update({
+            'financeMethod': method,
+            'method': method,
+            'updatedAt': ServerValue.timestamp,
+          });
+      if (!mounted) return;
+      setState(() {
+        row['financeMethod'] = method;
+        row['method'] = method;
+      });
+      return;
+    }
+
     final paymentId = (row['paymentId'] ?? '').toString().trim();
     if (paymentId.isEmpty) return;
     await widget.onSetMethod(paymentId: paymentId, method: method);
@@ -2255,10 +2374,12 @@ class _TeacherFinanceDetailsScreenState
   }
 
   bool _isMethodSet(Map<String, dynamic> row) {
-    final raw = (row['financeMethod'] ?? row['method'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
+    String raw;
+    if (row.containsKey('financeMethod')) {
+      raw = (row['financeMethod'] ?? '').toString().trim().toLowerCase();
+    } else {
+      raw = (row['method'] ?? '').toString().trim().toLowerCase();
+    }
     return raw.isNotEmpty;
   }
 
@@ -2331,31 +2452,47 @@ class _TeacherFinanceDetailsScreenState
       await _openAllocationEditor(row);
       return;
     }
+    final isDoneMarkEntry = row['isFinanceDoneMarkEntry'] == true;
+    final doneMarkKey = (row['financeDoneMarkKey'] ?? '').toString().trim();
     final paymentId = (row['paymentId'] ?? '').toString().trim();
-    if (paymentId.isEmpty) return;
+    if (!isDoneMarkEntry && paymentId.isEmpty) return;
+    if (isDoneMarkEntry && doneMarkKey.isEmpty) return;
 
     if (_isEffectiveSchoolOnly(row)) {
       final alloc = _amountsFrom(row);
       final gross = alloc.payoutAmount;
-      await widget.paymentsRef.child(paymentId).update({
+      final updates = {
         'financeTeacherPercent': 0,
         'financeTeacherGross': gross,
         'financeTeacherNet': 0,
         'financeSchoolNet': gross,
-        'financePushedAt': null,
-        'financePushedBy': null,
-        'financePushedStatus': null,
-        'financeUpdatedAt': ServerValue.timestamp,
-      });
+        'updatedAt': ServerValue.timestamp,
+      };
+      if (isDoneMarkEntry) {
+        await widget.financeDoneRef
+            .child(widget.teacherScopeKey)
+            .child(doneMarkKey)
+            .update(updates);
+      } else {
+        await widget.paymentsRef.child(paymentId).update({
+          ...updates,
+          'financePushedAt': null,
+          'financePushedBy': null,
+          'financePushedStatus': null,
+          'financeUpdatedAt': ServerValue.timestamp,
+        });
+      }
       if (!mounted) return;
       setState(() {
         row['financeTeacherPercent'] = 0;
         row['financeTeacherGross'] = gross;
         row['financeTeacherNet'] = 0;
         row['financeSchoolNet'] = gross;
-        row.remove('financePushedAt');
-        row.remove('financePushedBy');
-        row.remove('financePushedStatus');
+        if (!isDoneMarkEntry) {
+          row.remove('financePushedAt');
+          row.remove('financePushedBy');
+          row.remove('financePushedStatus');
+        }
       });
       return;
     }
@@ -2367,16 +2504,27 @@ class _TeacherFinanceDetailsScreenState
     final gross = alloc.payoutAmount;
     final teacherNet = ((gross * p) / 100).round();
     final schoolNet = gross - teacherNet;
-    await widget.paymentsRef.child(paymentId).update({
+    final updates = {
       'financeTeacherPercent': p,
       'financeTeacherGross': gross,
       'financeTeacherNet': teacherNet,
       'financeSchoolNet': schoolNet,
-      'financePushedAt': null,
-      'financePushedBy': null,
-      'financePushedStatus': null,
-      'financeUpdatedAt': ServerValue.timestamp,
-    });
+      'updatedAt': ServerValue.timestamp,
+    };
+    if (isDoneMarkEntry) {
+      await widget.financeDoneRef
+          .child(widget.teacherScopeKey)
+          .child(doneMarkKey)
+          .update(updates);
+    } else {
+      await widget.paymentsRef.child(paymentId).update({
+        ...updates,
+        'financePushedAt': null,
+        'financePushedBy': null,
+        'financePushedStatus': null,
+        'financeUpdatedAt': ServerValue.timestamp,
+      });
+    }
 
     if (!mounted) return;
     setState(() {
@@ -2384,9 +2532,11 @@ class _TeacherFinanceDetailsScreenState
       row['financeTeacherGross'] = gross;
       row['financeTeacherNet'] = teacherNet;
       row['financeSchoolNet'] = schoolNet;
-      row.remove('financePushedAt');
-      row.remove('financePushedBy');
-      row.remove('financePushedStatus');
+      if (!isDoneMarkEntry) {
+        row.remove('financePushedAt');
+        row.remove('financePushedBy');
+        row.remove('financePushedStatus');
+      }
     });
   }
 
@@ -2570,8 +2720,11 @@ class _TeacherFinanceDetailsScreenState
     );
 
     if (result == null) return;
+    final isDoneMarkEntry = row['isFinanceDoneMarkEntry'] == true;
+    final doneMarkKey = (row['financeDoneMarkKey'] ?? '').toString().trim();
     final paymentId = (row['paymentId'] ?? '').toString().trim();
-    if (paymentId.isEmpty) return;
+    if (!isDoneMarkEntry && paymentId.isEmpty) return;
+    if (isDoneMarkEntry && doneMarkKey.isEmpty) return;
 
     final statusResult = _normalizeStatus(result['status']);
     final updates = <String, dynamic>{
@@ -2597,14 +2750,23 @@ class _TeacherFinanceDetailsScreenState
       updates['financeSplitPaidStatus'] = null;
     }
 
-    await widget.paymentsRef.child(paymentId).update(updates);
+    if (isDoneMarkEntry) {
+      await widget.financeDoneRef
+          .child(widget.teacherScopeKey)
+          .child(doneMarkKey)
+          .update({...updates, 'updatedAt': ServerValue.timestamp});
+    } else {
+      await widget.paymentsRef.child(paymentId).update(updates);
+    }
 
     if (!mounted) return;
     setState(() {
       row['financePayoutStatus'] = statusResult;
-      row.remove('financePushedAt');
-      row.remove('financePushedBy');
-      row.remove('financePushedStatus');
+      if (!isDoneMarkEntry) {
+        row.remove('financePushedAt');
+        row.remove('financePushedBy');
+        row.remove('financePushedStatus');
+      }
       if (statusResult == 'split') {
         row['financeSplitPaidAmount'] = _asInt(result['splitPaidAmount']);
         row['financeSplitWaitingAmount'] = _asInt(result['splitWaitingAmount']);
@@ -2647,6 +2809,7 @@ class _TeacherFinanceDetailsScreenState
 
   bool _isPushEligibleRow(Map<String, dynamic> row) {
     if (_isNoPaymentRow(row)) return false;
+    if (row['isFinanceDoneMarkEntry'] == true) return false;
     if (!_isMethodSet(row)) return false;
     if (!_isStatusSet(row, isNoPayment: false)) return false;
     final variantKey = _variantKeyFrom(row);
@@ -2760,6 +2923,97 @@ class _TeacherFinanceDetailsScreenState
       ).showSnackBar(SnackBar(content: Text('Could not push items: $e')));
     } finally {
       if (mounted) setState(() => _isPushingAll = false);
+    }
+  }
+
+  Future<void> _clearTeacherSetup() async {
+    if (_isClearingSetup) return;
+    final targetRows = _rows
+        .where(
+          (row) =>
+              !_isNoPaymentRow(row) && row['isFinanceDoneMarkEntry'] != true,
+        )
+        .toList();
+    final paymentIds = targetRows
+        .map((row) => (row['paymentId'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (paymentIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No payment rows to clear.')),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Clear teacher setup'),
+        content: Text(
+          'Clear finance setup for ${paymentIds.length} payment item${paymentIds.length == 1 ? '' : 's'} for ${widget.teacherName}? This will unpush and reset method, status, split, share, and allocations.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Clear setup'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _isClearingSetup = true);
+    try {
+      final localPatch = <String, dynamic>{
+        'financeMethod': '',
+        'financePayoutStatus': null,
+        'financeSplitPaidAmount': null,
+        'financeSplitWaitingAmount': null,
+        'financeSplitPaidStatus': null,
+        'financeTeacherPercent': null,
+        'financeTeacherGross': null,
+        'financeTeacherNet': null,
+        'financeSchoolNet': null,
+        'financeAllocations': null,
+        'financeTeacherShareUnlocked': null,
+        'financePushedAt': null,
+        'financePushedBy': null,
+        'financePushedStatus': null,
+        'financePeriodId': null,
+        'financePeriodStartDate': null,
+        'financePeriodStartAtMs': null,
+        'financePeriodEndDate': null,
+        'financePeriodEndAtMs': null,
+      };
+
+      for (final paymentId in paymentIds) {
+        await widget.paymentsRef.child(paymentId).update({
+          ...localPatch,
+          'financeUpdatedAt': ServerValue.timestamp,
+        });
+        _applyLocalPaymentPatch(paymentId, localPatch);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cleared setup for ${paymentIds.length} item${paymentIds.length == 1 ? '' : 's'} for ${widget.teacherName}.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not clear setup: $e')));
+    } finally {
+      if (mounted) setState(() => _isClearingSetup = false);
     }
   }
 
@@ -2934,6 +3188,90 @@ class _TeacherFinanceDetailsScreenState
     return out;
   }
 
+  List<Map<String, dynamic>> _oldWaitingRowsFromDoneMarks(dynamic raw) {
+    final out = <Map<String, dynamic>>[];
+    if (raw is! Map) return out;
+    final m = Map<dynamic, dynamic>.from(raw);
+    for (final e in m.entries) {
+      final markKey = e.key.toString().trim();
+      if (markKey.isEmpty) continue;
+      final v = e.value;
+      if (v is! Map) continue;
+      final mm = Map<dynamic, dynamic>.from(v);
+      final isOldWaiting =
+          mm['oldWaitingEntry'] == true || mm['oldWaiting'] == true;
+      if (!isOldWaiting) continue;
+
+      final amount = _asInt(mm['amount']);
+      if (amount <= 0) continue;
+      final uid = (mm['uid'] ?? '').toString().trim();
+      if (uid.isEmpty) continue;
+
+      final paidAt = _asInt(mm['paidAt']);
+      final sourcePaidAt = _asInt(mm['oldWaitingSourcePaidAt']);
+      final payoutStatus = _normalizeStatus(
+        mm['financePayoutStatus'] ?? mm['status'],
+      );
+      out.add({
+        'paymentId': 'old_waiting__$markKey',
+        'isFinanceDoneMarkEntry': true,
+        'financeDoneMarkKey': markKey,
+        'uid': uid,
+        'learner_name': (mm['learnerName'] ?? mm['learner_name'] ?? '')
+            .toString()
+            .trim(),
+        'learner_serial': (mm['learnerSerial'] ?? mm['learner_serial'] ?? '')
+            .toString()
+            .trim(),
+        'teacherId': widget.teacherId,
+        'teacherName': widget.teacherName,
+        'course_id': (mm['course_id'] ?? '').toString().trim(),
+        'course_title': (mm['course_title'] ?? '').toString().trim(),
+        'course_code': (mm['course_code'] ?? '').toString().trim(),
+        'amount': amount,
+        'method': (mm['method'] ?? mm['financeMethod'] ?? '').toString().trim(),
+        'financeMethod': (mm['financeMethod'] ?? mm['method'] ?? '')
+            .toString()
+            .trim(),
+        'financePayoutStatus': payoutStatus,
+        'financeSplitPaidAmount': mm['financeSplitPaidAmount'],
+        'financeSplitWaitingAmount': mm['financeSplitWaitingAmount'],
+        'financeSplitPaidStatus': mm['financeSplitPaidStatus'],
+        'financeTeacherPercent': mm['financeTeacherPercent'],
+        'financeTeacherGross': mm['financeTeacherGross'],
+        'financeTeacherNet': mm['financeTeacherNet'],
+        'financeSchoolNet': mm['financeSchoolNet'],
+        'paidAt': paidAt > 0 ? paidAt : sourcePaidAt,
+        'notes': (mm['notes'] ?? '').toString().trim(),
+        'oldWaiting': true,
+        'oldWaitingSourcePaymentId': (mm['oldWaitingSourcePaymentId'] ?? '')
+            .toString()
+            .trim(),
+        'oldWaitingOriginalAmount': _asInt(mm['oldWaitingOriginalAmount']),
+        'oldWaitingSourcePaidAt': sourcePaidAt,
+        'oldWaitingSourceMethod': (mm['oldWaitingSourceMethod'] ?? '')
+            .toString()
+            .trim(),
+        'oldWaitingSourceCourseId': (mm['oldWaitingSourceCourseId'] ?? '')
+            .toString()
+            .trim(),
+        'oldWaitingSourceCourseTitle': (mm['oldWaitingSourceCourseTitle'] ?? '')
+            .toString()
+            .trim(),
+        'oldWaitingSourceCourseCode': (mm['oldWaitingSourceCourseCode'] ?? '')
+            .toString()
+            .trim(),
+        'oldWaitingSourceMode': (mm['oldWaitingSourceMode'] ?? 'history')
+            .toString()
+            .trim(),
+        'oldWaitingCreatedBy': (mm['oldWaitingCreatedBy'] ?? '')
+            .toString()
+            .trim(),
+      });
+    }
+    return out;
+  }
+
   Future<void> _setManualDone(Map<String, dynamic> row, bool done) async {
     final uid = (row['uid'] ?? '').toString().trim();
     if (uid.isEmpty) return;
@@ -2960,40 +3298,10 @@ class _TeacherFinanceDetailsScreenState
   }
 
   Future<void> _startOldWaitingSetup(Map<String, dynamic> learnerRow) async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetCtx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.history_rounded),
-                title: const Text('Use previous payment'),
-                subtitle: const Text('Pick old date/fee then set left amount'),
-                onTap: () => Navigator.of(sheetCtx).pop('history'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_note_rounded),
-                title: const Text('Skip and enter manually'),
-                subtitle: const Text('Type fee, method, date, note, and left'),
-                onTap: () => Navigator.of(sheetCtx).pop('manual'),
-              ),
-              const SizedBox(height: 6),
-            ],
-          ),
-        );
-      },
-    );
-    if (choice == null) return;
-    await _addManualPayment(learnerRow, forceManual: choice == 'manual');
+    await _addManualPayment(learnerRow);
   }
 
-  Future<void> _addManualPayment(
-    Map<String, dynamic> learnerRow, {
-    bool forceManual = false,
-  }) async {
+  Future<void> _addManualPayment(Map<String, dynamic> learnerRow) async {
     final uid = (learnerRow['uid'] ?? '').toString().trim();
     if (uid.isEmpty) return;
     final learnerSerial =
@@ -3003,119 +3311,104 @@ class _TeacherFinanceDetailsScreenState
     final learnerNameNorm = _learnerNameFrom(learnerRow).trim().toLowerCase();
 
     final history = <Map<String, dynamic>>[];
-    if (!forceManual) {
-      try {
-        final historySnap = await widget.paymentsRef
-            .orderByChild('uid')
-            .equalTo(uid)
-            .get();
-        final historyRaw = historySnap.value;
-        if (historyRaw is Map) {
-          historyRaw.forEach((k, v) {
+    try {
+      final historySnap = await widget.paymentsRef
+          .orderByChild('uid')
+          .equalTo(uid)
+          .get();
+      final historyRaw = historySnap.value;
+      if (historyRaw is Map) {
+        historyRaw.forEach((k, v) {
+          if (v is! Map) return;
+          final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          m['paymentId'] = k.toString();
+          history.add(m.cast<String, dynamic>());
+        });
+      }
+
+      if (history.isEmpty) {
+        final fallbackSnap = await widget.paymentsRef.get();
+        final fallbackRaw = fallbackSnap.value;
+        if (fallbackRaw is Map) {
+          final dedupe = <String>{};
+          fallbackRaw.forEach((k, v) {
             if (v is! Map) return;
             final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-            m['paymentId'] = k.toString();
-            history.add(m.cast<String, dynamic>());
-          });
-        }
+            final pid = k.toString();
+            final rowUid = (m['uid'] ?? '').toString().trim();
+            if (rowUid == uid) {
+              if (dedupe.add(pid)) {
+                m['paymentId'] = pid;
+                history.add(m.cast<String, dynamic>());
+              }
+              return;
+            }
 
-        if (history.isEmpty) {
-          final fallbackSnap = await widget.paymentsRef.get();
-          final fallbackRaw = fallbackSnap.value;
-          if (fallbackRaw is Map) {
-            final dedupe = <String>{};
-            fallbackRaw.forEach((k, v) {
-              if (v is! Map) return;
-              final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-              final pid = k.toString();
-              final rowUid = (m['uid'] ?? '').toString().trim();
-              if (rowUid == uid) {
+            if (learnerSerial.isNotEmpty) {
+              final rowSerial = (m['learner_serial'] ?? '').toString().trim();
+              if (rowSerial == learnerSerial) {
                 if (dedupe.add(pid)) {
                   m['paymentId'] = pid;
                   history.add(m.cast<String, dynamic>());
                 }
                 return;
               }
+            }
 
-              if (learnerSerial.isNotEmpty) {
-                final rowSerial = (m['learner_serial'] ?? '').toString().trim();
-                if (rowSerial == learnerSerial) {
-                  if (dedupe.add(pid)) {
-                    m['paymentId'] = pid;
-                    history.add(m.cast<String, dynamic>());
-                  }
-                  return;
+            if (learnerNameNorm.isNotEmpty) {
+              final rowName = (m['learner_name'] ?? m['learnerName'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              if (rowName == learnerNameNorm) {
+                if (dedupe.add(pid)) {
+                  m['paymentId'] = pid;
+                  history.add(m.cast<String, dynamic>());
                 }
               }
-
-              if (learnerNameNorm.isNotEmpty) {
-                final rowName = (m['learner_name'] ?? m['learnerName'] ?? '')
-                    .toString()
-                    .trim()
-                    .toLowerCase();
-                if (rowName == learnerNameNorm) {
-                  if (dedupe.add(pid)) {
-                    m['paymentId'] = pid;
-                    history.add(m.cast<String, dynamic>());
-                  }
-                }
-              }
-            });
-          }
+            }
+          });
         }
-
-        history.sort(
-          (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
-        );
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not load previous payments.')),
-        );
-        return;
       }
 
-      if (history.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No previous payments found for this learner.'),
-          ),
-        );
-        return;
-      }
+      history.sort(
+        (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load previous payments.')),
+      );
+      return;
+    }
+
+    if (history.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No previous payments found for this learner.'),
+        ),
+      );
+      return;
     }
 
     if (!mounted) return;
 
-    const manualSourceId = '__manual__';
-    String sourcePaymentId = forceManual
-        ? manualSourceId
-        : (history.isEmpty
-              ? manualSourceId
-              : (history.first['paymentId'] ?? '').toString());
-    Map<String, dynamic>? sourcePayment = history.isEmpty
-        ? null
-        : history.first;
+    String sourcePaymentId = (history.first['paymentId'] ?? '').toString();
+    Map<String, dynamic>? sourcePayment = history.first;
 
     final originalFeeCtrl = TextEditingController(
-      text: sourcePayment == null
-          ? ''
-          : _asInt(sourcePayment['amount']).toString(),
+      text: _asInt(sourcePayment['amount']).toString(),
     );
     final leftCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
-    String method = sourcePayment == null
-        ? 'cash'
-        : _AdminFinanceScreenState._normalizeMethod(
-            sourcePayment['financeMethod'] ?? sourcePayment['method'],
-          );
+    String method = _AdminFinanceScreenState._normalizeMethod(
+      sourcePayment['financeMethod'] ?? sourcePayment['method'],
+    );
     DateTime selectedDate = DateTime.now();
-    if (sourcePayment != null && !forceManual) {
-      final srcDate = _asInt(sourcePayment['paidAt']);
-      if (srcDate > 0) {
-        selectedDate = DateTime.fromMillisecondsSinceEpoch(srcDate);
-      }
+    final srcDate = _asInt(sourcePayment['paidAt']);
+    if (srcDate > 0) {
+      selectedDate = DateTime.fromMillisecondsSinceEpoch(srcDate);
     }
     String dateLabel(DateTime d) {
       String two(int n) => n.toString().padLeft(2, '0');
@@ -3161,10 +3454,6 @@ class _TeacherFinanceDetailsScreenState
                             labelText: 'Old payment source',
                           ),
                           items: [
-                            const DropdownMenuItem<String>(
-                              value: manualSourceId,
-                              child: Text('Skip history (manual entry)'),
-                            ),
                             ...history.map((p) {
                               final pid = (p['paymentId'] ?? '')
                                   .toString()
@@ -3192,7 +3481,7 @@ class _TeacherFinanceDetailsScreenState
                           onChanged: (v) {
                             if (v == null) return;
                             Map<String, dynamic>? selected;
-                            if (v != manualSourceId && history.isNotEmpty) {
+                            if (history.isNotEmpty) {
                               selected = history.firstWhere(
                                 (p) => (p['paymentId'] ?? '').toString() == v,
                                 orElse: () => history.first,
@@ -3217,9 +3506,6 @@ class _TeacherFinanceDetailsScreenState
                                         srcDate,
                                       );
                                 }
-                              } else {
-                                originalFeeCtrl.text = '';
-                                method = 'cash';
                               }
                             });
                           },
@@ -3229,18 +3515,11 @@ class _TeacherFinanceDetailsScreenState
                           controller: originalFeeCtrl,
                           keyboardType: TextInputType.number,
                           textInputAction: TextInputAction.next,
-                          readOnly: sourcePayment != null,
+                          readOnly: true,
                           decoration: InputDecoration(
-                            labelText: sourcePayment != null
-                                ? 'Original fee (from selected source)'
-                                : 'Fee',
-                            hintText: sourcePayment != null
-                                ? null
-                                : 'Type original fee in DA',
-                            filled: sourcePayment != null,
-                            fillColor: sourcePayment != null
-                                ? const Color(0xFFF8EED8)
-                                : null,
+                            labelText: 'Original fee (from selected source)',
+                            filled: true,
+                            fillColor: const Color(0xFFF8EED8),
                             border: const OutlineInputBorder(),
                           ),
                         ),
@@ -3366,16 +3645,18 @@ class _TeacherFinanceDetailsScreenState
         ? ''
         : (src['course_code'] ?? '').toString().trim();
 
-    final ref = widget.paymentsRef.push();
-    await ref.set({
+    final markKey = _doneMarkKey(learnerRow);
+    if (markKey.isEmpty) return;
+    final markRef = widget.financeDoneRef
+        .child(widget.teacherScopeKey)
+        .child(markKey);
+    await markRef.set({
       'uid': uid,
-      'learner_name': _learnerNameFrom(learnerRow),
-      'learner_serial':
+      'learnerName': _learnerNameFrom(learnerRow),
+      'learnerSerial':
           (learnerRow['learner_serial'] ?? learnerRow['serial'] ?? '')
               .toString()
               .trim(),
-      'teacherId': widget.teacherId,
-      'teacherName': widget.teacherName,
       'course_id': _courseIdFromRow(learnerRow),
       'course_title': (learnerRow['course_title'] ?? '').toString().trim(),
       'course_code': (learnerRow['course_code'] ?? '').toString().trim(),
@@ -3386,71 +3667,35 @@ class _TeacherFinanceDetailsScreenState
       'paidAt': paidAt,
       'notes': note,
       'oldWaiting': true,
-      'oldWaitingSourcePaymentId': sourcePaymentId == manualSourceId
-          ? ''
-          : sourcePaymentId,
+      'oldWaitingEntry': true,
+      'oldWaitingSourcePaymentId': sourcePaymentId,
       'oldWaitingOriginalAmount': sourceAmount,
       'oldWaitingSourcePaidAt': sourcePaidAt,
       'oldWaitingSourceMethod': sourceMethod,
       'oldWaitingSourceCourseId': sourceCourseId,
       'oldWaitingSourceCourseTitle': sourceCourseTitle,
       'oldWaitingSourceCourseCode': sourceCourseCode,
-      'oldWaitingSourceMode': sourcePaymentId == manualSourceId
-          ? 'manual'
-          : 'history',
+      'oldWaitingSourceMode': 'history',
       'oldWaitingCreatedBy': 'admin',
       'oldWaitingCreatedAt': ServerValue.timestamp,
-      'createdAt': ServerValue.timestamp,
-      'variantKey': 'inclass',
-      'variantLabel': 'Inclass',
-    });
-
-    final newRow = <String, dynamic>{
-      'paymentId': ref.key,
-      'uid': uid,
-      'learner_name': _learnerNameFrom(learnerRow),
-      'learner_serial':
-          (learnerRow['learner_serial'] ?? learnerRow['serial'] ?? '')
-              .toString()
-              .trim(),
+      'status': 'tbpaid',
+      'done': false,
       'teacherId': widget.teacherId,
       'teacherName': widget.teacherName,
-      'course_id': _courseIdFromRow(learnerRow),
-      'course_title': (learnerRow['course_title'] ?? '').toString().trim(),
-      'course_code': (learnerRow['course_code'] ?? '').toString().trim(),
-      'amount': amount,
-      'method': method,
-      'financeMethod': method,
-      'financePayoutStatus': 'tbpaid',
-      'paidAt': paidAt,
-      'notes': note,
-      'oldWaiting': true,
-      'oldWaitingSourcePaymentId': sourcePaymentId == manualSourceId
-          ? ''
-          : sourcePaymentId,
-      'oldWaitingOriginalAmount': sourceAmount,
-      'oldWaitingSourcePaidAt': sourcePaidAt,
-      'oldWaitingSourceMethod': sourceMethod,
-      'oldWaitingSourceCourseId': sourceCourseId,
-      'oldWaitingSourceCourseTitle': sourceCourseTitle,
-      'oldWaitingSourceCourseCode': sourceCourseCode,
-      'oldWaitingSourceMode': sourcePaymentId == manualSourceId
-          ? 'manual'
-          : 'history',
-      'oldWaitingCreatedBy': 'admin',
-      'variantKey': 'inclass',
-      'variantLabel': 'Inclass',
-    };
-    if (!mounted) return;
-    setState(() {
-      _rows.add(newRow);
-      _rows.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+      'updatedAt': ServerValue.timestamp,
     });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Old waiting added from payment history.')),
+    );
   }
 
   Future<void> _editOldWaitingPayment(Map<String, dynamic> row) async {
+    final isDoneMarkEntry = row['isFinanceDoneMarkEntry'] == true;
+    final doneMarkKey = (row['financeDoneMarkKey'] ?? '').toString().trim();
     final paymentId = (row['paymentId'] ?? '').toString().trim();
-    if (paymentId.isEmpty) return;
+    if (!isDoneMarkEntry && paymentId.isEmpty) return;
+    if (isDoneMarkEntry && doneMarkKey.isEmpty) return;
 
     final amountCtrl = TextEditingController(
       text: _asInt(row['amount']).toString(),
@@ -3606,18 +3851,32 @@ class _TeacherFinanceDetailsScreenState
       0,
     ).millisecondsSinceEpoch;
 
-    await widget.paymentsRef.child(paymentId).update({
-      'amount': amount,
-      'method': method,
-      'financeMethod': method,
-      'paidAt': paidAt,
-      'notes': note,
-      'financePushedAt': null,
-      'financePushedBy': null,
-      'financePushedStatus': null,
-      'financeUpdatedAt': ServerValue.timestamp,
-      'updatedAt': ServerValue.timestamp,
-    });
+    if (isDoneMarkEntry) {
+      await widget.financeDoneRef
+          .child(widget.teacherScopeKey)
+          .child(doneMarkKey)
+          .update({
+            'amount': amount,
+            'method': method,
+            'financeMethod': method,
+            'paidAt': paidAt,
+            'notes': note,
+            'updatedAt': ServerValue.timestamp,
+          });
+    } else {
+      await widget.paymentsRef.child(paymentId).update({
+        'amount': amount,
+        'method': method,
+        'financeMethod': method,
+        'paidAt': paidAt,
+        'notes': note,
+        'financePushedAt': null,
+        'financePushedBy': null,
+        'financePushedStatus': null,
+        'financeUpdatedAt': ServerValue.timestamp,
+        'updatedAt': ServerValue.timestamp,
+      });
+    }
 
     if (!mounted) return;
     setState(() {
@@ -3626,26 +3885,16 @@ class _TeacherFinanceDetailsScreenState
       row['financeMethod'] = method;
       row['paidAt'] = paidAt;
       row['notes'] = note;
-      row.remove('financePushedAt');
-      row.remove('financePushedBy');
-      row.remove('financePushedStatus');
+      if (!isDoneMarkEntry) {
+        row.remove('financePushedAt');
+        row.remove('financePushedBy');
+        row.remove('financePushedStatus');
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    var originalTotal = 0;
-    var payoutTotal = 0;
-    var waitingTotal = 0;
-    for (final row in _rows.where((r) => !_isNoPaymentRow(r))) {
-      final effective = _AdminFinanceScreenState._effectiveFinanceFromPayment(
-        row,
-      );
-      originalTotal += effective.originalAmount;
-      payoutTotal += effective.teacherNet;
-      waitingTotal += effective.waitingAmount;
-    }
-
     return Scaffold(
       backgroundColor: AdminFinanceScreen.appBg,
       appBar: AppBar(
@@ -3673,9 +3922,20 @@ class _TeacherFinanceDetailsScreenState
           return StreamBuilder<DatabaseEvent>(
             stream: widget.financeDoneRef.child(widget.teacherScopeKey).onValue,
             builder: (context, doneSnap) {
-              final manualDone = _manualDoneKeys(doneSnap.data?.snapshot.value);
+              final doneRaw = doneSnap.data?.snapshot.value;
+              final manualDone = _manualDoneKeys(doneRaw);
+              final oldWaitingRows = _oldWaitingRowsFromDoneMarks(doneRaw);
               final paymentLearnerCourse = <String>{};
               for (final r in _rows) {
+                final uid = (r['uid'] ?? '').toString().trim();
+                final courseId = _courseIdFromRow(r);
+                if (uid.isNotEmpty && courseId.isNotEmpty) {
+                  paymentLearnerCourse.add(
+                    _sessionKey(uid: uid, courseId: courseId),
+                  );
+                }
+              }
+              for (final r in oldWaitingRows) {
                 final uid = (r['uid'] ?? '').toString().trim();
                 final courseId = _courseIdFromRow(r);
                 if (uid.isNotEmpty && courseId.isNotEmpty) {
@@ -3718,15 +3978,29 @@ class _TeacherFinanceDetailsScreenState
               }
 
               final rowsToShow =
-                  <Map<String, dynamic>>[..._rows, ...noPaymentRows]
-                    ..sort((a, b) {
-                      final am = _asInt(a['paidAt']);
-                      final bm = _asInt(b['paidAt']);
-                      if (am != bm) return bm.compareTo(am);
-                      return _learnerNameFrom(a).toLowerCase().compareTo(
-                        _learnerNameFrom(b).toLowerCase(),
-                      );
-                    });
+                  <Map<String, dynamic>>[
+                    ..._rows,
+                    ...oldWaitingRows,
+                    ...noPaymentRows,
+                  ]..sort((a, b) {
+                    final am = _asInt(a['paidAt']);
+                    final bm = _asInt(b['paidAt']);
+                    if (am != bm) return bm.compareTo(am);
+                    return _learnerNameFrom(a).toLowerCase().compareTo(
+                      _learnerNameFrom(b).toLowerCase(),
+                    );
+                  });
+
+              var originalTotal = 0;
+              var payoutTotal = 0;
+              var waitingTotal = 0;
+              for (final row in rowsToShow.where((r) => !_isNoPaymentRow(r))) {
+                final effective =
+                    _AdminFinanceScreenState._effectiveFinanceFromPayment(row);
+                originalTotal += effective.originalAmount;
+                payoutTotal += effective.teacherNet;
+                waitingTotal += effective.waitingAmount;
+              }
 
               return ListView(
                 padding: EdgeInsets.fromLTRB(
@@ -3773,6 +4047,23 @@ class _TeacherFinanceDetailsScreenState
                               )
                             : const Icon(Icons.upload_rounded),
                         label: Text(_isPushingAll ? 'Pushing...' : 'Push all'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _isClearingSetup || _isPushingAll
+                            ? null
+                            : _clearTeacherSetup,
+                        icon: _isClearingSetup
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cleaning_services_rounded),
+                        label: Text(
+                          _isClearingSetup ? 'Clearing...' : 'Clear setup',
+                        ),
                       ),
                     ],
                   ),
@@ -4892,11 +5183,15 @@ class _TeacherSquareCard extends StatelessWidget {
     required this.data,
     required this.money,
     required this.onTap,
+    required this.onClearSetup,
+    this.isClearingSetup = false,
   });
 
   final _TeacherCardData data;
   final String Function(int amount) money;
   final VoidCallback onTap;
+  final VoidCallback onClearSetup;
+  final bool isClearingSetup;
 
   @override
   Widget build(BuildContext context) {
@@ -4929,10 +5224,26 @@ class _TeacherSquareCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: onTap,
-                  icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                  label: const Text('Open'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: isClearingSetup ? null : onClearSetup,
+                      tooltip: 'Clear setup',
+                      icon: isClearingSetup
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cleaning_services_rounded),
+                    ),
+                    TextButton.icon(
+                      onPressed: onTap,
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: const Text('Open'),
+                    ),
+                  ],
                 ),
               ],
             ),

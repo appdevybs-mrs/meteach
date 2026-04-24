@@ -373,7 +373,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   Future<void> _printCertificate(Certificate cert) async {
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(cert);
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      final fileName = CertificatePdfService.buildPdfFileName(cert);
+      await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
       if (!mounted) return;
       AppToast.show(
         context,
@@ -2158,17 +2159,12 @@ class _CertificateViewSheet extends StatelessWidget {
   Future<void> _sharePdf(BuildContext context) async {
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(certificate);
+      final fileName = CertificatePdfService.buildPdfFileName(certificate);
       final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${certificate.cvn}.pdf',
-      );
+      final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(bytes, flush: true);
       await Share.shareXFiles([
-        XFile(
-          file.path,
-          mimeType: 'application/pdf',
-          name: '${certificate.cvn}.pdf',
-        ),
+        XFile(file.path, mimeType: 'application/pdf', name: fileName),
       ]);
       if (!context.mounted) return;
       AppToast.show(
@@ -2189,7 +2185,8 @@ class _CertificateViewSheet extends StatelessWidget {
   Future<void> _printPdf(BuildContext context) async {
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(certificate);
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      final fileName = CertificatePdfService.buildPdfFileName(certificate);
+      await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
       if (!context.mounted) return;
       AppToast.show(
         context,

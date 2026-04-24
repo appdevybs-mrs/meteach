@@ -10,6 +10,26 @@ import '../models/certificate_model.dart';
 class CertificatePdfService {
   static const int _templateRasterDpi = 300;
 
+  static String buildPdfFileName(Certificate cert) {
+    final title = _sanitizeFileNamePart(
+      cert.certificateTitle,
+      fallback: 'certificate',
+    );
+    final cvn = _sanitizeFileNamePart(cert.cvn, fallback: 'cvn');
+    return 'YBS_${title}_$cvn.pdf';
+  }
+
+  static String _sanitizeFileNamePart(String raw, {required String fallback}) {
+    final cleaned = raw
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    if (cleaned.isEmpty) return fallback;
+    return cleaned;
+  }
+
   String _fmtDate(DateTime d) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)}';

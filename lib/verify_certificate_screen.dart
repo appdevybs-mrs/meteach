@@ -247,13 +247,12 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
 
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(cert);
+      final fileName = CertificatePdfService.buildPdfFileName(cert);
       final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${cert.cvn}.pdf',
-      );
+      final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(bytes, flush: true);
       await Share.shareXFiles([
-        XFile(file.path, mimeType: 'application/pdf', name: '${cert.cvn}.pdf'),
+        XFile(file.path, mimeType: 'application/pdf', name: fileName),
       ]);
     } catch (_) {
       if (!mounted) return;
