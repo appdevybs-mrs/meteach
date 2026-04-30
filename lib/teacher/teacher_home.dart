@@ -14,6 +14,7 @@ import '../shared/first_login_agreement.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
 import '../shared/responsive_layout.dart';
+import '../shared/icon_theme.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_stories_screen.dart';
@@ -379,32 +380,30 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
     await AppLoading.run(
       context,
       () async {
-        final userId = FirebaseAuth.instance.currentUser?.uid;
-
         await SessionManager.stopListening();
-
-        await FirebaseAuth.instance.signOut();
-
-        unawaited(() async {
-          try {
-            if (userId != null && userId.isNotEmpty) {
-              await FirebaseDatabase.instance
-                  .ref('fcm_tokens/$userId')
-                  .remove();
-            }
-          } catch (_) {}
-
-          try {
-            await appThemeController.resetToDefault();
-          } catch (_) {}
-        }());
       },
       message: 'Logging out...',
       isLogout: true,
     );
+
+    await FirebaseAuth.instance.signOut();
+
+    unawaited(() async {
+      if (userId != null && userId.isNotEmpty) {
+        try {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+        } catch (_) {}
+      }
+
+      try {
+        await appThemeController.resetToDefault();
+      } catch (_) {}
+    }());
   }
 
   String _norm(String s) => s.trim().toLowerCase();
@@ -1161,7 +1160,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               ? null
               : IconButton(
                   key: _menuButtonKey,
-                  icon: Icon(Icons.menu_rounded, color: p.primary),
+                  icon: Icon(TeacherIcons.menu, color: p.primary),
                   onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
           title: FutureBuilder<String>(
@@ -1198,12 +1197,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             if (webDesktop)
               IconButton(
                 tooltip: 'Theme',
-                icon: Icon(Icons.palette_outlined, color: p.primary),
+                icon: Icon(TeacherIcons.theme, color: p.primary),
                 onPressed: _openThemeSettings,
               ),
             IconButton(
               tooltip: 'Logout',
-              icon: Icon(Icons.logout_rounded, color: p.accent),
+              icon: Icon(TeacherIcons.logout, color: p.accent),
               onPressed: () => _logout(context),
             ),
           ],
@@ -1287,7 +1286,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       child: _MiniStatCard(
                                         palette: p,
                                         value: unread == 0 ? '0' : '$unread',
-                                        icon: Icons.email_rounded,
+                                        icon: TeacherIcons.mailStat,
                                         badgeCount: unread,
                                         badgeColor: Colors.red,
                                         onTap: _openMailScreen,
@@ -1316,7 +1315,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                             value: unreviewed == 0
                                                 ? '0'
                                                 : '$unreviewed',
-                                            icon: Icons.assignment_rounded,
+                                            icon: TeacherIcons.homeworkStat,
                                             badgeCount: unreviewed,
                                             badgeColor: const Color(0xFFD97706),
                                             onTap: _openHomeworkInboxScreen,
@@ -1341,7 +1340,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       child: _MiniStatCard(
                                         palette: p,
                                         value: pending == 0 ? '0' : '$pending',
-                                        icon: Icons.alarm_rounded,
+                                        icon: TeacherIcons.reminderStat,
                                         badgeCount: pending,
                                         badgeColor: p.accent,
                                         onTap: _openRemindersScreen,
@@ -1444,25 +1443,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                               children: [
                                 _WebQuickActionTile(
                                   palette: p,
-                                  icon: Icons.event_available_rounded,
+                                  icon: TeacherIcons.onlineBooking,
                                   title: 'Online Booking',
                                   onTap: _openOnlineAvailabilityScreen,
                                 ),
                                 _WebQuickActionTile(
                                   palette: p,
-                                  icon: Icons.public_rounded,
+                                  icon: TeacherIcons.gallery,
                                   title: 'Gallery',
                                   onTap: _openGalleryScreen,
                                 ),
                                 _WebQuickActionTile(
                                   palette: p,
-                                  icon: Icons.menu_book_rounded,
+                                  icon: TeacherIcons.syllabi,
                                   title: 'Syllabi',
                                   onTap: _openSyllabiScreen,
                                 ),
                                 _WebQuickActionTile(
                                   palette: p,
-                                  icon: Icons.account_balance_wallet_rounded,
+                                  icon: TeacherIcons.wages,
                                   title: 'Wages',
                                   onTap: _openWagesScreen,
                                 ),
@@ -1632,49 +1631,49 @@ class _TeacherHomeWebRail extends StatelessWidget {
                 children: [
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.school_rounded,
+                    icon: TeacherIcons.classes,
                     title: 'My Classes',
                     onTap: onOpenClasses,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.schedule_rounded,
+                    icon: TeacherIcons.schedule,
                     title: 'Schedule',
                     onTap: onOpenSchedule,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.mail_rounded,
+                    icon: TeacherIcons.mail,
                     title: 'Mail',
                     onTap: onOpenMail,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.alarm_rounded,
+                    icon: TeacherIcons.reminders,
                     title: 'Reminders',
                     onTap: onOpenReminders,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.event_available_rounded,
+                    icon: TeacherIcons.onlineBooking,
                     title: 'Online Booking',
                     onTap: onOpenBooking,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.public_rounded,
+                    icon: TeacherIcons.gallery,
                     title: 'Gallery',
                     onTap: onOpenGallery,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.menu_book_rounded,
+                    icon: TeacherIcons.syllabi,
                     title: 'Syllabi',
                     onTap: onOpenSyllabi,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.account_balance_wallet_rounded,
+                    icon: TeacherIcons.wages,
                     title: 'Wages',
                     onTap: onOpenWages,
                   ),
@@ -1684,7 +1683,7 @@ class _TeacherHomeWebRail extends StatelessWidget {
             const SizedBox(height: 8),
             _DrawerTile(
               palette: palette,
-              icon: Icons.logout_rounded,
+              icon: TeacherIcons.logout,
               title: 'Logout',
               onTap: onLogout,
             ),
@@ -1736,25 +1735,25 @@ class _TeacherHomeWebAside extends StatelessWidget {
             const SizedBox(height: 10),
             _DrawerTile(
               palette: palette,
-              icon: Icons.mail_rounded,
+              icon: TeacherIcons.mail,
               title: 'Open Mail',
               onTap: onOpenMail,
             ),
             _DrawerTile(
               palette: palette,
-              icon: Icons.assignment_rounded,
+              icon: TeacherIcons.homeworkStat,
               title: 'Homework Inbox',
               onTap: onOpenHomework,
             ),
             _DrawerTile(
               palette: palette,
-              icon: Icons.alarm_rounded,
+              icon: TeacherIcons.reminderStat,
               title: 'Open Reminders',
               onTap: onOpenReminders,
             ),
             _DrawerTile(
               palette: palette,
-              icon: Icons.school_rounded,
+              icon: TeacherIcons.classes,
               title: 'Open Classes',
               onTap: onOpenClasses,
             ),
@@ -1845,7 +1844,7 @@ class _TeacherDrawer extends StatelessWidget {
                     radius: 24,
                     backgroundColor: Colors.white24,
                     child: Icon(
-                      Icons.school_rounded,
+                      TeacherIcons.classes,
                       color: Colors.white,
                       size: 28,
                     ),
@@ -1877,7 +1876,7 @@ class _TeacherDrawer extends StatelessWidget {
                 children: [
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.person_rounded,
+                    icon: TeacherIcons.profile,
                     title: 'Profile',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1886,7 +1885,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.calendar_today_rounded,
+                    icon: TeacherIcons.calendarSchedule,
                     title: 'Schedule',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1895,7 +1894,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.school_rounded,
+                    icon: TeacherIcons.classes,
                     title: 'My Classes',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1904,7 +1903,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.collections_rounded,
+                    icon: TeacherIcons.gallery,
                     title: 'Gallery',
                     subtitle: 'My learners and teachers',
                     onTap: () {
@@ -1914,7 +1913,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.sports_esports_rounded,
+                    icon: TeacherIcons.games,
                     title: 'Games',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1923,7 +1922,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.menu_book_rounded,
+                    icon: TeacherIcons.stories,
                     title: 'Stories',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1932,7 +1931,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.event_available_rounded,
+                    icon: TeacherIcons.onlineBooking,
                     title: 'Online Availability',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1941,7 +1940,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.video_call_rounded,
+                    icon: TeacherIcons.onlineCircle,
                     title: 'Online Circle',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1950,7 +1949,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.email_rounded,
+                    icon: TeacherIcons.mail,
                     title: 'Mail',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1959,7 +1958,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.alarm_rounded,
+                    icon: TeacherIcons.reminders,
                     title: 'Reminders',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1968,7 +1967,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.wallet_rounded,
+                    icon: TeacherIcons.wages,
                     title: 'Wages',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1977,7 +1976,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.policy_rounded,
+                    icon: TeacherIcons.regulations,
                     title: 'Regulations',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1986,7 +1985,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.menu_book_rounded,
+                    icon: TeacherIcons.syllabi,
                     title: 'Syllabi',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -1995,7 +1994,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.folder_shared_rounded,
+                    icon: TeacherIcons.shared,
                     title: 'Shared',
                     subtitle: 'Shared files between teachers',
                     onTap: () {
@@ -2005,7 +2004,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.hub_rounded,
+                    icon: TeacherIcons.myPlatform,
                     title: 'My Platform',
                     subtitle: 'Assigned course comments and reviews',
                     onTap: () {
@@ -2015,7 +2014,7 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.palette_rounded,
+                    icon: TeacherIcons.theme,
                     title: 'Theme Settings',
                     subtitle: 'Manly / girly looks',
                     onTap: () {
@@ -2041,7 +2040,7 @@ class _TeacherDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(18),
                     ),
                   ),
-                  icon: const Icon(Icons.logout_rounded),
+                  icon: const Icon(TeacherIcons.logout),
                   label: const Text(
                     'Logout',
                     style: TextStyle(fontWeight: FontWeight.w900),
@@ -2125,7 +2124,7 @@ class _DrawerTile extends StatelessWidget {
                   ),
                 ),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  TeacherIcons.chevron,
                   color: palette.text.withValues(alpha: 0.45),
                 ),
               ],
@@ -2198,7 +2197,7 @@ class _HeroSummaryCard extends StatelessWidget {
               Expanded(
                 child: _HeroActionButton(
                   label: 'Profile',
-                  icon: Icons.person_rounded,
+                  icon: TeacherIcons.profile,
                   fillColor: Colors.white,
                   textColor: palette.primary,
                   onTap: onOpenProfile,
@@ -2208,7 +2207,7 @@ class _HeroSummaryCard extends StatelessWidget {
               Expanded(
                 child: _HeroActionButton(
                   label: 'Schedule',
-                  icon: Icons.calendar_today_rounded,
+                  icon: TeacherIcons.calendarSchedule,
                   fillColor: Colors.white12,
                   textColor: Colors.white,
                   onTap: onOpenSchedule,
@@ -2316,7 +2315,7 @@ class _OverviewPanel extends StatelessWidget {
                   palette: palette,
                   label: 'Classes',
                   value: '$classesCount',
-                  icon: Icons.school_rounded,
+                  icon: TeacherIcons.classes,
                   onTap: onOpenClasses,
                 ),
               ),
@@ -2326,7 +2325,7 @@ class _OverviewPanel extends StatelessWidget {
                   palette: palette,
                   label: 'Learners',
                   value: '$learnersCount',
-                  icon: Icons.groups_rounded,
+                  icon: TeacherIcons.overviewLearners,
                 ),
               ),
               const SizedBox(width: 8),
@@ -2335,7 +2334,7 @@ class _OverviewPanel extends StatelessWidget {
                   palette: palette,
                   label: 'Online',
                   value: '$upcomingOnlineCount',
-                  icon: Icons.videocam_rounded,
+                  icon: TeacherIcons.overviewOnline,
                   badgeCount: upcomingOnlineCount,
                   badgeColor: Colors.red,
                   onTap: onOpenOnline,
@@ -2677,10 +2676,10 @@ class _NextComingClassCard extends StatelessWidget {
                                 children: [
                                   Icon(
                                     isLive
-                                        ? Icons.circle
+                                        ? TeacherIcons.liveIndicator
                                         : (isSoon
-                                              ? Icons.warning_amber_rounded
-                                              : Icons.timer_rounded),
+                                              ? TeacherIcons.soonWarning
+                                              : TeacherIcons.countdown),
                                     size: isLive ? 8 : 14,
                                     color: isLive ? Colors.red : countdownColor,
                                   ),
@@ -2710,8 +2709,8 @@ class _NextComingClassCard extends StatelessWidget {
                               ),
                               child: Icon(
                                 isOnline
-                                    ? Icons.video_call_rounded
-                                    : Icons.access_time_rounded,
+                                    ? TeacherIcons.videoCall
+                                    : TeacherIcons.inPerson,
                                 color: itemPrimary,
                               ),
                             ),
@@ -2759,18 +2758,18 @@ class _NextComingClassCard extends StatelessWidget {
                           children: [
                             _InfoChip(
                               palette: palette,
-                              icon: Icons.calendar_today_rounded,
+                              icon: TeacherIcons.nextClassCalendar,
                               text: DateFormat('EEE, MMM d').format(c.start),
                             ),
                             _InfoChip(
                               palette: palette,
-                              icon: Icons.schedule_rounded,
+                              icon: TeacherIcons.nextClassSchedule,
                               text:
                                   '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
                             ),
                             _InfoChip(
                               palette: palette,
-                              icon: Icons.badge_rounded,
+                              icon: TeacherIcons.nextClassBadge,
                               text: c.isOnline
                                   ? 'Online booking'
                                   : 'ID: ${c.classId}',
@@ -2938,7 +2937,7 @@ class _MiniStatCard extends StatelessWidget {
                 ),
               ),
               if (showChevron)
-                const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                const Icon(TeacherIcons.chevron, color: Colors.grey),
             ],
           ),
         );
@@ -3009,7 +3008,7 @@ class _WebQuickActionTile extends StatelessWidget {
                   ),
                 ),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  TeacherIcons.chevron,
                   size: 18,
                   color: palette.text.withValues(alpha: 0.45),
                 ),
@@ -3086,7 +3085,9 @@ class _ThemeChoiceTile extends StatelessWidget {
                 ),
               ),
               Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                selected
+                    ? TeacherIcons.themeSelected
+                    : TeacherIcons.themeUnselected,
                 color: selected ? preview1 : Colors.grey,
               ),
             ],

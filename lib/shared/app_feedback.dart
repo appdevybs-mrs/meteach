@@ -295,7 +295,9 @@ class AppLoading {
     try {
       return await task();
     } finally {
-      entry.remove();
+      try {
+        entry.remove();
+      } catch (_) {}
     }
   }
 }

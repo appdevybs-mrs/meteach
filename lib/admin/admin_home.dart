@@ -30,6 +30,7 @@ import '../shared/app_feedback.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
 import '../shared/app_theme.dart';
+import '../shared/icon_theme.dart';
 import '../shared/payment_status.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/web_page_frame.dart';
@@ -239,34 +240,30 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
     await AppLoading.run(
       context,
       () async {
-        final userId = FirebaseAuth.instance.currentUser?.uid;
-
-        // ✅ stop "single device" listener
         await SessionManager.stopListening();
-
-        await FirebaseAuth.instance.signOut();
-
-        unawaited(() async {
-          // ✅ remove FCM token record
-          try {
-            if (userId != null && userId.isNotEmpty) {
-              await FirebaseDatabase.instance
-                  .ref('fcm_tokens/$userId')
-                  .remove();
-            }
-          } catch (_) {}
-
-          try {
-            await appThemeController.resetToDefault();
-          } catch (_) {}
-        }());
       },
       message: 'Logging out...',
       isLogout: true,
     );
+
+    await FirebaseAuth.instance.signOut();
+
+    unawaited(() async {
+      if (userId != null && userId.isNotEmpty) {
+        try {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+        } catch (_) {}
+      }
+
+      try {
+        await appThemeController.resetToDefault();
+      } catch (_) {}
+    }());
   }
 
   Color get _screenBg =>
@@ -369,7 +366,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'Finance',
           subtitle: 'Range income and X plans',
           tags: const ['From-To', '1x/2x/...'],
-          icon: Icons.account_balance_wallet_rounded,
+          icon: AdminIcons.finance,
           color: AdminHome.accentAmber,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -405,7 +402,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'Attendance',
           subtitle: 'Daily / Weekly stats',
           tags: const ['Today', 'Weekly'],
-          icon: Icons.fact_check_rounded,
+          icon: AdminIcons.attendance,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -443,7 +440,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'Study Coach',
           subtitle: 'Vocabulary, grammar, speaking',
           tags: const ['Study Coach', 'CSV'],
-          icon: Icons.spellcheck_rounded,
+          icon: AdminIcons.studyCoach,
           color: AdminHome.accentCyan,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -513,7 +510,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'Activity Center',
           subtitle: 'Centralized system logs',
           tags: const ['Teacher', 'Learner', 'Admin'],
-          icon: Icons.manage_search_rounded,
+          icon: AdminIcons.activityCenter,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -533,7 +530,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'Notification Audit',
           subtitle: 'Push delivery monitoring',
           tags: const ['Push Events', 'Failures'],
-          icon: Icons.notifications_active_rounded,
+          icon: AdminIcons.notificationAudit,
           color: AdminHome.accentSky,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -617,7 +614,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'File Manager',
           subtitle: 'Courses & Games files',
           tags: const ['Courses', 'Games'],
-          icon: Icons.folder_open,
+          icon: AdminIcons.fileManager,
           color: AdminHome.accentGreen,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -686,7 +683,7 @@ class _AdminHomeState extends State<AdminHome> {
           title: 'Window Access',
           subtitle: 'Open or close windows',
           tags: const ['Learner', 'Teacher', 'Admin'],
-          icon: Icons.toggle_on_rounded,
+          icon: AdminIcons.windowAccess,
           color: AdminHome.accentSlate,
           isReceptionistStyle: !_isAdminMode,
           onTap: () {
@@ -1020,7 +1017,7 @@ class _AdminHomeState extends State<AdminHome> {
             ),
           ),
           _DrawerTile(
-            icon: Icons.payments_rounded,
+            icon: AdminIcons.navPayments,
             title: 'Payments',
             subtitle: 'Financial records',
             color: AdminHome.actionOrange,
@@ -1405,7 +1402,7 @@ class _AdminTodoHomeCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(
-                    Icons.task_alt_rounded,
+                    AdminIcons.adminTodo,
                     color: AdminHome.primaryBlue,
                     size: 22,
                   ),
@@ -1849,7 +1846,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           title: 'Online Booking',
           subtitle: subtitle,
           tags: ['Today ${stats.today}', 'Upcoming ${stats.upcoming}'],
-          icon: Icons.event_available_rounded,
+          icon: AdminIcons.onlineBooking,
           color: AdminHome.accentGreen,
           badgeCount: stats.upcoming,
           isReceptionistStyle: isReceptionistStyle,
@@ -1886,7 +1883,7 @@ class _SubscriptionsDashCard extends StatelessWidget {
           title: 'Subscriptions',
           subtitle: subtitle,
           tags: ['New $count', count == 0 ? 'No queue' : 'Needs review'],
-          icon: Icons.how_to_reg_rounded,
+          icon: AdminIcons.subscriptions,
           color: AdminHome.accentAmber,
           badgeCount: count,
           isReceptionistStyle: isReceptionistStyle,
@@ -1943,7 +1940,7 @@ class _JobApplicationsDashCard extends StatelessWidget {
           title: 'Job Applications',
           subtitle: subtitle,
           tags: ['New $uncalledCount', 'Follow-up $followUp'],
-          icon: Icons.work_history_rounded,
+          icon: AdminIcons.jobApplications,
           color: AdminHome.accentSlate,
           badgeCount: uncalledCount,
           isReceptionistStyle: isReceptionistStyle,
@@ -2047,7 +2044,7 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
           title: 'Shared Files',
           subtitle: subtitle,
           tags: ['Shared $count', count == 0 ? 'No updates' : 'Check latest'],
-          icon: Icons.folder_shared_rounded,
+          icon: AdminIcons.sharedFiles,
           color: AdminHome.accentTeal,
           badgeCount: count,
           isReceptionistStyle: isReceptionistStyle,
@@ -2182,7 +2179,7 @@ class _WagesDashCard extends StatelessWidget {
           title: 'Wages',
           subtitle: subtitle,
           tags: ['Pending $pending', 'This month $paidThisMonth'],
-          icon: Icons.wallet_rounded,
+          icon: AdminIcons.wages,
           color: AdminHome.accentRose,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
@@ -2229,7 +2226,7 @@ class _ContractDashCard extends StatelessWidget {
           title: 'Contract',
           subtitle: subtitle,
           tags: ['Teacher $teacherCount', 'Learner $learnerCount'],
-          icon: Icons.description_rounded,
+          icon: AdminIcons.contract,
           color: AdminHome.accentCyan,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
@@ -2357,7 +2354,7 @@ class _PriorityAlertsDashCard extends StatelessWidget {
           title: 'Priority Alerts',
           subtitle: subtitle,
           tags: ['Unseen $unseen', 'Today $today'],
-          icon: Icons.campaign_rounded,
+          icon: AdminIcons.priorityAlerts,
           color: AdminHome.actionOrange,
           badgeCount: unseen,
           isReceptionistStyle: isReceptionistStyle,
@@ -2394,7 +2391,7 @@ class _PublicGalleryDashCard extends StatelessWidget {
               ? 'No teasers published'
               : '$count teaser item${count == 1 ? '' : 's'}',
           tags: ['Teasers $count', count == 0 ? 'Empty' : 'Published'],
-          icon: Icons.photo_library_rounded,
+          icon: AdminIcons.publicGallery,
           color: AdminHome.accentSky,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
@@ -2466,7 +2463,7 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
           title: 'Teacher Availability',
           subtitle: subtitle,
           tags: ['Online $online', 'Slots $slots'],
-          icon: Icons.manage_accounts_rounded,
+          icon: AdminIcons.teacherAvailability,
           color: AdminHome.accentCyan,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
@@ -3005,7 +3002,7 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Icon(
-                        Icons.payments_rounded,
+                        AdminIcons.payments,
                         color: isReceptionistStyle
                             ? AdminHome.actionOrange
                             : AdminHome.accentBlue,
@@ -3337,7 +3334,7 @@ class _LearnersDashCard extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(
-                      Icons.people_alt_rounded,
+                      AdminIcons.learners,
                       color: isReceptionistStyle
                           ? AdminHome.actionOrange
                           : AdminHome.accentPurple,
@@ -3568,7 +3565,7 @@ class _StaffMailDashCard extends StatelessWidget {
         title: 'Staff',
         subtitle: 'Teachers & staff',
         tags: const ['Unread 0', 'Threads 0'],
-        icon: Icons.badge_rounded,
+        icon: AdminIcons.staff,
         color: AdminHome.accentAmber,
         isReceptionistStyle: isReceptionistStyle,
         onTap: onTap,
@@ -3599,7 +3596,7 @@ class _StaffMailDashCard extends StatelessWidget {
           title: 'Staff',
           subtitle: subtitle,
           tags: ['Unread $unread', 'Threads $threads'],
-          icon: Icons.badge_rounded,
+          icon: AdminIcons.staff,
           color: AdminHome.accentAmber,
           badgeCount: unread,
           isReceptionistStyle: isReceptionistStyle,
@@ -3627,7 +3624,7 @@ class _AdminMailDashCard extends StatelessWidget {
         title: 'Admin Mail',
         subtitle: 'Central inbox hub',
         tags: const ['Unread 0', 'Threads 0'],
-        icon: Icons.mail_rounded,
+        icon: AdminIcons.adminMail,
         color: AdminHome.accentSky,
         isReceptionistStyle: isReceptionistStyle,
         onTap: onTap,
@@ -3658,7 +3655,7 @@ class _AdminMailDashCard extends StatelessWidget {
           title: 'Admin Mail',
           subtitle: subtitle,
           tags: ['Unread $unread', 'Threads $threads'],
-          icon: Icons.mail_rounded,
+          icon: AdminIcons.adminMail,
           color: AdminHome.accentSky,
           badgeCount: unread,
           isReceptionistStyle: isReceptionistStyle,
@@ -3970,7 +3967,7 @@ class _CourseFeedbackDashCard extends StatelessWidget {
             'Reported $reported',
             reported > 0 ? 'Needs action' : 'All clear',
           ],
-          icon: Icons.reviews_rounded,
+          icon: AdminIcons.courseReviews,
           color: AdminHome.accentAmber,
           badgeCount: reported,
           isReceptionistStyle: isReceptionistStyle,

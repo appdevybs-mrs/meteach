@@ -277,22 +277,50 @@ class _AdminTeacherMailTopicsScreenState
                   elevation: 0,
                   child: ListTile(
                     title: Text(
-                      t.subject.isEmpty ? '(No subject)' : t.subject,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Text(
-                      t.lastMessage.isEmpty ? 'No messages yet' : t.lastMessage,
+                      _teacherDisplayName(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: Colors.grey.shade700,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          t.subject.isEmpty ? '(No subject)' : t.subject,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          t.lastMessage.isEmpty
+                              ? 'No messages yet'
+                              : t.lastMessage,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, height: 1.2),
+                        ),
+                      ],
+                    ),
+                    isThreeLine: true,
                     trailing: t.unreadCount > 0
                         ? CircleAvatar(
                             radius: 12,
+                            backgroundColor: Colors.grey.shade400,
                             child: Text(
                               '${t.unreadCount}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
+                                color: Colors.white,
                               ),
                             ),
                           )

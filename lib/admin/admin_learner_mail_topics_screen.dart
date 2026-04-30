@@ -244,20 +244,44 @@ class _AdminLearnerMailTopicsScreenState
                 return Card(
                   child: ListTile(
                     title: Text(
-                      item.subject.isEmpty ? '(No subject)' : item.subject,
+                      widget.learnerName.isEmpty
+                          ? 'Learner'
+                          : widget.learnerName,
                       style: TextStyle(
-                        fontWeight: hasUnread
-                            ? FontWeight.w800
-                            : FontWeight.w400,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: Colors.grey.shade700,
                       ),
-                    ),
-                    subtitle: Text(
-                      item.lastMessage.isEmpty
-                          ? 'No messages yet'
-                          : item.lastMessage,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          item.subject.isEmpty ? '(No subject)' : item.subject,
+                          style: TextStyle(
+                            fontWeight: hasUnread
+                                ? FontWeight.w800
+                                : FontWeight.w400,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          item.lastMessage.isEmpty
+                              ? 'No messages yet'
+                              : item.lastMessage,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, height: 1.2),
+                        ),
+                      ],
+                    ),
+                    isThreeLine: true,
                     trailing: hasUnread
                         ? Center(
                             widthFactor: 1,
@@ -267,7 +291,7 @@ class _AdminLearnerMailTopicsScreenState
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.red,
+                                color: Colors.grey.shade600,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(

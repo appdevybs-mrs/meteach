@@ -33,6 +33,7 @@ import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
 import 'shared/profile_avatar.dart';
 import 'shared/ybs_busy_logo.dart';
+import 'shared/icon_theme.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
 import 'package:video_player/video_player.dart';
@@ -694,7 +695,7 @@ class _CvnVerifyButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.shield_rounded, color: Brand.primaryBlue, size: 20),
+              Icon(MainIcons.shield, color: Brand.primaryBlue, size: 20),
               const SizedBox(width: 6),
               Text(
                 'CVN',
@@ -773,10 +774,7 @@ class _LevelTestCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Brand.uiBorder),
                 ),
-                child: const Icon(
-                  Icons.workspace_premium_rounded,
-                  color: Brand.actionOrange,
-                ),
+                child: const Icon(MainIcons.premium, color: Brand.actionOrange),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -802,7 +800,7 @@ class _LevelTestCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.open_in_new_rounded, color: Brand.primaryBlue),
+              const Icon(MainIcons.openInNew, color: Brand.primaryBlue),
             ],
           ),
         ),
@@ -1612,15 +1610,15 @@ class _JoinOnlineCircleEntryButtonState
                   alignment: WrapAlignment.center,
                   children: [
                     _PrettyChip(
-                      icon: Icons.schedule_rounded,
+                      icon: MainIcons.schedule,
                       label: _formatTimeOnly(circle.timeMs),
                     ),
                     _PrettyChip(
-                      icon: Icons.timer_outlined,
+                      icon: MainIcons.timer,
                       label: '${circle.durationMinutes} min',
                     ),
                     _PrettyChip(
-                      icon: Icons.info_outline_rounded,
+                      icon: MainIcons.info,
                       label: circle.status.isEmpty ? 'open' : circle.status,
                     ),
                   ],
@@ -1638,13 +1636,13 @@ class _JoinOnlineCircleEntryButtonState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _DetailRow(
-                        icon: Icons.calendar_today_rounded,
+                        icon: MainIcons.calendar,
                         label: 'Date & time',
                         value: _formatDateTime(circle.timeMs),
                       ),
                       const SizedBox(height: 10),
                       const _DetailRow(
-                        icon: Icons.access_time_filled_rounded,
+                        icon: MainIcons.accessTime,
                         label: 'Join rule',
                         value:
                             'Users can join from 5 minutes before start until the circle duration ends.',
@@ -1652,7 +1650,7 @@ class _JoinOnlineCircleEntryButtonState
                       if (circle.description.isNotEmpty) ...[
                         const SizedBox(height: 10),
                         _DetailRow(
-                          icon: Icons.notes_rounded,
+                          icon: MainIcons.notes,
                           label: 'Description',
                           value: circle.description,
                         ),

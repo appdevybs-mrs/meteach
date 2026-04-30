@@ -78,7 +78,7 @@ class MediaDownload {
         final d = Directory(p);
         if (await d.exists()) return d.path;
       }
-      if (Platform.isLinux || Platform.isMacOS) {
+      if (Platform.isLinux || Platform.isMacOS || Platform.isIOS) {
         final home = Platform.environment['HOME'] ?? '';
         if (home.isNotEmpty) {
           final d = Directory('$home/Downloads');
@@ -102,6 +102,31 @@ class MediaDownload {
     }
   }
 
+  static Future<(File file, bool isPublic)> _prepareAndroidOutput(
+    String fileName,
+  ) async {
+    final publicDir = Directory('/storage/emulated/0/Download');
+    if (await publicDir.exists()) {
+      try {
+        final testFile = File(
+          '${publicDir.path}/.ybs_test_${DateTime.now().millisecondsSinceEpoch}',
+        );
+        await testFile.writeAsBytes([0]);
+        await testFile.delete();
+        return (File('${publicDir.path}/$fileName'), true);
+      } catch (_) {
+        // Scoped storage or permission issue, fall back
+      }
+    }
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final downloadsDir = Directory('${appDir.path}/downloads');
+    if (!await downloadsDir.exists()) {
+      await downloadsDir.create(recursive: true);
+    }
+    return (File('${downloadsDir.path}/$fileName'), false);
+  }
+
   static Future<File> _prepareOutputFile(
     String cleanedUrl,
     String suggestedName, {
@@ -113,12 +138,8 @@ class MediaDownload {
     );
 
     if (Platform.isAndroid) {
-      final baseDir = await getApplicationDocumentsDirectory();
-      final targetDir = Directory('${baseDir.path}/downloads');
-      if (!await targetDir.exists()) {
-        await targetDir.create(recursive: true);
-      }
-      return File('${targetDir.path}/$fileName');
+      final (file, isPublic) = await _prepareAndroidOutput(fileName);
+      return file;
     }
 
     String? folder;
@@ -170,9 +191,14 @@ class MediaDownload {
     File file,
   ) async {
     final showOpen = !Platform.isAndroid;
-    final locationText = Platform.isAndroid
-        ? 'Saved to app storage.'
-        : 'Saved to ${file.path}';
+    final isPublicDownloads = file.path.startsWith(
+      '/storage/emulated/0/Download',
+    );
+    final locationText = isPublicDownloads
+        ? 'Saved to Downloads folder.'
+        : (Platform.isAndroid
+              ? 'Saved to app storage.'
+              : 'Saved to ${file.path}');
 
     await showModalBottomSheet<void>(
       context: context,
@@ -199,10 +225,49 @@ class MediaDownload {
                 const SizedBox(height: 16),
                 if (Platform.isAndroid)
                   Text(
-                    'Use Share to open this file in another app.',
+                    isPublicDownloads
+                        ? 'You can find this file in your Downloads.'
+                        : 'Use Share to send to another app.',
                     style: TextStyle(color: Colors.grey.shade700),
                   ),
                 if (Platform.isAndroid) const SizedBox(height: 12),
+                if (Platform.isAndroid && !isPublicDownloads)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        Navigator.of(sheetContext).pop();
+                        try {
+                          final publicDir = Directory(
+                            '/storage/emulated/0/Download',
+                          );
+                          if (await publicDir.exists()) {
+                            final targetFile = File(
+                              '${publicDir.path}/${file.uri.pathSegments.last}',
+                            );
+                            await file.copy(targetFile.path);
+                            if (context.mounted) {
+                              AppToast.fromSnackBar(
+                                context,
+                                const SnackBar(
+                                  content: Text('Saved to Downloads folder.'),
+                                ),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            AppToast.fromSnackBar(
+                              context,
+                              SnackBar(content: Text('Could not save: $e')),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('Save to Downloads'),
+                    ),
+                  ),
                 Row(
                   children: [
                     if (showOpen)
@@ -224,7 +289,7 @@ class MediaDownload {
                           Share.shareXFiles([XFile(file.path)]);
                         },
                         icon: const Icon(Icons.share_rounded),
-                        label: Text(showOpen ? 'Share' : 'Share / Open'),
+                        label: Text(showOpen ? 'Share' : 'Share'),
                       ),
                     ),
                   ],

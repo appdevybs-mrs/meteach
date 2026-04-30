@@ -620,7 +620,7 @@ enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
 enum _QuickLearnerReminder { payment, absence, empty }
 
-enum _QuickSmsTemplate { empty, welcome, paymentReminder, absence }
+enum _QuickSmsTemplate { empty, welcome, paymentReminder, absence, schedule }
 
 class _LearnersList extends StatefulWidget {
   const _LearnersList({
@@ -714,6 +714,11 @@ class _LearnersListState extends State<_LearnersList>
               title: const Text('Absence (We miss you)'),
               onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.absence),
             ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today_rounded),
+              title: const Text('Schedule'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.schedule),
+            ),
             const SizedBox(height: 10),
           ],
         ),
@@ -754,6 +759,19 @@ class _LearnersListState extends State<_LearnersList>
           'إذا احتجت أي مساعدة للمتابعة، نحن دائماً معك.',
         ].join('\n');
         break;
+
+      case _QuickSmsTemplate.schedule:
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator()),
+        );
+        final scheduleBody = await _buildScheduleMessage(learner);
+        if (mounted) Navigator.of(context).pop();
+        if (!mounted) return;
+        await _launchSms(phone: phone, body: scheduleBody);
+        return;
     }
 
     await _launchSms(phone: phone, body: body);
@@ -783,6 +801,86 @@ class _LearnersListState extends State<_LearnersList>
     } catch (_) {
       if (mounted) _toast('SMS app not available. Text is copied ✅');
     }
+  }
+
+  Future<String> _buildScheduleMessage(Learner learner) async {
+    final fullName = learner.fullName;
+    final coursesSnap = await _db.ref('users/${learner.uid}/courses').get();
+    final coursesRaw = coursesSnap.value;
+
+    final lines = <String>[];
+    lines.add('الطالب: $fullName');
+
+    if (coursesRaw is Map) {
+      final courseList = <Map<String, dynamic>>[];
+      coursesRaw.forEach((_, val) {
+        if (val is Map) {
+          courseList.add(
+            val
+                .map((k, v) => MapEntry(k.toString(), v))
+                .cast<String, dynamic>(),
+          );
+        }
+      });
+
+      for (final course in courseList) {
+        final variantKey = _normalizeVariantKey(
+          (course['variantKey'] ?? course['variant'] ?? 'inclass').toString(),
+        );
+
+        if (variantKey != 'inclass' && variantKey != 'private') continue;
+
+        final title = (course['title'] ?? '').toString().trim();
+        final classMap = course['class'];
+        if (classMap is! Map) continue;
+        final classId = (classMap['class_id'] ?? '').toString().trim();
+        if (classId.isEmpty) continue;
+
+        final schedSnap = await _db.ref('classes/$classId/schedule').get();
+        final schedRaw = schedSnap.value;
+        if (schedRaw is! Map) continue;
+
+        final sessionsRaw = schedRaw['sessions'];
+        final sessions = <Map<String, dynamic>>[];
+        if (sessionsRaw is List) {
+          for (final s in sessionsRaw) {
+            if (s is Map) {
+              sessions.add(
+                s
+                    .map((k, v) => MapEntry(k.toString(), v))
+                    .cast<String, dynamic>(),
+              );
+            }
+          }
+        }
+        if (sessions.isEmpty) continue;
+
+        final parts = sessions
+            .map((s) {
+              final day = (s['day'] ?? '').toString().trim();
+              final start = (s['start_time'] ?? '').toString().trim();
+              if (day.isEmpty && start.isEmpty) return '';
+              if (day.isEmpty) return start;
+              if (start.isEmpty) return day;
+              return '$day $start';
+            })
+            .where((e) => e.trim().isNotEmpty)
+            .toList();
+
+        if (parts.isEmpty) continue;
+
+        if (title.isNotEmpty) {
+          lines.add(title);
+        }
+        lines.add(parts.join(' • '));
+      }
+    }
+
+    if (lines.length <= 1) {
+      lines.add('لا يوجد جدول محدد حالياً.');
+    }
+
+    return lines.join('\n');
   }
 
   String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';

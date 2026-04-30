@@ -74,7 +74,7 @@ class _AuthGateState extends State<AuthGate> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               try {
                 final nav = appNavigatorKey.currentState;
-                if (nav != null && nav.mounted) {
+                if (nav != null) {
                   nav.popUntil((route) => route.isFirst);
                 }
               } catch (_) {

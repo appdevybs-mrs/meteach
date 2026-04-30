@@ -89,6 +89,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   final Map<String, Map<String, _RecordedSessionMeta>>
   _recordedSessionMetaCache = <String, Map<String, _RecordedSessionMeta>>{};
   final Set<String> _expandedClassIds = <String>{};
+
+  // ===== Pause cooldown timer & tracking =====
+  Timer? _pauseCooldownTimer;
+  final Set<String> _cooldownNotifiedClassIds = {};
+
   List<Map<String, String>> get _teachers {
     final list = _teachersByUid.values.toList();
     list.sort((a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""));
@@ -161,6 +166,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       if (!mounted) return;
       setState(() => _flexSearch = _flexSearchCtrl.text.trim().toLowerCase());
     });
+
+    // ===== Pause cooldown: check immediately, then daily =====
+    _checkPauseCooldowns();
+    _pauseCooldownTimer = Timer.periodic(const Duration(hours: 24), (_) {
+      _checkPauseCooldowns();
+    });
   }
 
   @override
@@ -168,6 +179,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _flexSearchCtrl.dispose();
+    _pauseCooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -1331,6 +1343,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           'updated_at': ServerValue.timestamp,
           'updated_by': FirebaseAuth.instance.currentUser?.uid ?? '',
         },
+        'pause_cooldown_notified': null,
+        'pause_cooldown_notified_at': null,
         'updated_at': ServerValue.timestamp,
       });
       _refreshClassesSnapshot();
@@ -1403,13 +1417,144 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       _notify(
         'Class paused from $fromYmd to $toYmd. Mail sent to $sentCount recipient(s).',
       );
-      return;
+    } else {
+      _notify(
+        'Class paused from $fromYmd to $toYmd. Mail sent to $sentCount/$totalRecipients recipient(s).',
+        error: true,
+      );
     }
 
-    _notify(
-      'Class paused from $fromYmd to $toYmd. Mail sent to $sentCount/$totalRecipients recipient(s).',
-      error: true,
-    );
+    // ===== Send push notifications to all recipients =====
+    for (final entry in recipientRoleByUid.entries) {
+      final uid = entry.key;
+      final role = entry.value;
+      try {
+        await PushDispatchService.dispatchToUser(
+          intent: PushIntent.reminder,
+          targetUid: uid,
+          title: 'Class Paused',
+          message: 'Class $effectiveTitle paused from $fromYmd to $toYmd.',
+          context: const PushDispatchContext(
+            screen: 'admin/admin_classes',
+            action: 'class_pause_push',
+          ),
+          eventParts: ['class_pause', classId, uid],
+          data: {'classId': classId, 'pauseFrom': fromYmd, 'pauseTo': toYmd},
+          route: role == 'teacher' ? 'teacher' : 'learner',
+        );
+      } catch (_) {}
+    }
+  }
+
+  // ===== Pause Cooldown: check paused classes near/at expiry =====
+
+  Future<void> _checkPauseCooldowns() async {
+    try {
+      final snap = await _classesRef.get();
+      if (!snap.exists || snap.value is! Map) return;
+      final classes = Map<dynamic, dynamic>.from(snap.value as Map);
+
+      final now = DateTime.now();
+
+      for (final entry in classes.entries) {
+        final classId = entry.key.toString().trim();
+        if (classId.isEmpty) continue;
+
+        final raw = entry.value;
+        if (raw is! Map) continue;
+        final cls = Map<String, dynamic>.from(raw);
+
+        final status = (cls['status'] ?? '').toString().trim().toLowerCase();
+        if (status != 'paused') continue;
+
+        final alreadyNotified = cls['pause_cooldown_notified'] == true;
+        if (alreadyNotified) continue;
+
+        final pauseWindow = cls['pause_window'];
+        if (pauseWindow is! Map) continue;
+
+        final toDateStr = (pauseWindow['to'] ?? '').toString().trim();
+        if (toDateStr.isEmpty) continue;
+
+        // Parse to-date and check if it's today or in the past
+        DateTime toDate;
+        try {
+          toDate = DateTime.parse(toDateStr);
+        } catch (_) {
+          continue;
+        }
+
+        final todayDate = DateTime(now.year, now.month, now.day);
+        final toDateTime = DateTime(toDate.year, toDate.month, toDate.day);
+
+        // Notify when pause period ends (toDate <= today)
+        if (toDateTime.isAfter(todayDate)) continue;
+
+        // Already notified in this session?
+        if (_cooldownNotifiedClassIds.contains(classId)) continue;
+
+        await _triggerPauseCooldown(classId, cls);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _triggerPauseCooldown(
+    String classId,
+    Map<String, dynamic> cls,
+  ) async {
+    _cooldownNotifiedClassIds.add(classId);
+
+    final courseTitle = (cls['course_title'] ?? '').toString().trim();
+    final effectiveTitle = courseTitle.isEmpty ? classId : courseTitle;
+    final pauseWindow = cls['pause_window'] is Map
+        ? (cls['pause_window'] as Map).map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final pauseTo = (pauseWindow['to'] ?? '').toString().trim();
+
+    // 1. Notify admin(s) via admin topic
+    try {
+      await PushDispatchService.dispatchAdminTopic(
+        intent: PushIntent.adminTodo,
+        title: 'Class Pause Ending',
+        message:
+            'Class $effectiveTitle (ID: $classId) pause period ended on $pauseTo. Review if class should be reactivated.',
+        context: const PushDispatchContext(
+          screen: 'admin/admin_classes',
+          action: 'pause_cooldown_admin_notify',
+        ),
+        eventParts: ['pause_cooldown', classId],
+        data: {'classId': classId, 'action': 'pause_ended'},
+        route: 'admin_classes',
+      );
+    } catch (_) {}
+
+    // 2. Email learners asking them to contact the school
+    final learners = _classLearnersList(cls);
+
+    for (final learner in learners) {
+      final uid = (learner['uid'] ?? '').toString().trim();
+      if (uid.isEmpty) continue;
+      final name = (learner['name'] ?? 'Learner').toString().trim();
+
+      try {
+        await _sendClassPauseMailToUser(
+          recipientUid: uid,
+          recipientName: name,
+          recipientRoleSeed: 'learner',
+          subject: 'Class Pause Ended - Contact Us',
+          body:
+              'Dear $name,\n\nThe pause period for class $effectiveTitle has ended.\n\nPlease contact Your Bridge School to resume your classes.\n\nThank you.',
+        );
+      } catch (_) {}
+    }
+
+    // 3. Mark as notified in DB to prevent repeats
+    try {
+      await _classesRef.child(classId).update({
+        'pause_cooldown_notified': true,
+        'pause_cooldown_notified_at': ServerValue.timestamp,
+      });
+    } catch (_) {}
   }
 
   Future<void> _setClassStatus(String classId, String status) async {

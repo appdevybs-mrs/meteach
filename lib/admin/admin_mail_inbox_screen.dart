@@ -19,7 +19,7 @@ class AdminMailInboxScreen extends StatefulWidget {
 }
 
 class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
-  static const Color _personNameColor = Color(0xFFE65100);
+  static const Color _personNameColor = Color(0xFF616161);
 
   final _db = FirebaseDatabase.instance;
   final _searchC = TextEditingController();
@@ -302,29 +302,32 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                       return Card(
                         child: ListTile(
                           title: Text(
-                            item.subject.isEmpty
-                                ? '(No subject)'
-                                : item.subject,
+                            '${item.peerName.isEmpty ? 'User' : item.peerName} • $roleLabel',
                             style: TextStyle(
-                              fontWeight: hasUnread
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
+                              color: _personNameColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              height: 1.2,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '${item.peerName.isEmpty ? 'User' : item.peerName} • $roleLabel',
+                                item.subject.isEmpty
+                                    ? '(No subject)'
+                                    : item.subject,
+                                style: TextStyle(
+                                  fontWeight: hasUnread
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  fontSize: 14,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: _personNameColor,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  height: 1.2,
-                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -362,7 +365,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.red,
+                                    color: Colors.grey.shade600,
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(

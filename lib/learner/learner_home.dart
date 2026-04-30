@@ -27,6 +27,7 @@ import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/icon_theme.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
@@ -325,40 +326,34 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
     await AppLoading.run(
       context,
       () async {
-        final uid = FirebaseAuth.instance.currentUser?.uid;
-
         await SessionManager.stopListening();
-
-        await FirebaseAuth.instance.signOut();
-
-        unawaited(() async {
-          if (uid != null && uid.isNotEmpty) {
-            try {
-              // intentionally empty (your original)
-            } catch (_) {}
-          }
-
-          try {
-            await FirebaseMessaging.instance.deleteToken();
-          } catch (_) {}
-
-          if (uid != null && uid.isNotEmpty) {
-            try {
-              await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
-            } catch (_) {}
-          }
-
-          try {
-            await appThemeController.resetToDefault();
-          } catch (_) {}
-        }());
       },
       message: 'Logging out...',
       isLogout: true,
     );
+
+    await FirebaseAuth.instance.signOut();
+
+    unawaited(() async {
+      try {
+        await FirebaseMessaging.instance.deleteToken();
+      } catch (_) {}
+
+      if (uid != null && uid.isNotEmpty) {
+        try {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+        } catch (_) {}
+      }
+
+      try {
+        await appThemeController.resetToDefault();
+      } catch (_) {}
+    }());
   }
 
   Future<String> _myDisplayName() async {
@@ -2233,7 +2228,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                     height: 52,
                     child: FilledButton.icon(
                       onPressed: () => _openJoinFabUrl(payload.meetUrl),
-                      icon: const Icon(Icons.video_call_rounded),
+                      icon: const Icon(LearnerIcons.joinNow),
                       label: const Text(
                         'Join Now',
                         style: TextStyle(fontWeight: FontWeight.w900),
@@ -2526,20 +2521,20 @@ class _ProgressCard extends StatelessWidget {
   IconData _variantIcon(String variantKey) {
     switch (variantKey) {
       case 'recorded':
-        return Icons.play_circle_fill_rounded;
+        return LearnerIcons.recordedCourse;
       case 'flexible':
       case 'online':
-        return Icons.wifi_rounded;
+        return LearnerIcons.flexibleCourse;
       case 'private':
       case 'live':
-        return Icons.person_rounded;
+        return LearnerIcons.privateCourse;
       case 'inclass':
       case 'in_class':
       case 'in-class':
       case 'in class':
-        return Icons.groups_rounded;
+        return LearnerIcons.inClassCourse;
       default:
-        return Icons.menu_book_rounded;
+        return LearnerIcons.defaultCourse;
     }
   }
 
@@ -3825,10 +3820,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                       color: Colors.white.withValues(alpha: 0.25),
                     ),
                   ),
-                  child: const Icon(
-                    Icons.calendar_month_rounded,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(LearnerIcons.booking, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -3999,7 +3991,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
               children: [
                 Row(
                   children: [
-                    Icon(Icons.upcoming_rounded, size: 18, color: p.accent),
+                    Icon(LearnerIcons.upcoming, size: 18, color: p.accent),
                     const SizedBox(width: 8),
                     Text(
                       'Upcoming reserved class',
@@ -4086,7 +4078,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
               Row(
                 children: [
                   Icon(
-                    canJoin ? Icons.video_call_rounded : Icons.upcoming_rounded,
+                    canJoin ? LearnerIcons.joinNow : LearnerIcons.upcoming,
                     size: 18,
                     color: canJoin ? statusColor : idleColor,
                   ),
@@ -4516,7 +4508,7 @@ Future<void> _showBookingRefillDialog(
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
-                Icons.account_balance_wallet_rounded,
+                LearnerIcons.creditsWallet,
                 color: Color(0xFFD32F2F),
               ),
             ),
@@ -4591,7 +4583,7 @@ Future<void> _showBookingRefillDialog(
                     await _openContactSchool(context, school);
                   }
                 : null,
-            icon: const Icon(Icons.call_rounded),
+            icon: const Icon(LearnerIcons.contactSchool),
             label: const Text('Contact School / تواصل مع المدرسة'),
           ),
         ],
@@ -5423,7 +5415,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                               ),
                             ),
                             child: Icon(
-                              Icons.assignment_rounded,
+                              LearnerIcons.homework,
                               color: p.primary,
                               size: iconSize,
                             ),
@@ -5566,7 +5558,7 @@ class _RemindersHomeCard extends StatelessWidget {
                             ),
                           ),
                           child: Icon(
-                            Icons.notifications_active_rounded,
+                            LearnerIcons.reminders,
                             color: p.primary,
                             size: iconSize,
                           ),
@@ -5707,7 +5699,7 @@ class _LearnerMailHomeCard extends StatelessWidget {
                             ),
                           ),
                           child: Icon(
-                            Icons.mail_rounded,
+                            LearnerIcons.mail,
                             color: p.primary,
                             size: iconSize,
                           ),
@@ -5821,7 +5813,7 @@ class _GalleryHomeCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: p.border.withValues(alpha: 0.85)),
               ),
-              child: Icon(Icons.photo_library_rounded, color: p.primary),
+              child: Icon(LearnerIcons.gallery, color: p.primary),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -5914,7 +5906,7 @@ class _StudyCoachHomeCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: p.border.withValues(alpha: 0.85)),
               ),
-              child: Icon(Icons.psychology_alt_rounded, color: p.primary),
+              child: Icon(LearnerIcons.studyCoach, color: p.primary),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -6014,61 +6006,61 @@ class _LearnerHomeWebRail extends StatelessWidget {
                 children: [
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.menu_book_rounded,
+                    icon: LearnerIcons.courses,
                     title: 'Courses',
                     onTap: onOpenCourses,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.event_available_rounded,
+                    icon: LearnerIcons.booking,
                     title: 'Booking',
                     onTap: onOpenBooking,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.mail_rounded,
+                    icon: LearnerIcons.mail,
                     title: 'Mail',
                     onTap: onOpenMail,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.notifications_active_rounded,
+                    icon: LearnerIcons.reminders,
                     title: 'Reminders',
                     onTap: onOpenReminders,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.assignment_rounded,
+                    icon: LearnerIcons.homework,
                     title: 'Homework (from Courses)',
                     onTap: onOpenHomework,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.photo_library_rounded,
+                    icon: LearnerIcons.gallery,
                     title: 'Gallery',
                     onTap: onOpenGallery,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.auto_stories_rounded,
+                    icon: LearnerIcons.stories,
                     title: 'Stories',
                     onTap: onOpenStories,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.games_rounded,
+                    icon: LearnerIcons.games,
                     title: 'Games',
                     onTap: onOpenGames,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.psychology_alt_rounded,
+                    icon: LearnerIcons.studyCoach,
                     title: 'Study Coach',
                     onTap: onOpenCoach,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.person_rounded,
+                    icon: LearnerIcons.profile,
                     title: 'Profile',
                     onTap: onOpenProfile,
                   ),
@@ -6078,7 +6070,7 @@ class _LearnerHomeWebRail extends StatelessWidget {
             const SizedBox(height: 8),
             _DrawerTile(
               palette: palette,
-              icon: Icons.logout_rounded,
+              icon: LearnerIcons.logout,
               title: 'Logout',
               onTap: onLogout,
             ),
@@ -6130,25 +6122,25 @@ class _LearnerHomeWebAside extends StatelessWidget {
             const SizedBox(height: 10),
             _DrawerTile(
               palette: palette,
-              icon: Icons.menu_book_rounded,
+              icon: LearnerIcons.courses,
               title: 'Open Courses',
               onTap: onOpenCourses,
             ),
             _DrawerTile(
               palette: palette,
-              icon: Icons.event_available_rounded,
+              icon: LearnerIcons.booking,
               title: 'Open Booking',
               onTap: onOpenBooking,
             ),
             _DrawerTile(
               palette: palette,
-              icon: Icons.mail_rounded,
+              icon: LearnerIcons.mail,
               title: 'Open Mail',
               onTap: onOpenMail,
             ),
             _DrawerTile(
               palette: palette,
-              icon: Icons.notifications_active_rounded,
+              icon: LearnerIcons.reminders,
               title: 'Open Reminders',
               onTap: onOpenReminders,
             ),
@@ -6318,7 +6310,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: coursesTileKey,
                     palette: palette,
-                    icon: Icons.menu_book_rounded,
+                    icon: LearnerIcons.courses,
                     title: 'My Courses',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6328,7 +6320,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: storiesTileKey,
                     palette: palette,
-                    icon: Icons.auto_stories_rounded,
+                    icon: LearnerIcons.stories,
                     title: 'Stories',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6338,7 +6330,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: galleryTileKey,
                     palette: palette,
-                    icon: Icons.photo_library_rounded,
+                    icon: LearnerIcons.gallery,
                     title: 'Gallery',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6348,7 +6340,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: gamesTileKey,
                     palette: palette,
-                    icon: Icons.sports_esports_rounded,
+                    icon: LearnerIcons.games,
                     title: 'Games',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6358,7 +6350,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: coachTileKey,
                     palette: palette,
-                    icon: Icons.psychology_alt_rounded,
+                    icon: LearnerIcons.studyCoach,
                     title: 'Study Coach',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6369,7 +6361,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: mailTileKey,
                     palette: palette,
-                    icon: Icons.mail_rounded,
+                    icon: LearnerIcons.mail,
                     title: 'Mail',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6380,7 +6372,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: profileTileKey,
                     palette: palette,
-                    icon: Icons.person_rounded,
+                    icon: LearnerIcons.profile,
                     title: 'Profile',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6390,7 +6382,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: regulationsTileKey,
                     palette: palette,
-                    icon: Icons.policy_rounded,
+                    icon: LearnerIcons.regulations,
                     title: 'Regulations',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6400,7 +6392,7 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: themeTileKey,
                     palette: palette,
-                    icon: Icons.palette_rounded,
+                    icon: LearnerIcons.theme,
                     title: 'Theme Settings',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -6426,7 +6418,7 @@ class _LearnerDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(18),
                     ),
                   ),
-                  icon: const Icon(Icons.logout_rounded),
+                  icon: const Icon(LearnerIcons.logout),
                   label: const Text(
                     'Logout',
                     style: TextStyle(fontWeight: FontWeight.w900),
