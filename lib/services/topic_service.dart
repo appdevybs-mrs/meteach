@@ -1,4 +1,5 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TopicService {
@@ -123,6 +124,27 @@ class TopicService {
     for (final topic in allToRemove) {
       await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
     }
+
+    try {
+      final token = (await FirebaseMessaging.instance.getToken() ?? '').trim();
+      if (token.isNotEmpty) {
+        final ref = FirebaseDatabase.instance.ref('fcm_tokens_v2/$safeUid');
+        final snap = await ref.get();
+        final raw = snap.value;
+        if (raw is Map) {
+          final entries = raw.entries.toList();
+          for (final e in entries) {
+            final key = e.key.toString().trim();
+            if (key.isEmpty || e.value is! Map) continue;
+            final m = (e.value as Map).map((k, v) => MapEntry(k.toString(), v));
+            final rowToken = (m['token'] ?? '').toString().trim();
+            if (rowToken == token) {
+              await ref.child(key).remove();
+            }
+          }
+        }
+      }
+    } catch (_) {}
 
     await prefs.remove(prefKey);
   }

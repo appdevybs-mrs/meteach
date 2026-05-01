@@ -322,6 +322,13 @@ class FCMService {
     if (kIsWeb) return;
 
     final data = Map<String, dynamic>.from(message.data);
+    final payloadTargetUid = (data['targetUid'] ?? '').toString().trim();
+    final currentUid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+    if (payloadTargetUid.isNotEmpty &&
+        currentUid.isNotEmpty &&
+        payloadTargetUid != currentUid) {
+      return;
+    }
     final type = _canonicalType(data['type']);
     if (type.isNotEmpty) {
       data['type'] = type;

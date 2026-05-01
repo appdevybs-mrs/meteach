@@ -17,7 +17,6 @@ import '../shared/ybs_busy_logo.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
-import '../services/push_dispatch_service.dart';
 import '../services/reminder_consistency_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
@@ -1277,37 +1276,13 @@ class _LearnersListState extends State<_LearnersList>
       return;
     }
 
-    await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
-
     try {
-      await PushDispatchService.dispatchToUser(
-        intent: PushIntent.reminder,
-        targetUid: uid,
-        title: title,
-        message: message,
-        context: const PushDispatchContext(
-          screen: 'admin/admin_learners',
-          action: 'learner_reminder_push',
-        ),
-        eventParts: ['learner', uid, reminderRef.key ?? ''],
-        data: {
-          'learnerUid': uid,
-          'kind': type.name,
-          'reminderId': reminderRef.key,
-        },
-        route: 'learner',
-      );
-
-      await reminderRef.update({
-        'status': 'new',
-        'push/sentAt': ServerValue.timestamp,
-        'push/error': null,
-      });
+      await reminderRef.update({'status': 'new'});
 
       await AuditLogService.logSuccess(
         actionKey: AuditActionKeys.adminReminderSend,
         domain: AuditDomain.admin,
-        summary: 'Admin sent ${type.name} reminder to ${learner.fullName}',
+        summary: 'Admin saved ${type.name} reminder for ${learner.fullName}',
         actor: AuditActor(uid: admin?.uid, role: 'admin', name: admin?.email),
         target: AuditTarget(type: 'learner', uid: uid, name: learner.fullName),
         keywords: [uid, type.name, reminderRef.key ?? ''],
@@ -1315,14 +1290,12 @@ class _LearnersListState extends State<_LearnersList>
       );
 
       if (!mounted) return;
-      _toast('$title sent ✅');
+      _toast('$title saved ✅');
     } catch (e) {
-      await reminderRef.update({'status': 'new', 'push/error': e.toString()});
-
       await AuditLogService.logFailure(
         actionKey: AuditActionKeys.adminReminderSend,
         domain: AuditDomain.admin,
-        summary: 'Admin reminder push failed for ${learner.fullName}',
+        summary: 'Admin reminder save finalize failed for ${learner.fullName}',
         actor: AuditActor(uid: admin?.uid, role: 'admin', name: admin?.email),
         target: AuditTarget(type: 'learner', uid: uid, name: learner.fullName),
         keywords: [uid, type.name, reminderRef.key ?? ''],
@@ -1331,7 +1304,7 @@ class _LearnersListState extends State<_LearnersList>
       );
 
       if (!mounted) return;
-      _toast('Reminder saved but push failed');
+      _toast('Reminder saved, but final status update failed');
     }
   }
 

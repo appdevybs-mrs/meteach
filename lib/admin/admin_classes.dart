@@ -254,40 +254,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       return;
     }
 
-    await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
-
     try {
-      await PushDispatchService.dispatchToUser(
-        intent: PushIntent.reminder,
-        targetUid: uid,
-        title: title,
-        message: message,
-        context: const PushDispatchContext(
-          screen: 'admin/admin_classes',
-          action: 'learner_reminder_push',
-        ),
-        eventParts: ['learner', uid, reminderRef.key ?? ''],
-        data: {
-          'learnerUid': uid,
-          'kind': type.name,
-          'reminderId': reminderRef.key,
-        },
-        route: 'learner',
-      );
-
-      await reminderRef.update({
-        'status': 'new',
-        'push/sentAt': ServerValue.timestamp,
-        'push/error': null,
-      });
+      await reminderRef.update({'status': 'new'});
 
       if (!mounted) return;
-      _notify('$title sent ✅');
+      _notify('$title saved ✅');
     } catch (e) {
-      await reminderRef.update({'status': 'new', 'push/error': e.toString()});
-
       if (!mounted) return;
-      _notify('Reminder saved but push failed', error: true);
+      _notify('Reminder saved, but final status update failed', error: true);
     }
   }
 

@@ -223,7 +223,7 @@ class PushDispatchService {
         eventId: eventId,
         title: title,
         message: message,
-        data: payload,
+        data: {...payload, 'targetUid': safeUid},
       );
       return PushDispatchResult(
         sent: true,
