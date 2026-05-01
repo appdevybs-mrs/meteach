@@ -70,6 +70,7 @@ class AppWindowKeys {
   static const adminContract = 'contract';
   static const adminSettings = 'settings';
   static const adminJobApplications = 'job_applications';
+  static const adminDiary = 'diary';
 }
 
 class AppWindowDefinition {
@@ -558,6 +559,14 @@ class WindowAccessService {
       key: AppWindowKeys.adminJobApplications,
       labelEn: 'Job Applications',
       labelAr: 'طلبات التوظيف',
+      tab: 'Operations',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminDiary,
+      labelEn: 'Diary',
+      labelAr: 'اليومية',
       tab: 'Operations',
       canClose: true,
     ),

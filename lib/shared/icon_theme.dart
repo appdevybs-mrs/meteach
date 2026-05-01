@@ -106,6 +106,7 @@ class AdminIcons {
   static const windowAccess = FontAwesomeIcons.lockOpen;
   static const jobApplications = FontAwesomeIcons.briefcase;
   static const adminTodo = Icons.task_alt_rounded;
+  static const diary = FontAwesomeIcons.bookOpen;
 
   static const navLearners = Icons.people_alt_rounded;
   static const navPayments = FontAwesomeIcons.coins;

@@ -48,6 +48,7 @@ import 'admin_window_access_screen.dart';
 import 'admin_finance_screen.dart';
 import '../services/window_access_service.dart';
 import 'admin_payment_summary_sync_service.dart';
+import 'admin_diary_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -734,6 +735,25 @@ class _AdminHomeState extends State<AdminHome> {
         'Hiring pipeline',
         windowKey: AppWindowKeys.adminJobApplications,
         child: _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
+      ),
+      card(
+        'Diary',
+        'Shared daily office log',
+        windowKey: AppWindowKeys.adminDiary,
+        child: _DashCard(
+          title: 'Diary',
+          subtitle: 'Shared daily office log',
+          tags: const ['Shared', 'Follow-up'],
+          icon: AdminIcons.diary,
+          color: AdminHome.accentRose,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminDiary,
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminDiaryScreen())),
+          ),
+        ),
       ),
     ];
 
@@ -3631,6 +3651,8 @@ class _DashCard extends StatelessWidget {
         return 'Activity';
       case 'Shared Files':
         return 'Shared';
+      case 'Diary':
+        return 'Diary';
       default:
         return value;
     }
