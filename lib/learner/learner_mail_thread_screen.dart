@@ -2031,90 +2031,145 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
     final receiptLabel = mine ? _receiptLabel(m) : '';
 
+    final menu = PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 130),
+      tooltip: 'Message actions',
+      icon: Icon(
+        Icons.more_horiz_rounded,
+        size: 18,
+        color: _navy.withValues(alpha: 0.50),
+      ),
+      onSelected: (v) async {
+        if (v == 'react') _openReactionsPicker(m);
+        if (v == 'delete_for_me') await _deleteMessageForMe(m);
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'react', child: Text('React')),
+        PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+      ],
+    );
+
     return Padding(
-      padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
+      padding: EdgeInsets.only(top: 2, left: mine ? 0 : 2, right: mine ? 2 : 0),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    sender,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _fmtTime(m.createdAtMs),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    fontStyle: FontStyle.italic,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                if (receiptLevel > 0) ...[
-                  const SizedBox(width: 6),
-                  Icon(
-                    receiptLevel == 2
-                        ? Icons.done_all_rounded
-                        : Icons.done_rounded,
-                    size: 15,
-                    color: receiptLevel == 2
-                        ? scheme.primary
-                        : scheme.onSurfaceVariant,
-                  ),
-                  if (receiptLabel.isNotEmpty) ...[
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        receiptLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: receiptLevel == 2
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ],
+          if (!mine) menu,
+          Text(
+            sender,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: scheme.onSurface,
             ),
           ),
-          const SizedBox(width: 2),
-          PopupMenuButton<String>(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 130),
-            tooltip: 'Message actions',
-            icon: Icon(
-              Icons.more_horiz_rounded,
-              size: 18,
-              color: _navy.withValues(alpha: 0.50),
+          const SizedBox(width: 6),
+          Text(
+            _fmtTime(m.createdAtMs),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              fontStyle: FontStyle.italic,
+              color: scheme.onSurfaceVariant,
             ),
-            onSelected: (v) async {
-              if (v == 'react') _openReactionsPicker(m);
-              if (v == 'delete_for_me') await _deleteMessageForMe(m);
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'react', child: Text('React')),
-              PopupMenuItem(
-                value: 'delete_for_me',
-                child: Text('Delete (for me)'),
+          ),
+          const SizedBox(width: 6),
+          _buildReadByAvatars(m, mine: mine),
+          if (receiptLevel > 0) ...[
+            const SizedBox(width: 6),
+            Icon(
+              receiptLevel == 2 ? Icons.done_all_rounded : Icons.done_rounded,
+              size: 15,
+              color: receiptLevel == 2
+                  ? scheme.primary
+                  : scheme.onSurfaceVariant,
+            ),
+          ],
+          if (receiptLabel.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Text(
+              receiptLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: receiptLevel == 2
+                    ? scheme.primary
+                    : scheme.onSurfaceVariant,
               ),
-            ],
-          ),
+            ),
+          ],
+          if (mine) menu,
         ],
+      ),
+    );
+  }
+
+  String _initialForUid(String uid) {
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return '?';
+    if (cleanUid == widget.peerUid.trim()) {
+      final p = _peerNameShown.trim();
+      if (p.isNotEmpty) return p[0].toUpperCase();
+    }
+    if (cleanUid == _meUid.trim()) {
+      final me = _meDisplayName.trim();
+      if (me.isNotEmpty) return me[0].toUpperCase();
+    }
+    return cleanUid[0].toUpperCase();
+  }
+
+  Widget _buildReadByAvatars(_MailMsg m, {required bool mine}) {
+    if (!mine) return const SizedBox.shrink();
+    final readers = m.readBy.keys.where((uid) => uid.trim() != _meUid).toList();
+    if (readers.isEmpty) return const SizedBox.shrink();
+    final visible = readers.take(3).toList();
+    return SizedBox(
+      height: 16,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final uid in visible)
+            Transform.translate(
+              offset: const Offset(-2, 0),
+              child: CircleAvatar(
+                radius: 7,
+                backgroundColor: Colors.teal.shade200,
+                child: Text(
+                  _initialForUid(uid),
+                  style: const TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ),
+          if (readers.length > 3)
+            Text(
+              '+${readers.length - 3}',
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSenderAvatar({required bool mine}) {
+    final label = mine ? _meDisplayName : _peerNameShown;
+    final text = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
+    return CircleAvatar(
+      radius: 12,
+      backgroundColor: mine
+          ? _navy.withValues(alpha: 0.18)
+          : _orange.withValues(alpha: 0.28),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -2492,38 +2547,53 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                   onTap: _selectionMode
                                       ? () => _toggleMessageSelection(m)
                                       : null,
-                                  child: Column(
+                                  child: Row(
                                     mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: mine
-                                        ? CrossAxisAlignment.end
-                                        : CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
+                                      if (!mine) ...[
+                                        _buildSenderAvatar(mine: false),
+                                        const SizedBox(width: 6),
+                                      ],
+                                      Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: mine
+                                            ? CrossAxisAlignment.end
+                                            : CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              border:
+                                                  _selectedMessageIds.contains(
+                                                    m.id,
+                                                  )
+                                                  ? Border.all(
+                                                      color: _orange,
+                                                      width: 1.5,
+                                                    )
+                                                  : null,
+                                            ),
+                                            child: ConstrainedBox(
+                                              constraints: BoxConstraints(
+                                                maxWidth: _messageMaxWidth(m),
+                                              ),
+                                              child: _buildMessageBubble(
+                                                m,
+                                                mine: mine,
+                                              ),
+                                            ),
                                           ),
-                                          border:
-                                              _selectedMessageIds.contains(m.id)
-                                              ? Border.all(
-                                                  color: _orange,
-                                                  width: 1.5,
-                                                )
-                                              : null,
-                                        ),
-                                        child: ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxWidth: _messageMaxWidth(m),
-                                          ),
-                                          child: _buildMessageBubble(
-                                            m,
-                                            mine: mine,
-                                          ),
-                                        ),
+                                          if (m.reactions.isNotEmpty)
+                                            _buildReactionsRow(m, mine: mine),
+                                          _buildMessageMeta(m, mine: mine),
+                                        ],
                                       ),
-                                      if (m.reactions.isNotEmpty)
-                                        _buildReactionsRow(m, mine: mine),
-                                      _buildMessageMeta(m, mine: mine),
+                                      if (mine) ...[
+                                        const SizedBox(width: 6),
+                                        _buildSenderAvatar(mine: true),
+                                      ],
                                     ],
                                   ),
                                 ),

@@ -644,7 +644,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               title: const Text('Open topic'),
               onTap: () => Navigator.pop(context, 'open'),
             ),
-            if (row.isHomework)
+            if (row.isHomework && !row.isGroup)
               ListTile(
                 leading: const Icon(Icons.rate_review_rounded),
                 title: const Text('Review homework'),

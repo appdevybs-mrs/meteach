@@ -295,30 +295,39 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       return;
     }
     final groupName = (t['groupName'] ?? _subject).toString();
+    final creatorUid = (t['createdByUid'] ?? '').toString().trim();
     final participants = await InternalMailService.loadThreadParticipants(
       widget.threadId,
     );
     final usersSnap = await _db.ref('users').get();
     final usersRaw = usersSnap.value;
     final users = <Map<String, String>>[];
+    String resolveDisplayName(Map<dynamic, dynamic> m, String uid) {
+      final mm = m.map((k, v) => MapEntry(k.toString(), v));
+      final fn = (mm['first_name'] ?? mm['firstName'] ?? '').toString().trim();
+      final ln = (mm['last_name'] ?? mm['lastName'] ?? '').toString().trim();
+      final fullName = (mm['fullName'] ?? mm['name'] ?? '').toString().trim();
+      final email = (mm['email'] ?? '').toString().trim();
+      final full = ('$fn $ln').trim();
+      if (full.isNotEmpty) return full;
+      if (fullName.isNotEmpty) return fullName;
+      if (email.isNotEmpty) return email;
+      return uid;
+    }
+
     if (usersRaw is Map) {
       usersRaw.forEach((uid, vv) {
         if (uid == null || vv is! Map) return;
         final id = uid.toString().trim();
         if (id.isEmpty || id == _meUid) return;
         final m = vv.map((k, v) => MapEntry(k.toString(), v));
-        final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-        final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
-        final email = (m['email'] ?? '').toString().trim();
-        final name = ('$fn $ln').trim();
-        users.add({
-          'uid': id,
-          'name': name.isEmpty ? (email.isEmpty ? id : email) : name,
-        });
+        final name = resolveDisplayName(m, id);
+        users.add({'uid': id, 'name': name});
       });
     }
     final selected = <String>{};
     var working = false;
+    var addQuery = '';
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -347,15 +356,52 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: participants.map((uid) {
+                      final isCreator =
+                          creatorUid.isNotEmpty && creatorUid == uid;
                       final u = users.firstWhere(
                         (e) => e['uid'] == uid,
                         orElse: () => {'uid': uid, 'name': uid},
                       );
                       return InputChip(
-                        label: Text(u['name'] ?? uid),
+                        avatar: isCreator
+                            ? const Icon(Icons.shield_rounded, size: 16)
+                            : null,
+                        label: Text(
+                          isCreator
+                              ? '${u['name'] ?? uid} (Creator)'
+                              : (u['name'] ?? uid),
+                        ),
                         onDeleted: working
                             ? null
                             : () async {
+                                if (isCreator) {
+                                  _snack('Group creator cannot be removed.');
+                                  return;
+                                }
+                                final shouldRemove =
+                                    await showDialog<bool>(
+                                      context: ctx,
+                                      builder: (dialogCtx) => AlertDialog(
+                                        title: const Text('Remove member?'),
+                                        content: Text(
+                                          'Remove ${u['name'] ?? uid} from this group?',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dialogCtx, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dialogCtx, true),
+                                            child: const Text('Remove'),
+                                          ),
+                                        ],
+                                      ),
+                                    ) ??
+                                    false;
+                                if (!shouldRemove) return;
                                 setLocal(() => working = true);
                                 try {
                                   await InternalMailService.removeGroupMember(
@@ -379,12 +425,35 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                     'Add members',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    onChanged: (v) =>
+                        setLocal(() => addQuery = v.trim().toLowerCase()),
+                    decoration: const InputDecoration(
+                      hintText: 'Search by member name',
+                      prefixIcon: Icon(Icons.search_rounded, size: 20),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 220),
                     child: ListView(
                       shrinkWrap: true,
                       children: users
-                          .where((u) => !participants.contains(u['uid']))
+                          .where((u) {
+                            if (participants.contains(u['uid'])) return false;
+                            if (addQuery.isEmpty) return true;
+                            final name = (u['name'] ?? '')
+                                .toString()
+                                .toLowerCase();
+                            final uid = (u['uid'] ?? '')
+                                .toString()
+                                .toLowerCase();
+                            return name.contains(addQuery) ||
+                                uid.contains(addQuery);
+                          })
                           .map((u) {
                             final uid = u['uid'] ?? '';
                             return CheckboxListTile(
@@ -453,6 +522,45 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         'unreadCount': 0,
       });
     } catch (_) {}
+  }
+
+  Future<void> _deleteGroupForEveryone() async {
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete group for everyone?'),
+            content: const Text(
+              'All members will be removed and this group chat will be archived for everyone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete group'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    try {
+      await InternalMailService.archiveGroupThreadForEveryone(
+        threadId: widget.threadId,
+        actorUid: _meUid,
+        actorRole: 'admin',
+      );
+      if (!mounted) return;
+      _snack('Group deleted and archived.');
+      Navigator.of(context).pop();
+    } catch (e) {
+      _snack('Failed to delete group: $e');
+    }
   }
 
   int _asInt(dynamic value) {
@@ -551,6 +659,54 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       return 'Delivered ${_fmtReceiptAt(_peerLastDeliveredAtMs)}';
     }
     return '';
+  }
+
+  String _initialForUid(String uid) {
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return '?';
+    if (cleanUid == _meUid) return 'A';
+    final peer = widget.peerName.trim();
+    if (peer.isNotEmpty) return peer[0].toUpperCase();
+    return cleanUid[0].toUpperCase();
+  }
+
+  Widget _buildReadByAvatars(_MailMsg m, {required bool mine}) {
+    if (!mine) return const SizedBox.shrink();
+    final readers = m.readBy.keys.where((uid) => uid.trim() != _meUid).toList();
+    if (readers.isEmpty) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: readers.take(3).map((uid) {
+        return Padding(
+          padding: const EdgeInsets.only(right: 2),
+          child: CircleAvatar(
+            radius: 7,
+            backgroundColor: Colors.teal.shade200,
+            child: Text(
+              _initialForUid(uid),
+              style: const TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w800,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSenderAvatar({required bool mine}) {
+    final label = mine ? 'Me' : widget.peerName;
+    final text = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
+    return CircleAvatar(
+      radius: 12,
+      backgroundColor: mine ? const Color(0xFFBBDEFB) : const Color(0xFFFFE0B2),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+      ),
+    );
   }
 
   List<_MailMsg> _parseMessages(dynamic data) {
@@ -1231,11 +1387,18 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
             onSelected: (v) async {
               if (v == 'delete_topic') await _deleteThreadForMe();
               if (v == 'manage_members') await _openManageGroupMembers();
+              if (v == 'delete_group_everyone') {
+                await _deleteGroupForEveryone();
+              }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(
                 value: 'manage_members',
                 child: Text('Manage members'),
+              ),
+              PopupMenuItem(
+                value: 'delete_group_everyone',
+                child: Text('Delete group (everyone)'),
               ),
               PopupMenuItem(
                 value: 'delete_topic',
@@ -1283,106 +1446,88 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                             alignment: mine
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: _messageMaxWidth(),
-                              ),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: _selectedMessageIds.contains(m.id)
-                                      ? Border.all(
-                                          color: Colors.orange,
-                                          width: 1.5,
-                                        )
-                                      : null,
-                                ),
-                                child: Container(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    10,
-                                    12,
-                                    10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: mine
-                                        ? const Color(0xFFE3F2FD)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.08,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (!mine) ...[
+                                  _buildSenderAvatar(mine: false),
+                                  const SizedBox(width: 6),
+                                ],
+                                Column(
+                                  crossAxisAlignment: mine
+                                      ? CrossAxisAlignment.end
+                                      : CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: _messageMaxWidth(),
                                       ),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Flexible(
-                                            child: Wrap(
-                                              spacing: 8,
-                                              runSpacing: 4,
-                                              crossAxisAlignment:
-                                                  WrapCrossAlignment.center,
-                                              children: [
-                                                Text(
-                                                  mine ? 'Me' : widget.peerName,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    color: _personNameColor,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  _fmt(m.createdAtMs),
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontStyle: FontStyle.italic,
-                                                    color:
-                                                        scheme.onSurfaceVariant,
-                                                  ),
-                                                ),
-                                                if (receiptLevel > 0)
-                                                  Icon(
-                                                    receiptLevel == 2
-                                                        ? Icons.done_all_rounded
-                                                        : Icons.done_rounded,
-                                                    size: 15,
-                                                    color: receiptLevel == 2
-                                                        ? scheme.primary
-                                                        : scheme
-                                                              .onSurfaceVariant,
-                                                  ),
-                                                if (receiptLabel.isNotEmpty)
-                                                  Text(
-                                                    receiptLabel,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 10.5,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: receiptLevel == 2
-                                                          ? scheme.primary
-                                                          : scheme
-                                                                .onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                              ],
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                          border:
+                                              _selectedMessageIds.contains(m.id)
+                                              ? Border.all(
+                                                  color: Colors.orange,
+                                                  width: 1.5,
+                                                )
+                                              : null,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            12,
+                                            10,
+                                            12,
+                                            10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: mine
+                                                ? const Color(0xFFE3F2FD)
+                                                : Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.08,
+                                              ),
                                             ),
                                           ),
-                                          if (!_selectionMode) ...[
-                                            const SizedBox(width: 2),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              if (m.body.trim().isNotEmpty) ...[
+                                                const SizedBox(height: 6),
+                                                SelectableText(m.body),
+                                              ],
+                                              if (m.attachments.isNotEmpty) ...[
+                                                const SizedBox(height: 8),
+                                                ...m.attachments.map(
+                                                  (a) => _buildAttachmentWidget(
+                                                    a: a,
+                                                    mine: mine,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: _messageMaxWidth(),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (!mine && !_selectionMode)
                                             PopupMenuButton<String>(
                                               tooltip: 'Message actions',
                                               onSelected: (v) async {
@@ -1399,26 +1544,85 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                 ),
                                               ],
                                             ),
+                                          Flexible(
+                                            child: Text(
+                                              mine ? 'Me' : widget.peerName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                color: _personNameColor,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            _fmt(m.createdAtMs),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontStyle: FontStyle.italic,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          _buildReadByAvatars(m, mine: mine),
+                                          if (receiptLevel > 0) ...[
+                                            const SizedBox(width: 6),
+                                            Icon(
+                                              receiptLevel == 2
+                                                  ? Icons.done_all_rounded
+                                                  : Icons.done_rounded,
+                                              size: 15,
+                                              color: receiptLevel == 2
+                                                  ? scheme.primary
+                                                  : scheme.onSurfaceVariant,
+                                            ),
                                           ],
+                                          if (receiptLabel.isNotEmpty) ...[
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                receiptLabel,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: receiptLevel == 2
+                                                      ? scheme.primary
+                                                      : scheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                          if (mine && !_selectionMode)
+                                            PopupMenuButton<String>(
+                                              tooltip: 'Message actions',
+                                              onSelected: (v) async {
+                                                if (v == 'delete_for_me') {
+                                                  await _deleteMessageForMe(m);
+                                                }
+                                              },
+                                              itemBuilder: (_) => const [
+                                                PopupMenuItem(
+                                                  value: 'delete_for_me',
+                                                  child: Text(
+                                                    'Delete (for me)',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                         ],
                                       ),
-                                      if (m.body.trim().isNotEmpty) ...[
-                                        const SizedBox(height: 6),
-                                        SelectableText(m.body),
-                                      ],
-                                      if (m.attachments.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        ...m.attachments.map(
-                                          (a) => _buildAttachmentWidget(
-                                            a: a,
-                                            mine: mine,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ),
+                                if (mine) ...[
+                                  const SizedBox(width: 6),
+                                  _buildSenderAvatar(mine: true),
+                                ],
+                              ],
                             ),
                           ),
                         );

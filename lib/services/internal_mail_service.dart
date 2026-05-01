@@ -222,6 +222,21 @@ class InternalMailService {
     if (safeThreadId.isEmpty || safeMemberUid.isEmpty) {
       throw Exception('Missing thread or member.');
     }
+    final threadSnap = await _db.ref('mail_threads/$safeThreadId').get();
+    if (!threadSnap.exists || threadSnap.value is! Map) {
+      throw Exception('Thread not found.');
+    }
+    final thread = (threadSnap.value as Map).map(
+      (k, v) => MapEntry(k.toString(), v),
+    );
+    if (thread['isGroup'] != true) {
+      throw Exception('Not a group thread.');
+    }
+    final creatorUid = (thread['createdByUid'] ?? '').toString().trim();
+    if (creatorUid.isNotEmpty && creatorUid == safeMemberUid) {
+      throw Exception('Group creator cannot be removed.');
+    }
+
     final existing = await loadThreadParticipants(safeThreadId);
     if (!existing.contains(safeMemberUid)) return;
     final updates = <String, dynamic>{
@@ -242,6 +257,51 @@ class InternalMailService {
       }
       await _db.ref().update(fix);
     }
+  }
+
+  static Future<void> archiveGroupThreadForEveryone({
+    required String threadId,
+    required String actorUid,
+    required String actorRole,
+  }) async {
+    final safeThreadId = threadId.trim();
+    final safeActorUid = actorUid.trim();
+    final normalizedRole = MailConsistencyService.normalizeRole(actorRole);
+    if (safeThreadId.isEmpty || safeActorUid.isEmpty) {
+      throw Exception('Missing thread or actor uid.');
+    }
+    if (normalizedRole != 'admin') {
+      throw Exception('Only admin can archive/delete a group.');
+    }
+
+    final threadSnap = await _db.ref('mail_threads/$safeThreadId').get();
+    if (!threadSnap.exists || threadSnap.value is! Map) {
+      throw Exception('Thread not found.');
+    }
+    final thread = (threadSnap.value as Map).map(
+      (k, v) => MapEntry(k.toString(), v),
+    );
+    if (thread['isGroup'] != true) {
+      throw Exception('Not a group thread.');
+    }
+
+    final participants = await loadThreadParticipants(safeThreadId);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final updates = <String, dynamic>{
+      'mail_threads/$safeThreadId/archivedAt': now,
+      'mail_threads/$safeThreadId/archivedByUid': safeActorUid,
+      'mail_threads/$safeThreadId/archivedReason': 'group_deleted_by_admin',
+      'mail_threads/$safeThreadId/isDeleted': true,
+      'mail_threads/$safeThreadId/updatedAt': now,
+    };
+
+    for (final uid in participants) {
+      updates['mail_threads/$safeThreadId/participants/$uid'] = null;
+      updates['mail_index/$uid/$safeThreadId'] = null;
+      updates['mail_state/$uid/$safeThreadId'] = null;
+    }
+
+    await _db.ref().update(updates);
   }
 
   static Future<String> ensureOneToOneThread({

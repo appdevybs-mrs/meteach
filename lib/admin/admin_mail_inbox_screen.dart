@@ -38,6 +38,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
   bool _didInitialRepair = false;
   bool _groupBackfillRunning = false;
   _AdminMailFilter _filter = _AdminMailFilter.all;
+  _AdminInboxTab _tab = _AdminInboxTab.mail;
   final Map<String, String> _peerRoleCache = <String, String>{};
 
   @override
@@ -442,6 +443,8 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
     return rows.where((row) {
       final r = row.item;
+      final matchesTab = _tab == _AdminInboxTab.groups ? r.isGroup : !r.isGroup;
+      if (!matchesTab) return false;
       final cachedRole = _peerRoleCache[r.peerUid] ?? r.peerRole;
       final role = MailConsistencyService.normalizeRole(cachedRole);
       final isUnread = r.unreadCount > 0;
@@ -464,6 +467,20 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
       return matchesFilter && matchesSearch;
     }).toList();
+  }
+
+  Widget _buildTabButton({
+    required _AdminInboxTab value,
+    required String label,
+    required IconData icon,
+  }) {
+    final selected = _tab == value;
+    return ChoiceChip(
+      selected: selected,
+      avatar: Icon(icon, size: 16),
+      label: Text(label),
+      onSelected: (_) => setState(() => _tab = value),
+    );
   }
 
   Future<void> _openThread(_InboxRow row) async {
@@ -591,6 +608,18 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
+                  _buildTabButton(
+                    value: _AdminInboxTab.mail,
+                    label: 'Mail',
+                    icon: Icons.mail_outline_rounded,
+                  ),
+                  const SizedBox(width: 8),
+                  _buildTabButton(
+                    value: _AdminInboxTab.groups,
+                    label: 'Groups',
+                    icon: Icons.groups_rounded,
+                  ),
+                  const SizedBox(width: 14),
                   _filterChip(_AdminMailFilter.all, 'All'),
                   const SizedBox(width: 8),
                   _filterChip(_AdminMailFilter.learners, 'Learners'),
@@ -642,6 +671,23 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
                       return Card(
                         child: ListTile(
+                          leading: isGroup
+                              ? CircleAvatar(
+                                  backgroundColor: Colors.indigo.withValues(
+                                    alpha: 0.10,
+                                  ),
+                                  foregroundImage:
+                                      item.groupPicUrl.trim().isNotEmpty
+                                      ? NetworkImage(item.groupPicUrl.trim())
+                                      : null,
+                                  child: item.groupPicUrl.trim().isNotEmpty
+                                      ? null
+                                      : const Icon(
+                                          Icons.groups_rounded,
+                                          color: Colors.indigo,
+                                        ),
+                                )
+                              : null,
                           title: Text(
                             isGroup
                                 ? (item.groupName.isEmpty
@@ -770,6 +816,8 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 }
 
 enum _AdminMailFilter { all, learners, staffTeachers, unread }
+
+enum _AdminInboxTab { mail, groups }
 
 class _InboxRow {
   _InboxRow({required this.threadId, required this.item});
