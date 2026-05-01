@@ -98,6 +98,7 @@ class _AdminHomeState extends State<AdminHome> {
   bool _loadingReceptionistWindows = true;
   bool _showSearch = false;
   String _homeSearch = '';
+  int _learnerPaymentRefreshTick = 0;
   final TextEditingController _homeSearchController = TextEditingController();
   Map<String, bool> _receptionistWindowEnabled = const <String, bool>{};
 
@@ -165,7 +166,9 @@ class _AdminHomeState extends State<AdminHome> {
     if (!OfflineActionGuard.ensureOnline(context)) return;
     await _loadReceptionistWindowAccess();
     if (!mounted) return;
-    setState(() {});
+    setState(() {
+      _learnerPaymentRefreshTick++;
+    });
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
@@ -326,6 +329,7 @@ class _AdminHomeState extends State<AdminHome> {
         child: KeyedSubtree(
           key: _learnersCardKey,
           child: _LearnersDashCard(
+            refreshTick: _learnerPaymentRefreshTick,
             isReceptionistStyle: !_isAdminMode,
             onTap: () => _openAdminWindow(
               AppWindowKeys.adminLearners,
@@ -3062,14 +3066,32 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
 
 // ===================== LEARNERS CARD =====================
 
-class _LearnersDashCard extends StatelessWidget {
+class _LearnersDashCard extends StatefulWidget {
   final VoidCallback onTap;
   final bool isReceptionistStyle;
+  final int refreshTick;
 
   const _LearnersDashCard({
     required this.onTap,
     this.isReceptionistStyle = false,
+    this.refreshTick = 0,
   });
+
+  @override
+  State<_LearnersDashCard> createState() => _LearnersDashCardState();
+}
+
+class _LearnersDashCardState extends State<_LearnersDashCard> {
+  _PaymentAttentionDetails? _manualDetails;
+  bool _manualLoading = false;
+
+  @override
+  void didUpdateWidget(covariant _LearnersDashCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshTick != oldWidget.refreshTick) {
+      unawaited(_recomputeFromLearnerCardLogic());
+    }
+  }
 
   void _showLearnersSheet(
     BuildContext context, {
@@ -3140,6 +3162,297 @@ class _LearnersDashCard extends StatelessWidget {
     );
   }
 
+  static int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static String _normalizeVariantKey(String raw) {
+    final v = raw.trim().toLowerCase();
+    switch (v) {
+      case 'inclass':
+      case 'in-class':
+      case 'in class':
+      case 'in_class':
+      case 'class':
+        return 'inclass';
+      case 'private':
+      case 'live':
+      case 'vip':
+        return 'private';
+      case 'flexible':
+      case 'online':
+        return 'flexible';
+      case 'recorded':
+      case 'record':
+        return 'recorded';
+      default:
+        return v.isEmpty ? 'inclass' : v;
+    }
+  }
+
+  static bool _isExpiredMs(int expiresAt) {
+    if (expiresAt <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= expiresAt;
+  }
+
+  static bool _isNearExpiryMs(int expiresAt, {int days = 10}) {
+    if (expiresAt <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = expiresAt - now;
+    if (diff < 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
+  }
+
+  static int _rank(_PayFlag f) {
+    switch (f) {
+      case _PayFlag.black:
+        return 4;
+      case _PayFlag.red:
+        return 3;
+      case _PayFlag.yellow:
+        return 2;
+      case _PayFlag.ok:
+      case _PayFlag.noCourse:
+        return 0;
+    }
+  }
+
+  static int _flexibleSessionsConsumed(Map<String, dynamic> courseMap) {
+    final directOnline = countConsumedOnlineAttendance(
+      courseMap['online_attendance'],
+    );
+    if (directOnline > 0) return directOnline;
+    final bookingProgress = courseMap['booking_progress'];
+    if (bookingProgress is Map) {
+      final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
+      final nestedOnline = countConsumedOnlineAttendance(
+        bp['online_attendance'],
+      );
+      if (nestedOnline > 0) return nestedOnline;
+    }
+    return countHeldUniqueAttendanceDates(courseMap['attendance']);
+  }
+
+  static _PayFlag _learnerStyleVariantPaymentFlag(
+    Map<String, dynamic> courseMap,
+  ) {
+    final variantKey = _normalizeVariantKey(
+      (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
+    );
+    final paymentSummary = courseMap['payment_summary'];
+    final summaryMap = paymentSummary is Map
+        ? paymentSummary.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final attendance = courseMap['attendance'];
+    final sessionsDone = switch (variantKey) {
+      'inclass' => countHeldAttendanceRecords(attendance),
+      'private' => countPresentUniqueAttendanceDates(attendance),
+      'flexible' => _flexibleSessionsConsumed(courseMap),
+      _ => countPresentUniqueAttendanceDates(attendance),
+    };
+
+    final sessionsPaidTotal = _asInt(summaryMap['sessionsPaidTotal']);
+    final totalPaid = _asInt(summaryMap['totalPaid']);
+    final lastAmount = _asInt(summaryMap['lastAmount']);
+    final lastPaymentAt = _asInt(summaryMap['lastPaymentAt']);
+    final hasPaymentHistory =
+        totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
+    final effectiveSessionsPaidTotal = sessionsPaidTotal > 0
+        ? sessionsPaidTotal
+        : (hasPaymentHistory &&
+                  (variantKey == 'private' || variantKey == 'inclass')
+              ? 8
+              : 0);
+    final remindBeforeSession = _asInt(summaryMap['remindBeforeSession']);
+
+    if (variantKey == 'recorded') {
+      final access = courseMap['recorded_access'];
+      final accessMap = access is Map
+          ? access.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final accessExpiresAt = _asInt(accessMap['expiresAt']);
+      final summaryExpiresAt = _asInt(summaryMap['expiresAt']);
+      final effectiveExpiresAt = accessExpiresAt > 0
+          ? accessExpiresAt
+          : summaryExpiresAt;
+      if (effectiveExpiresAt <= 0) return _PayFlag.black;
+      if (_isExpiredMs(effectiveExpiresAt)) return _PayFlag.red;
+      if (_isNearExpiryMs(effectiveExpiresAt)) return _PayFlag.yellow;
+      return _PayFlag.ok;
+    }
+
+    if (variantKey == 'flexible') {
+      final access = courseMap['flexible_access'];
+      final accessMap = access is Map
+          ? access.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final expiresAt = _asInt(accessMap['expiresAt']);
+      if (effectiveSessionsPaidTotal <= 0 && expiresAt <= 0)
+        return _PayFlag.black;
+      if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (isPaymentDueBySessions(
+        sessionsPaidTotal: effectiveSessionsPaidTotal,
+        sessionsPresent: sessionsDone,
+      )) {
+        return _PayFlag.red;
+      }
+      if (expiresAt > 0 && _isNearExpiryMs(expiresAt, days: 10))
+        return _PayFlag.yellow;
+      if (isPaymentWarningBySessions(
+        sessionsPaidTotal: effectiveSessionsPaidTotal,
+        sessionsPresent: sessionsDone,
+        remindBeforeSession: normalizeReminderForSessions(
+          sessionsPaidTotal: effectiveSessionsPaidTotal,
+          remindBeforeSession: remindBeforeSession > 0
+              ? remindBeforeSession
+              : 2,
+        ),
+      )) {
+        return _PayFlag.yellow;
+      }
+      return _PayFlag.ok;
+    }
+
+    if (effectiveSessionsPaidTotal <= 0) return _PayFlag.black;
+    if (isPaymentDueBySessions(
+      sessionsPaidTotal: effectiveSessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+    )) {
+      return _PayFlag.red;
+    }
+    if (isPaymentWarningBySessions(
+      sessionsPaidTotal: effectiveSessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+      remindBeforeSession: normalizeReminderForSessions(
+        sessionsPaidTotal: effectiveSessionsPaidTotal,
+        remindBeforeSession: remindBeforeSession,
+      ),
+    )) {
+      return _PayFlag.yellow;
+    }
+    return _PayFlag.ok;
+  }
+
+  Future<void> _recomputeFromLearnerCardLogic() async {
+    if (_manualLoading) return;
+    setState(() => _manualLoading = true);
+    final usersSnap = await FirebaseDatabase.instance.ref('users').get();
+    final usersVal = usersSnap.value;
+
+    final noCourse = <String>[];
+    final overdue = <String>[];
+    final dueNow = <String>[];
+    final warning = <String>[];
+    final ok = <String>[];
+
+    if (usersVal is Map) {
+      for (final entry in usersVal.entries) {
+        final uid = '${entry.key}'.trim();
+        final userVal = entry.value;
+        if (uid.isEmpty || userVal is! Map) continue;
+        final userMap = userVal.map((k, v) => MapEntry(k.toString(), v));
+        final role = (userMap['role'] ?? '').toString().trim().toLowerCase();
+        if (role != 'learner' && role != 'learners' && role != 'learner(s)') {
+          continue;
+        }
+
+        final fn = (userMap['first_name'] ?? userMap['firstName'] ?? '')
+            .toString()
+            .trim();
+        final ln = (userMap['last_name'] ?? userMap['lastName'] ?? '')
+            .toString()
+            .trim();
+        final email = (userMap['email'] ?? '').toString().trim();
+        final displayName = ('$fn $ln').trim().isNotEmpty
+            ? ('$fn $ln').trim()
+            : (email.isNotEmpty ? email : uid);
+
+        try {
+          final coursesSnap = await FirebaseDatabase.instance
+              .ref('users/$uid/courses')
+              .get();
+          final coursesVal = coursesSnap.value;
+          if (coursesVal is! Map || coursesVal.isEmpty) {
+            noCourse.add(displayName);
+            continue;
+          }
+
+          var hasAtLeastOneCourse = false;
+          _PayFlag best = _PayFlag.ok;
+          coursesVal.forEach((_, courseVal) {
+            if (courseVal is! Map) return;
+            hasAtLeastOneCourse = true;
+            final courseMap = courseVal
+                .map((k, vv) => MapEntry(k.toString(), vv))
+                .cast<String, dynamic>();
+            final flag = _learnerStyleVariantPaymentFlag(courseMap);
+            if (_rank(flag) > _rank(best)) best = flag;
+          });
+
+          if (!hasAtLeastOneCourse) {
+            noCourse.add(displayName);
+            continue;
+          }
+
+          switch (best) {
+            case _PayFlag.black:
+              overdue.add(displayName);
+              break;
+            case _PayFlag.red:
+              dueNow.add(displayName);
+              break;
+            case _PayFlag.yellow:
+              warning.add(displayName);
+              break;
+            case _PayFlag.ok:
+              ok.add(displayName);
+              break;
+            case _PayFlag.noCourse:
+              noCourse.add(displayName);
+              break;
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    int sortCaseInsensitive(String a, String b) =>
+        a.toLowerCase().compareTo(b.toLowerCase());
+    noCourse.sort(sortCaseInsensitive);
+    overdue.sort(sortCaseInsensitive);
+    dueNow.sort(sortCaseInsensitive);
+    warning.sort(sortCaseInsensitive);
+    ok.sort(sortCaseInsensitive);
+
+    if (!mounted) return;
+    setState(() {
+      _manualDetails = _PaymentAttentionDetails(
+        summary: _PaymentAttentionSummary(
+          totalLearners:
+              noCourse.length +
+              overdue.length +
+              dueNow.length +
+              warning.length +
+              ok.length,
+          noCourse: noCourse.length,
+          black: overdue.length,
+          red: dueNow.length,
+          yellow: warning.length,
+          ok: ok.length,
+        ),
+        noCourseLearners: noCourse,
+        overdueLearners: overdue,
+        dueNowLearners: dueNow,
+        warningLearners: warning,
+        okLearners: ok,
+      );
+      _manualLoading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final usersRef = FirebaseDatabase.instance.ref('users');
@@ -3147,15 +3460,16 @@ class _LearnersDashCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: usersRef.onValue,
       builder: (context, snap) {
-        final details = _PaymentAttentionDetails.fromUsers(
+        final streamDetails = _PaymentAttentionDetails.fromUsers(
           snap.data?.snapshot.value,
         );
+        final details = _manualDetails ?? streamDetails;
         final summary = details.summary;
 
         if (!snap.hasData) {
           return InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: onTap,
+            onTap: widget.onTap,
             child: _learnersCardUi(
               context: context,
               total: 0,
@@ -3170,14 +3484,14 @@ class _LearnersDashCard extends StatelessWidget {
               yellowNames: const <String>[],
               okNames: const <String>[],
               loading: true,
-              isReceptionistStyle: isReceptionistStyle,
+              isReceptionistStyle: widget.isReceptionistStyle,
             ),
           );
         }
 
         return InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
+          onTap: widget.onTap,
           child: _learnersCardUi(
             context: context,
             total: summary.totalLearners,
@@ -3191,8 +3505,8 @@ class _LearnersDashCard extends StatelessWidget {
             redNames: details.dueNowLearners,
             yellowNames: details.warningLearners,
             okNames: details.okLearners,
-            loading: false,
-            isReceptionistStyle: isReceptionistStyle,
+            loading: _manualLoading,
+            isReceptionistStyle: widget.isReceptionistStyle,
           ),
         );
       },

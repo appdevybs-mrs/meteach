@@ -3496,6 +3496,572 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _loadClassSyllabusFlat({
+    required String courseId,
+    required String variantKey,
+  }) async {
+    if (courseId.trim().isEmpty) return const <Map<String, dynamic>>[];
+
+    final syllabusVariant = syllabusVariantForScheduledAttendance(
+      _normalizeVariantKey(variantKey),
+    );
+    var sSnap = await _syllabiRef.child(courseId).child(syllabusVariant).get();
+    if ((!sSnap.exists || sSnap.value == null || sSnap.value is! Map) &&
+        syllabusVariant == 'private') {
+      sSnap = await _syllabiRef.child(courseId).child('inclass').get();
+    }
+    if (!sSnap.exists || sSnap.value == null || sSnap.value is! Map) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    final s = Map<String, dynamic>.from(sSnap.value as Map);
+    final flat = <Map<String, dynamic>>[];
+
+    final modules = s['modules'];
+    if (modules is List) {
+      for (final m in modules) {
+        if (m is! Map) continue;
+        final module = Map<String, dynamic>.from(m);
+        final units = module['units'];
+        if (units is! List) continue;
+        for (final u in units) {
+          if (u is! Map) continue;
+          final unit = Map<String, dynamic>.from(u);
+          final unitTitle = ((unit['title'] ?? '').toString().trim().isNotEmpty)
+              ? (unit['title'] ?? '').toString()
+              : (unit['description'] ?? '').toString();
+          final unitOrder = _asInt(unit['order']);
+          final lessons = unit['lessons'];
+          if (lessons is! List) continue;
+          for (final ss in lessons) {
+            if (ss is! Map) continue;
+            final sess = Map<String, dynamic>.from(ss);
+            flat.add({
+              'unitOrder': unitOrder,
+              'unitTitle': unitTitle,
+              'order': _asInt(sess['order']),
+              'sessionId': (sess['id'] ?? '').toString(),
+              'title': (sess['title'] ?? '').toString(),
+              'objective': (sess['objective'] ?? '').toString(),
+            });
+          }
+        }
+      }
+    } else {
+      final units = s['units'];
+      if (units is List) {
+        for (final u in units) {
+          if (u is! Map) continue;
+          final unit = Map<String, dynamic>.from(u);
+          final unitTitle = ((unit['title'] ?? '').toString().trim().isNotEmpty)
+              ? (unit['title'] ?? '').toString()
+              : (unit['description'] ?? '').toString();
+          final unitOrder = _asInt(unit['order']);
+          final sessions = unit['sessions'];
+          if (sessions is! List) continue;
+          for (final ss in sessions) {
+            if (ss is! Map) continue;
+            final sess = Map<String, dynamic>.from(ss);
+            flat.add({
+              'unitOrder': unitOrder,
+              'unitTitle': unitTitle,
+              'order': _asInt(sess['order']),
+              'sessionId': (sess['id'] ?? '').toString(),
+              'title': (sess['title'] ?? '').toString(),
+              'objective': (sess['objective'] ?? '').toString(),
+            });
+          }
+        }
+      }
+    }
+
+    flat.sort((a, b) {
+      final uo = _asInt(a['unitOrder']).compareTo(_asInt(b['unitOrder']));
+      if (uo != 0) return uo;
+      return _asInt(a['order']).compareTo(_asInt(b['order']));
+    });
+    return flat;
+  }
+
+  Set<String> _coveredSessionIdsForLearner({
+    required Map<String, dynamic> cls,
+    required String learnerUid,
+  }) {
+    final attendanceRaw = cls['attendance'];
+    if (attendanceRaw is! Map) return <String>{};
+
+    final out = <String>{};
+    final att = Map<dynamic, dynamic>.from(attendanceRaw);
+    for (final value in att.values) {
+      if (value is! Map) continue;
+      final rec = Map<String, dynamic>.from(value);
+
+      bool isPresent = false;
+      final presentRaw = rec['present'];
+      if (presentRaw is Map) {
+        final present = Map<String, dynamic>.from(presentRaw);
+        if (present[learnerUid] == true) isPresent = true;
+      }
+      if (!isPresent) continue;
+
+      final taughtItems = rec['taughtItems'];
+      if (taughtItems is List) {
+        for (final itemRaw in taughtItems) {
+          if (itemRaw is! Map) continue;
+          final item = Map<String, dynamic>.from(itemRaw);
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
+          if (type.isNotEmpty && type != 'syllabus') continue;
+          final sid = (item['sessionId'] ?? '').toString().trim();
+          if (sid.isNotEmpty) out.add(sid);
+        }
+      }
+
+      final taught = rec['taught'];
+      if (taught is Map) {
+        final tm = Map<String, dynamic>.from(taught);
+        final sid = (tm['sessionId'] ?? '').toString().trim();
+        if (sid.isNotEmpty) out.add(sid);
+      }
+    }
+
+    return out;
+  }
+
+  Future<_ClassSyllabusProgressDetails> _loadClassSyllabusProgressDetails(
+    Map<String, dynamic> cls,
+  ) async {
+    final courseId = (cls['course_id'] ?? '').toString().trim();
+    final variantKey = (cls['variantKey'] ?? '').toString();
+    final syllabus = await _loadClassSyllabusFlat(
+      courseId: courseId,
+      variantKey: variantKey,
+    );
+    final classCovered = _classCoveredSessionIds(cls);
+    final learners = _classLearnersList(cls);
+
+    final rows = <_ClassLearnerProgressRow>[];
+    final topCovered = <String>{};
+
+    for (final learner in learners) {
+      final uid = (learner['uid'] ?? '').trim();
+      if (uid.isEmpty) continue;
+      final covered = _coveredSessionIdsForLearner(cls: cls, learnerUid: uid);
+      if (covered.length > topCovered.length) {
+        topCovered
+          ..clear()
+          ..addAll(covered);
+      }
+      rows.add(
+        _ClassLearnerProgressRow(
+          uid: uid,
+          learnerName: (learner['name'] ?? '').trim(),
+          serial: (learner['serial'] ?? '').trim(),
+          covered: covered,
+        ),
+      );
+    }
+
+    final comparedRows =
+        rows.map((row) {
+          final missing = topCovered.difference(row.covered);
+          final extra = row.covered.difference(topCovered);
+          return row.copyWith(missingFromTop: missing, extraVsTop: extra);
+        }).toList()..sort((a, b) {
+          final byMissing = b.missingFromTop.length.compareTo(
+            a.missingFromTop.length,
+          );
+          if (byMissing != 0) return byMissing;
+          final an = a.displayName.toLowerCase();
+          final bn = b.displayName.toLowerCase();
+          return an.compareTo(bn);
+        });
+
+    return _ClassSyllabusProgressDetails(
+      syllabus: syllabus,
+      classCovered: classCovered,
+      learnerRows: comparedRows,
+      topCoveredCount: topCovered.length,
+    );
+  }
+
+  Future<void> _openClassSyllabusProgressSheet(Map<String, dynamic> cls) async {
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    final title = (cls['course_title'] ?? '').toString().trim();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: FutureBuilder<_ClassSyllabusProgressDetails>(
+              future: _loadClassSyllabusProgressDetails(cls),
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return const SizedBox(
+                    height: 300,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final data = snap.data!;
+                final total = data.syllabus.length;
+                final classDone = data.classCovered.length;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title.isEmpty ? 'Class Progress' : title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A2B48),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      classId.isEmpty ? '-' : 'Class ID: $classId',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      total > 0
+                          ? 'Class taught lessons: $classDone / $total'
+                          : 'Class taught lessons: -',
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          ...data.syllabus.asMap().entries.map((entry) {
+                            final idx = entry.key + 1;
+                            final s = entry.value;
+                            final sid = (s['sessionId'] ?? '')
+                                .toString()
+                                .trim();
+                            final taught =
+                                sid.isNotEmpty &&
+                                data.classCovered.contains(sid);
+                            final stitle = (s['title'] ?? '').toString().trim();
+                            final objective = (s['objective'] ?? '')
+                                .toString()
+                                .trim();
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: taught
+                                    ? const Color(0xFFECFDF5)
+                                    : Colors.grey.shade50,
+                                border: Border.all(
+                                  color: taught
+                                      ? const Color(0xFF86EFAC)
+                                      : Colors.grey.shade300,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        taught
+                                            ? Icons.check_circle_rounded
+                                            : Icons
+                                                  .radio_button_unchecked_rounded,
+                                        color: taught
+                                            ? const Color(0xFF16A34A)
+                                            : Colors.grey.shade500,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '$idx. ${stitle.isEmpty ? 'Lesson' : stitle}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (objective.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      objective,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 8),
+                          const Divider(height: 1),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Learner alignment',
+                            style: TextStyle(
+                              color: Colors.grey.shade900,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...data.learnerRows.map((row) {
+                            final isBehind = row.missingFromTop.isNotEmpty;
+                            final isDifferent =
+                                !isBehind && row.extraVsTop.isNotEmpty;
+                            final pct = total > 0
+                                ? ((row.covered.length / total) * 100)
+                                      .round()
+                                      .clamp(0, 100)
+                                : 0;
+                            final bg = isBehind
+                                ? const Color(0xFFFEF2F2)
+                                : (isDifferent
+                                      ? const Color(0xFFFFFBEB)
+                                      : const Color(0xFFECFDF5));
+                            final border = isBehind
+                                ? const Color(0xFFFCA5A5)
+                                : (isDifferent
+                                      ? const Color(0xFFFCD34D)
+                                      : const Color(0xFF86EFAC));
+                            final badgeText = isBehind
+                                ? 'Behind'
+                                : (isDifferent ? 'Different path' : 'On track');
+                            final badgeColor = isBehind
+                                ? const Color(0xFFB91C1C)
+                                : (isDifferent
+                                      ? const Color(0xFFB45309)
+                                      : const Color(0xFF166534));
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: bg,
+                                border: Border.all(color: border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          row.displayName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        '$pct%',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${row.covered.length} / $total lessons',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade800,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    badgeText,
+                                    style: TextStyle(
+                                      color: badgeColor,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  if (isBehind)
+                                    InkWell(
+                                      onTap: () {
+                                        _openMissingLessonsSheet(
+                                          learnerName: row.displayName,
+                                          missingSessionIds: row.missingFromTop,
+                                          syllabus: data.syllabus,
+                                        );
+                                      },
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 2,
+                                        ),
+                                        child: Text(
+                                          'Missing ${row.missingFromTop.length} lesson(s) vs top learner (${data.topCoveredCount}). Tap to view.',
+                                          style: TextStyle(
+                                            color: Colors.red.shade700,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                            decoration:
+                                                TextDecoration.underline,
+                                            decorationColor:
+                                                Colors.red.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openMissingLessonsSheet({
+    required String learnerName,
+    required Set<String> missingSessionIds,
+    required List<Map<String, dynamic>> syllabus,
+  }) async {
+    if (missingSessionIds.isEmpty) return;
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final s in syllabus) {
+      final sid = (s['sessionId'] ?? '').toString().trim();
+      if (sid.isEmpty) continue;
+      byId[sid] = s;
+    }
+
+    final rows = <Map<String, dynamic>>[];
+    for (final sid in missingSessionIds) {
+      final item = byId[sid];
+      if (item != null) {
+        rows.add(item);
+      } else {
+        rows.add({
+          'sessionId': sid,
+          'title': 'Lesson $sid',
+          'objective': '',
+          'order': 999999,
+          'unitOrder': 999999,
+        });
+      }
+    }
+
+    rows.sort((a, b) {
+      final uo = _asInt(a['unitOrder']).compareTo(_asInt(b['unitOrder']));
+      if (uo != 0) return uo;
+      return _asInt(a['order']).compareTo(_asInt(b['order']));
+    });
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  learnerName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    color: Color(0xFF1A2B48),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Missing lessons (${rows.length})',
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: rows.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final s = rows[i];
+                      final title = (s['title'] ?? '').toString().trim();
+                      final objective = (s['objective'] ?? '')
+                          .toString()
+                          .trim();
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title.isEmpty ? 'Lesson' : title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (objective.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                objective,
+                                style: TextStyle(
+                                  color: Colors.grey.shade800,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // -------------------- Classes List UI --------------------
 
   Future<void> _openClassesFiltersSheet() async {
@@ -4049,15 +4615,60 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          metrics.totalSessions > 0
-                                              ? 'Course progress: ${metrics.currentSessions} / ${metrics.totalSessions}'
-                                              : 'Course progress: ${metrics.currentSessions} / -',
-                                          style: TextStyle(
-                                            color: Colors.grey.shade800,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                          ),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                metrics.totalSessions > 0
+                                                    ? 'Course progress: ${metrics.currentSessions} / ${metrics.totalSessions}'
+                                                    : 'Course progress: ${metrics.currentSessions} / -',
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade800,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                            Tooltip(
+                                              message:
+                                                  'Syllabus lesson details',
+                                              child: InkWell(
+                                                onTap: () {
+                                                  _openClassSyllabusProgressSheet(
+                                                    cls,
+                                                  );
+                                                },
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                                child: Container(
+                                                  width: 22,
+                                                  height: 22,
+                                                  alignment: Alignment.center,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: const Color(
+                                                      0xFFFEF3C7,
+                                                    ),
+                                                    border: Border.all(
+                                                      color: const Color(
+                                                        0xFFF59E0B,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  child: const Text(
+                                                    '!',
+                                                    style: TextStyle(
+                                                      color: Color(0xFF92400E),
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      height: 1,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                         const SizedBox(height: 4),
                                         ClipRRect(
@@ -6317,6 +6928,60 @@ class _RecordedCourseSummary {
     required this.durationMonths,
     required this.lastPaymentAt,
   });
+}
+
+class _ClassSyllabusProgressDetails {
+  final List<Map<String, dynamic>> syllabus;
+  final Set<String> classCovered;
+  final List<_ClassLearnerProgressRow> learnerRows;
+  final int topCoveredCount;
+
+  const _ClassSyllabusProgressDetails({
+    required this.syllabus,
+    required this.classCovered,
+    required this.learnerRows,
+    required this.topCoveredCount,
+  });
+}
+
+class _ClassLearnerProgressRow {
+  final String uid;
+  final String learnerName;
+  final String serial;
+  final Set<String> covered;
+  final Set<String> missingFromTop;
+  final Set<String> extraVsTop;
+
+  const _ClassLearnerProgressRow({
+    required this.uid,
+    required this.learnerName,
+    required this.serial,
+    required this.covered,
+    this.missingFromTop = const <String>{},
+    this.extraVsTop = const <String>{},
+  });
+
+  String get displayName {
+    final n = learnerName.trim();
+    if (n.isNotEmpty) return n;
+    final s = serial.trim();
+    if (s.isNotEmpty) return 'Serial: $s';
+    return uid;
+  }
+
+  _ClassLearnerProgressRow copyWith({
+    Set<String>? missingFromTop,
+    Set<String>? extraVsTop,
+  }) {
+    return _ClassLearnerProgressRow(
+      uid: uid,
+      learnerName: learnerName,
+      serial: serial,
+      covered: covered,
+      missingFromTop: missingFromTop ?? this.missingFromTop,
+      extraVsTop: extraVsTop ?? this.extraVsTop,
+    );
+  }
 }
 
 class _ClassTabMetrics {
