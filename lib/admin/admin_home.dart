@@ -272,6 +272,12 @@ class _AdminHomeState extends State<AdminHome> {
   String get _screenTitle =>
       _isAdminMode ? 'Admin Dashboard' : 'Reception Desk';
 
+  bool _isWindowVisibleForCurrentMode(String windowKey) {
+    if (_isAdminMode) return true;
+    if (_loadingReceptionistWindows) return false;
+    return _receptionistWindowEnabled[windowKey] ?? true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -295,21 +301,19 @@ class _AdminHomeState extends State<AdminHome> {
         ? 14.0
         : (width >= 900 ? 12.0 : (isMobileDashboard ? 8.0 : 10.0));
 
-    _HomeCardItem card(String title, String subtitle, Widget child) {
-      return _HomeCardItem(title: title, subtitle: subtitle, child: child);
-    }
-
-    _HomeCardItem receptionistCard(
+    _HomeCardItem card(
       String title,
-      String subtitle,
-      String windowKey,
-      Widget child,
-    ) {
+      String subtitle, {
+      required Widget child,
+      String? windowKey,
+      bool adminOnly = false,
+    }) {
       return _HomeCardItem(
         title: title,
         subtitle: subtitle,
         child: child,
         windowKey: windowKey,
+        adminOnly: adminOnly,
       );
     }
 
@@ -317,7 +321,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Learners',
         'Students list',
-        KeyedSubtree(
+        windowKey: AppWindowKeys.adminLearners,
+        child: KeyedSubtree(
           key: _learnersCardKey,
           child: _LearnersDashCard(
             isReceptionistStyle: !_isAdminMode,
@@ -333,7 +338,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Classes',
         'Manage classes',
-        _ClassesDashCard(
+        windowKey: AppWindowKeys.adminClasses,
+        child: _ClassesDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminClasses,
@@ -346,7 +352,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Payments',
         'Financial records',
-        KeyedSubtree(
+        windowKey: AppWindowKeys.adminPayments,
+        child: KeyedSubtree(
           key: _paymentsCardKey,
           child: _PaymentsAttentionDashCard(
             isReceptionistStyle: !_isAdminMode,
@@ -362,7 +369,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Finance',
         'Range income and X plans',
-        _DashCard(
+        windowKey: AppWindowKeys.adminFinance,
+        child: _DashCard(
           title: 'Finance',
           subtitle: 'Range income and X plans',
           tags: const ['From-To', '1x/2x/...'],
@@ -380,7 +388,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Schedule',
         'Weekly timetable',
-        _DashCard(
+        windowKey: AppWindowKeys.adminSchedule,
+        child: _DashCard(
           title: 'Schedule',
           subtitle: 'Weekly timetable',
           tags: const ['This week', 'Open classes'],
@@ -398,7 +407,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Attendance',
         'Daily / Weekly stats',
-        _DashCard(
+        windowKey: AppWindowKeys.adminAttendance,
+        child: _DashCard(
           title: 'Attendance',
           subtitle: 'Daily / Weekly stats',
           tags: const ['Today', 'Weekly'],
@@ -418,7 +428,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Courses',
         'Manage courses',
-        _DashCard(
+        windowKey: AppWindowKeys.adminCourses,
+        child: _DashCard(
           title: 'Courses',
           subtitle: 'Manage courses',
           tags: const ['Catalog', 'Manage'],
@@ -436,7 +447,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Study Coach',
         'Vocabulary, grammar, speaking',
-        _DashCard(
+        windowKey: AppWindowKeys.adminVocabLists,
+        child: _DashCard(
           title: 'Study Coach',
           subtitle: 'Vocabulary, grammar, speaking',
           tags: const ['Study Coach', 'CSV'],
@@ -456,7 +468,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Course Reviews',
         'Moderate learner reviews',
-        _CourseFeedbackDashCard(
+        windowKey: AppWindowKeys.adminCourseReviews,
+        child: _CourseFeedbackDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminCourseReviews,
@@ -471,12 +484,14 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Online Booking',
         'Online Booking management',
-        _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
+        windowKey: AppWindowKeys.adminOnlineBooking,
+        child: _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'Reminders',
         'Send & manage reminders',
-        _RemindersDashCard(
+        windowKey: AppWindowKeys.adminReminders,
+        child: _RemindersDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminReminders,
@@ -491,7 +506,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Priority Alerts',
         'Send one-time popup alerts',
-        _PriorityAlertsDashCard(
+        windowKey: AppWindowKeys.adminPriorityAlerts,
+        child: _PriorityAlertsDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminPriorityAlerts,
@@ -506,7 +522,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Activity Center',
         'Centralized system logs',
-        _DashCard(
+        windowKey: AppWindowKeys.adminActivityCenter,
+        child: _DashCard(
           title: 'Activity Center',
           subtitle: 'Centralized system logs',
           tags: const ['Teacher', 'Learner', 'Admin'],
@@ -526,7 +543,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Notification Audit',
         'Push delivery monitoring',
-        _DashCard(
+        windowKey: AppWindowKeys.adminNotificationAudit,
+        child: _DashCard(
           title: 'Notification Audit',
           subtitle: 'Push delivery monitoring',
           tags: const ['Push Events', 'Failures'],
@@ -546,7 +564,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Staff',
         'Teachers & staff',
-        _StaffMailDashCard(
+        windowKey: AppWindowKeys.adminStaff,
+        child: _StaffMailDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminStaff,
@@ -559,7 +578,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Admin Mail',
         'Central inbox hub',
-        _AdminMailDashCard(
+        windowKey: AppWindowKeys.adminMail,
+        child: _AdminMailDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminMail,
@@ -572,7 +592,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Wages',
         'Teacher payments',
-        _WagesDashCard(
+        windowKey: AppWindowKeys.adminWages,
+        child: _WagesDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminWages,
@@ -585,7 +606,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Teacher Availability',
         'Coverage & staffing overview',
-        _TeacherAvailabilityDashCard(
+        windowKey: AppWindowKeys.adminTeacherAvailability,
+        child: _TeacherAvailabilityDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminTeacherAvailability,
@@ -600,17 +622,20 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Subscriptions',
         'Registration requests',
-        _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
+        windowKey: AppWindowKeys.adminSubscriptions,
+        child: _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'Certificates',
         'Issued certificates',
-        _CertificatesDashCard(isReceptionistStyle: !_isAdminMode),
+        windowKey: AppWindowKeys.adminCertificates,
+        child: _CertificatesDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'File Manager',
         'Courses & Games files',
-        _DashCard(
+        windowKey: AppWindowKeys.adminFileManager,
+        child: _DashCard(
           title: 'File Manager',
           subtitle: 'Courses & Games files',
           tags: const ['Courses', 'Games'],
@@ -628,7 +653,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Shared Files',
         'Teacher shared files',
-        KeyedSubtree(
+        windowKey: AppWindowKeys.adminSharedFiles,
+        child: KeyedSubtree(
           key: _sharedCardKey,
           child: _AdminSharedFilesDashCard(isReceptionistStyle: !_isAdminMode),
         ),
@@ -636,7 +662,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Public Gallery',
         'Teaser media',
-        _PublicGalleryDashCard(
+        windowKey: AppWindowKeys.adminPublicGallery,
+        child: _PublicGalleryDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminPublicGallery,
@@ -651,7 +678,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Contract',
         'Contracts & documents',
-        _ContractDashCard(
+        windowKey: AppWindowKeys.adminContract,
+        child: _ContractDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminContract,
@@ -664,7 +692,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Settings',
         'Force update config',
-        _SettingsDashCard(
+        windowKey: AppWindowKeys.adminSettings,
+        child: _SettingsDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminSettings,
@@ -679,7 +708,8 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Window Access',
         'Open or close windows',
-        _DashCard(
+        adminOnly: true,
+        child: _DashCard(
           title: 'Window Access',
           subtitle: 'Open or close windows',
           tags: const ['Learner', 'Teacher', 'Admin'],
@@ -702,159 +732,13 @@ class _AdminHomeState extends State<AdminHome> {
       card(
         'Job Applications',
         'Hiring pipeline',
-        _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
-      ),
-    ];
-
-    final receptionistCards = <_HomeCardItem>[
-      receptionistCard(
-        'Learners',
-        'Students overview',
-        AppWindowKeys.adminLearners,
-        KeyedSubtree(
-          key: _learnersCardKey,
-          child: _LearnersDashCard(
-            isReceptionistStyle: true,
-            onTap: () => _openAdminWindow(
-              AppWindowKeys.adminLearners,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-              ),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Classes',
-        'Manage classes',
-        AppWindowKeys.adminClasses,
-        _ClassesDashCard(
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminClasses,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Payments',
-        'Financial records',
-        AppWindowKeys.adminPayments,
-        KeyedSubtree(
-          key: _paymentsCardKey,
-          child: _PaymentsAttentionDashCard(
-            isReceptionistStyle: true,
-            onTap: () => _openAdminWindow(
-              AppWindowKeys.adminPayments,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-              ),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Schedule',
-        'Weekly timetable',
-        AppWindowKeys.adminSchedule,
-        _DashCard(
-          title: 'Schedule',
-          subtitle: 'Weekly timetable',
-          tags: const ['This week', 'Open classes'],
-          icon: Icons.calendar_view_week_rounded,
-          color: AdminHome.accentTeal,
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminSchedule,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Reminders',
-        'Send reminders',
-        AppWindowKeys.adminReminders,
-        _RemindersDashCard(
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminReminders,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminTeacherRemindersScreen(),
-              ),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Priority Alerts',
-        'Popup messages',
-        AppWindowKeys.adminPriorityAlerts,
-        _PriorityAlertsDashCard(
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminPriorityAlerts,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminPriorityAlertsScreen(),
-              ),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Staff',
-        'Teachers & staff',
-        AppWindowKeys.adminStaff,
-        _StaffMailDashCard(
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminStaff,
-            () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Admin Mail',
-        'Central inbox hub',
-        AppWindowKeys.adminMail,
-        _AdminMailDashCard(
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminMail,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
-            ),
-          ),
-        ),
-      ),
-      receptionistCard(
-        'Public Gallery',
-        'Teaser media',
-        AppWindowKeys.adminPublicGallery,
-        _PublicGalleryDashCard(
-          isReceptionistStyle: true,
-          onTap: () => _openAdminWindow(
-            AppWindowKeys.adminPublicGallery,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminPublicGalleryScreen(),
-              ),
-            ),
-          ),
-        ),
+        windowKey: AppWindowKeys.adminJobApplications,
+        child: _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
       ),
     ];
 
     final q = _homeSearch.trim().toLowerCase();
-    final selectedCards = _isAdminMode ? allCards : receptionistCards;
-    final visibleCards = selectedCards
+    final visibleCards = allCards
         .where((c) {
           final matchesSearch =
               q.isEmpty ||
@@ -862,6 +746,7 @@ class _AdminHomeState extends State<AdminHome> {
               c.subtitle.toLowerCase().contains(q);
           if (!matchesSearch) return false;
           if (_isAdminMode) return true;
+          if (c.adminOnly) return false;
           if (_loadingReceptionistWindows) return false;
           final windowKey = c.windowKey;
           if (windowKey == null || windowKey.isEmpty) return true;
@@ -983,6 +868,48 @@ class _AdminHomeState extends State<AdminHome> {
 
     final webDesktop = isWebDesktop(context);
 
+    final webRailTiles = <Widget>[
+      if (_isWindowVisibleForCurrentMode(AppWindowKeys.adminLearners))
+        _DrawerTile(
+          icon: Icons.school_rounded,
+          title: 'Learners',
+          subtitle: 'Open learner management',
+          color: AdminHome.primaryBlue,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminLearners,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+            ),
+          ),
+        ),
+      if (_isWindowVisibleForCurrentMode(AppWindowKeys.adminPayments))
+        _DrawerTile(
+          icon: AdminIcons.navPayments,
+          title: 'Payments',
+          subtitle: 'Financial records',
+          color: AdminHome.actionOrange,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminPayments,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+            ),
+          ),
+        ),
+      if (_isWindowVisibleForCurrentMode(AppWindowKeys.adminClasses))
+        _DrawerTile(
+          icon: Icons.class_rounded,
+          title: 'Classes',
+          subtitle: 'Classes and attendance',
+          color: AdminHome.accentIndigo,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminClasses,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+            ),
+          ),
+        ),
+    ];
+
     final webRail = Container(
       width: 250,
       margin: const EdgeInsets.fromLTRB(12, 10, 0, 12),
@@ -1004,42 +931,18 @@ class _AdminHomeState extends State<AdminHome> {
             ),
           ),
           const SizedBox(height: 10),
-          _DrawerTile(
-            icon: Icons.school_rounded,
-            title: 'Learners',
-            subtitle: 'Open learner management',
-            color: AdminHome.primaryBlue,
-            onTap: () => _openAdminWindow(
-              AppWindowKeys.adminLearners,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+          ...webRailTiles,
+          if (!_isAdminMode && _loadingReceptionistWindows)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               ),
             ),
-          ),
-          _DrawerTile(
-            icon: AdminIcons.navPayments,
-            title: 'Payments',
-            subtitle: 'Financial records',
-            color: AdminHome.actionOrange,
-            onTap: () => _openAdminWindow(
-              AppWindowKeys.adminPayments,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-              ),
-            ),
-          ),
-          _DrawerTile(
-            icon: Icons.class_rounded,
-            title: 'Classes',
-            subtitle: 'Classes and attendance',
-            color: AdminHome.accentIndigo,
-            onTap: () => _openAdminWindow(
-              AppWindowKeys.adminClasses,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-              ),
-            ),
-          ),
           const Spacer(),
           _DrawerTile(
             icon: Icons.logout_rounded,
@@ -1221,12 +1124,14 @@ class _HomeCardItem {
     required this.subtitle,
     required this.child,
     this.windowKey,
+    this.adminOnly = false,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
   final String? windowKey;
+  final bool adminOnly;
 }
 
 class _AdminPasswordDialog extends StatefulWidget {
@@ -2810,7 +2715,7 @@ class _PaymentAttentionLogic {
 
     final attendance = courseMap['attendance'];
     final sessionsDone = switch (variantKey) {
-      'inclass' => countHeldUniqueAttendanceDates(attendance),
+      'inclass' => countHeldAttendanceRecords(attendance),
       'private' => countPresentUniqueAttendanceDates(attendance),
       'flexible' => _flexibleSessionsConsumed(courseMap),
       _ => countPresentUniqueAttendanceDates(attendance),

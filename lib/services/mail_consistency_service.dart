@@ -142,6 +142,12 @@ class MailConsistencyService {
       final existing = existingRaw is Map
           ? existingRaw.map((k, v) => MapEntry(k.toString(), v))
           : <String, dynamic>{};
+      final isGroup = threadMap['isGroup'] == true;
+      final groupName = (threadMap['groupName'] ?? '').toString();
+      final groupPicUrl = (threadMap['groupPicUrl'] ?? '').toString();
+      final participantCount = participants.entries
+          .where((e) => e.key.trim().isNotEmpty && e.value == true)
+          .length;
 
       if (peerUid.isEmpty) {
         peerUid = (existing['peerUid'] ?? '').toString().trim();
@@ -167,7 +173,11 @@ class MailConsistencyService {
 
       final needsRepair =
           existing.isEmpty ||
-          (existing['peerUid'] ?? '').toString().trim().isEmpty ||
+          (isGroup && existing['isGroup'] != true) ||
+          (isGroup &&
+              (existing['groupName'] ?? '').toString().trim().isEmpty) ||
+          (isGroup && !existing.containsKey('participantCount')) ||
+          (!isGroup && (existing['peerUid'] ?? '').toString().trim().isEmpty) ||
           (existing['updatedAt'] == null) ||
           (existing['subject'] ?? '').toString().trim().isEmpty ||
           (existing['unreadCount'] == null && existing['unread'] != null) ||
@@ -190,6 +200,12 @@ class MailConsistencyService {
       updates['$base/peerUid'] = peerUid;
       updates['$base/peerName'] = peerName;
       updates['$base/peerRole'] = peerRole;
+      updates['$base/isGroup'] = isGroup;
+      if (isGroup) {
+        updates['$base/groupName'] = groupName;
+        updates['$base/groupPicUrl'] = groupPicUrl;
+        updates['$base/participantCount'] = participantCount;
+      }
       updates['$base/deletedAt'] = existing['deletedAt'];
       touched += 1;
     }
@@ -284,5 +300,106 @@ class MailConsistencyService {
         } catch (_) {}
       }
     }
+  }
+
+  static Future<int> repairGroupThreadIndex({
+    required FirebaseDatabase db,
+    required String threadId,
+  }) async {
+    final safeThreadId = threadId.trim();
+    if (safeThreadId.isEmpty) return 0;
+
+    final threadSnap = await db.ref('mail_threads/$safeThreadId').get();
+    if (!threadSnap.exists || threadSnap.value is! Map) return 0;
+
+    final thread = (threadSnap.value as Map).map(
+      (k, v) => MapEntry(k.toString(), v),
+    );
+    if (thread['isGroup'] != true) return 0;
+
+    final participantsRaw = thread['participants'];
+    final participantsMap = participantsRaw is Map
+        ? participantsRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final participants = <String>[];
+    for (final entry in participantsMap.entries) {
+      final uid = entry.key.trim();
+      if (uid.isEmpty) continue;
+      if (entry.value == true ||
+          entry.value == 1 ||
+          entry.value.toString() == 'true') {
+        participants.add(uid);
+      }
+    }
+    if (participants.isEmpty) return 0;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final subject = (thread['subject'] ?? '').toString();
+    final type = (thread['type'] ?? 'mail').toString();
+    final groupName = (thread['groupName'] ?? '').toString();
+    final groupPicUrl = (thread['groupPicUrl'] ?? '').toString();
+    final updatedAt = toInt(thread['updatedAt']);
+    final lastMessage =
+        (thread['lastMessage'] ?? thread['lastMessagePreview'] ?? '')
+            .toString();
+
+    final updates = <String, dynamic>{};
+    var touched = 0;
+
+    for (final uid in participants) {
+      final idxPath = 'mail_index/$uid/$safeThreadId';
+      final idxSnap = await db.ref(idxPath).get();
+      final idx = idxSnap.value is Map
+          ? (idxSnap.value as Map).map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+
+      final needsRepair =
+          idx.isEmpty ||
+          idx['isGroup'] != true ||
+          (idx['groupName'] ?? '').toString().trim().isEmpty ||
+          !idx.containsKey('participantCount');
+
+      if (!needsRepair) continue;
+
+      updates['$idxPath/subject'] = (idx['subject'] ?? subject).toString();
+      updates['$idxPath/type'] = (idx['type'] ?? type).toString();
+      updates['$idxPath/updatedAt'] = toInt(idx['updatedAt']) > 0
+          ? toInt(idx['updatedAt'])
+          : (updatedAt > 0 ? updatedAt : now);
+      updates['$idxPath/lastMessage'] = (idx['lastMessage'] ?? lastMessage)
+          .toString();
+      updates['$idxPath/unreadCount'] = toInt(idx['unreadCount']);
+      updates['$idxPath/deletedAt'] = idx['deletedAt'];
+      updates['$idxPath/isGroup'] = true;
+      updates['$idxPath/groupName'] = groupName;
+      updates['$idxPath/groupPicUrl'] = groupPicUrl;
+      updates['$idxPath/participantCount'] = participants.length;
+      touched += 1;
+    }
+
+    if (updates.isNotEmpty) {
+      await db.ref().update(updates);
+    }
+    return touched;
+  }
+
+  static Future<int> runGroupIndexBackfill({
+    required FirebaseDatabase db,
+  }) async {
+    final snap = await db.ref('mail_threads').get();
+    if (!snap.exists || snap.value is! Map) return 0;
+    final threads = (snap.value as Map).map(
+      (k, v) => MapEntry(k.toString(), v),
+    );
+
+    var touched = 0;
+    for (final entry in threads.entries) {
+      final threadId = entry.key.trim();
+      if (threadId.isEmpty || entry.value is! Map) continue;
+      final map = (entry.value as Map).map((k, v) => MapEntry(k.toString(), v));
+      if (map['isGroup'] != true) continue;
+      touched += await repairGroupThreadIndex(db: db, threadId: threadId);
+    }
+    return touched;
   }
 }

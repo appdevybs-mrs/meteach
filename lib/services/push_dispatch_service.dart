@@ -387,6 +387,53 @@ class PushDispatchService {
     );
   }
 
+  static Future<int> dispatchMailToGroup({
+    required String threadId,
+    required String senderUid,
+    required String senderName,
+    required String title,
+    required String preview,
+    required int nowMs,
+    required PushDispatchContext context,
+  }) async {
+    final safeThreadId = threadId.trim();
+    final safeSenderUid = senderUid.trim();
+    if (safeThreadId.isEmpty || safeSenderUid.isEmpty) return 0;
+
+    final snap = await _db
+        .child('mail_threads/$safeThreadId/participants')
+        .get();
+    if (!snap.exists || snap.value is! Map) return 0;
+    final participants = (snap.value as Map).map((k, v) => MapEntry('$k', v));
+
+    var sent = 0;
+    for (final entry in participants.entries) {
+      final uid = entry.key.trim();
+      final enabled = entry.value == true || entry.value == 1;
+      if (!enabled || uid.isEmpty || uid == safeSenderUid) continue;
+      try {
+        final r = await dispatchToUser(
+          intent: PushIntent.mail,
+          targetUid: uid,
+          title: title.trim().isEmpty ? 'New group message' : title.trim(),
+          message: preview.trim().isEmpty
+              ? '$senderName sent a new group message'
+              : preview.trim(),
+          context: context,
+          eventParts: ['mail_group', safeThreadId, '$nowMs', uid],
+          data: {
+            'threadId': safeThreadId,
+            'peerUid': safeSenderUid,
+            'isGroup': true,
+          },
+          route: 'mail_thread',
+        );
+        if (r.sent) sent += 1;
+      } catch (_) {}
+    }
+    return sent;
+  }
+
   static Future<PushDispatchResult> dispatchAdminTopic({
     required PushIntent intent,
     required String title,

@@ -1888,7 +1888,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     final attendance = courseMap['attendance'];
     switch (v) {
       case 'inclass':
-        return countHeldUniqueAttendanceDates(attendance);
+        return countHeldAttendanceRecords(attendance);
       case 'private':
         return countPresentUniqueAttendanceDates(attendance);
       case 'flexible':

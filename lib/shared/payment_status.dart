@@ -67,6 +67,17 @@ int countHeldUniqueAttendanceDates(dynamic attendance) {
   return byDate.length;
 }
 
+int countHeldAttendanceRecords(dynamic attendance) {
+  if (attendance is! Map) return 0;
+
+  int held = 0;
+  attendance.forEach((_, value) {
+    if (value is! Map) return;
+    held += 1;
+  });
+  return held;
+}
+
 int countPresentOnlineAttendance(dynamic onlineAttendance) {
   if (onlineAttendance is! Map) return 0;
 

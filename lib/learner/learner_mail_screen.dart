@@ -716,12 +716,17 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                     final isHomework = _isHomeworkRow(r);
 
                                     final peerUid = r.peerUid;
+                                    final isGroup = r.isGroup;
                                     if (peerUid.trim().isNotEmpty) {
                                       _ensureUserPhotoCached(peerUid);
                                     }
-                                    final peerName = r.peerName.trim().isEmpty
-                                        ? 'User'
-                                        : r.peerName.trim();
+                                    final peerName = isGroup
+                                        ? (r.groupName.trim().isEmpty
+                                              ? 'Group conversation'
+                                              : r.groupName.trim())
+                                        : (r.peerName.trim().isEmpty
+                                              ? 'User'
+                                              : r.peerName.trim());
                                     final lastMessage = r.lastMessage;
                                     final unread = r.unreadCount;
                                     final updatedAt = r.updatedAtMs;
@@ -769,22 +774,55 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                             Stack(
                                               clipBehavior: Clip.none,
                                               children: [
-                                                ProfileAvatar(
-                                                  name: peerName,
-                                                  photoUrl: _bestPhoto(peerUid),
-                                                  radius: 23,
-                                                  fallbackBg: _navy.withValues(
-                                                    alpha: 0.10,
-                                                  ),
-                                                  fallbackFg: isHomework
-                                                      ? _hwAccent
-                                                      : _navy.withValues(
-                                                          alpha: 0.92,
+                                                isGroup
+                                                    ? CircleAvatar(
+                                                        radius: 23,
+                                                        backgroundColor: Colors
+                                                            .indigo
+                                                            .withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        foregroundImage:
+                                                            r.groupPicUrl
+                                                                .trim()
+                                                                .isNotEmpty
+                                                            ? NetworkImage(
+                                                                r.groupPicUrl
+                                                                    .trim(),
+                                                              )
+                                                            : null,
+                                                        child:
+                                                            r.groupPicUrl
+                                                                .trim()
+                                                                .isNotEmpty
+                                                            ? null
+                                                            : const Icon(
+                                                                Icons
+                                                                    .groups_rounded,
+                                                                color: Colors
+                                                                    .indigo,
+                                                              ),
+                                                      )
+                                                    : ProfileAvatar(
+                                                        name: peerName,
+                                                        photoUrl: _bestPhoto(
+                                                          peerUid,
                                                         ),
-                                                  borderColor: _navy.withValues(
-                                                    alpha: 0.15,
-                                                  ),
-                                                ),
+                                                        radius: 23,
+                                                        fallbackBg: _navy
+                                                            .withValues(
+                                                              alpha: 0.10,
+                                                            ),
+                                                        fallbackFg: isHomework
+                                                            ? _hwAccent
+                                                            : _navy.withValues(
+                                                                alpha: 0.92,
+                                                              ),
+                                                        borderColor: _navy
+                                                            .withValues(
+                                                              alpha: 0.15,
+                                                            ),
+                                                      ),
                                                 if (unread > 0)
                                                   Positioned(
                                                     right: -8,
@@ -839,6 +877,39 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                           ),
                                                         ),
                                                       ),
+                                                      if (isGroup)
+                                                        Container(
+                                                          margin:
+                                                              const EdgeInsets.only(
+                                                                right: 8,
+                                                              ),
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 2,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.indigo
+                                                                .withValues(
+                                                                  alpha: 0.12,
+                                                                ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  999,
+                                                                ),
+                                                          ),
+                                                          child: const Text(
+                                                            'Group',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w800,
+                                                              color:
+                                                                  Colors.indigo,
+                                                            ),
+                                                          ),
+                                                        ),
                                                       const SizedBox(width: 10),
                                                       Text(
                                                         updatedAt <= 0
@@ -1648,6 +1719,9 @@ class _TopicRow {
     required this.unreadCount,
     required this.deletedAtMs,
     required this.homeworkRef,
+    required this.isGroup,
+    required this.groupName,
+    required this.groupPicUrl,
   });
 
   final String threadId;
@@ -1660,6 +1734,9 @@ class _TopicRow {
   final int unreadCount;
   final int? deletedAtMs;
   final String homeworkRef;
+  final bool isGroup;
+  final String groupName;
+  final String groupPicUrl;
 
   factory _TopicRow.fromMap(String threadId, Map<String, dynamic> m) {
     int toInt(dynamic v) {
@@ -1685,6 +1762,9 @@ class _TopicRow {
       unreadCount: toInt(m['unreadCount'] ?? m['unread']),
       deletedAtMs: toIntN(m['deletedAt']),
       homeworkRef: (m['homeworkRef'] ?? '').toString(),
+      isGroup: m['isGroup'] == true,
+      groupName: (m['groupName'] ?? '').toString(),
+      groupPicUrl: (m['groupPicUrl'] ?? '').toString(),
     );
   }
 }

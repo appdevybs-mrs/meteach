@@ -1,9 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../services/mail_consistency_service.dart';
+import '../services/internal_mail_service.dart';
 import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
@@ -183,6 +186,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   String _bestName(_TopicRow r) {
+    if (r.isGroup && r.groupName.trim().isNotEmpty) return r.groupName.trim();
     final cached = _nameCache[r.peerUid.trim()];
     if (cached != null && cached.trim().isNotEmpty) return cached;
 
@@ -197,6 +201,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   String _bestPhoto(_TopicRow r) {
+    if (r.isGroup) return r.groupPicUrl.trim();
     return _photoCache[r.peerUid.trim()] ?? '';
   }
 
@@ -979,6 +984,50 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         return;
       }
 
+      if (picked.mode == _ComposeMode.group) {
+        final selectedUids = <String>{...(picked.receiverUids ?? const [])};
+        if (selectedUids.isEmpty) {
+          _snack('Please select at least one member.');
+          return;
+        }
+        final groupName = picked.groupName?.trim() ?? '';
+        if (groupName.isEmpty) {
+          _snack('Please provide a group name.');
+          return;
+        }
+
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final threadId = await InternalMailService.createGroupThread(
+          creatorUid: _meUid,
+          creatorName: picked.teacherName,
+          creatorRole: 'teacher',
+          participantUids: selectedUids,
+          groupName: groupName,
+          groupPicUrl: picked.groupPicUrl,
+          subject: subject,
+          now: now,
+        );
+        await InternalMailService.sendGroupMessage(
+          threadId: threadId,
+          senderUid: _meUid,
+          body: firstMessage,
+        );
+
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            settings: RouteSettings(name: '/mail/thread/$threadId'),
+            builder: (_) => TeacherMailThreadScreen(
+              threadId: threadId,
+              peerUid: '',
+              peerName: groupName,
+              subject: subject,
+            ),
+          ),
+        );
+        return;
+      }
+
       if (picked.mode == _ComposeMode.classGroup) {
         final classId = picked.classId;
         if (classId == null || classId.trim().isEmpty) {
@@ -1726,6 +1775,10 @@ class _ThreadTile extends StatelessWidget {
             scheme.surface,
           )
         : scheme.surface;
+    final isGroup = row.isGroup;
+    final effectiveBg = isGroup
+        ? Color.alphaBlend(Colors.indigo.withValues(alpha: 0.06), bgColor)
+        : bgColor;
     final borderColor = row.unreadCount > 0
         ? scheme.primary.withValues(alpha: 0.28)
         : scheme.outline.withValues(alpha: 0.16);
@@ -1733,7 +1786,7 @@ class _ThreadTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        color: bgColor,
+        color: effectiveBg,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
       ),
@@ -1746,14 +1799,28 @@ class _ThreadTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ProfileAvatar(
-                name: displayName,
-                photoUrl: photoUrl,
-                radius: 19,
-                fallbackBg: avatarColor.withValues(alpha: 0.14),
-                fallbackFg: avatarColor,
-                borderColor: avatarColor.withValues(alpha: 0.30),
-              ),
+              isGroup
+                  ? CircleAvatar(
+                      radius: 19,
+                      backgroundColor: Colors.indigo.withValues(alpha: 0.12),
+                      foregroundImage: photoUrl.trim().isNotEmpty
+                          ? NetworkImage(photoUrl.trim())
+                          : null,
+                      child: photoUrl.trim().isNotEmpty
+                          ? null
+                          : const Icon(
+                              Icons.groups_rounded,
+                              color: Colors.indigo,
+                            ),
+                    )
+                  : ProfileAvatar(
+                      name: displayName,
+                      photoUrl: photoUrl,
+                      radius: 19,
+                      fallbackBg: avatarColor.withValues(alpha: 0.14),
+                      fallbackFg: avatarColor,
+                      borderColor: avatarColor.withValues(alpha: 0.30),
+                    ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1772,6 +1839,26 @@ class _ThreadTile extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (isGroup)
+                          Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.indigo.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              'Group',
+                              style: TextStyle(
+                                color: Colors.indigo,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
                         if (timeLabel.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Text(
@@ -1888,6 +1975,10 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 
   final _subjectC = TextEditingController();
   final _messageC = TextEditingController();
+  final _groupNameC = TextEditingController();
+  final _groupPicUrlC = TextEditingController();
+  final _memberSearchC = TextEditingController();
+  String _memberQuery = '';
   String _teacherName = 'Teacher';
 
   List<_RecipientRow> _recipients = [];
@@ -1898,6 +1989,44 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   _ClassRow? _pickedClass;
 
   _ComposeMode _mode = _ComposeMode.single;
+  bool _uploadingGroupPic = false;
+
+  Future<void> _uploadGroupPicture() async {
+    if (_uploadingGroupPic) return;
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Group picture upload is not supported on web yet.'),
+        ),
+      );
+      return;
+    }
+    final picked = await FilePicker.platform.pickFiles(withData: false);
+    final path = picked?.files.single.path;
+    if (path == null || path.trim().isEmpty) return;
+    setState(() => _uploadingGroupPic = true);
+    try {
+      final parts = path.replaceAll('\\', '/').split('/');
+      final filename = parts.isEmpty ? 'group.jpg' : parts.last;
+      final url = await MailUploadClient.defaultClient().uploadPath(
+        path: path,
+        filename: filename,
+      );
+      _groupPicUrlC.text = url.trim();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Group picture uploaded.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    } finally {
+      if (mounted) setState(() => _uploadingGroupPic = false);
+    }
+  }
 
   @override
   void initState() {
@@ -1909,6 +2038,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   void dispose() {
     _subjectC.dispose();
     _messageC.dispose();
+    _groupNameC.dispose();
+    _groupPicUrlC.dispose();
+    _memberSearchC.dispose();
     super.dispose();
   }
 
@@ -2142,6 +2274,33 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           receiverName: selected.length == 1 ? selected.first.name : null,
           receiverUids: selected.map((e) => e.uid).toList(),
           classId: null,
+          groupName: null,
+          groupPicUrl: null,
+        ),
+      );
+      return;
+    }
+
+    if (_mode == _ComposeMode.group) {
+      final selected = _recipients
+          .where((r) => _pickedRecipientUids.contains(r.uid))
+          .toList();
+      if (selected.isEmpty) return;
+      final gName = _groupNameC.text.trim();
+      if (gName.isEmpty) return;
+      Navigator.pop(
+        context,
+        _ComposeResult(
+          mode: _ComposeMode.group,
+          teacherName: _teacherName,
+          subject: subject,
+          firstMessage: msg,
+          receiverUid: null,
+          receiverName: null,
+          receiverUids: selected.map((e) => e.uid).toList(),
+          classId: null,
+          groupName: gName,
+          groupPicUrl: _groupPicUrlC.text.trim(),
         ),
       );
       return;
@@ -2161,6 +2320,8 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         receiverName: null,
         receiverUids: null,
         classId: c.classId,
+        groupName: null,
+        groupPicUrl: null,
       ),
     );
   }
@@ -2178,7 +2339,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     }
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
+      padding: EdgeInsets.fromLTRB(14, 6, 14, 12 + bottom),
       child: SafeArea(
         top: false,
         child: SingleChildScrollView(
@@ -2186,9 +2347,12 @@ class _ComposeSheetState extends State<_ComposeSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 6),
-              const Text(
-                'New topic',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              Text(
+                _mode == _ComposeMode.group ? 'Create group mail' : 'New topic',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
               ),
               const SizedBox(height: 14),
               if (_loading)
@@ -2223,13 +2387,17 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                         value: _ComposeMode.classGroup,
                         label: Text('Whole class'),
                       ),
+                      ButtonSegment(
+                        value: _ComposeMode.group,
+                        label: Text('Group'),
+                      ),
                     ],
                     selected: {_mode},
                     onSelectionChanged: (s) => setState(() => _mode = s.first),
                   ),
                 ),
-                const SizedBox(height: 14),
-                if (_mode == _ComposeMode.single)
+                const SizedBox(height: 10),
+                if (_mode == _ComposeMode.single || _mode == _ComposeMode.group)
                   Container(
                     decoration: BoxDecoration(
                       border: Border.all(
@@ -2237,15 +2405,17 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                       ),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Send to',
+                        Text(
+                          _mode == _ComposeMode.group
+                              ? 'Group members'
+                              : 'Send to',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         if (_recipients.isEmpty)
                           const Text('No recipients found.')
                         else ...[
@@ -2272,13 +2442,37 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                             ],
                           ),
                           const SizedBox(height: 4),
+                          TextField(
+                            controller: _memberSearchC,
+                            onChanged: (v) => setState(
+                              () => _memberQuery = v.trim().toLowerCase(),
+                            ),
+                            decoration: const InputDecoration(
+                              hintText: 'Search member name',
+                              prefixIcon: Icon(Icons.search_rounded, size: 20),
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
                           ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 260),
+                            constraints: const BoxConstraints(maxHeight: 190),
                             child: ListView.builder(
                               shrinkWrap: true,
-                              itemCount: _recipients.length,
+                              itemCount: _recipients.where((r) {
+                                if (_memberQuery.isEmpty) return true;
+                                return r.name.toLowerCase().contains(
+                                  _memberQuery,
+                                );
+                              }).length,
                               itemBuilder: (context, index) {
-                                final r = _recipients[index];
+                                final filtered = _recipients.where((r) {
+                                  if (_memberQuery.isEmpty) return true;
+                                  return r.name.toLowerCase().contains(
+                                    _memberQuery,
+                                  );
+                                }).toList();
+                                final r = filtered[index];
                                 final checked = _pickedRecipientUids.contains(
                                   r.uid,
                                 );
@@ -2286,6 +2480,10 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                                 return CheckboxListTile(
                                   value: checked,
                                   dense: true,
+                                  visualDensity: const VisualDensity(
+                                    horizontal: -2,
+                                    vertical: -3,
+                                  ),
                                   contentPadding: EdgeInsets.zero,
                                   controlAffinity:
                                       ListTileControlAffinity.leading,
@@ -2379,32 +2577,82 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 12),
+                if (_mode == _ComposeMode.group) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _groupNameC,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'Group name',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: _uploadingGroupPic
+                          ? null
+                          : _uploadGroupPicture,
+                      icon: _uploadingGroupPic
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.upload_file_rounded),
+                      label: const Text('Upload group picture'),
+                    ),
+                  ),
+                  if (_groupPicUrlC.text.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      _groupPicUrlC.text.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _subjectC,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
-                    labelText: 'Topic / Subject',
+                    labelText: _mode == _ComposeMode.group
+                        ? 'Subject'
+                        : 'Topic / Subject',
+                    isDense: true,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _messageC,
-                  minLines: 4,
-                  maxLines: 8,
+                  minLines: 2,
+                  maxLines: 4,
                   textInputAction: TextInputAction.newline,
                   decoration: InputDecoration(
-                    labelText: 'Mail message',
+                    labelText: _mode == _ComposeMode.group
+                        ? 'First message'
+                        : 'Mail message',
                     alignLabelWithHint: true,
+                    isDense: true,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -2416,8 +2664,18 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                     label: Text(
                       _mode == _ComposeMode.classGroup
                           ? 'Send to class'
+                          : _mode == _ComposeMode.group
+                          ? 'Create group'
                           : 'Create and send',
                     ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
                   ),
                 ),
               ],
@@ -2429,7 +2687,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   }
 }
 
-enum _ComposeMode { single, classGroup }
+enum _ComposeMode { single, classGroup, group }
 
 enum _RecipientType { admin, teacher, learner }
 
@@ -2461,6 +2719,8 @@ class _ComposeResult {
     required this.receiverName,
     required this.receiverUids,
     required this.classId,
+    required this.groupName,
+    required this.groupPicUrl,
   });
 
   final _ComposeMode mode;
@@ -2471,6 +2731,8 @@ class _ComposeResult {
   final String? receiverName;
   final List<String>? receiverUids;
   final String? classId;
+  final String? groupName;
+  final String? groupPicUrl;
 }
 
 class _TopicRow {
@@ -2485,6 +2747,9 @@ class _TopicRow {
     required this.deletedAtMs,
     required this.type,
     required this.homeworkRef,
+    required this.isGroup,
+    required this.groupName,
+    required this.groupPicUrl,
   });
 
   final String threadId;
@@ -2497,6 +2762,9 @@ class _TopicRow {
   final int? deletedAtMs;
   final String type;
   final String homeworkRef;
+  final bool isGroup;
+  final String groupName;
+  final String groupPicUrl;
 
   bool get isHomework {
     if (type.toLowerCase() == 'homework') return true;
@@ -2540,6 +2808,9 @@ class _TopicRow {
       deletedAtMs: toIntN(m['deletedAt']),
       type: inferredType,
       homeworkRef: homeworkRef,
+      isGroup: m['isGroup'] == true,
+      groupName: (m['groupName'] ?? '').toString(),
+      groupPicUrl: (m['groupPicUrl'] ?? '').toString(),
     );
   }
 }

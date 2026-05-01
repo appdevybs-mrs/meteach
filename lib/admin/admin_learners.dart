@@ -23,6 +23,7 @@ import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../services/backend_api.dart';
 import 'admin_learner_mail_topics_screen.dart';
+import 'admin_classes.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key, this.initialSearch = ''});
@@ -1007,6 +1008,209 @@ class _LearnersListState extends State<_LearnersList>
     });
   }
 
+  Future<List<_LearnerClassLink>> _loadLearnerClassLinks(String uid) async {
+    final key = uid.trim();
+    if (key.isEmpty) return const <_LearnerClassLink>[];
+
+    final snap = await _db.ref('users/$key/courses').get();
+    final raw = snap.value;
+    if (raw is! Map) return const <_LearnerClassLink>[];
+
+    final out = <_LearnerClassLink>[];
+    final seen = <String>{};
+
+    raw.forEach((_, value) {
+      if (value is! Map) return;
+      final course = value
+          .map((k, v) => MapEntry(k.toString(), v))
+          .cast<String, dynamic>();
+
+      final classMap = course['class'];
+      if (classMap is! Map) return;
+
+      final classId = (classMap['class_id'] ?? '').toString().trim();
+      if (classId.isEmpty) return;
+      if (!seen.add(classId)) return;
+
+      final courseTitle = (course['title'] ?? '').toString().trim();
+      final courseCode = (course['course_code'] ?? '').toString().trim();
+
+      out.add(
+        _LearnerClassLink(
+          classId: classId,
+          courseTitle: courseTitle,
+          courseCode: courseCode,
+        ),
+      );
+    });
+
+    for (int i = 0; i < out.length; i++) {
+      final link = out[i];
+      try {
+        final classSnap = await _db.ref('classes/${link.classId}').get();
+        if (!classSnap.exists || classSnap.value is! Map) continue;
+
+        final cls = (classSnap.value as Map)
+            .map((k, v) => MapEntry(k.toString(), v))
+            .cast<String, dynamic>();
+
+        final teacher = (cls['instructor'] ?? '').toString().trim();
+        final schedule = _classSchedulePreview(cls);
+
+        out[i] = link.copyWith(teacherName: teacher, schedulePreview: schedule);
+      } catch (_) {
+        // Ignore per-class fetch errors and keep base link available.
+      }
+    }
+
+    return out;
+  }
+
+  String _classSchedulePreview(Map<String, dynamic> cls) {
+    final schedRaw = cls['schedule'];
+    if (schedRaw is! Map) return '';
+    final sched = schedRaw.map((k, v) => MapEntry('$k', v));
+    final sessionsRaw = sched['sessions'];
+    if (sessionsRaw is! List || sessionsRaw.isEmpty) return '';
+
+    final parts = <String>[];
+    for (final s in sessionsRaw) {
+      if (s is! Map) continue;
+      final m = s.map((k, v) => MapEntry('$k', v));
+      final day = (m['day'] ?? '').toString().trim();
+      final start = (m['start_time'] ?? '').toString().trim();
+      final duration = (m['duration_min'] ?? '').toString().trim();
+
+      final chunk = [
+        if (day.isNotEmpty) day,
+        if (start.isNotEmpty) start,
+        if (duration.isNotEmpty) '(${duration}m)',
+      ].join(' ');
+
+      if (chunk.isNotEmpty) parts.add(chunk);
+      if (parts.length >= 2) break;
+    }
+
+    if (parts.isEmpty) return '';
+    return parts.join(' • ');
+  }
+
+  Future<_LearnerClassLink?> _pickLearnerClass(
+    String learnerName,
+    List<_LearnerClassLink> links,
+  ) async {
+    if (!mounted) return null;
+
+    return showDialog<_LearnerClassLink>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Choose class'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460, maxHeight: 360),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (learnerName.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        learnerName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: links.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (ctx, i) {
+                      final link = links[i];
+                      final title = link.courseTitle.isNotEmpty
+                          ? link.courseTitle
+                          : (link.courseCode.isNotEmpty
+                                ? link.courseCode
+                                : 'Class');
+                      final subtitleText = [
+                        if (link.teacherName.isNotEmpty)
+                          'Teacher: ${link.teacherName}',
+                        if (link.schedulePreview.isNotEmpty)
+                          link.schedulePreview,
+                      ].join(' • ');
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          '$title • ${link.classId}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: subtitleText.isEmpty
+                            ? null
+                            : Text(
+                                subtitleText,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                        onTap: () => Navigator.pop(ctx, link),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openLearnerClassFromCard({
+    required String uid,
+    required String learnerName,
+  }) async {
+    try {
+      final links = await _loadLearnerClassLinks(uid);
+      if (!mounted) return;
+
+      if (links.isEmpty) {
+        _toast('No class linked for this learner.');
+        return;
+      }
+
+      _LearnerClassLink? selected;
+      if (links.length == 1) {
+        selected = links.first;
+      } else {
+        selected = await _pickLearnerClass(learnerName, links);
+      }
+
+      if (!mounted || selected == null) return;
+      final chosen = selected;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AdminClassesScreen(openClassId: chosen.classId),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _toast('Could not open class right now.');
+    }
+  }
+
   Future<void> _sendLearnerQuickReminder({
     required String uid,
     required Learner learner,
@@ -1289,7 +1493,7 @@ class _LearnersListState extends State<_LearnersList>
 
     final attendance = courseMap['attendance'];
     final sessionsDone = switch (variantKey) {
-      'inclass' => countHeldUniqueAttendanceDates(attendance),
+      'inclass' => countHeldAttendanceRecords(attendance),
       'private' => countPresentUniqueAttendanceDates(attendance),
       'flexible' => _flexibleSessionsConsumedFromCourseMap(courseMap),
       _ => _LearnerExpandedTabsState._countUniqueAttendance(attendance),
@@ -1573,6 +1777,12 @@ class _LearnersListState extends State<_LearnersList>
                                   _loadPayFlagForUid(row.uid);
                                 }
                               },
+                              onDoubleTap: () {
+                                _openLearnerClassFromCard(
+                                  uid: row.uid,
+                                  learnerName: l.fullName,
+                                );
+                              },
                               child: Padding(
                                 padding: EdgeInsets.all(dense ? 9 : 12),
                                 child: Row(
@@ -1814,6 +2024,32 @@ class _LearnersListState extends State<_LearnersList>
           ),
         ),
       ],
+    );
+  }
+}
+
+class _LearnerClassLink {
+  const _LearnerClassLink({
+    required this.classId,
+    required this.courseTitle,
+    required this.courseCode,
+    this.teacherName = '',
+    this.schedulePreview = '',
+  });
+
+  final String classId;
+  final String courseTitle;
+  final String courseCode;
+  final String teacherName;
+  final String schedulePreview;
+
+  _LearnerClassLink copyWith({String? teacherName, String? schedulePreview}) {
+    return _LearnerClassLink(
+      classId: classId,
+      courseTitle: courseTitle,
+      courseCode: courseCode,
+      teacherName: teacherName ?? this.teacherName,
+      schedulePreview: schedulePreview ?? this.schedulePreview,
     );
   }
 }
@@ -4142,7 +4378,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       return countPresentUniqueAttendanceDates(attendance);
     }
     if (v == 'inclass') {
-      return countHeldUniqueAttendanceDates(attendance);
+      return countHeldAttendanceRecords(attendance);
     }
     return countPresentUniqueAttendanceDates(attendance);
   }

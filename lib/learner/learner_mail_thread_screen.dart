@@ -17,6 +17,7 @@ import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
 import '../services/mail_consistency_service.dart';
+import '../services/internal_mail_service.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/route_state.dart';
 import '../shared/human_error.dart';
@@ -733,13 +734,45 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final msgRef = _msgsRef.push();
-      final msgKey = msgRef.key!;
-
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
       final preview80 = preview.length > 80
           ? preview.substring(0, 80)
           : preview;
+      final tSnap = await _threadRef.get();
+      final tMap = tSnap.value is Map
+          ? (tSnap.value as Map).map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final isGroup = tMap['isGroup'] == true;
+
+      if (isGroup) {
+        await InternalMailService.sendGroupMessage(
+          threadId: widget.threadId,
+          senderUid: _meUid,
+          body: bodyBackup,
+          attachments: attachmentsBackup,
+        );
+        unawaited(_markRead());
+        unawaited(() async {
+          try {
+            await PushDispatchService.dispatchMailToGroup(
+              threadId: widget.threadId,
+              senderUid: _meUid,
+              senderName: _meDisplayName,
+              title: (tMap['groupName'] ?? widget.subject).toString(),
+              preview: preview80,
+              nowMs: now,
+              context: const PushDispatchContext(
+                screen: 'learner/learner_mail_thread',
+                action: 'mail_push_group',
+              ),
+            );
+          } catch (_) {}
+        }());
+        return;
+      }
+
+      final msgRef = _msgsRef.push();
+      final msgKey = msgRef.key!;
 
       final payload = <String, dynamic>{
         'fromUid': _meUid,

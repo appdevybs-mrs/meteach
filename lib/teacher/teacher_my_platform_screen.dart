@@ -81,6 +81,40 @@ class _RecordedSessionMeta {
   final bool hasMaterials;
 }
 
+class _RecordedLessonDetail {
+  const _RecordedLessonDetail({
+    required this.title,
+    required this.unitTitle,
+    required this.moduleTitle,
+    required this.hasVideo,
+    required this.hasMaterials,
+    required this.videoDone,
+    required this.materialsDone,
+  });
+
+  final String title;
+  final String unitTitle;
+  final String moduleTitle;
+  final bool hasVideo;
+  final bool hasMaterials;
+  final bool videoDone;
+  final bool materialsDone;
+
+  bool get isDone {
+    if (hasVideo && hasMaterials) return videoDone || materialsDone;
+    if (hasVideo) return videoDone;
+    if (hasMaterials) return materialsDone;
+    return false;
+  }
+}
+
+class _RecordedLearnerDetails {
+  const _RecordedLearnerDetails({required this.studied, required this.left});
+
+  final List<_RecordedLessonDetail> studied;
+  final List<_RecordedLessonDetail> left;
+}
+
 class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -98,6 +132,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   final Map<String, String> _courseLabelById = <String, String>{};
   final Map<String, Map<String, _RecordedSessionMeta>> _recordedMetaCache =
       <String, Map<String, _RecordedSessionMeta>>{};
+  final Set<String> _expandedRecordedRows = <String>{};
+  final Map<String, Future<_RecordedLearnerDetails>>
+  _recordedDetailsFutureByRow = <String, Future<_RecordedLearnerDetails>>{};
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -131,6 +168,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           ..addAll(assignedMap);
         _all = items;
         _learnerProgressRows = learnerRows;
+        _expandedRecordedRows.clear();
+        _recordedDetailsFutureByRow.clear();
         _busy = false;
         _learnersBusy = false;
       });
@@ -343,50 +382,20 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   }) async {
     final out = <_LearnerRecordedProgressItem>[];
 
-    final classesSnap = await _db.child('classes').get();
-    final learnerUids = <String>{};
-    final classCourseIds = <String>{};
-
-    if (classesSnap.exists && classesSnap.value is Map) {
-      final classes = Map<dynamic, dynamic>.from(classesSnap.value as Map);
-      for (final entry in classes.entries) {
-        if (entry.value is! Map) continue;
-        final c = Map<String, dynamic>.from(entry.value as Map);
-
-        final cur = c['instructor_current'];
-        final currentUid = cur is Map
-            ? (cur['uid'] ?? '').toString().trim()
-            : '';
-        if (currentUid != _uid) continue;
-
-        final classCourseId = (c['course_id'] ?? '').toString().trim();
-        if (classCourseId.isNotEmpty) {
-          classCourseIds.add(classCourseId);
-        }
-
-        final learnersMap = c['learners'];
-        if (learnersMap is Map) {
-          for (final uidAny in learnersMap.keys) {
-            final learnerUid = uidAny.toString().trim();
-            if (learnerUid.isNotEmpty) {
-              learnerUids.add(learnerUid);
-            }
-          }
-        }
-      }
-    }
-
-    if (learnerUids.isEmpty) return out;
-
     final usersSnap = await _db.child('users').get();
     if (!usersSnap.exists || usersSnap.value is! Map) return out;
 
     final users = Map<dynamic, dynamic>.from(usersSnap.value as Map);
 
-    for (final learnerUid in learnerUids) {
-      final userRaw = users[learnerUid];
-      if (userRaw is! Map) continue;
-      final user = Map<String, dynamic>.from(userRaw);
+    for (final userEntry in users.entries) {
+      final learnerUid = userEntry.key.toString().trim();
+      if (learnerUid.isEmpty || userEntry.value is! Map) continue;
+
+      final user = Map<String, dynamic>.from(userEntry.value as Map);
+      final role = (user['role'] ?? '').toString().trim().toLowerCase();
+      if (role != 'learner' && role != 'learners' && role != 'learner(s)') {
+        continue;
+      }
 
       final first = (user['first_name'] ?? '').toString().trim();
       final last = (user['last_name'] ?? '').toString().trim();
@@ -417,8 +426,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
         if (assignedCourseKeys.isNotEmpty &&
             !assignedCourseKeys.contains(courseId) &&
-            !assignedCourseKeys.contains(courseKey) &&
-            !classCourseIds.contains(courseId)) {
+            !assignedCourseKeys.contains(courseKey)) {
           continue;
         }
 
@@ -487,6 +495,253 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       return a.courseTitle.toLowerCase().compareTo(b.courseTitle.toLowerCase());
     });
     return out;
+  }
+
+  String _recordedRowKey(_LearnerRecordedProgressItem item) {
+    return '${item.learnerUid}__${item.courseKey}__${item.courseId}';
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
+    final out = <Map<String, dynamic>>[];
+    if (node is List) {
+      for (final item in node) {
+        if (item is Map) {
+          out.add(Map<String, dynamic>.from(item));
+        }
+      }
+      return out;
+    }
+    if (node is Map) {
+      final map = Map<dynamic, dynamic>.from(node);
+      for (final entry in map.entries) {
+        if (entry.value is Map) {
+          out.add(Map<String, dynamic>.from(entry.value as Map));
+        }
+      }
+    }
+    return out;
+  }
+
+  bool _asBool(dynamic v) {
+    if (v is bool) return v;
+    final s = (v ?? '').toString().trim().toLowerCase();
+    return s == 'true' || s == '1';
+  }
+
+  Future<_RecordedLearnerDetails> _loadRecordedLearnerDetails(
+    _LearnerRecordedProgressItem item,
+  ) async {
+    final courseId = item.courseId.trim();
+    final courseKey = item.courseKey.trim();
+    final learnerUid = item.learnerUid.trim();
+    if (courseId.isEmpty || courseKey.isEmpty || learnerUid.isEmpty) {
+      return const _RecordedLearnerDetails(studied: [], left: []);
+    }
+
+    final syllabusSnap = await _db
+        .child('syllabi')
+        .child(courseId)
+        .child('recorded')
+        .get();
+    final progressSnap = await _db
+        .child('users')
+        .child(learnerUid)
+        .child('courses')
+        .child(courseKey)
+        .child('recorded_progress')
+        .get();
+
+    final progressMap = (progressSnap.exists && progressSnap.value is Map)
+        ? Map<dynamic, dynamic>.from(progressSnap.value as Map)
+        : <dynamic, dynamic>{};
+
+    final sessionItems = <Map<String, dynamic>>[];
+    if (syllabusSnap.exists && syllabusSnap.value is Map) {
+      final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
+      final rawModules = _asListOfMaps(root['modules']);
+      if (rawModules.isNotEmpty) {
+        for (int mi = 0; mi < rawModules.length; mi++) {
+          final module = rawModules[mi];
+          final moduleLabel =
+              (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+              ? (module['otherTitle'] ?? '').toString().trim()
+              : ((module['title'] ?? '').toString().trim().isNotEmpty
+                    ? (module['title'] ?? '').toString().trim()
+                    : 'M${mi + 1}');
+          final rawUnits = _asListOfMaps(module['units']);
+          for (final unit in rawUnits) {
+            final unitTitle = (unit['title'] ?? '').toString().trim();
+            final rawLessons = _asListOfMaps(unit['lessons']);
+            for (final lesson in rawLessons) {
+              sessionItems.add({
+                'moduleTitle': moduleLabel,
+                'unitTitle': unitTitle,
+                ...lesson,
+              });
+            }
+          }
+        }
+      } else {
+        final rawUnits = _asListOfMaps(root['units']);
+        for (final unit in rawUnits) {
+          final unitTitle = (unit['title'] ?? '').toString().trim();
+          final rawSessions = _asListOfMaps(unit['sessions']);
+          for (final session in rawSessions) {
+            sessionItems.add({
+              'moduleTitle': '',
+              'unitTitle': unitTitle,
+              ...session,
+            });
+          }
+        }
+      }
+    }
+
+    int orderOf(Map<String, dynamic> s) {
+      final n = int.tryParse((s['sessionNumber'] ?? '').toString()) ?? 0;
+      if (n > 0) return n;
+      return int.tryParse((s['order'] ?? '').toString()) ?? 0;
+    }
+
+    sessionItems.sort((a, b) => orderOf(a).compareTo(orderOf(b)));
+
+    final studied = <_RecordedLessonDetail>[];
+    final left = <_RecordedLessonDetail>[];
+
+    for (int i = 0; i < sessionItems.length; i++) {
+      final session = sessionItems[i];
+      final sessionId = (session['id'] ?? '').toString().trim();
+      final titleRaw = (session['title'] ?? '').toString().trim();
+      final title = titleRaw.isNotEmpty ? titleRaw : 'Session ${i + 1}';
+      final unitTitle = (session['unitTitle'] ?? '').toString().trim();
+      final moduleTitle = (session['moduleTitle'] ?? '').toString().trim();
+
+      final hasVideo = (session['videoUrl'] ?? '').toString().trim().isNotEmpty;
+      final hasMaterials = (session['materialsUrl'] ?? '')
+          .toString()
+          .trim()
+          .isNotEmpty;
+
+      final raw = progressMap[sessionId];
+      final progress = raw is Map
+          ? Map<dynamic, dynamic>.from(raw)
+          : <dynamic, dynamic>{};
+      final videoDone = _asBool(progress['videoCompleted']);
+      final materialsDone = _asBool(progress['materialsCompleted']);
+
+      final detail = _RecordedLessonDetail(
+        title: title,
+        unitTitle: unitTitle,
+        moduleTitle: moduleTitle,
+        hasVideo: hasVideo,
+        hasMaterials: hasMaterials,
+        videoDone: videoDone,
+        materialsDone: materialsDone,
+      );
+
+      if (detail.isDone) {
+        studied.add(detail);
+      } else {
+        left.add(detail);
+      }
+    }
+
+    return _RecordedLearnerDetails(studied: studied, left: left);
+  }
+
+  Widget _compactStatusChip({
+    required IconData icon,
+    required String label,
+    required bool done,
+  }) {
+    final fg = done ? const Color(0xFF15803D) : const Color(0xFF64748B);
+    final bg = done ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: fg.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lessonCompactRow(_RecordedLessonDetail item, {required bool done}) {
+    final contextBits = <String>[];
+    if (item.moduleTitle.isNotEmpty) contextBits.add(item.moduleTitle);
+    if (item.unitTitle.isNotEmpty) contextBits.add(item.unitTitle);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+      decoration: BoxDecoration(
+        color: done ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          if (contextBits.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              contextBits.join(' • '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            children: [
+              if (item.hasVideo)
+                _compactStatusChip(
+                  icon: Icons.play_circle_fill_rounded,
+                  label: item.videoDone ? 'VD' : 'VP',
+                  done: item.videoDone,
+                ),
+              if (item.hasMaterials)
+                _compactStatusChip(
+                  icon: Icons.description_rounded,
+                  label: item.materialsDone ? 'MD' : 'MP',
+                  done: item.materialsDone,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   List<_MyPlatformItem> get _filtered {
@@ -816,6 +1071,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, i) {
               final item = _learnerProgressRows[i];
+              final rowKey = _recordedRowKey(item);
+              final expanded = _expandedRecordedRows.contains(rowKey);
               final progress = item.totalSessions > 0
                   ? (item.completedSessions / item.totalSessions).clamp(
                       0.0,
@@ -832,12 +1089,42 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      item.learnerName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.learnerName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF0F172A),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 16,
+                          tooltip: expanded ? 'Hide details' : 'Show details',
+                          icon: Icon(
+                            expanded
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            color: const Color(0xFF334155),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              if (expanded) {
+                                _expandedRecordedRows.remove(rowKey);
+                              } else {
+                                _expandedRecordedRows.add(rowKey);
+                                _recordedDetailsFutureByRow[rowKey] ??=
+                                    _loadRecordedLearnerDetails(item);
+                              }
+                            });
+                          },
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -877,6 +1164,88 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         ),
                       ),
                     ),
+                    if (expanded) ...[
+                      const SizedBox(height: 10),
+                      FutureBuilder<_RecordedLearnerDetails>(
+                        future: _recordedDetailsFutureByRow[rowKey],
+                        builder: (context, snap) {
+                          if (snap.hasError) {
+                            return const Text(
+                              'Could not load lesson details.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFB91C1C),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            );
+                          }
+                          if (!snap.hasData) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final details = snap.data!;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Studied lessons',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF166534),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              if (details.studied.isEmpty)
+                                const Text(
+                                  'No studied lessons yet.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                )
+                              else
+                                ...details.studied.map(
+                                  (x) => _lessonCompactRow(x, done: true),
+                                ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Left lessons',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF9A3412),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              if (details.left.isEmpty)
+                                const Text(
+                                  'No pending lessons.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                )
+                              else
+                                ...details.left.map(
+                                  (x) => _lessonCompactRow(x, done: false),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
                   ],
                 ),
               );

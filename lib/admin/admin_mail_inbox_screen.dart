@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../services/mail_consistency_service.dart';
+import '../services/internal_mail_service.dart';
 import '../services/mail_thread_by_id_screen.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
@@ -32,6 +36,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
   late final Stream<DatabaseEvent> _stream;
   bool _repairInProgress = false;
   bool _didInitialRepair = false;
+  bool _groupBackfillRunning = false;
   _AdminMailFilter _filter = _AdminMailFilter.all;
   final Map<String, String> _peerRoleCache = <String, String>{};
 
@@ -40,6 +45,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
     super.initState();
     _stream = _indexRef.onValue.asBroadcastStream();
     _runIntegritySweepOnce();
+    _runGroupBackfillOnce();
   }
 
   @override
@@ -76,6 +82,335 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
     } finally {
       _repairInProgress = false;
       _didInitialRepair = true;
+    }
+  }
+
+  Future<void> _runGroupBackfillOnce() async {
+    if (_groupBackfillRunning) return;
+    _groupBackfillRunning = true;
+    try {
+      final markerRef = _db.ref('appConfig/mail/groupIndexBackfillV1');
+      final markerSnap = await markerRef.get();
+      final marker = markerSnap.value is Map
+          ? (markerSnap.value as Map).map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final doneAt = MailConsistencyService.toInt(marker['doneAt']);
+      if (doneAt > 0) return;
+
+      final touched = await MailConsistencyService.runGroupIndexBackfill(
+        db: _db,
+      );
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await markerRef.update({
+        'doneAt': now,
+        'doneByUid': _meUid,
+        'touchedRows': touched,
+      });
+      if (!mounted) return;
+      _snack('Group mail backfill completed ($touched repaired).');
+    } catch (_) {
+      // Keep inbox responsive even if migration check fails.
+    } finally {
+      _groupBackfillRunning = false;
+    }
+  }
+
+  Future<List<Map<String, String>>> _loadRecipients() async {
+    final snap = await _db.ref('users').get();
+    final raw = snap.value;
+    if (raw is! Map) return const [];
+    final out = <Map<String, String>>[];
+    raw.forEach((uid, vv) {
+      if (uid == null || vv is! Map) return;
+      final m = vv.map((k, v) => MapEntry(k.toString(), v));
+      final id = uid.toString().trim();
+      if (id.isEmpty || id == _meUid) return;
+      final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final email = (m['email'] ?? '').toString().trim();
+      final role = MailConsistencyService.normalizeRole(m['role']);
+      final name = ('$fn $ln').trim();
+      out.add({
+        'uid': id,
+        'name': name.isEmpty ? (email.isEmpty ? id : email) : name,
+        'role': role,
+      });
+    });
+    out.sort(
+      (a, b) => (a['name'] ?? '').toLowerCase().compareTo(
+        (b['name'] ?? '').toLowerCase(),
+      ),
+    );
+    return out;
+  }
+
+  Future<void> _openCreateGroup() async {
+    final recipients = await _loadRecipients();
+    if (!mounted) return;
+    if (recipients.isEmpty) {
+      _snack('No recipients available.');
+      return;
+    }
+
+    final subjectC = TextEditingController();
+    final groupNameC = TextEditingController();
+    final bodyC = TextEditingController();
+    final memberSearchC = TextEditingController();
+    String groupPicUrl = '';
+    String memberQuery = '';
+    final picked = <String>{};
+    var uploading = false;
+    var submitting = false;
+
+    Future<void> uploadGroupPic(StateSetter setLocal) async {
+      if (uploading) return;
+      if (kIsWeb) {
+        _snack('Group picture upload is not supported on web yet.');
+        return;
+      }
+      final file = await FilePicker.platform.pickFiles(withData: false);
+      final path = file?.files.single.path;
+      if (path == null || path.trim().isEmpty) return;
+      setLocal(() => uploading = true);
+      try {
+        final url = await MailUploadClient.defaultClient().uploadFile(
+          file: File(path),
+        );
+        setLocal(() => groupPicUrl = url.trim());
+      } catch (e) {
+        _snack('Upload failed: $e');
+      } finally {
+        if (mounted) setLocal(() => uploading = false);
+      }
+    }
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (ctx) {
+          final bottom =
+              MediaQuery.of(ctx).viewInsets.bottom +
+              MediaQuery.of(ctx).padding.bottom;
+          return StatefulBuilder(
+            builder: (ctx, setLocal) {
+              final filtered = recipients.where((r) {
+                if (memberQuery.isEmpty) return true;
+                final name = (r['name'] ?? '').toLowerCase();
+                return name.contains(memberQuery);
+              }).toList();
+              return Padding(
+                padding: EdgeInsets.fromLTRB(14, 6, 14, 12 + bottom),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Create group mail',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: groupNameC,
+                        decoration: const InputDecoration(
+                          labelText: 'Group name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: subjectC,
+                        decoration: const InputDecoration(
+                          labelText: 'Subject',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: bodyC,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'First message',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: uploading
+                            ? null
+                            : () => uploadGroupPic(setLocal),
+                        icon: uploading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.upload_file_rounded),
+                        label: const Text('Upload group picture'),
+                      ),
+                      if (groupPicUrl.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          groupPicUrl,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(ctx).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Members',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: memberSearchC,
+                        onChanged: (v) => setLocal(
+                          () => memberQuery = v.trim().toLowerCase(),
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: 'Search member name',
+                          prefixIcon: Icon(Icons.search_rounded, size: 20),
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 190),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final r = filtered[i];
+                            final uid = r['uid'] ?? '';
+                            final checked = picked.contains(uid);
+                            return CheckboxListTile(
+                              value: checked,
+                              dense: true,
+                              visualDensity: const VisualDensity(
+                                horizontal: -2,
+                                vertical: -3,
+                              ),
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('${r['name']} • ${r['role']}'),
+                              onChanged: (v) => setLocal(() {
+                                if (v == true) {
+                                  picked.add(uid);
+                                } else {
+                                  picked.remove(uid);
+                                }
+                              }),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          onPressed: submitting
+                              ? null
+                              : () async {
+                                  final groupName = groupNameC.text.trim();
+                                  final subject = subjectC.text.trim();
+                                  final body = bodyC.text.trim();
+                                  if (groupName.isEmpty ||
+                                      subject.isEmpty ||
+                                      body.isEmpty) {
+                                    _snack(
+                                      'Please fill group name, subject, and first message.',
+                                    );
+                                    return;
+                                  }
+                                  if (picked.isEmpty) {
+                                    _snack(
+                                      'Please select at least one member.',
+                                    );
+                                    return;
+                                  }
+                                  setLocal(() => submitting = true);
+                                  try {
+                                    final now =
+                                        DateTime.now().millisecondsSinceEpoch;
+                                    final threadId =
+                                        await InternalMailService.createGroupThread(
+                                          creatorUid: _meUid,
+                                          creatorName: 'Admin',
+                                          creatorRole: 'admin',
+                                          participantUids: picked,
+                                          groupName: groupName,
+                                          groupPicUrl: groupPicUrl,
+                                          subject: subject,
+                                          now: now,
+                                        );
+                                    await InternalMailService.sendGroupMessage(
+                                      threadId: threadId,
+                                      senderUid: _meUid,
+                                      body: body,
+                                    );
+                                    if (!mounted) return;
+                                    if (ctx.mounted) {
+                                      Navigator.pop(ctx);
+                                    }
+                                    _snack('Group created successfully.');
+                                  } catch (e) {
+                                    _snack('Failed to create group: $e');
+                                  } finally {
+                                    if (mounted) {
+                                      setLocal(() => submitting = false);
+                                    }
+                                  }
+                                },
+                          icon: const Icon(Icons.groups_rounded),
+                          label: const Text('Create group'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: submitting
+                              ? null
+                              : () {
+                                  if (ctx.mounted) {
+                                    Navigator.pop(ctx);
+                                  }
+                                },
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      subjectC.dispose();
+      groupNameC.dispose();
+      bodyC.dispose();
+      memberSearchC.dispose();
     }
   }
 
@@ -132,7 +467,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
   }
 
   Future<void> _openThread(_InboxRow row) async {
-    final peerUid = row.item.peerUid.trim();
+    final peerUid = row.item.isGroup ? '' : row.item.peerUid.trim();
     final peerName = row.item.peerName.trim().isEmpty
         ? 'User'
         : row.item.peerName;
@@ -203,6 +538,11 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
         title: const Text('Admin Mail'),
         actions: [
           const SizedBox.shrink(),
+          IconButton(
+            tooltip: 'Create group mail',
+            icon: const Icon(Icons.group_add_rounded),
+            onPressed: _openCreateGroup,
+          ),
           IconButton(
             tooltip: 'Repair inbox index',
             icon: _repairInProgress
@@ -285,6 +625,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                       final role = MailConsistencyService.normalizeRole(
                         _peerRoleCache[item.peerUid] ?? item.peerRole,
                       );
+                      final isGroup = item.isGroup;
 
                       final roleLabel = switch (role) {
                         'learner' => 'Learner',
@@ -302,7 +643,11 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                       return Card(
                         child: ListTile(
                           title: Text(
-                            '${item.peerName.isEmpty ? 'User' : item.peerName} • $roleLabel',
+                            isGroup
+                                ? (item.groupName.isEmpty
+                                      ? 'Group conversation'
+                                      : item.groupName)
+                                : '${item.peerName.isEmpty ? 'User' : item.peerName} • $roleLabel',
                             style: TextStyle(
                               color: _personNameColor,
                               fontWeight: FontWeight.w700,
@@ -346,18 +691,19 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                tooltip: openListLabel,
-                                icon: const Icon(Icons.manage_search_rounded),
-                                onPressed: () => openAdminFilteredPeopleList(
-                                  context,
-                                  peerUid: item.peerUid,
-                                  peerName: item.peerName,
-                                  seedRole:
-                                      _peerRoleCache[item.peerUid] ??
-                                      item.peerRole,
+                              if (!isGroup)
+                                IconButton(
+                                  tooltip: openListLabel,
+                                  icon: const Icon(Icons.manage_search_rounded),
+                                  onPressed: () => openAdminFilteredPeopleList(
+                                    context,
+                                    peerUid: item.peerUid,
+                                    peerName: item.peerName,
+                                    seedRole:
+                                        _peerRoleCache[item.peerUid] ??
+                                        item.peerRole,
+                                  ),
                                 ),
-                              ),
                               if (hasUnread)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -440,6 +786,9 @@ class _InboxItem {
     required this.peerUid,
     required this.peerName,
     required this.peerRole,
+    required this.isGroup,
+    required this.groupName,
+    required this.groupPicUrl,
   });
 
   final String subject;
@@ -449,6 +798,9 @@ class _InboxItem {
   final String peerUid;
   final String peerName;
   final String peerRole;
+  final bool isGroup;
+  final String groupName;
+  final String groupPicUrl;
 
   factory _InboxItem.fromMap(Map<String, dynamic> m) {
     int toInt(dynamic v) {
@@ -465,6 +817,9 @@ class _InboxItem {
       peerUid: (m['peerUid'] ?? '').toString(),
       peerName: (m['peerName'] ?? '').toString(),
       peerRole: (m['peerRole'] ?? '').toString(),
+      isGroup: m['isGroup'] == true,
+      groupName: (m['groupName'] ?? '').toString(),
+      groupPicUrl: (m['groupPicUrl'] ?? '').toString(),
     );
   }
 }

@@ -22,6 +22,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../services/mail_consistency_service.dart';
+import '../services/internal_mail_service.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
@@ -260,6 +261,167 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     AppToast.fromSnackBar(
       context,
       SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
+  }
+
+  Future<void> _openManageGroupMembers() async {
+    final tSnap = await _threadRef.get();
+    if (!tSnap.exists || tSnap.value is! Map) {
+      _snack('Thread not found.');
+      return;
+    }
+    final t = (tSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+    if (t['isGroup'] != true) {
+      _snack('This is not a group thread.');
+      return;
+    }
+
+    final groupName = (t['groupName'] ?? widget.subject).toString();
+    final participants = await InternalMailService.loadThreadParticipants(
+      widget.threadId,
+    );
+    final usersSnap = await _db.ref('users').get();
+    final usersRaw = usersSnap.value;
+    final users = <Map<String, String>>[];
+    if (usersRaw is Map) {
+      usersRaw.forEach((uid, vv) {
+        if (uid == null || vv is! Map) return;
+        final id = uid.toString().trim();
+        if (id.isEmpty || id == _meUid) return;
+        final m = vv.map((k, v) => MapEntry(k.toString(), v));
+        final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+        final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+        final email = (m['email'] ?? '').toString().trim();
+        final name = ('$fn $ln').trim();
+        users.add({
+          'uid': id,
+          'name': name.isEmpty ? (email.isEmpty ? id : email) : name,
+        });
+      });
+    }
+
+    final selected = <String>{};
+    var working = false;
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                16 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Manage members • $groupName',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: participants.map((uid) {
+                      final u = users.firstWhere(
+                        (e) => e['uid'] == uid,
+                        orElse: () => {'uid': uid, 'name': uid},
+                      );
+                      return InputChip(
+                        label: Text(u['name'] ?? uid),
+                        onDeleted: working
+                            ? null
+                            : () async {
+                                setLocal(() => working = true);
+                                try {
+                                  await InternalMailService.removeGroupMember(
+                                    threadId: widget.threadId,
+                                    memberUid: uid,
+                                  );
+                                  if (!mounted) return;
+                                  Navigator.pop(ctx);
+                                  _snack('Member removed.');
+                                } catch (e) {
+                                  _snack('Failed to remove member: $e');
+                                } finally {
+                                  if (mounted) setLocal(() => working = false);
+                                }
+                              },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Add members',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: users
+                          .where((u) => !participants.contains(u['uid']))
+                          .map((u) {
+                            final uid = u['uid'] ?? '';
+                            return CheckboxListTile(
+                              value: selected.contains(uid),
+                              title: Text(u['name'] ?? uid),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              onChanged: working
+                                  ? null
+                                  : (v) => setLocal(() {
+                                      if (v == true) {
+                                        selected.add(uid);
+                                      } else {
+                                        selected.remove(uid);
+                                      }
+                                    }),
+                            );
+                          })
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: working || selected.isEmpty
+                          ? null
+                          : () async {
+                              setLocal(() => working = true);
+                              try {
+                                await InternalMailService.addGroupMembers(
+                                  threadId: widget.threadId,
+                                  memberUids: selected,
+                                );
+                                if (!mounted) return;
+                                Navigator.pop(ctx);
+                                _snack('Members added.');
+                              } catch (e) {
+                                _snack('Failed to add members: $e');
+                              } finally {
+                                if (mounted) setLocal(() => working = false);
+                              }
+                            },
+                      child: Text(
+                        working ? 'Saving...' : 'Add selected members',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -921,6 +1083,43 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ? (attachments.isNotEmpty ? '📎 Attachment' : '')
         : body.trim();
     final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
+
+    final tSnap = await _threadRef.get();
+    final tMap = tSnap.value is Map
+        ? (tSnap.value as Map).map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final isGroup = tMap['isGroup'] == true;
+
+    if (isGroup) {
+      await InternalMailService.sendGroupMessage(
+        threadId: widget.threadId,
+        senderUid: _meUid,
+        body: body,
+        attachments: attachments,
+      );
+      if (sendPush) {
+        unawaited(() async {
+          try {
+            await PushDispatchService.dispatchMailToGroup(
+              threadId: widget.threadId,
+              senderUid: _meUid,
+              senderName: _meDisplayName,
+              title: (tMap['groupName'] ?? widget.subject).toString(),
+              preview: preview80,
+              nowMs: now,
+              context: const PushDispatchContext(
+                screen: 'teacher/teacher_mail_thread',
+                action: 'mail_push_group',
+              ),
+            );
+          } catch (_) {}
+        }());
+      }
+      if (updateThreadPreview) {
+        unawaited(_markRead());
+      }
+      return;
+    }
 
     final payload = <String, dynamic>{
       'fromUid': _meUid,
@@ -4326,6 +4525,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               ),
               onPressed: canReport ? _openReportCard : null,
             ),
+          IconButton(
+            tooltip: 'Manage group members',
+            icon: const Icon(Icons.group_rounded, color: _navy),
+            onPressed: _openManageGroupMembers,
+          ),
         ],
         bottom: (subjectTrim.isEmpty)
             ? null

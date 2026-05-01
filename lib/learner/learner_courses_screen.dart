@@ -1043,7 +1043,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     final attendance = course['attendance'];
     switch (variantKey) {
       case 'inclass':
-        return countHeldUniqueAttendanceDates(attendance);
+        return countHeldAttendanceRecords(attendance);
       case 'private':
         return countPresentUniqueAttendanceDates(attendance);
       case 'flexible':
@@ -1474,7 +1474,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           return buildPill(state, tone);
                         }
 
-                        final inclassHeld = countHeldUniqueAttendanceDates(
+                        final inclassHeld = countHeldAttendanceRecords(
                           course['attendance'],
                         );
                         final privatePresent =

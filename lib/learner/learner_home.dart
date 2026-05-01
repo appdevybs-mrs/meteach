@@ -138,7 +138,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     final attendance = course['attendance'];
     switch (variantKey) {
       case 'inclass':
-        return countHeldUniqueAttendanceDates(attendance);
+        return countHeldAttendanceRecords(attendance);
       case 'private':
         return countPresentUniqueAttendanceDates(attendance);
       case 'flexible':
