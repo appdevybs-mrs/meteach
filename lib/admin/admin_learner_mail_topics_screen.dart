@@ -176,6 +176,10 @@ class _AdminLearnerMailTopicsScreenState
       });
 
       if (!mounted) return;
+      final learnerLabel = widget.learnerName.trim().isEmpty
+          ? 'learner'
+          : widget.learnerName.trim();
+      _snack('Topic created for $learnerLabel ✅');
 
       // open thread immediately
       await Navigator.of(context).push(

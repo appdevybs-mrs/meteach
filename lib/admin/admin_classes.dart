@@ -45,7 +45,7 @@ import '../services/reminder_consistency_service.dart';
 import 'admin_learner_mail_topics_screen.dart';
 import 'admin_learners.dart';
 
-enum _QuickLearnerReminder { payment, absence, empty }
+enum _QuickLearnerReminder { payment, absence, late, empty }
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
@@ -211,6 +211,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         message =
             'We noticed an absence. Please confirm with Your Bridge School.';
         break;
+      case _QuickLearnerReminder.late:
+        title = 'Late Arrival Reminder';
+        message =
+            'We noticed that you arrived late recently. Please try to come on time so you can benefit from the full lesson. We are always here to support you.';
+        break;
       case _QuickLearnerReminder.empty:
         return;
     }
@@ -277,7 +282,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       });
 
       if (!mounted) return;
-      _notify('Reminder saved & push sent ✅');
+      _notify('$title sent ✅');
     } catch (e) {
       await reminderRef.update({'status': 'new', 'push/error': e.toString()});
 
@@ -310,6 +315,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               leading: const Icon(Icons.event_busy_rounded),
               title: const Text('Absence'),
               onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
+            ),
+            ListTile(
+              leading: const Icon(Icons.access_time_rounded),
+              title: const Text('Late'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.late),
             ),
             ListTile(
               leading: const Icon(Icons.mail_rounded),

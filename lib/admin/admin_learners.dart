@@ -619,7 +619,7 @@ enum _PayFlag { ok, yellow, red, black, noCourse }
 
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
-enum _QuickLearnerReminder { payment, absence, empty }
+enum _QuickLearnerReminder { payment, absence, late, empty }
 
 enum _QuickSmsTemplate { empty, welcome, paymentReminder, absence, schedule }
 
@@ -1229,6 +1229,11 @@ class _LearnersListState extends State<_LearnersList>
         message =
             'We noticed an absence. Please confirm with Your Bridge School.';
         break;
+      case _QuickLearnerReminder.late:
+        title = 'Late Arrival Reminder';
+        message =
+            'We noticed that you arrived late recently. Please try to come on time so you can benefit from the full lesson. We are always here to support you.';
+        break;
       case _QuickLearnerReminder.empty:
         return;
     }
@@ -1310,7 +1315,7 @@ class _LearnersListState extends State<_LearnersList>
       );
 
       if (!mounted) return;
-      _toast('Reminder saved & push sent ✅');
+      _toast('$title sent ✅');
     } catch (e) {
       await reminderRef.update({'status': 'new', 'push/error': e.toString()});
 
@@ -1353,6 +1358,11 @@ class _LearnersListState extends State<_LearnersList>
               leading: const Icon(Icons.event_busy_rounded),
               title: const Text('Absence'),
               onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
+            ),
+            ListTile(
+              leading: const Icon(Icons.access_time_rounded),
+              title: const Text('Late'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.late),
             ),
             ListTile(
               leading: const Icon(Icons.mail_rounded),

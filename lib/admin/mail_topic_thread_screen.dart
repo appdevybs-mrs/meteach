@@ -1042,6 +1042,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         );
         unawaited(_markRead());
         _forceScrollToLatest();
+        final peerLabel = widget.peerName.trim().isEmpty
+            ? 'learner'
+            : widget.peerName.trim();
+        _snack('Mail sent to $peerLabel ✅');
         unawaited(() async {
           try {
             await PushDispatchService.dispatchMailToGroup(
@@ -1161,6 +1165,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           );
         } catch (_) {}
       }());
+      final peerLabel = widget.peerName.trim().isEmpty
+          ? 'learner'
+          : widget.peerName.trim();
+      _snack('Mail sent to $peerLabel ✅');
     } catch (e) {
       // ✅ restore input on failure
       _bodyC.text = bodyBackup;
