@@ -404,6 +404,52 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     return idx < 0 ? 0 : idx;
   }
 
+  String _normalizeDayLabel(String day) {
+    final d = day.trim().toLowerCase();
+    switch (d) {
+      case 'sat':
+      case 'saturday':
+        return 'Sat';
+      case 'sun':
+      case 'sunday':
+        return 'Sun';
+      case 'mon':
+      case 'monday':
+        return 'Mon';
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return 'Tue';
+      case 'wed':
+      case 'wednesday':
+        return 'Wed';
+      case 'thu':
+      case 'thurs':
+      case 'thursday':
+        return 'Thu';
+      case 'fri':
+      case 'friday':
+        return 'Fri';
+      default:
+        return '';
+    }
+  }
+
+  String _initialsWithDots(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return '-';
+    final parts = clean
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '-';
+    final letters = parts
+        .take(3)
+        .map((p) => p.substring(0, 1).toUpperCase())
+        .toList();
+    return '${letters.join('.')}.';
+  }
+
   // -------------------- Sessions progress --------------------
 
   int _sessionsTotal(Map<String, dynamic> cls) {
@@ -638,7 +684,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => AdminClassesScreen(openClassId: id),
+                          builder: (_) =>
+                              AdminClassesScreen(openClassSearchId: id),
                         ),
                       );
                     },
@@ -753,8 +800,10 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // -------------------- Blocks overlay --------------------
 
-  List<Widget> _buildBlocks(List<Map<String, dynamic>> classes, _Sizes s) {
-    final List<Widget> blocks = [];
+  List<_SessionBlock> _collectSessionBlocks(
+    List<Map<String, dynamic>> classes,
+  ) {
+    final out = <_SessionBlock>[];
 
     for (final cls in classes) {
       final bool isOpen = (cls["is_open"] ?? true) == true;
@@ -784,11 +833,13 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
             ? Map<String, dynamic>.from(sess)
             : <String, dynamic>{};
 
-        final day = (m["day"] ?? "").toString().trim();
+        final day = _normalizeDayLabel((m["day"] ?? "").toString());
         final start = (m["start_time"] ?? "").toString().trim();
         final dur = int.tryParse((m["duration_min"] ?? "0").toString()) ?? 0;
 
         if (day.isEmpty || start.isEmpty || dur <= 0) continue;
+
+        if (!RegExp(r'^\d{2}:\d{2}$').hasMatch(start)) continue;
 
         final startMin = _timeToMinutes(start);
         final endMin = startMin + dur;
@@ -799,121 +850,271 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         final visEnd = endMin > _visibleEndMin ? _visibleEndMin : endMin;
         if (visEnd <= visStart) continue;
 
-        final dayIdx = _dayIndex(day);
-
-        final top = ((visStart - _visibleStartMin) / _minutesStep) * s.slotH;
-        final height = (((visEnd - visStart) / _minutesStep) * s.slotH) - 4;
-
-        final left = s.timeGutterW + (dayIdx * s.dayColW) + 4;
-        final width = s.dayColW - 8;
-
         final title = _titleOf(cls);
         final learnersCount = _learnersCountOf(cls);
         final studyType = _studyTypeLabelOf(cls);
-
-        blocks.add(
-          Positioned(
-            left: left,
-            top: top + 2,
-            width: width,
-            height: height.clamp(18.0, double.infinity),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => _openClassPopup(cls),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  gradient: gradient,
-                  border: Border.all(
-                    color: isOpen
-                        ? borderColor.withValues(alpha: 0.70)
-                        : Colors.red.withValues(alpha: 0.75),
-                  ),
-                ),
-                child: LayoutBuilder(
-                  builder: (context, c) {
-                    final fsTitle = (c.maxHeight < 42) ? 10.5 : 12.0;
-                    final fsSub = (c.maxHeight < 42) ? 9.8 : 11.0;
-
-                    return ClipRect(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topLeft,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: c.maxWidth),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                "${title.isEmpty ? "Untitled" : title} • $learnersCount",
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: fsTitle,
-                                  height: 1.0,
-                                  color: Colors.black.withValues(alpha: 0.88),
-                                ),
-                              ),
-                              Text(
-                                studyType.isEmpty ? "-" : studyType,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: fsSub,
-                                  height: 1.0,
-                                  color: Colors.black.withValues(alpha: 0.84),
-                                ),
-                              ),
-                              Text(
-                                instructor.isEmpty ? "No teacher" : instructor,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: fsSub,
-                                  height: 1.0,
-                                  color: Colors.black.withValues(alpha: 0.82),
-                                ),
-                              ),
-                              Text(
-                                start,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: fsSub,
-                                  height: 1.0,
-                                  color: Colors.black.withValues(alpha: 0.88),
-                                ),
-                              ),
-                              if (!isOpen)
-                                const Text(
-                                  "CLOSED",
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 11,
-                                    height: 1.0,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
+        out.add(
+          _SessionBlock(
+            cls: cls,
+            dayIdx: _dayIndex(day),
+            visStartMin: visStart,
+            visEndMin: visEnd,
+            isOpen: isOpen,
+            title: title,
+            learnersCount: learnersCount,
+            studyType: studyType,
+            instructor: instructor,
+            gradient: gradient,
+            borderColor: borderColor,
           ),
         );
       }
+    }
+
+    return out;
+  }
+
+  List<Widget> _buildBlocks(List<Map<String, dynamic>> classes, _Sizes s) {
+    final blocks = <Widget>[];
+    final sessions = _collectSessionBlocks(classes);
+
+    final byDay = <int, List<_SessionBlock>>{};
+    for (final b in sessions) {
+      byDay.putIfAbsent(b.dayIdx, () => <_SessionBlock>[]).add(b);
+    }
+
+    byDay.forEach((_, dayBlocks) {
+      dayBlocks.sort((a, b) {
+        final sCmp = a.visStartMin.compareTo(b.visStartMin);
+        if (sCmp != 0) return sCmp;
+        return a.visEndMin.compareTo(b.visEndMin);
+      });
+
+      final active = <_SessionBlock>[];
+
+      for (final block in dayBlocks) {
+        active.removeWhere((x) => x.visEndMin <= block.visStartMin);
+        final usedCols = active.map((x) => x.col).toSet();
+        int col = 0;
+        while (usedCols.contains(col)) {
+          col++;
+        }
+        block.col = col;
+        active.add(block);
+
+        final laneCount = active.length;
+        for (final a in active) {
+          if (a.laneCount < laneCount) a.laneCount = laneCount;
+        }
+      }
+
+      for (final block in dayBlocks) {
+        final overlapPeers = dayBlocks
+            .where(
+              (other) =>
+                  !(other.visEndMin <= block.visStartMin ||
+                      other.visStartMin >= block.visEndMin),
+            )
+            .toList();
+        if (overlapPeers.isEmpty) continue;
+
+        final maxLane = overlapPeers
+            .map((x) => x.laneCount)
+            .reduce((a, b) => a > b ? a : b);
+
+        final dayWidth = s.dayColW - 4;
+        const colGap = 2.0;
+        const minLaneWidth = 58.0;
+        final computedMaxLanes = ((dayWidth + colGap) / (minLaneWidth + colGap))
+            .floor();
+        final maxLanes = computedMaxLanes < 1 ? 1 : computedMaxLanes;
+
+        if (maxLane <= maxLanes) {
+          block.denseRank = 0;
+          block.denseCount = 1;
+          continue;
+        }
+
+        final densePeers =
+            overlapPeers.where((x) => x.col >= (maxLanes - 1)).toList()
+              ..sort((a, b) {
+                final sCmp = a.visStartMin.compareTo(b.visStartMin);
+                if (sCmp != 0) return sCmp;
+                return a.visEndMin.compareTo(b.visEndMin);
+              });
+
+        block.denseCount = densePeers.isEmpty ? 1 : densePeers.length;
+        if (block.col >= (maxLanes - 1)) {
+          final idx = densePeers.indexOf(block);
+          block.denseRank = idx < 0 ? 0 : idx;
+        } else {
+          block.denseRank = 0;
+        }
+      }
+    });
+
+    for (final b in sessions) {
+      final top = ((b.visStartMin - _visibleStartMin) / _minutesStep) * s.slotH;
+      final rawHeight =
+          (((b.visEndMin - b.visStartMin) / _minutesStep) * s.slotH) - 1;
+      final height = rawHeight.clamp(18.0, double.infinity);
+
+      const dayInset = 2.0;
+      const colGap = 2.0;
+      const minLaneWidth = 58.0;
+      final dayLeft = s.timeGutterW + (b.dayIdx * s.dayColW) + dayInset;
+      final dayWidth = s.dayColW - (dayInset * 2);
+      final laneCount = b.laneCount < 1 ? 1 : b.laneCount;
+      final computedMaxLanes = ((dayWidth + colGap) / (minLaneWidth + colGap))
+          .floor();
+      final maxLanes = computedMaxLanes < 1 ? 1 : computedMaxLanes;
+      final renderLanes = laneCount > maxLanes ? maxLanes : laneCount;
+      final gapTotal = (renderLanes - 1) * colGap;
+      final colW = (dayWidth - gapTotal) / renderLanes;
+
+      final denseMode = laneCount > maxLanes;
+      final renderCol = denseMode
+          ? (b.col < (renderLanes - 1) ? b.col : (renderLanes - 1))
+          : b.col;
+      final left = dayLeft + (renderCol * (colW + colGap));
+
+      double blockTop = top;
+      double blockHeight = height;
+
+      if (denseMode && b.col >= (renderLanes - 1)) {
+        final stackCount = b.denseCount < 1 ? 1 : b.denseCount;
+        final rank = b.denseRank < 0 ? 0 : b.denseRank;
+        final stackGap = stackCount > 1 ? (stackCount - 1) * 1.0 : 0.0;
+        final perHeight = ((height - stackGap) / stackCount).clamp(
+          14.0,
+          height,
+        );
+        blockTop = top + (rank * (perHeight + 1.0));
+        blockHeight = perHeight;
+      }
+
+      blocks.add(
+        Positioned(
+          left: left,
+          top: blockTop,
+          width: colW,
+          height: blockHeight,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _openClassPopup(b.cls),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: b.gradient,
+                border: Border.all(
+                  color: b.isOpen
+                      ? b.borderColor.withValues(alpha: 0.70)
+                      : Colors.red.withValues(alpha: 0.75),
+                ),
+              ),
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  final tiny = c.maxHeight < 34;
+                  final compact = c.maxHeight < 46;
+                  final fsTitle = tiny ? 8.8 : (compact ? 9.6 : 10.6);
+                  final fsSub = tiny ? 8.0 : (compact ? 8.8 : 9.6);
+                  final showStudyType = !tiny;
+                  final showClosed = !b.isOpen && !tiny;
+                  final showDenseBadge =
+                      denseMode &&
+                      b.col >= (renderLanes - 1) &&
+                      b.denseRank == 0 &&
+                      b.denseCount > 1;
+
+                  return Stack(
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "${b.title.isEmpty ? "Untitled" : b.title} • ${b.learnersCount}",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: fsTitle,
+                              height: 1.0,
+                              color: Colors.black.withValues(alpha: 0.88),
+                            ),
+                          ),
+                          if (showStudyType)
+                            Text(
+                              b.studyType.isEmpty ? "-" : b.studyType,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: fsSub,
+                                height: 1.0,
+                                color: Colors.black.withValues(alpha: 0.84),
+                              ),
+                            ),
+                          Text(
+                            _initialsWithDots(
+                              b.instructor.isEmpty
+                                  ? "No teacher"
+                                  : b.instructor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: fsSub,
+                              height: 1.0,
+                              color: Colors.black.withValues(alpha: 0.82),
+                            ),
+                          ),
+                          if (showClosed)
+                            const Text(
+                              "CLOSED",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 10,
+                                height: 1.0,
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (showDenseBadge)
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '+${b.denseCount - 1}',
+                              style: TextStyle(
+                                fontSize: tiny ? 7.0 : 8.0,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.black.withValues(alpha: 0.85),
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     return blocks;
@@ -1154,7 +1355,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("Weekly Timetable"),
@@ -1312,6 +1512,38 @@ class _Sizes {
   final double timeGutterW;
   final double dayColW;
   final double slotH;
+}
+
+class _SessionBlock {
+  _SessionBlock({
+    required this.cls,
+    required this.dayIdx,
+    required this.visStartMin,
+    required this.visEndMin,
+    required this.isOpen,
+    required this.title,
+    required this.learnersCount,
+    required this.studyType,
+    required this.instructor,
+    required this.gradient,
+    required this.borderColor,
+  });
+
+  final Map<String, dynamic> cls;
+  final int dayIdx;
+  final int visStartMin;
+  final int visEndMin;
+  final bool isOpen;
+  final String title;
+  final int learnersCount;
+  final String studyType;
+  final String instructor;
+  final LinearGradient gradient;
+  final Color borderColor;
+  int col = 0;
+  int laneCount = 1;
+  int denseRank = 0;
+  int denseCount = 1;
 }
 
 class _TimetableGridPainter extends CustomPainter {

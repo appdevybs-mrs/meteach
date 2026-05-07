@@ -714,6 +714,8 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                   itemBuilder: (context, i) {
                                     final r = shown[i];
                                     final isHomework = _isHomeworkRow(r);
+                                    final isReport =
+                                        r.type.trim().toLowerCase() == 'report';
 
                                     final peerUid = r.peerUid;
                                     final isGroup = r.isGroup;
@@ -741,28 +743,38 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                       child: Container(
                                         padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
-                                          color: Colors.white,
+                                          color: isReport
+                                              ? const Color(0xFFE8F1FB)
+                                              : Colors.white,
                                           borderRadius: BorderRadius.circular(
                                             18,
                                           ),
                                           border: Border.all(
-                                            color: isHomework
-                                                ? _hwAccent.withValues(
-                                                    alpha: 0.26,
-                                                  )
-                                                : _navy.withValues(alpha: 0.14),
+                                            color: isReport
+                                                ? const Color(
+                                                    0xFF1F4E79,
+                                                  ).withValues(alpha: 0.30)
+                                                : (isHomework
+                                                      ? _hwAccent.withValues(
+                                                          alpha: 0.26,
+                                                        )
+                                                      : _navy.withValues(
+                                                          alpha: 0.14,
+                                                        )),
                                           ),
                                         ),
                                         child: Row(
                                           children: [
-                                            if (isHomework) ...[
+                                            if (isHomework || isReport) ...[
                                               Container(
                                                 width: 4,
                                                 height: 46,
                                                 decoration: BoxDecoration(
-                                                  color: _hwAccent.withValues(
-                                                    alpha: 0.92,
-                                                  ),
+                                                  color: isReport
+                                                      ? const Color(0xFF1F4E79)
+                                                      : _hwAccent.withValues(
+                                                          alpha: 0.92,
+                                                        ),
                                                   borderRadius:
                                                       BorderRadius.circular(
                                                         999,
@@ -815,9 +827,14 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                             ),
                                                         fallbackFg: isHomework
                                                             ? _hwAccent
-                                                            : _navy.withValues(
-                                                                alpha: 0.92,
-                                                              ),
+                                                            : (isReport
+                                                                  ? const Color(
+                                                                      0xFF1F4E79,
+                                                                    )
+                                                                  : _navy.withValues(
+                                                                      alpha:
+                                                                          0.92,
+                                                                    )),
                                                         borderColor: _navy
                                                             .withValues(
                                                               alpha: 0.15,
@@ -910,6 +927,42 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                             ),
                                                           ),
                                                         ),
+                                                      if (isReport)
+                                                        Container(
+                                                          margin:
+                                                              const EdgeInsets.only(
+                                                                right: 8,
+                                                              ),
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 2,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color:
+                                                                const Color(
+                                                                  0xFF1F4E79,
+                                                                ).withValues(
+                                                                  alpha: 0.14,
+                                                                ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  999,
+                                                                ),
+                                                          ),
+                                                          child: const Text(
+                                                            'Report',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w900,
+                                                              color: Color(
+                                                                0xFF1F4E79,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
                                                       const SizedBox(width: 10),
                                                       Text(
                                                         updatedAt <= 0
@@ -943,10 +996,17 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                                   .withValues(
                                                                     alpha: 0.12,
                                                                   )
-                                                            : _orange
-                                                                  .withValues(
-                                                                    alpha: 0.14,
-                                                                  ),
+                                                            : (isReport
+                                                                  ? const Color(
+                                                                      0xFF1F4E79,
+                                                                    ).withValues(
+                                                                      alpha:
+                                                                          0.12,
+                                                                    )
+                                                                  : _orange.withValues(
+                                                                      alpha:
+                                                                          0.14,
+                                                                    )),
                                                         borderRadius:
                                                             BorderRadius.circular(
                                                               999,
@@ -958,11 +1018,17 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                                       alpha:
                                                                           0.28,
                                                                     )
-                                                              : _orange
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.24,
-                                                                    ),
+                                                              : (isReport
+                                                                    ? const Color(
+                                                                        0xFF1F4E79,
+                                                                      ).withValues(
+                                                                        alpha:
+                                                                            0.24,
+                                                                      )
+                                                                    : _orange.withValues(
+                                                                        alpha:
+                                                                            0.24,
+                                                                      )),
                                                         ),
                                                       ),
                                                       child: Text(
@@ -979,7 +1045,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                                       alpha:
                                                                           0.92,
                                                                     )
-                                                              : _navyDark,
+                                                              : (isReport
+                                                                    ? const Color(
+                                                                        0xFF1F4E79,
+                                                                      )
+                                                                    : _navyDark),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -1014,9 +1084,15 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                                   ? _hwAccent.withValues(
                                                       alpha: 0.78,
                                                     )
-                                                  : _orange.withValues(
-                                                      alpha: 0.85,
-                                                    ),
+                                                  : (isReport
+                                                        ? const Color(
+                                                            0xFF1F4E79,
+                                                          ).withValues(
+                                                            alpha: 0.85,
+                                                          )
+                                                        : _orange.withValues(
+                                                            alpha: 0.85,
+                                                          )),
                                             ),
                                           ],
                                         ),

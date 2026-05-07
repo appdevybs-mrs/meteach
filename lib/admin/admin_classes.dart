@@ -49,7 +49,12 @@ enum _QuickLearnerReminder { payment, absence, late, empty }
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
-  const AdminClassesScreen({super.key, this.openClassId});
+  final String? openClassSearchId;
+  const AdminClassesScreen({
+    super.key,
+    this.openClassId,
+    this.openClassSearchId,
+  });
 
   @override
   State<AdminClassesScreen> createState() => _AdminClassesScreenState();
@@ -618,6 +623,18 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // -------------------- Open from timetable --------------------
 
   Future<void> _maybeOpenFromTimetable() async {
+    final searchId = widget.openClassSearchId?.trim();
+    if (searchId != null && searchId.isNotEmpty) {
+      await _bootFuture;
+      if (!mounted) return;
+      setState(() {
+        _showClassesSearch = true;
+        _searchCtrl.text = searchId;
+        _searchQuery = searchId.toLowerCase();
+      });
+      return;
+    }
+
     final id = widget.openClassId?.trim();
     if (id == null || id.isEmpty) return;
 

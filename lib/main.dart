@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
@@ -3575,7 +3576,7 @@ class _CoursesByCategory extends StatelessWidget {
   }
 }
 
-class _CategoryGridCard extends StatelessWidget {
+class _CategoryGridCard extends StatefulWidget {
   const _CategoryGridCard({
     required this.title,
     required this.courses,
@@ -3589,11 +3590,192 @@ class _CategoryGridCard extends StatelessWidget {
   final void Function(_CourseLite course) onOpenCourse;
 
   @override
+  State<_CategoryGridCard> createState() => _CategoryGridCardState();
+}
+
+class _CategoryGridCardState extends State<_CategoryGridCard> {
+  static final Map<String, Color> _thumbColorCache = <String, Color>{};
+
+  Color? _adaptiveColor;
+  bool _loadingColor = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAdaptiveColor();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CategoryGridCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.courses != widget.courses) {
+      _loadAdaptiveColor();
+    }
+  }
+
+  Future<void> _loadAdaptiveColor() async {
+    if (_loadingColor) return;
+    _loadingColor = true;
+
+    try {
+      final thumbs = widget.courses
+          .map((c) => c.thumb.trim())
+          .where((u) => u.isNotEmpty)
+          .take(3)
+          .toList();
+
+      if (thumbs.isEmpty) {
+        if (mounted) setState(() => _adaptiveColor = null);
+        return;
+      }
+
+      final colors = <Color>[];
+      for (final url in thumbs) {
+        final fromCache = _thumbColorCache[url];
+        if (fromCache != null) {
+          colors.add(fromCache);
+          continue;
+        }
+
+        final c = await _extractDominantColor(url);
+        if (c != null) {
+          _thumbColorCache[url] = c;
+          colors.add(c);
+        }
+      }
+
+      if (colors.isEmpty) {
+        if (mounted) setState(() => _adaptiveColor = null);
+        return;
+      }
+
+      final mixed = _mixColors(colors);
+      if (!mounted) return;
+      setState(() => _adaptiveColor = mixed);
+    } finally {
+      _loadingColor = false;
+    }
+  }
+
+  Color _mixColors(List<Color> colors) {
+    var r = 0.0;
+    var g = 0.0;
+    var b = 0.0;
+    for (final c in colors) {
+      r += c.r;
+      g += c.g;
+      b += c.b;
+    }
+    final n = colors.length.toDouble();
+    return Color.from(
+      alpha: 1,
+      red: (r / n).clamp(0, 1),
+      green: (g / n).clamp(0, 1),
+      blue: (b / n).clamp(0, 1),
+    );
+  }
+
+  Color _softened(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    final softened = hsl
+        .withSaturation((hsl.saturation * 0.6).clamp(0.22, 0.55))
+        .withLightness((hsl.lightness * 0.86 + 0.14).clamp(0.58, 0.82));
+    return softened.toColor();
+  }
+
+  Color _onColor(Color bg) {
+    return ThemeData.estimateBrightnessForColor(bg) == Brightness.dark
+        ? Colors.white
+        : Brand.primaryBlue;
+  }
+
+  Color _adaptiveActionColor(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl
+        .withSaturation((hsl.saturation * 0.75).clamp(0.35, 0.82))
+        .withLightness(0.32)
+        .toColor();
+  }
+
+  Future<Color?> _extractDominantColor(String url) async {
+    final imageProvider = NetworkImage(url);
+    final stream = imageProvider.resolve(const ImageConfiguration());
+    final completer = Completer<ImageInfo>();
+
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        if (!completer.isCompleted) completer.complete(info);
+      },
+      onError: (error, stackTrace) {
+        if (!completer.isCompleted) completer.completeError(error, stackTrace);
+      },
+    );
+    stream.addListener(listener);
+
+    try {
+      final info = await completer.future.timeout(const Duration(seconds: 3));
+      final image = info.image;
+      final byteData = await image.toByteData(format: ImageByteFormat.rawRgba);
+      if (byteData == null) return null;
+
+      final bytes = byteData.buffer.asUint8List();
+      final width = image.width;
+      final height = image.height;
+      if (width <= 0 || height <= 0) return null;
+
+      final stepX = (width / 24).floor().clamp(1, width);
+      final stepY = (height / 24).floor().clamp(1, height);
+
+      var r = 0;
+      var g = 0;
+      var b = 0;
+      var count = 0;
+
+      for (var y = 0; y < height; y += stepY) {
+        for (var x = 0; x < width; x += stepX) {
+          final i = (y * width + x) * 4;
+          if (i + 3 >= bytes.length) continue;
+          final a = bytes[i + 3];
+          if (a < 128) continue;
+          final rr = bytes[i];
+          final gg = bytes[i + 1];
+          final bb = bytes[i + 2];
+          final maxCh = math.max(rr, math.max(gg, bb));
+          final minCh = math.min(rr, math.min(gg, bb));
+          final sat = maxCh == 0 ? 0.0 : (maxCh - minCh) / maxCh;
+          if (sat < 0.08) continue;
+
+          r += rr;
+          g += gg;
+          b += bb;
+          count++;
+        }
+      }
+
+      if (count == 0) return null;
+      return Color.fromRGBO(r ~/ count, g ~/ count, b ~/ count, 1);
+    } catch (_) {
+      return null;
+    } finally {
+      stream.removeListener(listener);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 390;
     final cardW = compact ? 146.0 : 158.0;
     final thumbH = compact ? 84.0 : 92.0;
+    final topTone = _adaptiveColor == null ? null : _softened(_adaptiveColor!);
+    final chipBg = topTone == null
+        ? Brand.primaryBlue.withValues(alpha: 0.10)
+        : topTone.withValues(alpha: 0.34);
+    final chipFg = topTone == null ? Brand.primaryBlue : _onColor(topTone);
+    final actionTone = topTone == null
+        ? Brand.primaryBlue
+        : _adaptiveActionColor(topTone);
 
     return Material(
       color: Colors.transparent,
@@ -3604,7 +3786,13 @@ class _CategoryGridCard extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.white, Brand.appBg.withValues(alpha: 0.88)],
+            colors: topTone == null
+                ? [Colors.white, Brand.appBg.withValues(alpha: 0.88)]
+                : [
+                    topTone.withValues(alpha: 0.38),
+                    topTone.withValues(alpha: 0.18),
+                    Colors.white,
+                  ],
           ),
           boxShadow: [
             BoxShadow(
@@ -3624,19 +3812,15 @@ class _CategoryGridCard extends StatelessWidget {
                   width: compact ? 30 : 32,
                   height: compact ? 30 : 32,
                   decoration: BoxDecoration(
-                    color: Brand.primaryBlue.withValues(alpha: 0.10),
+                    color: chipBg,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
-                    Icons.category_rounded,
-                    color: Brand.primaryBlue,
-                    size: 18,
-                  ),
+                  child: Icon(Icons.category_rounded, color: chipFg, size: 18),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '$title (${courses.length})',
+                    '${widget.title} (${widget.courses.length})',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -3645,19 +3829,23 @@ class _CategoryGridCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                TextButton(onPressed: onTap, child: const Text('View all')),
+                TextButton(
+                  onPressed: widget.onTap,
+                  style: TextButton.styleFrom(foregroundColor: actionTone),
+                  child: const Text('View all'),
+                ),
               ],
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: compact ? 142 : 150,
+              height: compact ? 124 : 132,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: courses.length,
+                itemCount: widget.courses.length,
                 separatorBuilder: (_, ignoredSeparator) =>
                     const SizedBox(width: 8),
                 itemBuilder: (_, i) {
-                  final c = courses[i];
+                  final c = widget.courses[i];
                   return SizedBox(
                     width: cardW,
                     child: Material(
@@ -3665,7 +3853,7 @@ class _CategoryGridCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: () => onOpenCourse(c),
+                        onTap: () => widget.onOpenCourse(c),
                         child: Ink(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
@@ -3696,7 +3884,7 @@ class _CategoryGridCard extends StatelessWidget {
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                                 child: Text(
                                   c.title.trim().isEmpty
                                       ? '(Untitled course)'

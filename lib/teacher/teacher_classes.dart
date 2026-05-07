@@ -820,7 +820,20 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             final order = _asInt(session['order']);
 
             if (sn == sessionNo || order == sessionNo) {
-              return session;
+              final unitTitle = (unit['title'] ?? '').toString().trim();
+              final unitOtherTitle = (unit['otherTitle'] ?? '')
+                  .toString()
+                  .trim();
+              final unitOrder = _asInt(unit['order']);
+
+              return {
+                ...session,
+                'variantKey': variantKey,
+                'sessionNoResolved': sn > 0 ? sn : order,
+                'unitTitle': unitTitle,
+                'unitOtherTitle': unitOtherTitle,
+                'unitOrder': unitOrder,
+              };
             }
           }
         }
@@ -835,6 +848,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     int sessionNo,
     String courseTitle,
     List<String> learnerUids,
+    int startAtMillis,
+    int bookingDurationMinutes,
   ) async {
     final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
     if (!mounted) return;
@@ -845,9 +860,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
 
     final titleRaw = (info['title'] ?? '').toString().trim();
+    final resolvedSessionNo = _asInt(info['sessionNoResolved']);
+    final shownSessionNo = resolvedSessionNo > 0
+        ? resolvedSessionNo
+        : sessionNo;
     final title = titleRaw.isEmpty
-        ? 'Session $sessionNo'
-        : 'Session $sessionNo — $titleRaw';
+        ? 'Session $shownSessionNo'
+        : 'Session $shownSessionNo — $titleRaw';
 
     final courseLabel = courseTitle.trim().isEmpty ? courseId : courseTitle;
 
@@ -855,7 +874,49 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final content = (info['content'] ?? '').toString().trim();
     final homework = (info['homework'] ?? '').toString().trim();
     final materialsUrl = (info['materialsUrl'] ?? '').toString().trim();
-    final duration = _asInt(info['durationMinutes'] ?? 0);
+    final duration = _asInt(info['durationMinutes'] ?? 0) > 0
+        ? _asInt(info['durationMinutes'] ?? 0)
+        : bookingDurationMinutes;
+    final skillType = (info['skillType'] ?? '').toString().trim();
+    final unitTitle = (info['unitTitle'] ?? '').toString().trim();
+    final unitOrder = _asInt(info['unitOrder']);
+    final unitLabel = unitTitle.isEmpty
+        ? '-'
+        : (unitOrder > 0 ? 'Unit $unitOrder: $unitTitle' : unitTitle);
+    final variantKey = (info['variantKey'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final variantLabel = switch (variantKey) {
+      'inclass' => 'In-Class',
+      'private' => 'Private',
+      'flexible' => 'Flexible',
+      'recorded' => 'Recorded',
+      _ => '-',
+    };
+    final unitOtherTitle = (info['unitOtherTitle'] ?? '').toString().trim();
+
+    final startsAt = DateTime.fromMillisecondsSinceEpoch(startAtMillis);
+    final endsAt = startsAt.add(Duration(minutes: bookingDurationMinutes));
+    final now = DateTime.now();
+    final inWindow = _isInJoinWindow(startsAt, bookingDurationMinutes);
+    final isUpcoming = startsAt.isAfter(now) && !inWindow;
+    final statusText = inWindow ? 'Live' : (isUpcoming ? 'Upcoming' : 'Past');
+    final statusBg = inWindow
+        ? const Color(0xFFEAF7EE)
+        : (isUpcoming
+              ? p.accent.withValues(alpha: 0.12)
+              : p.soft.withValues(alpha: 0.65));
+    final statusBorder = inWindow
+        ? const Color(0xFFB9E2C5)
+        : (isUpcoming
+              ? p.accent.withValues(alpha: 0.28)
+              : p.border.withValues(alpha: 0.82));
+    final statusColor = inWindow ? const Color(0xFF166534) : p.primary;
+    final whenText =
+        '${startsAt.year}-${_two(startsAt.month)}-${_two(startsAt.day)} ${_two(startsAt.hour)}:${_two(startsAt.minute)}';
+    final endText =
+        '${endsAt.year}-${_two(endsAt.month)}-${_two(endsAt.day)} ${_two(endsAt.hour)}:${_two(endsAt.minute)}';
     final uniqueLearners = learnerUids
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
@@ -905,96 +966,147 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  title,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                    color: p.primary,
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: p.soft.withValues(alpha: 0.22),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: p.border.withValues(alpha: 0.85),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 16,
+                                                color: p.primary,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: statusBg,
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border: Border.all(
+                                                color: statusBorder,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              statusText,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: statusColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Course: $courseLabel',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: p.text.withValues(alpha: 0.78),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '$whenText - $endText',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: p.text.withValues(alpha: 0.72),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Course: $courseLabel',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: p.text.withValues(alpha: 0.72),
-                                  ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _detailsChip(
+                                      Icons.layers_rounded,
+                                      'Variant',
+                                      variantLabel,
+                                    ),
+                                    _detailsChip(
+                                      Icons.widgets_rounded,
+                                      'Unit',
+                                      unitLabel,
+                                    ),
+                                    _detailsChip(
+                                      Icons.school_rounded,
+                                      'Skill',
+                                      skillType.isEmpty ? '-' : skillType,
+                                    ),
+                                    _detailsChip(
+                                      Icons.timer_outlined,
+                                      'Duration',
+                                      duration > 0 ? '$duration min' : '-',
+                                    ),
+                                    if (unitOtherTitle.isNotEmpty)
+                                      _detailsChip(
+                                        Icons.category_rounded,
+                                        'Module',
+                                        unitOtherTitle,
+                                      ),
+                                  ],
                                 ),
-                                const SizedBox(height: 6),
-                                if (duration > 0)
-                                  Text(
-                                    'Duration: $duration min',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: p.text.withValues(alpha: 0.72),
-                                    ),
-                                  ),
-                                const SizedBox(height: 14),
-                                if (objective.isNotEmpty) ...[
-                                  Text(
-                                    'Objectives',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: p.primary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    objective,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.72),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                ],
-                                if (content.isNotEmpty) ...[
-                                  Text(
-                                    'Content',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: p.primary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    content,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.72),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                ],
-                                if (homework.isNotEmpty) ...[
-                                  Text(
-                                    'Homework',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: p.primary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    homework,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.72),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                ],
+                                const SizedBox(height: 12),
+                                _detailsSectionCard(
+                                  icon: Icons.flag_rounded,
+                                  iconColor: const Color(0xFFCC5803),
+                                  title: 'Objective',
+                                  body: objective,
+                                ),
+                                const SizedBox(height: 10),
+                                _detailsSectionCard(
+                                  icon: Icons.list_alt_rounded,
+                                  iconColor: const Color(0xFF0D9488),
+                                  title: 'Content',
+                                  body: content,
+                                ),
+                                const SizedBox(height: 10),
+                                _detailsSectionCard(
+                                  icon: Icons.assignment_rounded,
+                                  iconColor: const Color(0xFFB45309),
+                                  title: 'Homework',
+                                  body: homework,
+                                ),
                                 if (materialsUrl.isNotEmpty) ...[
-                                  SizedBox(
+                                  const SizedBox(height: 12),
+                                  Container(
                                     width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: p.accent.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: p.accent.withValues(alpha: 0.25),
+                                      ),
+                                    ),
                                     child: FilledButton.icon(
                                       style: FilledButton.styleFrom(
                                         backgroundColor: p.accent,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
-                                            14,
+                                            12,
                                           ),
                                         ),
                                         padding: const EdgeInsets.symmetric(
@@ -1012,7 +1124,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
                                 ],
                               ],
                             ),
@@ -1050,11 +1161,31 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                             return ChoiceChip(
                                               selected:
                                                   selectedLearnerUid == uid,
+                                              selectedColor: p.accent
+                                                  .withValues(alpha: 0.2),
+                                              backgroundColor: p.soft
+                                                  .withValues(alpha: 0.2),
+                                              side: BorderSide(
+                                                color: selectedLearnerUid == uid
+                                                    ? p.accent.withValues(
+                                                        alpha: 0.4,
+                                                      )
+                                                    : p.border.withValues(
+                                                        alpha: 0.82,
+                                                      ),
+                                              ),
                                               onSelected: (_) => setLocal(
                                                 () => selectedLearnerUid = uid,
                                               ),
                                               label: Text(
                                                 name.isEmpty ? 'Learner' : name,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  color:
+                                                      selectedLearnerUid == uid
+                                                      ? p.primary
+                                                      : p.text,
+                                                ),
                                               ),
                                             );
                                           },
@@ -1190,10 +1321,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                                                     10,
                                                                   ),
                                                               decoration: BoxDecoration(
-                                                                color: p.soft
+                                                                color: p.accent
                                                                     .withValues(
                                                                       alpha:
-                                                                          0.2,
+                                                                          0.08,
                                                                     ),
                                                                 borderRadius:
                                                                     BorderRadius.circular(
@@ -1201,10 +1332,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                                                     ),
                                                                 border: Border.all(
                                                                   color: p
-                                                                      .border
+                                                                      .accent
                                                                       .withValues(
                                                                         alpha:
-                                                                            0.84,
+                                                                            0.28,
                                                                       ),
                                                                 ),
                                                               ),
@@ -1249,18 +1380,39 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                                                       ),
                                                                 ),
                                                               ),
-                                                              child: Text(
-                                                                '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo} • ${r.present ? 'Present' : 'Absent'}${r.teacherName.isEmpty ? '' : ' • ${r.teacherName}'}${r.teacherNoteExists ? ' • ${r.teacherRating > 0 ? '${r.teacherRating}★' : 'No stars'}${r.teacherComment.isEmpty ? '' : ' • ${r.teacherComment}'}' : ''}',
-                                                                style: TextStyle(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w700,
-                                                                  color: p.text
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.82,
-                                                                      ),
-                                                                ),
+                                                              child: Column(
+                                                                crossAxisAlignment:
+                                                                    CrossAxisAlignment
+                                                                        .start,
+                                                                children: [
+                                                                  Text(
+                                                                    '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo}',
+                                                                    style: TextStyle(
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w900,
+                                                                      color: p
+                                                                          .primary,
+                                                                    ),
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    height: 4,
+                                                                  ),
+                                                                  Text(
+                                                                    '${r.present ? 'Present' : 'Absent'}${r.teacherName.isEmpty ? '' : ' • ${r.teacherName}'}${r.teacherNoteExists ? ' • ${r.teacherRating > 0 ? '${r.teacherRating}★' : 'No stars'}${r.teacherComment.isEmpty ? '' : ' • ${r.teacherComment}'}' : ''}',
+                                                                    style: TextStyle(
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w700,
+                                                                      color: p
+                                                                          .text
+                                                                          .withValues(
+                                                                            alpha:
+                                                                                0.82,
+                                                                          ),
+                                                                    ),
+                                                                  ),
+                                                                ],
                                                               ),
                                                             );
                                                           }),
@@ -1354,6 +1506,72 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ),
         );
       },
+    );
+  }
+
+  Widget _detailsChip(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.border.withValues(alpha: 0.84)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: p.accent),
+          const SizedBox(width: 6),
+          Text(
+            '$label: $value',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: p.text.withValues(alpha: 0.84),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailsSectionCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String body,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: iconColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body.isEmpty ? '-' : body,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: p.text.withValues(alpha: 0.8),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2094,6 +2312,50 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                               Expanded(
                                 child: OutlinedButton.icon(
                                   icon: const Icon(
+                                    Icons.assessment_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Report'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: p.primary,
+                                    side: BorderSide(color: p.border),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onPressed: learnerUid.isEmpty
+                                      ? null
+                                      : () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  TeacherLearnerProfileScreen(
+                                                    learnerUid: learnerUid,
+                                                    learnerName:
+                                                        learnerDisplayName,
+                                                    openReportComposerOnLoad:
+                                                        true,
+                                                    initialCourseTitle:
+                                                        classTitle,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(
                                     Icons.photo_library_rounded,
                                     size: 16,
                                   ),
@@ -2550,6 +2812,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   b.sessionNo,
                   b.courseTitle,
                   b.learnerUids,
+                  b.startAtMillis,
+                  b.durationMinutes,
                 ),
                 icon: Icon(Icons.info_outline_rounded, color: p.accent),
                 label: Text(
@@ -3755,6 +4019,9 @@ class _OnlineAttendanceHistoryScreenState
             final sn = _toInt(sm['sessionNumber']);
             final order = _toInt(sm['order']);
             if (sn == sessionNo || order == sessionNo) {
+              final unitTitle = _safeStr(um['title']);
+              final unitOtherTitle = _safeStr(um['otherTitle']);
+              final unitOrder = _toInt(um['order']);
               return {
                 'sessionTitle': _safeStr(sm['title']),
                 'title': _safeStr(sm['title']),
@@ -3762,6 +4029,11 @@ class _OnlineAttendanceHistoryScreenState
                 'content': _safeStr(sm['content']),
                 'homework': _safeStr(sm['homework']),
                 'skillType': _safeStr(sm['skillType']),
+                'variantKey': 'flexible',
+                'sessionNoResolved': sn > 0 ? sn : order,
+                'unitTitle': unitTitle,
+                'unitOtherTitle': unitOtherTitle,
+                'unitOrder': unitOrder,
               };
             }
           }
@@ -4128,65 +4400,241 @@ class _OnlineAttendanceHistoryScreenState
     );
   }
 
-  Widget _buildCourseDetailsTab(int sessionNo, Map<String, dynamic>? info) {
+  bool _isInJoinWindow(DateTime startsAt, int durationMinutes) {
+    final now = DateTime.now();
+    final startJoin = startsAt.subtract(const Duration(minutes: 10));
+    final endJoin = startsAt.add(Duration(minutes: durationMinutes + 30));
+    return !now.isBefore(startJoin) && !now.isAfter(endJoin);
+  }
+
+  Widget _buildCourseDetailsTab(
+    Map<String, dynamic> rec,
+    int sessionNo,
+    Map<String, dynamic>? info,
+  ) {
     final title = _safeStr(info?['sessionTitle']).isNotEmpty
         ? _safeStr(info?['sessionTitle'])
         : _safeStr(info?['title']);
     final objective = _safeStr(info?['objective']);
     final content = _safeStr(info?['content']);
     final homework = _safeStr(info?['homework']);
+    final skillType = _safeStr(info?['skillType']);
+    final unitTitle = _safeStr(info?['unitTitle']);
+    final unitOrder = _toInt(info?['unitOrder']);
+    final unitOtherTitle = _safeStr(info?['unitOtherTitle']);
+    final variantKey = _safeStr(info?['variantKey']).toLowerCase();
+    final unitLabel = unitTitle.isEmpty
+        ? '-'
+        : (unitOrder > 0 ? 'Unit $unitOrder: $unitTitle' : unitTitle);
+
+    final variantLabel = switch (variantKey) {
+      'inclass' => 'In-Class',
+      'private' => 'Private',
+      'flexible' => 'Flexible',
+      'recorded' => 'Recorded',
+      _ => '-',
+    };
+
+    final startAt = _toInt(rec['startAt']);
+    final duration = _toInt(rec['durationMinutes']);
+    final startDt = startAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(startAt)
+        : DateTime.now();
+    final inWindow = startAt > 0 ? _isInJoinWindow(startDt, duration) : false;
+    final isUpcoming =
+        startAt > 0 && startDt.isAfter(DateTime.now()) && !inWindow;
+    final statusText = inWindow ? 'Live' : (isUpcoming ? 'Upcoming' : 'Past');
+    final statusBg = inWindow
+        ? const Color(0xFFEAF7EE)
+        : (isUpcoming
+              ? p.accent.withValues(alpha: 0.12)
+              : p.soft.withValues(alpha: 0.65));
+    final statusBorder = inWindow
+        ? const Color(0xFFB9E2C5)
+        : (isUpcoming
+              ? p.accent.withValues(alpha: 0.28)
+              : p.border.withValues(alpha: 0.82));
+    final statusColor = inWindow ? const Color(0xFF166534) : p.primary;
+
+    String whenText() {
+      if (startAt <= 0) return '-';
+      return '${startDt.year}-${_TeacherClassesScreenState._two(startDt.month)}-${_TeacherClassesScreenState._two(startDt.day)} ${_TeacherClassesScreenState._two(startDt.hour)}:${_TeacherClassesScreenState._two(startDt.minute)}';
+    }
 
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title.isEmpty
-                ? 'Session ${sessionNo <= 0 ? '-' : sessionNo}'
-                : 'Session $sessionNo — $title',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              color: p.primary,
-              fontSize: 15,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: p.soft.withValues(alpha: 0.22),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title.isEmpty
+                            ? 'Session ${sessionNo <= 0 ? '-' : sessionNo}'
+                            : 'Session $sessionNo — $title',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: statusBorder),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: statusColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  whenText(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: p.text.withValues(alpha: 0.72),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Objective',
-            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _historyDetailsChip(
+                Icons.layers_rounded,
+                'Variant',
+                variantLabel,
+              ),
+              _historyDetailsChip(Icons.widgets_rounded, 'Unit', unitLabel),
+              _historyDetailsChip(
+                Icons.school_rounded,
+                'Skill',
+                skillType.isEmpty ? '-' : skillType,
+              ),
+              _historyDetailsChip(
+                Icons.timer_outlined,
+                'Duration',
+                duration > 0 ? '$duration min' : '-',
+              ),
+              if (unitOtherTitle.isNotEmpty)
+                _historyDetailsChip(
+                  Icons.category_rounded,
+                  'Module',
+                  unitOtherTitle,
+                ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
+          _historyDetailsSectionCard(
+            icon: Icons.flag_rounded,
+            iconColor: const Color(0xFFCC5803),
+            title: 'Objective',
+            body: objective,
+          ),
+          const SizedBox(height: 10),
+          _historyDetailsSectionCard(
+            icon: Icons.list_alt_rounded,
+            iconColor: const Color(0xFF0D9488),
+            title: 'Lesson content',
+            body: content,
+          ),
+          const SizedBox(height: 10),
+          _historyDetailsSectionCard(
+            icon: Icons.assignment_rounded,
+            iconColor: const Color(0xFFB45309),
+            title: 'Homework',
+            body: homework,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _historyDetailsChip(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.border.withValues(alpha: 0.84)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: p.accent),
+          const SizedBox(width: 6),
           Text(
-            objective.isEmpty ? '-' : objective,
+            '$label: $value',
             style: TextStyle(
-              color: p.text.withValues(alpha: 0.82),
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
+              color: p.text.withValues(alpha: 0.84),
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Lesson content',
-            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+        ],
+      ),
+    );
+  }
+
+  Widget _historyDetailsSectionCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String body,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: iconColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
-            content.isEmpty ? '-' : content,
+            body.isEmpty ? '-' : body,
             style: TextStyle(
-              color: p.text.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Homework',
-            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            homework.isEmpty ? '-' : homework,
-            style: TextStyle(
-              color: p.text.withValues(alpha: 0.82),
-              fontWeight: FontWeight.w700,
+              color: p.text.withValues(alpha: 0.8),
+              height: 1.35,
             ),
           ),
         ],
@@ -4438,7 +4886,7 @@ class _OnlineAttendanceHistoryScreenState
                     Expanded(
                       child: TabBarView(
                         children: [
-                          _buildCourseDetailsTab(sessionNo, info),
+                          _buildCourseDetailsTab(rec, sessionNo, info),
                           _buildLearnersTab(learnerUids),
                         ],
                       ),
@@ -4612,170 +5060,251 @@ class _OnlineAttendanceHistoryScreenState
             return ListView(
               padding: const EdgeInsets.all(14),
               children: [
-                ...rows.map((rec) {
+                ...rows.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final rec = entry.value;
                   final sessionNo = _toInt(rec['resolvedSessionNo']);
                   final when = _formatWhen(rec);
                   final learners = rec['learners'];
+                  final startAt = _toInt(rec['startAt']);
+                  final duration = _toInt(rec['durationMinutes']);
+                  final startDt = startAt > 0
+                      ? DateTime.fromMillisecondsSinceEpoch(startAt)
+                      : null;
+                  final inWindow = startDt != null
+                      ? _isInJoinWindow(startDt, duration)
+                      : false;
+                  final isUpcoming =
+                      startDt != null &&
+                      startDt.isAfter(DateTime.now()) &&
+                      !inWindow;
+                  final statusText = inWindow
+                      ? 'Live'
+                      : (isUpcoming ? 'Upcoming' : 'Past');
+                  final statusBg = inWindow
+                      ? const Color(0xFFEAF7EE)
+                      : (isUpcoming
+                            ? p.accent.withValues(alpha: 0.12)
+                            : p.soft.withValues(alpha: 0.65));
+                  final statusBorder = inWindow
+                      ? const Color(0xFFB9E2C5)
+                      : (isUpcoming
+                            ? p.accent.withValues(alpha: 0.28)
+                            : p.border.withValues(alpha: 0.82));
+                  final statusColor = inWindow
+                      ? const Color(0xFF166534)
+                      : p.primary;
+                  final presentCount = _toInt(rec['presentCount']);
+                  final absentCount = _toInt(rec['absentCount']);
+                  final animMs = 180 + (idx * 40);
+                  final durationMs = animMs > 520 ? 520 : animMs;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _box(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Session ${sessionNo <= 0 ? '-' : sessionNo} • $when',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: p.primary,
-                                  ),
-                                ),
-                              ),
-                              InkWell(
-                                borderRadius: BorderRadius.circular(999),
-                                onTap: () =>
-                                    _openSessionDetails(rec, sessionNo),
-                                child: Container(
-                                  width: 24,
-                                  height: 24,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: p.border.withValues(alpha: 0.82),
-                                    ),
-                                  ),
+                  return TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: Duration(milliseconds: durationMs),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, t, child) {
+                      return Opacity(
+                        opacity: t,
+                        child: Transform.translate(
+                          offset: Offset(0, (1 - t) * 12),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _box(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
                                   child: Text(
-                                    '!',
+                                    'Session ${sessionNo <= 0 ? '-' : sessionNo} • $when',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w900,
                                       color: p.primary,
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          if (sessionNo > 0) ...[
-                            const SizedBox(height: 6),
-                            FutureBuilder<Map<String, dynamic>?>(
-                              future: _loadSyllabusSessionByNo(
-                                _safeStr(rec['courseId']),
-                                sessionNo,
-                              ),
-                              builder: (context, infoSnap) {
-                                final info = infoSnap.data;
-                                final title = _safeStr(
-                                  info?['sessionTitle'] ?? info?['title'],
-                                );
-                                final skill = _safeStr(info?['skillType']);
-                                if (title.isEmpty && skill.isEmpty) {
-                                  return const SizedBox.shrink();
-                                }
-                                final lessonLine = title.isEmpty
-                                    ? 'Lesson: -'
-                                    : 'Lesson: $title';
-                                return Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    Text(
-                                      lessonLine,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: p.text.withValues(alpha: 0.82),
+                                Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusBg,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(color: statusBorder),
+                                  ),
+                                  child: Text(
+                                    statusText,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: statusColor,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(999),
+                                  onTap: () =>
+                                      _openSessionDetails(rec, sessionNo),
+                                  child: Container(
+                                    width: 24,
+                                    height: 24,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: p.border.withValues(alpha: 0.82),
                                       ),
                                     ),
-                                    if (skill.isNotEmpty)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: p.soft.withValues(alpha: 0.25),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: p.border.withValues(
-                                              alpha: 0.78,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          skill,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            color: p.primary,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          if (learners is Map && learners.isNotEmpty)
-                            ...learners.entries.map((entry) {
-                              final uid = entry.key.toString();
-                              final raw = entry.value;
-                              bool present = false;
-                              if (raw is Map) {
-                                final mm = raw.map(
-                                  (k, vv) => MapEntry(k.toString(), vv),
-                                );
-                                present = mm['present'] == true;
-                              }
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 6),
-                                child: FutureBuilder<DataSnapshot>(
-                                  future: _db
-                                      .child(
-                                        '${_TeacherClassesScreenState.usersNode}/$uid',
-                                      )
-                                      .get(),
-                                  builder: (context, userSnap) {
-                                    var name = 'Learner';
-                                    if (userSnap.hasData &&
-                                        userSnap.data!.exists &&
-                                        userSnap.data!.value is Map) {
-                                      final um = (userSnap.data!.value as Map)
-                                          .map(
-                                            (k, v) => MapEntry(k.toString(), v),
-                                          );
-                                      final fn = _safeStr(um['first_name']);
-                                      final ln = _safeStr(um['last_name']);
-                                      final full = ('$fn $ln').trim();
-                                      if (full.isNotEmpty) name = full;
-                                    }
-
-                                    return Text(
-                                      '$name — ${present ? 'Present' : 'Absent'}',
+                                    child: Text(
+                                      '!',
                                       style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: p.text.withValues(alpha: 0.8),
+                                        fontWeight: FontWeight.w900,
+                                        color: p.primary,
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 ),
-                              );
-                            })
-                          else
-                            Text(
-                              'No learners map saved.',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: p.text.withValues(alpha: 0.72),
-                              ),
+                              ],
                             ),
-                        ],
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _historyDetailsChip(
+                                  Icons.check_circle_outline_rounded,
+                                  'Present',
+                                  '$presentCount',
+                                ),
+                                _historyDetailsChip(
+                                  Icons.cancel_outlined,
+                                  'Absent',
+                                  '$absentCount',
+                                ),
+                                if (duration > 0)
+                                  _historyDetailsChip(
+                                    Icons.timer_outlined,
+                                    'Duration',
+                                    '$duration min',
+                                  ),
+                              ],
+                            ),
+                            if (sessionNo > 0) ...[
+                              const SizedBox(height: 6),
+                              FutureBuilder<Map<String, dynamic>?>(
+                                future: _loadSyllabusSessionByNo(
+                                  _safeStr(rec['courseId']),
+                                  sessionNo,
+                                ),
+                                builder: (context, infoSnap) {
+                                  final info = infoSnap.data;
+                                  final title = _safeStr(
+                                    info?['sessionTitle'] ?? info?['title'],
+                                  );
+                                  final skill = _safeStr(info?['skillType']);
+                                  final unitTitle = _safeStr(
+                                    info?['unitTitle'],
+                                  );
+                                  final unitOrder = _toInt(info?['unitOrder']);
+                                  final unitLabel = unitTitle.isEmpty
+                                      ? '-'
+                                      : (unitOrder > 0
+                                            ? 'Unit $unitOrder: $unitTitle'
+                                            : unitTitle);
+                                  if (title.isEmpty && skill.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      _historyDetailsChip(
+                                        Icons.menu_book_rounded,
+                                        'Lesson',
+                                        title.isEmpty ? '-' : title,
+                                      ),
+                                      _historyDetailsChip(
+                                        Icons.widgets_rounded,
+                                        'Unit',
+                                        unitLabel,
+                                      ),
+                                      if (skill.isNotEmpty)
+                                        _historyDetailsChip(
+                                          Icons.school_rounded,
+                                          'Skill',
+                                          skill,
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            if (learners is Map && learners.isNotEmpty)
+                              ...learners.entries.map((entry) {
+                                final uid = entry.key.toString();
+                                final raw = entry.value;
+                                bool present = false;
+                                if (raw is Map) {
+                                  final mm = raw.map(
+                                    (k, vv) => MapEntry(k.toString(), vv),
+                                  );
+                                  present = mm['present'] == true;
+                                }
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: FutureBuilder<DataSnapshot>(
+                                    future: _db
+                                        .child(
+                                          '${_TeacherClassesScreenState.usersNode}/$uid',
+                                        )
+                                        .get(),
+                                    builder: (context, userSnap) {
+                                      var name = 'Learner';
+                                      if (userSnap.hasData &&
+                                          userSnap.data!.exists &&
+                                          userSnap.data!.value is Map) {
+                                        final um = (userSnap.data!.value as Map)
+                                            .map(
+                                              (k, v) =>
+                                                  MapEntry(k.toString(), v),
+                                            );
+                                        final fn = _safeStr(um['first_name']);
+                                        final ln = _safeStr(um['last_name']);
+                                        final full = ('$fn $ln').trim();
+                                        if (full.isNotEmpty) name = full;
+                                      }
+
+                                      return Text(
+                                        '$name — ${present ? 'Present' : 'Absent'}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: p.text.withValues(alpha: 0.8),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                );
+                              })
+                            else
+                              Text(
+                                'No learners map saved.',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: p.text.withValues(alpha: 0.72),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   );

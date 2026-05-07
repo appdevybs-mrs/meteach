@@ -1768,6 +1768,7 @@ class _ThreadTile extends StatelessWidget {
     final shownSubject = _displaySubject(row.subject);
     final subject = shownSubject.isEmpty ? '(No topic)' : shownSubject;
     final preview = _firstSentence(row.lastMessage);
+    final isReport = row.type.trim().toLowerCase() == 'report';
 
     final bgColor = row.unreadCount > 0
         ? Color.alphaBlend(
@@ -1776,12 +1777,18 @@ class _ThreadTile extends StatelessWidget {
           )
         : scheme.surface;
     final isGroup = row.isGroup;
-    final effectiveBg = isGroup
-        ? Color.alphaBlend(Colors.indigo.withValues(alpha: 0.06), bgColor)
-        : bgColor;
+    final effectiveBg = isReport
+        ? Color.alphaBlend(const Color(0xFFE8F1FB), bgColor)
+        : (isGroup
+              ? Color.alphaBlend(Colors.indigo.withValues(alpha: 0.06), bgColor)
+              : bgColor);
     final borderColor = row.unreadCount > 0
-        ? scheme.primary.withValues(alpha: 0.28)
-        : scheme.outline.withValues(alpha: 0.16);
+        ? (isReport
+              ? const Color(0xFF1F4E79).withValues(alpha: 0.42)
+              : scheme.primary.withValues(alpha: 0.28))
+        : (isReport
+              ? const Color(0xFF1F4E79).withValues(alpha: 0.26)
+              : scheme.outline.withValues(alpha: 0.16));
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
@@ -1839,6 +1846,28 @@ class _ThreadTile extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (isReport)
+                          Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFF1F4E79,
+                              ).withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              'Report',
+                              style: TextStyle(
+                                color: Color(0xFF1F4E79),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
                         if (isGroup)
                           Container(
                             margin: const EdgeInsets.only(right: 6),
@@ -1881,9 +1910,11 @@ class _ThreadTile extends StatelessWidget {
                         fontWeight: row.unreadCount > 0
                             ? FontWeight.w900
                             : FontWeight.w800,
-                        color: row.unreadCount > 0
-                            ? scheme.primary
-                            : scheme.onSurface,
+                        color: isReport
+                            ? const Color(0xFF1F4E79)
+                            : (row.unreadCount > 0
+                                  ? scheme.primary
+                                  : scheme.onSurface),
                       ),
                     ),
                     const SizedBox(height: 5),

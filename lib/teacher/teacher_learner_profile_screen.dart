@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
@@ -10,10 +11,14 @@ class TeacherLearnerProfileScreen extends StatefulWidget {
     super.key,
     required this.learnerUid,
     required this.learnerName,
+    this.openReportComposerOnLoad = false,
+    this.initialCourseTitle,
   });
 
   final String learnerUid;
   final String learnerName;
+  final bool openReportComposerOnLoad;
+  final String? initialCourseTitle;
 
   @override
   State<TeacherLearnerProfileScreen> createState() =>
@@ -29,6 +34,7 @@ class _TeacherLearnerProfileScreenState
   Map<String, dynamic> _user = {};
   List<String> _photoUrls = [];
   String? _profilePhotoUrl;
+  bool _reportOpenedOnce = false;
 
   int _statCourses = 0;
   int _statAttendancePct = 0;
@@ -404,7 +410,390 @@ class _TeacherLearnerProfileScreenState
     } finally {
       if (mounted) {
         setState(() => _busy = false);
+        if (widget.openReportComposerOnLoad && !_reportOpenedOnce) {
+          _reportOpenedOnce = true;
+          Future<void>.delayed(const Duration(milliseconds: 120), () {
+            if (mounted) _openMonthlyReportComposer();
+          });
+        }
       }
+    }
+  }
+
+  Future<List<Map<String, String>>> _loadLearnerCourseOptions() async {
+    final out = <Map<String, String>>[];
+    final snap = await _db.child('users/${widget.learnerUid}/courses').get();
+    if (!snap.exists || snap.value is! Map) return out;
+    final courses = Map<dynamic, dynamic>.from(snap.value as Map);
+    for (final entry in courses.entries) {
+      final key = _safeStr(entry.key);
+      if (entry.value is! Map) continue;
+      final m = Map<String, dynamic>.from(entry.value as Map);
+      final cls = (m['class'] is Map)
+          ? Map<String, dynamic>.from(m['class'] as Map)
+          : <String, dynamic>{};
+      final title = _safeStr(
+        cls['course_title'] ?? m['course_title'] ?? m['title'] ?? key,
+      );
+      if (key.isEmpty && title.isEmpty) continue;
+      out.add({'key': key, 'title': title.isEmpty ? key : title});
+    }
+    return out;
+  }
+
+  Future<String?> _pickCourseTitleForReport() async {
+    final initial = _safeStr(widget.initialCourseTitle);
+    if (initial.isNotEmpty) return initial;
+    final options = await _loadLearnerCourseOptions();
+    if (options.isEmpty) return null;
+    if (options.length == 1) return _safeStr(options.first['title']);
+    if (!mounted) return null;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select course'),
+        content: SizedBox(
+          width: 320,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: options.length,
+            itemBuilder: (_, i) {
+              final t = _safeStr(options[i]['title']);
+              return ListTile(
+                title: Text(t.isEmpty ? 'Course' : t),
+                onTap: () => Navigator.pop(ctx, t),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _reportSubject(String courseTitle) {
+    final yy = (DateTime.now().year % 100).toString().padLeft(2, '0');
+    final title = courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+    return "RC - $title '$yy";
+  }
+
+  String _monthLabel() {
+    const months = <String>[
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    final now = DateTime.now();
+    return '${months[now.month - 1]} ${now.year}';
+  }
+
+  Future<String> _ensureReportThread({
+    required String teacherUid,
+    required String teacherName,
+    required String learnerUid,
+    required String learnerName,
+    required String subject,
+  }) async {
+    final threadsSnap = await _db.child('mail_threads').get();
+    if (threadsSnap.exists && threadsSnap.value is Map) {
+      final raw = Map<dynamic, dynamic>.from(threadsSnap.value as Map);
+      for (final e in raw.entries) {
+        final threadId = _safeStr(e.key);
+        if (threadId.isEmpty || e.value is! Map) continue;
+        final t = Map<dynamic, dynamic>.from(e.value as Map);
+        if (t['isGroup'] == true) continue;
+        final participants = t['participants'];
+        if (participants is! Map) continue;
+        final pm = Map<dynamic, dynamic>.from(participants);
+        final hasTeacher = pm[teacherUid] == true;
+        final hasLearner = pm[learnerUid] == true;
+        if (hasTeacher && hasLearner) return threadId;
+      }
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final threadId = _db.child('mail_threads').push().key;
+    if (threadId == null || threadId.trim().isEmpty) {
+      throw Exception('Could not create report thread.');
+    }
+
+    final updates = <String, dynamic>{
+      'mail_threads/$threadId/subject': subject,
+      'mail_threads/$threadId/type': 'report',
+      'mail_threads/$threadId/isGroup': false,
+      'mail_threads/$threadId/participants/$teacherUid': true,
+      'mail_threads/$threadId/participants/$learnerUid': true,
+      'mail_threads/$threadId/createdAt': now,
+      'mail_threads/$threadId/updatedAt': now,
+      'mail_threads/$threadId/lastMessage': '',
+      'mail_index/$teacherUid/$threadId/subject': subject,
+      'mail_index/$teacherUid/$threadId/type': 'report',
+      'mail_index/$teacherUid/$threadId/peerUid': learnerUid,
+      'mail_index/$teacherUid/$threadId/peerName': learnerName,
+      'mail_index/$teacherUid/$threadId/updatedAt': now,
+      'mail_index/$teacherUid/$threadId/lastMessage': '',
+      'mail_index/$teacherUid/$threadId/unreadCount': 0,
+      'mail_index/$teacherUid/$threadId/deletedAt': null,
+      'mail_index/$learnerUid/$threadId/subject': subject,
+      'mail_index/$learnerUid/$threadId/type': 'report',
+      'mail_index/$learnerUid/$threadId/peerUid': teacherUid,
+      'mail_index/$learnerUid/$threadId/peerName': teacherName,
+      'mail_index/$learnerUid/$threadId/updatedAt': now,
+      'mail_index/$learnerUid/$threadId/lastMessage': '',
+      'mail_index/$learnerUid/$threadId/unreadCount': 0,
+      'mail_index/$learnerUid/$threadId/deletedAt': null,
+      'mail_state/$teacherUid/$threadId/lastReadAt': now,
+      'mail_state/$teacherUid/$threadId/lastDeliveredAt': now,
+      'mail_state/$learnerUid/$threadId/lastDeliveredAt': now,
+    };
+    await _db.update(updates);
+    return threadId;
+  }
+
+  Future<void> _sendReportMail({
+    required String threadId,
+    required String teacherUid,
+    required String learnerUid,
+    required String body,
+    required String subject,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final msgRef = _db.child('mail_messages/$threadId').push();
+    final msgKey = msgRef.key;
+    if (msgKey == null || msgKey.trim().isEmpty) {
+      throw Exception('Could not create report message.');
+    }
+    final preview = body.trim().length > 80
+        ? body.trim().substring(0, 80)
+        : body.trim();
+    final updates = <String, dynamic>{
+      'mail_messages/$threadId/$msgKey': {
+        'fromUid': teacherUid,
+        'body': body,
+        'toUids': {learnerUid: true},
+        'ccUids': <String, bool>{},
+        'bccUids': <String, bool>{},
+        'attachments': <Map<String, dynamic>>[],
+        'createdAt': now,
+        'deletedFor': <String, bool>{},
+        'type': 'report',
+      },
+      'mail_threads/$threadId/subject': subject,
+      'mail_threads/$threadId/type': 'report',
+      'mail_threads/$threadId/updatedAt': now,
+      'mail_threads/$threadId/lastMessage': preview,
+      'mail_index/$teacherUid/$threadId/subject': subject,
+      'mail_index/$teacherUid/$threadId/type': 'report',
+      'mail_index/$teacherUid/$threadId/updatedAt': now,
+      'mail_index/$teacherUid/$threadId/lastMessage': preview,
+      'mail_index/$teacherUid/$threadId/unreadCount': 0,
+      'mail_index/$teacherUid/$threadId/deletedAt': null,
+      'mail_index/$learnerUid/$threadId/subject': subject,
+      'mail_index/$learnerUid/$threadId/type': 'report',
+      'mail_index/$learnerUid/$threadId/updatedAt': now,
+      'mail_index/$learnerUid/$threadId/lastMessage': preview,
+      'mail_index/$learnerUid/$threadId/deletedAt': null,
+      'mail_index/$learnerUid/$threadId/unreadCount': ServerValue.increment(1),
+      'mail_state/$teacherUid/$threadId/lastReadAt': now,
+      'mail_state/$teacherUid/$threadId/lastDeliveredAt': now,
+      'mail_state/$learnerUid/$threadId/lastDeliveredAt': now,
+    };
+    await _db.update(updates);
+  }
+
+  Future<void> _openMonthlyReportComposer() async {
+    if (_busy) return;
+    final courseTitle = await _pickCourseTitleForReport();
+    if (courseTitle == null || courseTitle.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No course selected.')));
+      }
+      return;
+    }
+
+    final behaviorC = TextEditingController();
+    final progressC = TextEditingController();
+    final homeworkC = TextEditingController(
+      text: 'Homework pending: $_statHomeworkPending',
+    );
+    final commentC = TextEditingController();
+    bool sending = false;
+
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Monthly Report Card'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  enabled: false,
+                  decoration: InputDecoration(
+                    labelText: 'Course',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    hintText: courseTitle,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: behaviorC,
+                  decoration: const InputDecoration(
+                    labelText: 'Behavior',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: progressC,
+                  decoration: const InputDecoration(
+                    labelText: 'Progress / Advancement',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: homeworkC,
+                  decoration: const InputDecoration(
+                    labelText: 'Homework Review',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: commentC,
+                  decoration: const InputDecoration(
+                    labelText: 'Teacher Comment',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  minLines: 2,
+                  maxLines: 5,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: sending
+                  ? null
+                  : () async {
+                      setLocal(() => sending = true);
+                      try {
+                        final me = FirebaseAuth.instance.currentUser;
+                        final meUid = _safeStr(me?.uid);
+                        if (meUid.isEmpty) {
+                          throw Exception('Teacher not signed in.');
+                        }
+                        final meName = _safeStr(me?.email).isEmpty
+                            ? 'Teacher'
+                            : _safeStr(me?.email).split('@').first;
+                        final learnerName = widget.learnerName.trim().isEmpty
+                            ? 'Learner'
+                            : widget.learnerName.trim();
+                        final subject = _reportSubject(courseTitle);
+                        final threadId = await _ensureReportThread(
+                          teacherUid: meUid,
+                          teacherName: meName,
+                          learnerUid: widget.learnerUid,
+                          learnerName: learnerName,
+                          subject: subject,
+                        );
+                        final body = [
+                          'Report Month: ${_monthLabel()}',
+                          'Course: $courseTitle',
+                          'Attendance: $_statAttendancePct%',
+                          'Lessons Covered: $_statLessonsCovered',
+                          'Homework Pending: $_statHomeworkPending',
+                          '',
+                          'Behavior:',
+                          behaviorC.text.trim().isEmpty
+                              ? '-'
+                              : behaviorC.text.trim(),
+                          '',
+                          'Progress / Advancement:',
+                          progressC.text.trim().isEmpty
+                              ? '-'
+                              : progressC.text.trim(),
+                          '',
+                          'Homework Review:',
+                          homeworkC.text.trim().isEmpty
+                              ? '-'
+                              : homeworkC.text.trim(),
+                          '',
+                          'Teacher Comment:',
+                          commentC.text.trim().isEmpty
+                              ? '-'
+                              : commentC.text.trim(),
+                        ].join('\n');
+
+                        await _sendReportMail(
+                          threadId: threadId,
+                          teacherUid: meUid,
+                          learnerUid: widget.learnerUid,
+                          body: body,
+                          subject: subject,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        setLocal(() => sending = false);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(toHumanError(e))),
+                          );
+                        }
+                      }
+                    },
+              icon: sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send_rounded),
+              label: Text(sending ? 'Sending…' : 'Send report'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Report sent successfully.')),
+      );
     }
   }
 
@@ -961,6 +1350,11 @@ class _TeacherLearnerProfileScreenState
         ),
         actions: [
           const SizedBox.shrink(),
+          IconButton(
+            tooltip: 'Monthly report',
+            icon: Icon(Icons.assessment_rounded, color: p.primary),
+            onPressed: _busy ? null : _openMonthlyReportComposer,
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.accent),

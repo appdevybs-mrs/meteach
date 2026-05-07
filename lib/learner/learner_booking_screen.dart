@@ -809,13 +809,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           ? 'Course'
           : courseTitle.trim();
 
-      await NotificationService.I.scheduleSessionReminder(
+      await NotificationService.I.scheduleSessionReminderSeries(
         classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
         title: 'Upcoming class',
         body:
             'Session $sessionNo for $safeCourseTitle with ${slot.teacherName}',
         sessionStart: slot.start,
-        minutesBefore: 30,
+        minutesBeforeList: const [60, 20, 5],
       );
     } catch (_) {}
   }
@@ -824,9 +824,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     try {
       await NotificationService.I.init();
 
-      await NotificationService.I.cancelSessionReminder(
+      await NotificationService.I.cancelSessionReminderSeries(
         classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
         sessionStart: slot.start,
+        minutesBeforeList: const [60, 20, 5],
       );
     } catch (_) {}
   }
@@ -1625,9 +1626,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         if (oldSlotStart != null) {
           try {
             await NotificationService.I.init();
-            await NotificationService.I.cancelSessionReminder(
+            await NotificationService.I.cancelSessionReminderSeries(
               classId: '${cid}_${existing.dayKey}_${existing.time}',
               sessionStart: oldSlotStart,
+              minutesBeforeList: const [60, 20, 5],
             );
           } catch (_) {}
         }

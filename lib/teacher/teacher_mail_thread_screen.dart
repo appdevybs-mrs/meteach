@@ -135,6 +135,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   final List<_ComposerUploadItem> _uploadingItems = [];
 
   bool _peerIsLearner = false;
+  // ignore: unused_field
   bool _loadedPeerRole = false;
   String? _threadCourseKey;
   String? _threadCourseTitle;
@@ -3432,6 +3433,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<Map<String, dynamic>> _computeHomeworkStatsForCourse({
     required String learnerUid,
     required String courseKey,
@@ -3507,6 +3509,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     };
   }
 
+  // ignore: unused_element
   int _clamp15(dynamic v) {
     int x = 3;
     if (v is num) x = v.toInt();
@@ -3514,6 +3517,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return x;
   }
 
+  // ignore: unused_element
   String _autoSummaryBalanced({
     required int behaviorAvg,
     required int progressAvg,
@@ -3598,6 +3602,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     ].join('\n');
   }
 
+  // ignore: unused_element
   List<String> _buildReportMessageLines({
     required String courseLabel,
     required String learnerName,
@@ -3626,6 +3631,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     ];
   }
 
+  // ignore: unused_element
   Future<Uint8List?> _renderWidgetToPng(
     GlobalKey key, {
     double pixelRatio = 2.5,
@@ -3643,12 +3649,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<String> _uploadPngBytes(Uint8List bytes) async {
     final client = MailUploadClient.defaultClient();
     final name = 'report_${DateTime.now().millisecondsSinceEpoch}.png';
     return client.uploadBytes(bytes: bytes, filename: name);
   }
 
+  // ignore: unused_element
   Future<String?> _pickCourseForReport() async {
     if (!_loadedLearnerCourses) {
       await _loadLearnerCoursesTitles();
@@ -3698,678 +3706,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _openReportCard() async {
-    if (!_peerIsLearner) {
-      _snack('Report Card is only for learners.');
-      return;
-    }
-
-    String? courseKey = _threadCourseKey?.trim();
-
-    if (courseKey == null || courseKey.isEmpty) {
-      courseKey = await _pickCourseForReport();
-
-      if (courseKey == null || courseKey.trim().isEmpty) {
-        _snack('No course found for this learner.');
-        return;
-      }
-
-      try {
-        await _threadRef.update({'courseKey': courseKey});
-        if (mounted) {
-          setState(() {
-            _threadCourseKey = courseKey;
-            final pickedTitle = (_learnerCourseTitles[courseKey] ?? '').trim();
-            if (pickedTitle.isNotEmpty) _threadCourseTitle = pickedTitle;
-          });
-        }
-      } catch (_) {}
-    }
-
-    courseKey = courseKey.trim();
-
-    final behaviorItems = <Map<String, dynamic>>[
-      {'label': 'Respect / attitude', 'score': 3},
-      {'label': 'Participation', 'score': 3},
-      {'label': 'Punctuality', 'score': 3},
-    ];
-
-    final progressItems = <Map<String, dynamic>>[
-      {'label': 'Speaking', 'score': 3},
-      {'label': 'Listening', 'score': 3},
-      {'label': 'Reading', 'score': 3},
-      {'label': 'Writing', 'score': 3},
-    ];
-
-    Map<String, dynamic> autoStats = {
-      'doneCount': 0,
-      'redoCount': 0,
-      'avgScore': 0,
-      'commonGrade': '—',
-    };
-
-    bool loadingAuto = true;
-    try {
-      autoStats = await _computeHomeworkStatsForCourse(
-        learnerUid: widget.peerUid,
-        courseKey: courseKey,
-      );
-    } catch (_) {}
-    loadingAuto = false;
-
-    final doneC = TextEditingController(
-      text: (autoStats['doneCount'] ?? 0).toString(),
-    );
-    final redoC = TextEditingController(
-      text: (autoStats['redoCount'] ?? 0).toString(),
-    );
-    final avgScoreC = TextEditingController(
-      text: (autoStats['avgScore'] ?? 0).toString(),
-    );
-    final commonGradeC = TextEditingController(
-      text: (autoStats['commonGrade'] ?? '—').toString(),
-    );
-    final commentC = TextEditingController(text: '');
-
-    final diagramKey = GlobalKey();
-
-    bool sending = false;
-
-    if (!mounted) return;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          Widget scorePicker({
-            required int value,
-            required ValueChanged<int> onChanged,
-          }) {
-            return DropdownButton<int>(
-              value: value,
-              isDense: true,
-              items: const [1, 2, 3, 4, 5]
-                  .map(
-                    (n) => DropdownMenuItem<int>(value: n, child: Text('$n')),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v == null) return;
-                onChanged(v);
-              },
-            );
-          }
-
-          Widget itemRow(List<Map<String, dynamic>> list, int index) {
-            final it = list[index];
-            final labelC = TextEditingController(
-              text: (it['label'] ?? '').toString(),
-            );
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: labelC,
-                      onChanged: (t) => it['label'] = t,
-                      decoration: const InputDecoration(
-                        labelText: 'Item',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  scorePicker(
-                    value: _clamp15(it['score']),
-                    onChanged: (v) => setLocal(() => it['score'] = v),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    tooltip: 'Remove',
-                    onPressed: () => setLocal(() {
-                      if (list.length > 1) list.removeAt(index);
-                    }),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          int avgList(List<Map<String, dynamic>> list) {
-            if (list.isEmpty) return 0;
-            int sum = 0;
-            int n = 0;
-            for (final it in list) {
-              final s = _clamp15(it['score']);
-              sum += s;
-              n++;
-            }
-            return n == 0 ? 0 : (sum / n).round();
-          }
-
-          final behaviorAvg = avgList(behaviorItems);
-          final progressAvg = avgList(progressItems);
-
-          int parseInt(TextEditingController c, {int min = 0, int max = 9999}) {
-            int v = int.tryParse(c.text.trim()) ?? 0;
-            if (v < min) v = min;
-            if (v > max) v = max;
-            return v;
-          }
-
-          String parseGrade(TextEditingController c) {
-            final g = c.text.trim().toUpperCase();
-            if (g == 'A' || g == 'B' || g == 'C' || g == 'D') return g;
-            if (g == '—' || g.isEmpty) return '—';
-            return '—';
-          }
-
-          final finalDone = parseInt(doneC);
-          final finalRedo = parseInt(redoC);
-          final finalAvgScore = parseInt(avgScoreC, min: 0, max: 100);
-          final finalCommonGrade = parseGrade(commonGradeC);
-
-          final commentText = commentC.text.trim();
-
-          final autoSummary = _autoSummaryBalanced(
-            behaviorAvg: behaviorAvg,
-            progressAvg: progressAvg,
-            homeworkDone: finalDone,
-            homeworkRedo: finalRedo,
-            homeworkAvgScore: finalAvgScore,
-          );
-
-          final fromThread = (_threadCourseTitle ?? '').trim();
-          final fromLearner = (_learnerCourseTitles[courseKey] ?? '').trim();
-
-          final courseLabel = fromThread.isNotEmpty
-              ? fromThread
-              : (fromLearner.isNotEmpty ? fromLearner : (courseKey ?? ''));
-
-          final summaryLines = _buildReportMessageLines(
-            courseLabel: courseLabel,
-            learnerName: _peerNameShown,
-            behaviorAvg: behaviorAvg,
-            progressAvg: progressAvg,
-            homeworkDone: finalDone,
-            homeworkRedo: finalRedo,
-            homeworkAvgScore: finalAvgScore,
-            homeworkCommonGrade: finalCommonGrade,
-            autoSummary: autoSummary,
-            teacherNote: commentText,
-          );
-
-          return PopScope(
-            canPop: !sending,
-            child: AlertDialog(
-              title: const Text('Report Card'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (loadingAuto)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: LinearProgressIndicator(),
-                      ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Homework (auto + editable)',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: doneC,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Done count',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setLocal(() {}),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: redoC,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Redo count',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setLocal(() {}),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: avgScoreC,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Avg score (0-100)',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setLocal(() {}),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: commonGradeC,
-                            decoration: const InputDecoration(
-                              labelText: 'Common grade (A/B/C/D)',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setLocal(() {}),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Behavior (1–5)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Colors.black.withValues(alpha: 0.75),
-                            ),
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => setLocal(
-                            () => behaviorItems.add({
-                              'label': 'New behavior item',
-                              'score': 3,
-                            }),
-                          ),
-                          icon: const Icon(Icons.add_rounded),
-                          label: const Text('Add'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    for (int i = 0; i < behaviorItems.length; i++)
-                      itemRow(behaviorItems, i),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Behavior average: $behaviorAvg/5',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Advancement / Progress (1–5)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Colors.black.withValues(alpha: 0.75),
-                            ),
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => setLocal(
-                            () => progressItems.add({
-                              'label': 'New progress item',
-                              'score': 3,
-                            }),
-                          ),
-                          icon: const Icon(Icons.add_rounded),
-                          label: const Text('Add'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    for (int i = 0; i < progressItems.length; i++)
-                      itemRow(progressItems, i),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Progress average: $progressAvg/5',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Teacher comment (optional)',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 160,
-                      child: TextField(
-                        controller: commentC,
-                        expands: true,
-                        maxLines: null,
-                        minLines: null,
-                        textAlignVertical: TextAlignVertical.top,
-                        decoration: const InputDecoration(
-                          labelText: 'Add a personal note…',
-                          border: OutlineInputBorder(),
-                          alignLabelWithHint: true,
-                        ),
-                        onChanged: (_) => setLocal(() {}),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'PNG preview (watermarked)',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    RepaintBoundary(
-                      key: diagramKey,
-                      child: _ReportWatermarkBackground(
-                        child: _ReportCardDiagramV2(
-                          schoolTitle: 'Your Bridge School',
-                          learnerName: _peerNameShown,
-                          courseLabel: courseLabel,
-                          createdAtMs: DateTime.now().millisecondsSinceEpoch,
-                          teacherName: _meDisplayName,
-                          behaviorItems: behaviorItems,
-                          progressItems: progressItems,
-                          behaviorAvg: behaviorAvg,
-                          progressAvg: progressAvg,
-                          homeworkDone: finalDone,
-                          homeworkRedo: finalRedo,
-                          homeworkAvgScore: finalAvgScore,
-                          homeworkCommonGrade: finalCommonGrade,
-                          autoSummary: autoSummary,
-                          commentText: commentText,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Message preview',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.black.withValues(alpha: 0.08),
-                        ),
-                      ),
-                      child: Text(summaryLines.join('\n')),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: sending ? null : () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton.icon(
-                  icon: sending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send_rounded),
-                  label: Text(sending ? 'Sending…' : 'Send report'),
-                  onPressed: sending
-                      ? null
-                      : () async {
-                          setLocal(() => sending = true);
-
-                          try {
-                            final reportId = _db
-                                .ref('reports/${widget.peerUid}')
-                                .push()
-                                .key;
-                            if (reportId == null) {
-                              _snack(
-                                'The report could not be prepared correctly. Please try again.',
-                              );
-                              setLocal(() => sending = false);
-                              return;
-                            }
-
-                            final now = DateTime.now().millisecondsSinceEpoch;
-
-                            Map<String, dynamic> toItemMap(
-                              List<Map<String, dynamic>> list,
-                            ) {
-                              String safeKey(String s) {
-                                var k = s.trim();
-                                k = k.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
-                                k = k.replaceAll(RegExp(r'\s+'), ' ').trim();
-                                if (k.isEmpty) k = 'item';
-                                return k;
-                              }
-
-                              final out = <String, dynamic>{};
-                              for (int i = 0; i < list.length; i++) {
-                                final label = (list[i]['label'] ?? '')
-                                    .toString()
-                                    .trim();
-                                if (label.isEmpty) continue;
-                                final key = '${safeKey(label)}_$i';
-                                out[key] = _clamp15(list[i]['score']);
-                              }
-                              return out;
-                            }
-
-                            final reportData = <String, dynamic>{
-                              'reportId': reportId,
-                              'createdAt': now,
-                              'createdByUid': _meUid,
-                              'createdByName': _meDisplayName,
-                              'courseTitle': courseLabel,
-                              'learnerUid': widget.peerUid,
-                              'learnerName': _peerNameShown,
-                              'threadId': widget.threadId,
-                              'courseKey': courseKey,
-                              'behavior': toItemMap(behaviorItems),
-                              'progress': toItemMap(progressItems),
-                              'homework': {
-                                'auto': {
-                                  'doneCount': autoStats['doneCount'] ?? 0,
-                                  'redoCount': autoStats['redoCount'] ?? 0,
-                                  'avgScore': autoStats['avgScore'] ?? 0,
-                                  'commonGrade':
-                                      (autoStats['commonGrade'] ?? '—')
-                                          .toString(),
-                                },
-                                'final': {
-                                  'doneCount': finalDone,
-                                  'redoCount': finalRedo,
-                                  'avgScore': finalAvgScore,
-                                  'commonGrade': finalCommonGrade,
-                                },
-                              },
-                              'comment': commentText,
-                              'autoSummary': autoSummary,
-                              'diagramVersion': 2,
-                            };
-
-                            await _db
-                                .ref('reports/${widget.peerUid}/$reportId')
-                                .set(reportData);
-                            await _threadRef
-                                .child('reports')
-                                .child(reportId)
-                                .set(true);
-
-                            final pngBytes = await _renderWidgetToPng(
-                              diagramKey,
-                              pixelRatio: 2.5,
-                            );
-                            if (pngBytes == null) {
-                              _snack('Could not generate diagram image.');
-                              setLocal(() => sending = false);
-                              return;
-                            }
-
-                            final url = await _uploadPngBytes(pngBytes);
-                            await _db
-                                .ref('reports/${widget.peerUid}/$reportId')
-                                .update({'diagramUrl': url});
-
-                            final msgBody = _buildReportMessageLines(
-                              courseLabel: courseLabel,
-                              learnerName: _peerNameShown,
-                              behaviorAvg: behaviorAvg,
-                              progressAvg: progressAvg,
-                              homeworkDone: finalDone,
-                              homeworkRedo: finalRedo,
-                              homeworkAvgScore: finalAvgScore,
-                              homeworkCommonGrade: finalCommonGrade,
-                              autoSummary: autoSummary,
-                              teacherNote: commentText,
-                            ).join('\n');
-
-                            await _sendRawMessage(
-                              body: msgBody,
-                              attachments: [
-                                {'name': 'ReportCard_$now.png', 'url': url},
-                              ],
-                              updateThreadPreview: true,
-                              sendPush: true,
-                              messageType: 'report',
-                            );
-
-                            await AuditLogService.logSuccess(
-                              actionKey: AuditActionKeys.teacherReportSend,
-                              domain: AuditDomain.report,
-                              summary:
-                                  'Teacher sent report card to $_peerNameShown',
-                              actor: AuditActor(
-                                uid: _meUid,
-                                role: 'teacher',
-                                name: _meDisplayName,
-                              ),
-                              target: AuditTarget(
-                                type: 'learner',
-                                uid: widget.peerUid,
-                                id: reportId,
-                                name: _peerNameShown,
-                              ),
-                              keywords: [
-                                reportId,
-                                (courseKey ?? ''),
-                                widget.threadId,
-                              ],
-                              context: {
-                                'reportId': reportId,
-                                'threadId': widget.threadId,
-                                'courseKey': courseKey,
-                                'courseLabel': courseLabel,
-                              },
-                              meta: {
-                                'behaviorAvg': behaviorAvg,
-                                'progressAvg': progressAvg,
-                                'homeworkDone': finalDone,
-                                'homeworkRedo': finalRedo,
-                                'homeworkAvgScore': finalAvgScore,
-                                'homeworkCommonGrade': finalCommonGrade,
-                              },
-                            );
-
-                            if (!ctx.mounted) return;
-                            Navigator.pop(ctx, true);
-                            if (!mounted) return;
-                            _snack('Report sent ✅');
-                          } catch (e, _) {
-                            await AuditLogService.logFailure(
-                              actionKey: AuditActionKeys.teacherReportSend,
-                              domain: AuditDomain.report,
-                              summary: 'Failed to send report card',
-                              actor: AuditActor(
-                                uid: _meUid,
-                                role: 'teacher',
-                                name: _meDisplayName,
-                              ),
-                              target: AuditTarget(
-                                type: 'learner',
-                                uid: widget.peerUid,
-                                id: widget.threadId,
-                                name: _peerNameShown,
-                              ),
-                              keywords: [widget.threadId, (courseKey ?? '')],
-                              errorMessage: e.toString(),
-                            );
-                            _snack(
-                              toHumanError(
-                                e,
-                                fallback:
-                                    'The report could not be sent right now. Please check your internet and try again.',
-                              ),
-                            );
-                            setLocal(() => sending = false);
-                          }
-                        },
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-
-    if (ok == true) {}
   }
 
   Widget _buildComposerUploads() {
@@ -4556,8 +3892,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ? '${_selectedMessageIds.length} selected'
         : (_peerNameShown.isEmpty ? 'Mail' : _peerNameShown);
     final subjectTrim = displaySubject(widget.subject);
-    final canReport = _peerIsLearner;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -4583,7 +3917,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 onChanged: (_) => setState(() {}),
               )
             : GestureDetector(
-                onLongPress: canReport ? _openReportCard : null,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -4641,17 +3974,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 color: Colors.deepOrange.withValues(alpha: 0.95),
               ),
               onPressed: _reviewHomeworkFromThread,
-            ),
-          if (_loadedPeerRole && _peerIsLearner)
-            IconButton(
-              tooltip: 'Report card',
-              icon: Icon(
-                Icons.assessment_rounded,
-                color: canReport
-                    ? Colors.teal.withValues(alpha: 0.95)
-                    : Colors.teal.withValues(alpha: 0.35),
-              ),
-              onPressed: canReport ? _openReportCard : null,
             ),
           IconButton(
             tooltip: 'Manage group members',
@@ -5018,6 +4340,7 @@ class _ComposerUploadItem {
 /// Watermark background used INSIDE RepaintBoundary so it appears in the PNG.
 /// - Center logo: very transparent
 /// - Top-right logo: non-transparent
+// ignore: unused_element
 class _ReportWatermarkBackground extends StatelessWidget {
   const _ReportWatermarkBackground({required this.child});
 
@@ -5074,6 +4397,7 @@ class _ReportWatermarkBackground extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _ReportCardDiagramV2 extends StatelessWidget {
   const _ReportCardDiagramV2({
     required this.schoolTitle,

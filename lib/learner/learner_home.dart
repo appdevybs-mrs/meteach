@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'learner_gallery_screen.dart';
 import '../shared/app_theme.dart';
@@ -33,6 +34,7 @@ import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
+import '../services/notification_service.dart';
 import '../services/learner_join_signal_service.dart';
 import '../services/window_access_service.dart';
 
@@ -2922,9 +2924,15 @@ class _BookingTopCard extends StatefulWidget {
 class _BookingTopCardState extends State<_BookingTopCard>
     with SingleTickerProviderStateMixin {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  static const String _sessionReminderKeysPref =
+      'learner_session_reminder_keys_v1';
+  static const List<int> _sessionReminderLeadMinutes = [60, 20, 5];
 
   Future<List<_NextBooking>>? _nextBookingFuture;
   final Map<String, Future<_MeetInfo?>> _meetInfoFutureByKey = {};
+  SharedPreferences? _prefs;
+  bool _reminderSyncInProgress = false;
+  bool _reminderSyncPending = false;
 
   Timer? _ticker;
   Timer? _nextBookingRefreshTimer;
@@ -2935,6 +2943,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
   void initState() {
     super.initState();
     _nextBookingFuture = _findMyUpcomingBookingsAcrossCourses();
+    unawaited(_initReminderSync());
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {});
@@ -2945,6 +2954,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
         _nextBookingFuture = _findMyUpcomingBookingsAcrossCourses();
         _meetInfoFutureByKey.clear();
       });
+      unawaited(_syncLearnerClassReminderSeries());
     });
 
     _pulseController = AnimationController(
@@ -2977,6 +2987,89 @@ class _BookingTopCardState extends State<_BookingTopCard>
       border: p.border,
       soft: p.soft,
     );
+  }
+
+  Future<void> _initReminderSync() async {
+    try {
+      await NotificationService.I.init();
+      await NotificationService.I.requestPermissions();
+    } catch (_) {}
+    try {
+      _prefs = await SharedPreferences.getInstance();
+    } catch (_) {}
+    await _syncLearnerClassReminderSeries();
+  }
+
+  String _reminderClassId(_NextBooking next) {
+    return '${next.courseId}_${next.dayKey}_${next.time}';
+  }
+
+  String _reminderSessionKey(_NextBooking next) {
+    return '${_reminderClassId(next)}@@${next.start.toIso8601String()}';
+  }
+
+  ({String classId, DateTime start})? _parseReminderSessionKey(String raw) {
+    final i = raw.lastIndexOf('@@');
+    if (i <= 0) return null;
+    final classId = raw.substring(0, i);
+    final startRaw = raw.substring(i + 2);
+    final start = DateTime.tryParse(startRaw);
+    if (classId.isEmpty || start == null) return null;
+    return (classId: classId, start: start);
+  }
+
+  Future<void> _syncLearnerClassReminderSeries() async {
+    if (_reminderSyncInProgress) {
+      _reminderSyncPending = true;
+      return;
+    }
+    _reminderSyncInProgress = true;
+    try {
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs = prefs;
+
+      final now = DateTime.now();
+      final bookings = await _findMyUpcomingBookingsAcrossCourses();
+      final candidates = bookings
+          .where((b) => b.start.isAfter(now.add(const Duration(minutes: 5))))
+          .toList();
+
+      final prevKeys =
+          prefs.getStringList(_sessionReminderKeysPref) ?? const [];
+      final nextKeys = <String>{
+        for (final b in candidates) _reminderSessionKey(b),
+      };
+
+      for (final key in prevKeys) {
+        if (nextKeys.contains(key)) continue;
+        final parsed = _parseReminderSessionKey(key);
+        if (parsed == null) continue;
+        await NotificationService.I.cancelSessionReminderSeries(
+          classId: parsed.classId,
+          sessionStart: parsed.start,
+          minutesBeforeList: _sessionReminderLeadMinutes,
+        );
+      }
+
+      for (final b in candidates) {
+        await NotificationService.I.scheduleSessionReminderSeries(
+          classId: _reminderClassId(b),
+          title: 'Upcoming class',
+          body: 'Your class with ${b.teacherName} is coming up.',
+          sessionStart: b.start,
+          minutesBeforeList: _sessionReminderLeadMinutes,
+        );
+      }
+
+      await prefs.setStringList(_sessionReminderKeysPref, nextKeys.toList());
+    } catch (_) {
+    } finally {
+      _reminderSyncInProgress = false;
+      if (_reminderSyncPending) {
+        _reminderSyncPending = false;
+        await _syncLearnerClassReminderSeries();
+      }
+    }
   }
 
   Future<List<Map<String, dynamic>>> _loadJoinableCourses() async {

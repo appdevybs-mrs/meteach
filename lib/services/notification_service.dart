@@ -446,6 +446,78 @@ class NotificationService {
     );
   }
 
+  Future<void> scheduleSessionReminderSeries({
+    required String classId,
+    required String title,
+    required String body,
+    required DateTime sessionStart,
+    List<int> minutesBeforeList = const [60, 20, 5],
+  }) async {
+    final now = DateTime.now();
+    if (!sessionStart.isAfter(now)) return;
+
+    final unique = <int>{};
+    for (final raw in minutesBeforeList) {
+      final mins = raw <= 0 ? 0 : raw;
+      if (mins > 0) unique.add(mins);
+    }
+    if (unique.isEmpty) return;
+
+    final sorted = unique.toList()..sort((a, b) => b.compareTo(a));
+
+    for (final mins in sorted) {
+      final scheduledAt = sessionStart.subtract(Duration(minutes: mins));
+      if (!scheduledAt.isAfter(now)) continue;
+
+      final enhancedBody = _enhanceSessionBody(
+        originalBody: body,
+        sessionStart: sessionStart,
+        scheduledAt: scheduledAt,
+      );
+
+      final tzTime = tz.TZDateTime.from(scheduledAt, tz.local);
+      final id = _makeLeadNotifId(classId, sessionStart, mins);
+
+      final payloadJson = jsonEncode({
+        'type': 'session',
+        'eventId': _sessionEventId(classId, sessionStart, 'lead_$mins'),
+        'classId': classId,
+        'sessionStart': sessionStart.toIso8601String(),
+        'title': title,
+        'body': enhancedBody,
+        'kind': 'lead',
+        'mins': mins,
+      });
+
+      await _zonedScheduleWithExactFallback(
+        id: id,
+        title: title,
+        body: enhancedBody,
+        scheduledDate: tzTime,
+        notificationDetails: _detailsSessionWithActions(
+          sessionStart: sessionStart,
+          scheduledAt: scheduledAt,
+        ),
+        payload: payloadJson,
+      );
+    }
+  }
+
+  Future<void> cancelSessionReminderSeries({
+    required String classId,
+    required DateTime sessionStart,
+    List<int> minutesBeforeList = const [60, 20, 5],
+  }) async {
+    final unique = <int>{};
+    for (final raw in minutesBeforeList) {
+      final mins = raw <= 0 ? 0 : raw;
+      if (mins > 0) unique.add(mins);
+    }
+    for (final mins in unique) {
+      await _plugin.cancel(id: _makeLeadNotifId(classId, sessionStart, mins));
+    }
+  }
+
   Future<void> scheduleAttendanceReminder({
     required String classId,
     required String title,
@@ -622,6 +694,11 @@ class NotificationService {
 
   int _makeNotifId(String classId, DateTime sessionStart) {
     final raw = '$classId|${sessionStart.toIso8601String()}';
+    return raw.hashCode.abs() % 2147483647;
+  }
+
+  int _makeLeadNotifId(String classId, DateTime sessionStart, int mins) {
+    final raw = 'LEAD|$classId|${sessionStart.toIso8601String()}|$mins';
     return raw.hashCode.abs() % 2147483647;
   }
 
