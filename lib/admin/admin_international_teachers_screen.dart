@@ -104,6 +104,24 @@ class _AdminInternationalTeacherDetailsScreenState
   Map<String, bool> _selected = <String, bool>{};
   List<Map<String, String>> _courses = <Map<String, String>>[];
 
+  Future<void> _pickExpiryDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = DateTime.tryParse(_expiryC.text.trim()) ?? today;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(today) ? today : initial,
+      firstDate: DateTime(today.year - 1, 1, 1),
+      lastDate: DateTime(today.year + 8, 12, 31),
+      helpText: 'Select expiry date',
+    );
+    if (picked == null) return;
+    final mm = picked.month.toString().padLeft(2, '0');
+    final dd = picked.day.toString().padLeft(2, '0');
+    _expiryC.text = '${picked.year}-$mm-$dd';
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -225,9 +243,29 @@ class _AdminInternationalTeacherDetailsScreenState
                   const SizedBox(height: 10),
                   TextField(
                     controller: _expiryC,
-                    decoration: const InputDecoration(
+                    readOnly: true,
+                    onTap: _pickExpiryDate,
+                    decoration: InputDecoration(
                       labelText: 'Expires On (YYYY-MM-DD)',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Pick date',
+                            onPressed: _pickExpiryDate,
+                            icon: const Icon(Icons.calendar_month_outlined),
+                          ),
+                          IconButton(
+                            tooltip: 'Clear date',
+                            onPressed: () {
+                              _expiryC.clear();
+                              if (mounted) setState(() {});
+                            },
+                            icon: const Icon(Icons.clear),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
