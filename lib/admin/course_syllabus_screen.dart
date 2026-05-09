@@ -1826,14 +1826,27 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         allowMultiple: false,
         type: FileType.custom,
         allowedExtensions: const ['pdf'],
-        withData: true,
+        withData: false,
       );
       if (pickedRes == null || pickedRes.files.isEmpty) return;
 
       final picked = pickedRes.files.single;
+      debugPrint(
+        '[CourseBookUpload] picked name=${picked.name} size=${picked.size} '
+        'hasPath=${(picked.path ?? '').trim().isNotEmpty} '
+        'hasBytes=${picked.bytes != null}',
+      );
       final ext = picked.extension?.trim().toLowerCase() ?? '';
       if (ext != 'pdf') {
         throw Exception('Only PDF files are allowed for course book.');
+      }
+      final hasPath = (picked.path ?? '').trim().isNotEmpty;
+      final hasBytes = picked.bytes != null;
+      if (!hasPath && !hasBytes) {
+        throw Exception(
+          'Could not read selected PDF from your file provider. '
+          'Try selecting from local storage or another file app.',
+        );
       }
 
       final courseMap = await _loadCourseMeta();

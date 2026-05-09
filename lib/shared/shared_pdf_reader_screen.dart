@@ -354,7 +354,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'Opening story...',
+                          'Opening...',
                           style: TextStyle(
                             color: p.primary,
                             fontWeight: FontWeight.w800,

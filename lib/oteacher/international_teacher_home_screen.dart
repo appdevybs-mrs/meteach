@@ -293,8 +293,16 @@ class _InternationalTeacherHomeScreenState
         elevation: 0,
         backgroundColor: p.primary,
         foregroundColor: Colors.white,
+        centerTitle: false,
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+        ),
         title: Text(
           _name.trim().isEmpty ? 'International Teacher' : _name.trim(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         leading: IconButton(
           icon: const Icon(Icons.menu_rounded),
@@ -1017,7 +1025,9 @@ class _InternationalTeacherSyllabusScreenState
                     itemCount: _lessons.length,
                     itemBuilder: (context, i) {
                       final l = _lessons[i];
-                      final accent = _skillColor(l.skillType);
+                      final accent = _skillColor(
+                        '${l.skillType} ${l.lessonTitle}',
+                      );
                       return TweenAnimationBuilder<double>(
                         tween: Tween(begin: 0, end: 1),
                         duration: Duration(milliseconds: 220 + (i * 18)),
@@ -1476,10 +1486,10 @@ class _InternationalTeacherSyllabusScreenState
 
   Color _skillColor(String rawSkill) {
     final v = rawSkill.toLowerCase();
+    if (v.contains('vocab')) return const Color(0xFF16A34A);
     if (v.contains('listen') || v.contains('speak')) {
       return const Color(0xFF7E22CE);
     }
-    if (v.contains('vocab')) return const Color(0xFF16A34A);
     if (v.contains('read')) return const Color(0xFF2563EB);
     if (v.contains('grammar')) return const Color(0xFFDC2626);
     if (v.contains('writ')) return const Color(0xFFEA580C);
