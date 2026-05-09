@@ -67,6 +67,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   _CourseBookAsset? _courseBook;
 
   bool _courseBookBusy = false;
+  bool _uploadingCourseBook = false;
+  double _courseBookUploadProgress = 0;
 
   bool get _isRecordedVariant =>
       widget.variantKey.trim().toLowerCase() == 'recorded';
@@ -1822,6 +1824,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     if (!_isFlexibleVariant || _courseBookBusy || _loading || _saving) return;
     setState(() => _courseBookBusy = true);
     try {
+      if (mounted) {
+        setState(() {
+          _uploadingCourseBook = true;
+          _courseBookUploadProgress = 0;
+        });
+      }
       final pickedRes = await FilePicker.platform.pickFiles(
         allowMultiple: false,
         type: FileType.custom,
@@ -1863,6 +1871,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         root: 'courses',
         path: uploadPath,
         customName: 'course_book',
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _courseBookUploadProgress = p);
+        },
       );
 
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -1892,7 +1904,13 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         type: AppToastType.error,
       );
     } finally {
-      if (mounted) setState(() => _courseBookBusy = false);
+      if (mounted) {
+        setState(() {
+          _courseBookBusy = false;
+          _uploadingCourseBook = false;
+          _courseBookUploadProgress = 0;
+        });
+      }
     }
   }
 
@@ -1980,12 +1998,22 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   onPressed: (_courseBookBusy || _saving || _loading)
                       ? null
                       : _uploadCourseBook,
-                  icon: Icon(
-                    hasBook
-                        ? Icons.upload_file_rounded
-                        : Icons.attach_file_rounded,
+                  icon: _uploadingCourseBook
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          hasBook
+                              ? Icons.upload_file_rounded
+                              : Icons.attach_file_rounded,
+                        ),
+                  label: Text(
+                    _uploadingCourseBook
+                        ? 'Uploading ${(_courseBookUploadProgress * 100).round()}%'
+                        : (hasBook ? 'Replace PDF' : 'Upload PDF'),
                   ),
-                  label: Text(hasBook ? 'Replace PDF' : 'Upload PDF'),
                 ),
                 OutlinedButton.icon(
                   onPressed: hasBook ? _openCourseBook : null,
@@ -2000,6 +2028,16 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   ),
               ],
             ),
+            if (_uploadingCourseBook) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 7,
+                  value: _courseBookUploadProgress.clamp(0.0, 1.0).toDouble(),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -2192,26 +2230,51 @@ class _SyllabusServerStorage {
       );
     }
 
-    onProgress?.call(0.05);
-    Timer? watchdog;
-    var stage = 0.05;
-    if (onProgress != null) {
-      watchdog = Timer.periodic(const Duration(milliseconds: 450), (_) {
-        stage += 0.05;
-        if (stage > 0.9) stage = 0.9;
-        onProgress(stage);
-      });
-    }
-
+    final contentLen = req.contentLength;
+    onProgress?.call(0);
+    final client = http.Client();
     http.Response response;
     try {
-      final streamed = await req.send().timeout(const Duration(minutes: 5));
-      onProgress?.call(0.95);
+      http.StreamedResponse streamed;
+      if (onProgress != null && contentLen > 0) {
+        final source = req.finalize();
+        final tracked = http.StreamedRequest('POST', uploadUri)
+          ..headers.addAll(req.headers)
+          ..contentLength = contentLen;
+
+        var uploaded = 0;
+        final done = Completer<void>();
+        source.listen(
+          (chunk) {
+            uploaded += chunk.length;
+            final ratio = (uploaded / contentLen).clamp(0.0, 0.98).toDouble();
+            onProgress(ratio);
+            tracked.sink.add(chunk);
+          },
+          onDone: () {
+            tracked.sink.close();
+            done.complete();
+          },
+          onError: (Object err, StackTrace st) {
+            tracked.sink.addError(err, st);
+            tracked.sink.close();
+            if (!done.isCompleted) done.completeError(err, st);
+          },
+          cancelOnError: true,
+        );
+        await done.future;
+        streamed = await client
+            .send(tracked)
+            .timeout(const Duration(minutes: 15));
+      } else {
+        streamed = await client.send(req).timeout(const Duration(minutes: 15));
+      }
+      onProgress?.call(0.99);
       response = await http.Response.fromStream(
         streamed,
       ).timeout(const Duration(minutes: 5));
     } finally {
-      watchdog?.cancel();
+      client.close();
     }
     final raw = response.body.trim();
 

@@ -5,7 +5,7 @@ require_once __DIR__ . '/file_ops.php';
 
 require_auth(['admin', 'teacher']);
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [
     'jpg', 'jpeg', 'png', 'webp', 'gif',
     'mp4', 'm4v', 'mov', 'webm',
@@ -16,6 +16,30 @@ const ALLOWED_EXTENSIONS = [
 
 if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
     json_response(['success' => false, 'message' => 'Missing file.'], 400);
+}
+
+$uploadErr = (int) ($_FILES['file']['error'] ?? UPLOAD_ERR_OK);
+if ($uploadErr !== UPLOAD_ERR_OK) {
+    $message = 'Upload failed.';
+    $status = 400;
+    if ($uploadErr === UPLOAD_ERR_INI_SIZE || $uploadErr === UPLOAD_ERR_FORM_SIZE) {
+        $message = 'File exceeds max upload size (' . (int) floor(MAX_UPLOAD_BYTES / (1024 * 1024)) . ' MB).';
+        $status = 413;
+    } elseif ($uploadErr === UPLOAD_ERR_PARTIAL) {
+        $message = 'Upload was interrupted. Please retry.';
+    } elseif ($uploadErr === UPLOAD_ERR_NO_FILE) {
+        $message = 'Missing file.';
+    } elseif ($uploadErr === UPLOAD_ERR_NO_TMP_DIR) {
+        $message = 'Server missing temp upload directory.';
+        $status = 500;
+    } elseif ($uploadErr === UPLOAD_ERR_CANT_WRITE) {
+        $message = 'Server could not write uploaded file.';
+        $status = 500;
+    } elseif ($uploadErr === UPLOAD_ERR_EXTENSION) {
+        $message = 'Upload blocked by server extension.';
+        $status = 500;
+    }
+    json_response(['success' => false, 'message' => $message, 'upload_error_code' => $uploadErr], $status);
 }
 
 $root = (string) ($_POST['root'] ?? '');
@@ -32,7 +56,12 @@ if ($tmp === '' || !is_uploaded_file($tmp)) {
 
 $size = (int) ($_FILES['file']['size'] ?? 0);
 if ($size <= 0 || $size > MAX_UPLOAD_BYTES) {
-    json_response(['success' => false, 'message' => 'Invalid file size.'], 400);
+    json_response([
+        'success' => false,
+        'message' => 'File exceeds max upload size (' . (int) floor(MAX_UPLOAD_BYTES / (1024 * 1024)) . ' MB).',
+        'max_upload_bytes' => MAX_UPLOAD_BYTES,
+        'received_size_bytes' => $size,
+    ], 413);
 }
 
 $origName = (string) ($_FILES['file']['name'] ?? 'file.bin');

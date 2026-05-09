@@ -96,6 +96,10 @@ String toHumanError(
     if (lower.contains('payload too large') ||
         lower.contains('request entity too large') ||
         lower.contains('too large') ||
+        lower.contains('invalid file size') ||
+        lower.contains('exceeds max upload size') ||
+        lower.contains('upload_err_ini_size') ||
+        lower.contains('upload_err_form_size') ||
         lower.contains('file is too large')) {
       return 'This file is too large to upload. Please choose a smaller file.';
     }
