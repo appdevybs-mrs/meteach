@@ -98,6 +98,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   bool _didShowFollowModeHint = false;
   bool _didShowCustomModeHint = false;
   late final AnimationController _sessionPulseCtrl;
+  Map<String, List<_BusyRange>>? _busyRangesCache;
+  DateTime? _busyRangesCacheAt;
+  static const Duration _busyRangesCacheTtl = Duration(seconds: 25);
+  DateTime? _busyVisualSince;
 
   @override
   void initState() {
@@ -522,6 +526,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Future<Map<String, List<_BusyRange>>>
   _loadTeacherBusyRangesForWindow() async {
+    final nowForCache = DateTime.now();
+    if (_busyRangesCache != null && _busyRangesCacheAt != null) {
+      final age = nowForCache.difference(_busyRangesCacheAt!);
+      if (age <= _busyRangesCacheTtl) {
+        return _busyRangesCache!;
+      }
+    }
+
     final now = DateTime.now();
     final startOfToday = DateTime(now.year, now.month, now.day);
     final endOfWindow = startOfToday.add(Duration(days: daysAhead));
@@ -603,7 +615,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       }
     } catch (_) {}
 
+    _busyRangesCache = out;
+    _busyRangesCacheAt = DateTime.now();
     return out;
+  }
+
+  void _invalidateBusyRangesCache() {
+    _busyRangesCache = null;
+    _busyRangesCacheAt = null;
   }
 
   bool _hasClassConflict(
@@ -833,6 +852,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Future<void> _runBusy(String label, Future<void> Function() action) async {
+    _markBusyVisualStart();
     if (!mounted) return;
     setState(() {
       progressLabel = label;
@@ -845,7 +865,33 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         setState(() {
           progressLabel = '';
         });
+        _clearBusyVisualIfIdle();
       }
+    }
+  }
+
+  void _setProgressLabel(String label) {
+    if (!mounted) return;
+    if (label.isNotEmpty) {
+      _markBusyVisualStart();
+    }
+    setState(() {
+      progressLabel = label;
+    });
+    if (label.isEmpty) {
+      _clearBusyVisualIfIdle();
+    }
+  }
+
+  void _markBusyVisualStart() {
+    _busyVisualSince ??= DateTime.now();
+  }
+
+  void _clearBusyVisualIfIdle() {
+    final stillBusy =
+        loading || booking || refreshing || progressLabel.isNotEmpty;
+    if (!stillBusy) {
+      _busyVisualSince = null;
     }
   }
 
@@ -1124,15 +1170,23 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final Map<String, _SlotSummary> summary = {};
 
     try {
+      final dayKeys = <String>[];
       for (int i = 0; i < daysAhead; i++) {
         final day = DateTime(
           now.year,
           now.month,
           now.day,
         ).add(Duration(days: i));
-        final dk = _dateKey(day);
+        dayKeys.add(_dateKey(day));
+      }
 
-        final snap = await _reservationsRootRef(cid).child(dk).get();
+      final snaps = await Future.wait(
+        dayKeys.map((dk) => _reservationsRootRef(cid).child(dk).get()),
+      );
+
+      for (int i = 0; i < dayKeys.length; i++) {
+        final dk = dayKeys[i];
+        final snap = snaps[i];
         if (!snap.exists || snap.value == null || snap.value is! Map) continue;
 
         final m = (snap.value as Map).map(
@@ -1195,15 +1249,23 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final byKey = <String, _MyBooking>{};
 
     try {
+      final dayKeys = <String>[];
       for (int i = 0; i < daysAhead; i++) {
         final day = DateTime(
           now.year,
           now.month,
           now.day,
         ).add(Duration(days: i));
-        final dk = _dateKey(day);
+        dayKeys.add(_dateKey(day));
+      }
 
-        final snap = await _reservationsRootRef(cid).child(dk).get();
+      final snaps = await Future.wait(
+        dayKeys.map((dk) => _reservationsRootRef(cid).child(dk).get()),
+      );
+
+      for (int i = 0; i < dayKeys.length; i++) {
+        final dk = dayKeys[i];
+        final snap = snaps[i];
         if (!snap.exists || snap.value == null || snap.value is! Map) continue;
 
         final m = (snap.value as Map).map(
@@ -1288,6 +1350,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       final root = (snap.value as Map).map(
         (k, vv) => MapEntry(k.toString(), vv),
       );
+      final teacherIds = root.keys.toList();
+      final teacherMeetUrls = <String, String>{};
+      if (teacherIds.isNotEmpty) {
+        final urls = await Future.wait(
+          teacherIds.map(_loadTeacherProfileMeetUrl),
+        );
+        for (int i = 0; i < teacherIds.length; i++) {
+          teacherMeetUrls[teacherIds[i]] = urls[i];
+        }
+      }
       final busyByTeacherDay = await _loadTeacherBusyRangesForWindow();
       final List<_TeacherAvail> teachers = [];
 
@@ -1329,7 +1401,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 .toString()
                 .trim();
 
-        final meetUrl = await _loadTeacherProfileMeetUrl(teacherId);
+        final meetUrl = teacherMeetUrls[teacherId] ?? '';
 
         int durationMin = _toInt(effective['durationMinutes'], fallback: 0);
         if (durationMin <= 0) {
@@ -1453,6 +1525,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (booking || refreshing) return;
     final cid = courseId;
     if (cid == null) return;
+    _setProgressLabel('Checking slot...');
 
     if (_isBookingLockedForNewBooking(slot)) {
       _toast('Booking closes 24 hours before class.');
@@ -1530,11 +1603,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
 
     setState(() => booking = true);
+    _markBusyVisualStart();
 
     try {
       final upcoming = await _findMyUpcomingBookings(cid);
       final existing = upcoming.isEmpty ? null : upcoming.first;
       final isCustomMode = studyMode == 'custom';
+      final sameTimeDifferentTeacher = upcoming.any(
+        (b) =>
+            b.dayKey == slot.dayKey &&
+            b.time == slot.time &&
+            b.teacherId != slot.teacherId,
+      );
 
       final sameExact = upcoming.any(
         (b) =>
@@ -1548,12 +1628,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       }
 
       if (isCustomMode) {
-        final sameTimeDifferentTeacher = upcoming.any(
-          (b) =>
-              b.dayKey == slot.dayKey &&
-              b.time == slot.time &&
-              b.teacherId != slot.teacherId,
-        );
         if (sameTimeDifferentTeacher) {
           _toast(
             _bilingual(
@@ -1576,6 +1650,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         }
 
         if (count == 1 || count == 2) {
+          _setProgressLabel('Preparing confirmation...');
           final ok = await _confirmWithLogo(
             title: 'Booking limit | حد الحجز',
             message:
@@ -1596,6 +1671,21 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       }
 
       if (!isCustomMode && existing != null) {
+        final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
+        final msg = sameTimeDifferentTeacher
+            ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
+            : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? targetSession} (${slot.bookedCount}/$cap).';
+        _setProgressLabel('Preparing confirmation...');
+        final ok = await _confirmWithLogo(
+          title: sameTimeDifferentTeacher ? 'Change teacher' : 'Change booking',
+          message: msg,
+          confirmLabel: sameTimeDifferentTeacher
+              ? 'Yes, Change Teacher'
+              : 'Yes, Change',
+        );
+        if (!mounted) return;
+        if (ok != true) return;
+
         final locked = !existing.start.isAfter(
           DateTime.now().add(const Duration(hours: 24)),
         );
@@ -1605,6 +1695,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           );
           return;
         }
+
+        _setProgressLabel('Saving booking...');
 
         final cancelStatus = await _cancelBookingByKey(
           cid,
@@ -1637,6 +1729,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       }
 
       final ref = _reservationsRef(cid, slot.dayKey, slot.time, slot.teacherId);
+      _setProgressLabel('Saving booking...');
 
       final pre = await ref.get();
       int? existingGroupSession;
@@ -1754,6 +1847,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
+      _invalidateBusyRangesCache();
     } catch (e) {
       await AuditLogService.logFailure(
         actionKey: AuditActionKeys.learnerBookingCreate,
@@ -1772,6 +1866,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     } finally {
       if (mounted) {
         setState(() => booking = false);
+        _clearBusyVisualIfIdle();
       }
     }
   }
@@ -1958,7 +2053,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     final lateCancel = _isWithin24Hours(slot);
 
+    _setProgressLabel('Checking cancellation...');
     setState(() => booking = true);
+    _markBusyVisualStart();
 
     try {
       final status = await _cancelBookingByKey(
@@ -1972,6 +2069,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         return;
       }
 
+      _setProgressLabel('Removing reminder...');
       await _cancelLearnerLocalReminder(slot);
 
       if (status == _CancelBookingStatus.cancelled && lateCancel) {
@@ -2005,9 +2103,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         );
       }
 
+      _setProgressLabel('Refreshing schedule...');
       await _loadStudiedSessions(cid);
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
+      _invalidateBusyRangesCache();
     } catch (e) {
       await AuditLogService.logFailure(
         actionKey: AuditActionKeys.learnerBookingCancel,
@@ -2026,6 +2126,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     } finally {
       if (mounted) {
         setState(() => booking = false);
+        _clearBusyVisualIfIdle();
       }
     }
   }
@@ -2035,13 +2136,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (cid == null || loading || booking || refreshing) return;
 
     setState(() => refreshing = true);
+    _markBusyVisualStart();
     try {
+      _setProgressLabel('Refreshing schedule...');
+      _invalidateBusyRangesCache();
       await _loadStudiedSessions(cid);
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } finally {
       if (mounted) {
         setState(() => refreshing = false);
+        _clearBusyVisualIfIdle();
       }
     }
   }
@@ -3205,124 +3310,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         : () async {
                             Navigator.pop(context);
 
-                            final upcoming = await _findMyUpcomingBookings(
-                              courseId!,
-                            );
-                            final existing = upcoming.isEmpty
-                                ? null
-                                : upcoming.first;
-                            final isCustomMode = studyMode == 'custom';
-
-                            final isSameExactBooking = upcoming.any(
-                              (b) =>
-                                  b.dayKey == slot.dayKey &&
-                                  b.time == slot.time &&
-                                  b.teacherId == slot.teacherId,
-                            );
-
-                            final isSameTimeDifferentTeacher = upcoming.any(
-                              (b) =>
-                                  b.dayKey == slot.dayKey &&
-                                  b.time == slot.time &&
-                                  b.teacherId != slot.teacherId,
-                            );
-
-                            if (isCustomMode) {
-                              if (isSameExactBooking) {
-                                _toast('You already booked this slot ✅');
-                                return;
-                              }
-
-                              if (isSameTimeDifferentTeacher) {
-                                _toast(
-                                  _bilingual(
-                                    'You already booked this date and time with another teacher.',
-                                    'لقد حجزت هذا التاريخ والوقت بالفعل مع معلم آخر.',
-                                  ),
-                                );
-                                return;
-                              }
-
-                              final count = upcoming.length;
-                              if (count >= 3) {
-                                _toast(
-                                  _bilingual(
-                                    'You already booked 3 sessions. Please cancel one to book another.',
-                                    'لقد حجزت 3 جلسات بالفعل. يرجى إلغاء واحدة لحجز جلسة أخرى.',
-                                  ),
-                                );
-                                return;
-                              }
-
-                              final prefix = count == 1
-                                  ? 'You already booked 1 session. You can book up to 3 sessions.\nلقد حجزت جلسة واحدة بالفعل. يمكنك حجز حتى 3 جلسات.\n\n'
-                                  : (count == 2
-                                        ? 'You already booked 2 sessions. You can book up to 3 sessions.\nلقد حجزت جلستين بالفعل. يمكنك حجز حتى 3 جلسات.\n\n'
-                                        : '');
-
-                              final msg =
-                                  '${prefix}Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? targetSession}\nLearners: ${slot.bookedCount}/$cap';
-
-                              final ok = await _confirmWithLogo(
-                                title: 'Book this slot',
-                                message: msg,
-                                confirmLabel: 'Yes',
-                              );
-
-                              if (ok == true) {
-                                await _runBusy('Saving booking...', () async {
-                                  await _bookSlot(slot);
-                                });
-                              }
-                              return;
-                            }
-
-                            final hasOther =
-                                existing != null && !isSameExactBooking;
-
-                            final locked =
-                                existing != null &&
-                                !existing.start.isAfter(
-                                  DateTime.now().add(const Duration(hours: 24)),
-                                );
-
-                            final label = isSameTimeDifferentTeacher
-                                ? 'Change teacher'
-                                : ((slot.bookedCount > 0 &&
-                                          slot.groupSessionNo == targetSession)
-                                      ? 'Join group'
-                                      : 'Book this slot');
-
-                            final msg = hasOther
-                                ? (locked
-                                      ? 'You already booked a class within 24 hours.\nYou can’t change it now.'
-                                      : isSameTimeDifferentTeacher
-                                      ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
-                                      : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? targetSession} (${slot.bookedCount}/$cap).')
-                                : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? targetSession}\nLearners: ${slot.bookedCount}/$cap';
-                            if (hasOther && locked) {
-                              _toast(
-                                'You can’t change booking within 24 hours.',
-                              );
-                              return;
-                            }
-
+                            final msg =
+                                'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? targetSession}\nLearners: ${slot.bookedCount}/$cap';
                             final ok = await _confirmWithLogo(
-                              title: hasOther
-                                  ? (isSameTimeDifferentTeacher
-                                        ? 'Change teacher'
-                                        : 'Change booking')
-                                  : label,
+                              title:
+                                  (slot.bookedCount > 0 &&
+                                      slot.groupSessionNo == targetSession)
+                                  ? 'Join group'
+                                  : 'Book this slot',
                               message: msg,
-                              confirmLabel: hasOther
-                                  ? (isSameTimeDifferentTeacher
-                                        ? 'Yes, Change Teacher'
-                                        : 'Yes, Change')
-                                  : 'Yes',
+                              confirmLabel: 'Yes',
                             );
 
                             if (ok == true) {
-                              await _runBusy('Saving booking...', () async {
+                              await _runBusy('Checking slot...', () async {
                                 await _bookSlot(slot);
                               });
                             }
@@ -4844,6 +4845,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const YbsBusyLogo(size: 44),
+                          const SizedBox(height: 10),
+                          const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: primaryBlue,
+                            ),
+                          ),
                           const SizedBox(height: 14),
                           Text(
                             progressLabel.isEmpty
@@ -4854,6 +4864,35 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                               fontWeight: FontWeight.w900,
                               color: primaryBlue,
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          StreamBuilder<int>(
+                            stream: Stream.periodic(
+                              const Duration(seconds: 1),
+                              (x) => x,
+                            ),
+                            initialData: 0,
+                            builder: (context, _) {
+                              final since = _busyVisualSince;
+                              if (since == null) {
+                                return const SizedBox.shrink();
+                              }
+                              final elapsed = DateTime.now().difference(since);
+                              if (elapsed <
+                                  const Duration(milliseconds: 2500)) {
+                                return const SizedBox.shrink();
+                              }
+                              final sec = elapsed.inSeconds;
+                              return Text(
+                                'Still working... ${sec}s',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade700,
+                                  fontSize: 12,
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),

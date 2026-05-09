@@ -2247,7 +2247,7 @@ class _SyllabusServerStorage {
         source.listen(
           (chunk) {
             uploaded += chunk.length;
-            final ratio = (uploaded / contentLen).clamp(0.0, 0.98).toDouble();
+            final ratio = (uploaded / contentLen).clamp(0.0, 0.95).toDouble();
             onProgress(ratio);
             tracked.sink.add(chunk);
           },
@@ -2269,7 +2269,7 @@ class _SyllabusServerStorage {
       } else {
         streamed = await client.send(req).timeout(const Duration(minutes: 15));
       }
-      onProgress?.call(0.99);
+      onProgress?.call(0.98);
       response = await http.Response.fromStream(
         streamed,
       ).timeout(const Duration(minutes: 5));

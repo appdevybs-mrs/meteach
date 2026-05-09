@@ -14,16 +14,61 @@ const ALLOWED_EXTENSIONS = [
     'html', 'htm',
 ];
 
+function parse_size_to_bytes(string $raw): int
+{
+    $v = trim($raw);
+    if ($v === '') {
+        return 0;
+    }
+
+    if (!preg_match('/^\s*(\d+(?:\.\d+)?)\s*([KMGTP]?)(?:B)?\s*$/i', $v, $m)) {
+        return 0;
+    }
+
+    $num = (float) ($m[1] ?? '0');
+    $unit = strtoupper((string) ($m[2] ?? ''));
+    $mult = 1;
+    if ($unit === 'K') {
+        $mult = 1024;
+    } elseif ($unit === 'M') {
+        $mult = 1024 * 1024;
+    } elseif ($unit === 'G') {
+        $mult = 1024 * 1024 * 1024;
+    } elseif ($unit === 'T') {
+        $mult = 1024 * 1024 * 1024 * 1024;
+    } elseif ($unit === 'P') {
+        $mult = 1024 * 1024 * 1024 * 1024 * 1024;
+    }
+
+    return (int) floor($num * $mult);
+}
+
+function effective_upload_limit_bytes(): int
+{
+    $candidates = [MAX_UPLOAD_BYTES];
+    $uploadMax = parse_size_to_bytes((string) ini_get('upload_max_filesize'));
+    $postMax = parse_size_to_bytes((string) ini_get('post_max_size'));
+    if ($uploadMax > 0) {
+        $candidates[] = $uploadMax;
+    }
+    if ($postMax > 0) {
+        $candidates[] = $postMax;
+    }
+    return min($candidates);
+}
+
 if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
     json_response(['success' => false, 'message' => 'Missing file.'], 400);
 }
 
 $uploadErr = (int) ($_FILES['file']['error'] ?? UPLOAD_ERR_OK);
 if ($uploadErr !== UPLOAD_ERR_OK) {
+    $effectiveLimit = effective_upload_limit_bytes();
+    $effectiveLimitMb = (int) floor($effectiveLimit / (1024 * 1024));
     $message = 'Upload failed.';
     $status = 400;
     if ($uploadErr === UPLOAD_ERR_INI_SIZE || $uploadErr === UPLOAD_ERR_FORM_SIZE) {
-        $message = 'File exceeds max upload size (' . (int) floor(MAX_UPLOAD_BYTES / (1024 * 1024)) . ' MB).';
+        $message = 'File exceeds server upload limit (' . $effectiveLimitMb . ' MB).';
         $status = 413;
     } elseif ($uploadErr === UPLOAD_ERR_PARTIAL) {
         $message = 'Upload was interrupted. Please retry.';
@@ -39,7 +84,15 @@ if ($uploadErr !== UPLOAD_ERR_OK) {
         $message = 'Upload blocked by server extension.';
         $status = 500;
     }
-    json_response(['success' => false, 'message' => $message, 'upload_error_code' => $uploadErr], $status);
+    json_response([
+        'success' => false,
+        'message' => $message,
+        'upload_error_code' => $uploadErr,
+        'max_upload_bytes' => MAX_UPLOAD_BYTES,
+        'effective_limit_bytes' => $effectiveLimit,
+        'upload_max_filesize' => (string) ini_get('upload_max_filesize'),
+        'post_max_size' => (string) ini_get('post_max_size'),
+    ], $status);
 }
 
 $root = (string) ($_POST['root'] ?? '');
@@ -55,11 +108,15 @@ if ($tmp === '' || !is_uploaded_file($tmp)) {
 }
 
 $size = (int) ($_FILES['file']['size'] ?? 0);
-if ($size <= 0 || $size > MAX_UPLOAD_BYTES) {
+$effectiveLimit = effective_upload_limit_bytes();
+if ($size <= 0 || $size > $effectiveLimit) {
     json_response([
         'success' => false,
-        'message' => 'File exceeds max upload size (' . (int) floor(MAX_UPLOAD_BYTES / (1024 * 1024)) . ' MB).',
+        'message' => 'File exceeds server upload limit (' . (int) floor($effectiveLimit / (1024 * 1024)) . ' MB).',
         'max_upload_bytes' => MAX_UPLOAD_BYTES,
+        'effective_limit_bytes' => $effectiveLimit,
+        'upload_max_filesize' => (string) ini_get('upload_max_filesize'),
+        'post_max_size' => (string) ini_get('post_max_size'),
         'received_size_bytes' => $size,
     ], 413);
 }
