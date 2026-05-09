@@ -19,6 +19,8 @@ import 'admin_mail_person_list_navigation.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/profile_avatar.dart';
+import '../shared/chat_sender_identity.dart';
 
 class MailUploadClient {
   MailUploadClient({
@@ -167,6 +169,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   bool _fileUploading = false;
   double _fileUploadProgress = 0;
   String _uploadingFileName = '';
+  final Map<String, ChatSenderIdentity> _senderByUid =
+      <String, ChatSenderIdentity>{};
+  final Set<String> _senderLoadInFlight = <String>{};
 
   final List<Map<String, String>> _attachments = [];
   final Set<String> _selectedMessageIds = <String>{};
@@ -193,6 +198,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     _loadSubject();
     _markRead();
     _listenPeerState();
+    unawaited(_warmSenderIdentities());
   }
 
   @override
@@ -272,6 +278,65 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     );
   }
 
+  String _displayNameForUid(String uid) {
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return 'User';
+    if (cleanUid == _meUid.trim()) return 'Me';
+    final known = _senderByUid[cleanUid]?.displayName.trim() ?? '';
+    if (known.isNotEmpty) return known;
+    if (cleanUid == widget.peerUid.trim()) {
+      final peer = widget.peerName.trim();
+      if (peer.isNotEmpty) return peer;
+    }
+    return 'User';
+  }
+
+  Future<void> _warmSenderIdentities([
+    Iterable<String> hintedUids = const [],
+  ]) async {
+    final uids = <String>{
+      _meUid.trim(),
+      widget.peerUid.trim(),
+      ...hintedUids.map((e) => e.trim()),
+    }..removeWhere((e) => e.isEmpty);
+    if (uids.isEmpty) return;
+
+    try {
+      final tSnap = await _threadRef.child('participants').get();
+      if (tSnap.exists && tSnap.value is Map) {
+        final p = (tSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        for (final entry in p.entries) {
+          if (entry.value == true) uids.add(entry.key.trim());
+        }
+      }
+    } catch (_) {}
+
+    var changed = false;
+    for (final uid in uids) {
+      if (_senderByUid.containsKey(uid) || _senderLoadInFlight.contains(uid)) {
+        continue;
+      }
+      _senderLoadInFlight.add(uid);
+      try {
+        final snap = await _db.ref('users/$uid').get();
+        if (snap.exists && snap.value is Map) {
+          final raw = snap.value as Map;
+          _senderByUid[uid] = ChatSenderIdentity(
+            uid: uid,
+            displayName: resolveDisplayNameFromUserMap(raw, uid),
+            photoUrl: resolvePhotoUrlFromUserMap(raw),
+          );
+          changed = true;
+        }
+      } catch (_) {
+      } finally {
+        _senderLoadInFlight.remove(uid);
+      }
+    }
+
+    if (changed && mounted) setState(() {});
+  }
+
   Future<void> _loadSubject() async {
     try {
       final snap = await _threadRef.get();
@@ -303,16 +368,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     final usersRaw = usersSnap.value;
     final users = <Map<String, String>>[];
     String resolveDisplayName(Map<dynamic, dynamic> m, String uid) {
-      final mm = m.map((k, v) => MapEntry(k.toString(), v));
-      final fn = (mm['first_name'] ?? mm['firstName'] ?? '').toString().trim();
-      final ln = (mm['last_name'] ?? mm['lastName'] ?? '').toString().trim();
-      final fullName = (mm['fullName'] ?? mm['name'] ?? '').toString().trim();
-      final email = (mm['email'] ?? '').toString().trim();
-      final full = ('$fn $ln').trim();
-      if (full.isNotEmpty) return full;
-      if (fullName.isNotEmpty) return fullName;
-      if (email.isNotEmpty) return email;
-      return uid;
+      return resolveDisplayNameFromUserMap(m, uid);
     }
 
     if (usersRaw is Map) {
@@ -408,7 +464,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                     threadId: widget.threadId,
                                     memberUid: uid,
                                   );
-                                  if (!mounted) return;
+                                  if (!mounted || !ctx.mounted) return;
                                   Navigator.pop(ctx);
                                   _snack('Member removed.');
                                 } catch (e) {
@@ -488,7 +544,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                   threadId: widget.threadId,
                                   memberUids: selected,
                                 );
-                                if (!mounted) return;
+                                if (!mounted || !ctx.mounted) return;
                                 Navigator.pop(ctx);
                                 _snack('Members added.');
                               } catch (e) {
@@ -665,7 +721,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     final cleanUid = uid.trim();
     if (cleanUid.isEmpty) return '?';
     if (cleanUid == _meUid) return 'A';
-    final peer = widget.peerName.trim();
+    final peer = _displayNameForUid(cleanUid);
     if (peer.isNotEmpty) return peer[0].toUpperCase();
     return cleanUid[0].toUpperCase();
   }
@@ -696,16 +752,19 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     );
   }
 
-  Widget _buildSenderAvatar({required bool mine}) {
-    final label = mine ? 'Me' : widget.peerName;
-    final text = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
-    return CircleAvatar(
+  Widget _buildSenderAvatar({required String uid, required bool mine}) {
+    final senderName = _displayNameForUid(uid);
+    final senderPhoto = _senderByUid[uid.trim()]?.photoUrl ?? '';
+    final accent = senderAccentColor(uid);
+    return ProfileAvatar(
+      name: senderName,
+      photoUrl: senderPhoto,
       radius: 12,
-      backgroundColor: mine ? const Color(0xFFBBDEFB) : const Color(0xFFFFE0B2),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
-      ),
+      fallbackBg: mine
+          ? const Color(0xFFBBDEFB)
+          : accent.withValues(alpha: 0.16),
+      fallbackFg: mine ? const Color(0xFF0D3B66) : accent,
+      borderColor: accent.withValues(alpha: 0.30),
     );
   }
 
@@ -1419,6 +1478,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                   stream: _msgStream,
                   builder: (_, snap) {
                     final msgs = _parseMessages(snap.data?.snapshot.value);
+                    unawaited(
+                      _warmSenderIdentities(msgs.map((m) => m.fromUid)),
+                    );
                     unawaited(_markMessagesSeen(msgs));
                     _onMessagesChanged(msgs);
                     _visibleMessages = msgs;
@@ -1448,10 +1510,13 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                 : Alignment.centerLeft,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (!mine) ...[
-                                  _buildSenderAvatar(mine: false),
+                                  _buildSenderAvatar(
+                                    uid: m.fromUid,
+                                    mine: false,
+                                  ),
                                   const SizedBox(width: 6),
                                 ],
                                 Column(
@@ -1487,7 +1552,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                           decoration: BoxDecoration(
                                             color: mine
                                                 ? const Color(0xFFE3F2FD)
-                                                : Colors.white,
+                                                : senderAccentColor(
+                                                    m.fromUid,
+                                                  ).withValues(alpha: 0.10),
                                             borderRadius: BorderRadius.circular(
                                               16,
                                             ),
@@ -1546,12 +1613,16 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                             ),
                                           Flexible(
                                             child: Text(
-                                              mine ? 'Me' : widget.peerName,
+                                              _displayNameForUid(m.fromUid),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w800,
-                                                color: _personNameColor,
+                                                color: mine
+                                                    ? _personNameColor
+                                                    : senderAccentColor(
+                                                        m.fromUid,
+                                                      ),
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -1620,7 +1691,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                 ),
                                 if (mine) ...[
                                   const SizedBox(width: 6),
-                                  _buildSenderAvatar(mine: true),
+                                  _buildSenderAvatar(
+                                    uid: m.fromUid,
+                                    mine: true,
+                                  ),
                                 ],
                               ],
                             ),

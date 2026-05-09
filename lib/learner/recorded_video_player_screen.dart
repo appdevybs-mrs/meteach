@@ -238,7 +238,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       final controller = VideoPlayerController.networkUrl(uri);
       _controller = controller;
 
+      final initTimer = Stopwatch()..start();
+      _debug('video initialize start sessionId=${widget.sessionId}');
       await controller.initialize();
+      _debug(
+        'video initialize done sessionId=${widget.sessionId} elapsedMs=${initTimer.elapsedMilliseconds}',
+      );
       controller.addListener(_videoListener);
 
       final durationMs = controller.value.duration.inMilliseconds;
@@ -261,7 +266,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _startHideControlsTimer();
       _debug('loadAndInit success initialized=true');
     } catch (e) {
-      _debug('loadAndInit error=$e');
+      _debug('loadAndInit error sessionId=${widget.sessionId} error=$e');
       final message = e.toString();
       if (!mounted) return;
       setState(() {

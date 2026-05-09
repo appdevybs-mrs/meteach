@@ -643,6 +643,7 @@ class _LearnerDashboardLite extends StatefulWidget {
 class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   Future<List<_CourseProgressItem>>? _progressFuture;
+  Future<bool>? _hasFlexibleBookableCourseFuture;
   Future<_JoinFabPayload?>? _joinFabFuture;
   Timer? _progressRefreshTimer;
   Timer? _joinFabRefreshTimer;
@@ -651,11 +652,13 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   void initState() {
     super.initState();
     _progressFuture = _loadProgressItems();
+    _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse();
     _joinFabFuture = _findJoinFabPayload();
     _progressRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!mounted) return;
       setState(() {
         _progressFuture = _loadProgressItems();
+        _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse();
       });
     });
     _joinFabRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
@@ -2122,7 +2125,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 },
               ),
               FutureBuilder<bool>(
-                future: _hasFlexibleBookableCourse(),
+                future: _hasFlexibleBookableCourseFuture,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const SizedBox.shrink();

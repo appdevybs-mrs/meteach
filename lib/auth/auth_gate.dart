@@ -34,6 +34,8 @@ class _AuthGateState extends State<AuthGate> {
   bool _sessionStarted = false;
   String? _sessionUid;
   bool _signedOutCleanupQueued = false;
+  String? _deletedCheckUid;
+  Future<DataSnapshot>? _deletedCheckFuture;
 
   void log(String msg) {}
 
@@ -64,6 +66,8 @@ class _AuthGateState extends State<AuthGate> {
           final previousUid = _sessionUid;
           _sessionStarted = false;
           _sessionUid = null;
+          _deletedCheckUid = null;
+          _deletedCheckFuture = null;
           SessionManager.stopListening(); // stop session listener when signed out
           unawaited(TeacherScheduleWidgetService.instance.clearSnapshot());
           if (previousUid != null && previousUid.isNotEmpty) {
@@ -196,15 +200,19 @@ class _AuthGateState extends State<AuthGate> {
                 : <String, dynamic>{};
 
             final status = (m['status'] ?? '').toString().toLowerCase().trim();
-            // ✅ NEW: Always check if user is in users_deleted FIRST
-            final delRefEarly = FirebaseDatabase.instance.ref(
-              'users_deleted/$uid',
-            );
+            // ✅ Always check if user is in users_deleted FIRST
+            if (_deletedCheckUid != uid || _deletedCheckFuture == null) {
+              _deletedCheckUid = uid;
+              _deletedCheckFuture = FirebaseDatabase.instance
+                  .ref('users_deleted/$uid')
+                  .get();
+            }
 
             return FutureBuilder<DataSnapshot>(
-              future: delRefEarly.get(),
+              future: _deletedCheckFuture,
               builder: (context, delSnapEarly) {
-                if (!delSnapEarly.hasData) {
+                if (!delSnapEarly.hasData &&
+                    delSnapEarly.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
                     body: Center(
                       child: BrandedInlineLoader(
@@ -214,8 +222,19 @@ class _AuthGateState extends State<AuthGate> {
                   );
                 }
 
-                if (delSnapEarly.data!.exists) {
-                  final rawDel = delSnapEarly.data!.value;
+                final deletedSnap = delSnapEarly.data;
+                if (deletedSnap == null) {
+                  return const Scaffold(
+                    body: Center(
+                      child: BrandedInlineLoader(
+                        message: 'Verifying access...',
+                      ),
+                    ),
+                  );
+                }
+
+                if (deletedSnap.exists) {
+                  final rawDel = deletedSnap.value;
                   final mm = rawDel is Map
                       ? rawDel.map((k, v) => MapEntry(k.toString(), v))
                       : <String, dynamic>{};

@@ -1031,11 +1031,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             if (s is! Map) continue;
             final sess = s.map((k, vv) => MapEntry(k.toString(), vv));
 
-            int no = _toInt(sess['sessionNumber'], fallback: 0);
-            if (no <= 0) no = fallbackNo;
+            final sourceSessionNo = _toInt(sess['sessionNumber'], fallback: 0);
+            final no = fallbackNo;
 
             out['$no'] = {
               'sessionNo': no,
+              'sourceSessionNumber': sourceSessionNo,
               'sessionTitle': (sess['title'] ?? '').toString(),
               'objective': (sess['objective'] ?? '').toString(),
               'content': (sess['content'] ?? '').toString(),

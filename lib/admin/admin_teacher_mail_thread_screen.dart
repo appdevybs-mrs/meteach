@@ -19,6 +19,7 @@ import 'admin_mail_person_list_navigation.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/chat_sender_identity.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -179,6 +180,9 @@ class _AdminTeacherMailThreadScreenState
   final Set<String> _selectedMessageIds = <String>{};
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
   final Set<String> _readReceiptWriteInFlight = <String>{};
+  final Map<String, ChatSenderIdentity> _senderByUid =
+      <String, ChatSenderIdentity>{};
+  final Set<String> _senderLoadInFlight = <String>{};
   bool _autoFollowLatest = true;
   int _lastMessageCount = 0;
   int _lastNewestMessageAt = 0;
@@ -202,6 +206,7 @@ class _AdminTeacherMailThreadScreenState
     _loadOrInitThread();
     _markRead(); // best effort
     _ensureIndexForMe(); // so it appears in inbox even if empty
+    unawaited(_warmSenderIdentities());
   }
 
   @override
@@ -317,6 +322,51 @@ class _AdminTeacherMailThreadScreenState
       context,
       SnackBar(content: Text(humanizeUiMessage(msg))),
     );
+  }
+
+  String _displayNameForUid(String uid) {
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return 'User';
+    if (cleanUid == _meUid.trim()) return 'Me';
+    final known = _senderByUid[cleanUid]?.displayName.trim() ?? '';
+    if (known.isNotEmpty) return known;
+    if (cleanUid == widget.teacherUid.trim()) return _teacherDisplayName();
+    return 'User';
+  }
+
+  Future<void> _warmSenderIdentities([
+    Iterable<String> hintedUids = const [],
+  ]) async {
+    final uids = <String>{
+      _meUid.trim(),
+      widget.teacherUid.trim(),
+      ...hintedUids.map((e) => e.trim()),
+    }..removeWhere((e) => e.isEmpty);
+    if (uids.isEmpty) return;
+
+    var changed = false;
+    for (final uid in uids) {
+      if (_senderByUid.containsKey(uid) || _senderLoadInFlight.contains(uid)) {
+        continue;
+      }
+      _senderLoadInFlight.add(uid);
+      try {
+        final snap = await _db.ref('users/$uid').get();
+        if (snap.exists && snap.value is Map) {
+          final raw = snap.value as Map;
+          _senderByUid[uid] = ChatSenderIdentity(
+            uid: uid,
+            displayName: resolveDisplayNameFromUserMap(raw, uid),
+            photoUrl: resolvePhotoUrlFromUserMap(raw),
+          );
+          changed = true;
+        }
+      } catch (_) {
+      } finally {
+        _senderLoadInFlight.remove(uid);
+      }
+    }
+    if (changed && mounted) setState(() {});
   }
 
   Future<void> _loadOrInitThread() async {
@@ -813,7 +863,7 @@ class _AdminTeacherMailThreadScreenState
     final text = targets
         .map((m) {
           final body = m.body.trim().isEmpty ? '(Attachment)' : m.body.trim();
-          final sender = m.fromUid == _meUid ? 'Me' : 'Teacher';
+          final sender = _displayNameForUid(m.fromUid);
           return '[${_fmt(m.createdAtMs)}] $sender: $body';
         })
         .join('\n');
@@ -1164,6 +1214,9 @@ class _AdminTeacherMailThreadScreenState
                   stream: _msgStream,
                   builder: (_, snap) {
                     final msgs = _parseMessages(snap.data?.snapshot.value);
+                    unawaited(
+                      _warmSenderIdentities(msgs.map((m) => m.fromUid)),
+                    );
                     unawaited(_markMessagesSeen(msgs));
                     _onMessagesChanged(msgs);
                     _visibleMessages = msgs;
@@ -1212,7 +1265,9 @@ class _AdminTeacherMailThreadScreenState
                                   decoration: BoxDecoration(
                                     color: mine
                                         ? const Color(0xFFE3F2FD)
-                                        : Colors.white,
+                                        : senderAccentColor(
+                                            m.fromUid,
+                                          ).withValues(alpha: 0.10),
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
                                       color: Colors.black.withValues(
@@ -1237,13 +1292,17 @@ class _AdminTeacherMailThreadScreenState
                                                   WrapCrossAlignment.center,
                                               children: [
                                                 Text(
-                                                  mine ? 'Me' : 'Teacher',
+                                                  _displayNameForUid(m.fromUid),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.w800,
-                                                    color: _personNameColor,
+                                                    color: mine
+                                                        ? _personNameColor
+                                                        : senderAccentColor(
+                                                            m.fromUid,
+                                                          ),
                                                     fontSize: 12,
                                                   ),
                                                 ),

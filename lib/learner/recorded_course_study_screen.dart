@@ -79,6 +79,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   final Set<String> _expandedLessonDetails = <String>{};
   final Set<String> _generatingModuleCertificateKeys = <String>{};
   final Map<String, String> _teacherNameByUidCache = <String, String>{};
+  final Map<String, StorageCheckResult> _storageCheckCacheByUrl =
+      <String, StorageCheckResult>{};
 
   @override
   void initState() {
@@ -597,10 +599,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<bool> _isLessonAssetMissingOnServer({required String url}) async {
+    final cacheKey = url.trim();
+    final cached = _storageCheckCacheByUrl[cacheKey];
+    if (cached != null) {
+      return cached == StorageCheckResult.missing;
+    }
+
     final check = await StorageExistence.checkUrlExistsOnManagedStorage(
-      url,
+      cacheKey,
       expect: 'file',
     );
+    _storageCheckCacheByUrl[cacheKey] = check;
     return check == StorageCheckResult.missing;
   }
 
@@ -881,6 +890,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<void> _openVideoPlaceholder(_RecordedSession session) async {
+    final openTimer = Stopwatch()..start();
     final hasVideo = session.videoUrl.trim().isNotEmpty;
     final videoUrl = session.videoUrl.trim();
     _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
@@ -891,13 +901,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       return;
     }
 
-    final isMissing = await _isLessonAssetMissingOnServer(url: videoUrl);
-    if (isMissing) {
-      _snack(
-        _lessonUnavailableMessage(lessonType: 'Video lesson', session: session),
-      );
-      return;
-    }
+    _debug('openVideo routePushStart sessionId=${session.id}');
     if (!mounted) return;
 
     await Navigator.push(
@@ -912,6 +916,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           videoUrl: videoUrl,
         ),
       ),
+    );
+    _debug(
+      'openVideo routeReturned sessionId=${session.id} elapsedMs=${openTimer.elapsedMilliseconds}',
     );
 
     if (!mounted) return;

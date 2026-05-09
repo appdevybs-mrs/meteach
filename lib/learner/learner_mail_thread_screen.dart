@@ -24,6 +24,8 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
+import '../shared/profile_avatar.dart';
+import '../shared/chat_sender_identity.dart';
 
 class LearnerMailThreadScreen extends StatefulWidget {
   const LearnerMailThreadScreen({
@@ -65,10 +67,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     BuildContext context, {
     bool isReport = false,
     bool isHwEval = false,
+    Color accent = _orange,
   }) {
     if (isReport) return const Color(0xFFE8F1FB);
     if (isHwEval) return Colors.teal.withValues(alpha: 0.18);
-    return _orange.withValues(alpha: 0.80);
+    return accent.withValues(alpha: 0.18);
   }
 
   static Color _datePillBg(BuildContext context) =>
@@ -127,6 +130,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   final AudioRecorder _rec = AudioRecorder();
   List<_MailMsg> _visibleMessages = const <_MailMsg>[];
   final Set<String> _readReceiptWriteInFlight = <String>{};
+  final Map<String, ChatSenderIdentity> _senderByUid =
+      <String, ChatSenderIdentity>{};
+  final Set<String> _senderLoadInFlight = <String>{};
 
   bool _recStarting = false;
   bool _recRecording = false;
@@ -183,6 +189,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     _listenPeerState();
     _loadNames();
     _loadThreadType();
+    unawaited(_warmSenderIdentities());
 
     _posSub = _audio.onPositionChanged.listen((d) {
       if (!mounted) return;
@@ -279,6 +286,70 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         }
       });
     } catch (_) {}
+  }
+
+  String _displayNameForUid(String uid) {
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return 'User';
+    if (cleanUid == _meUid.trim()) {
+      final me = _meDisplayName.trim();
+      return me.isEmpty ? 'You' : me;
+    }
+    final known = _senderByUid[cleanUid]?.displayName.trim() ?? '';
+    if (known.isNotEmpty) return known;
+    if (cleanUid == widget.peerUid.trim()) {
+      final p = _peerNameShown.trim();
+      if (p.isNotEmpty) return p;
+    }
+    return 'User';
+  }
+
+  Future<void> _warmSenderIdentities([
+    Iterable<String> hintedUids = const [],
+  ]) async {
+    final uids = <String>{
+      _meUid.trim(),
+      widget.peerUid.trim(),
+      ...hintedUids.map((e) => e.trim()),
+    }..removeWhere((e) => e.isEmpty);
+    if (uids.isEmpty) return;
+
+    try {
+      final tSnap = await _threadRef.child('participants').get();
+      if (tSnap.exists && tSnap.value is Map) {
+        final p = (tSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        for (final entry in p.entries) {
+          if (entry.value == true) uids.add(entry.key.trim());
+        }
+      }
+    } catch (_) {}
+
+    var changed = false;
+    for (final uid in uids) {
+      if (_senderByUid.containsKey(uid) || _senderLoadInFlight.contains(uid)) {
+        continue;
+      }
+      _senderLoadInFlight.add(uid);
+      try {
+        final snap = await _db.ref('users/$uid').get();
+        if (snap.exists && snap.value is Map) {
+          final raw = snap.value as Map;
+          final name = resolveDisplayNameFromUserMap(raw, uid);
+          final photo = resolvePhotoUrlFromUserMap(raw);
+          _senderByUid[uid] = ChatSenderIdentity(
+            uid: uid,
+            displayName: name,
+            photoUrl: photo,
+          );
+          changed = true;
+        }
+      } catch (_) {
+      } finally {
+        _senderLoadInFlight.remove(uid);
+      }
+    }
+
+    if (changed && mounted) setState(() {});
   }
 
   Future<void> _markRead() async {
@@ -1928,7 +1999,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
     final bubbleBg = mine
         ? _mineBubbleBg(context, isReport: isReport, isHwEval: isHwEval)
-        : _theirsBubbleBg(context, isReport: isReport, isHwEval: isHwEval);
+        : _theirsBubbleBg(
+            context,
+            isReport: isReport,
+            isHwEval: isHwEval,
+            accent: senderAccentColor(m.fromUid),
+          );
 
     final textColor = mine ? _mineText(context) : _theirsText(context);
 
@@ -2025,9 +2101,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   Widget _buildMessageMeta(_MailMsg m, {required bool mine}) {
     final scheme = Theme.of(context).colorScheme;
-    final sender = mine
-        ? (_meDisplayName.trim().isEmpty ? 'You' : _meDisplayName)
-        : (_peerNameShown.trim().isEmpty ? 'User' : _peerNameShown);
+    final sender = _displayNameForUid(m.fromUid);
+    final accent = senderAccentColor(m.fromUid);
     final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
     final receiptLabel = mine ? _receiptLabel(m) : '';
 
@@ -2056,14 +2131,16 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!mine) menu,
-          Text(
-            sender,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              color: scheme.onSurface,
+          Flexible(
+            child: Text(
+              sender,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: mine ? scheme.onSurface : accent,
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -2090,16 +2167,18 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           ],
           if (receiptLabel.isNotEmpty) ...[
             const SizedBox(width: 4),
-            Text(
-              receiptLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: receiptLevel == 2
-                    ? scheme.primary
-                    : scheme.onSurfaceVariant,
+            Flexible(
+              child: Text(
+                receiptLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: receiptLevel == 2
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -2159,18 +2238,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     );
   }
 
-  Widget _buildSenderAvatar({required bool mine}) {
-    final label = mine ? _meDisplayName : _peerNameShown;
-    final text = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
-    return CircleAvatar(
+  Widget _buildSenderAvatar({required String uid, required bool mine}) {
+    final senderName = _displayNameForUid(uid);
+    final senderPhoto = _senderByUid[uid.trim()]?.photoUrl ?? '';
+    final accent = senderAccentColor(uid);
+    return ProfileAvatar(
+      name: senderName,
+      photoUrl: senderPhoto,
       radius: 12,
-      backgroundColor: mine
+      fallbackBg: mine
           ? _navy.withValues(alpha: 0.18)
-          : _orange.withValues(alpha: 0.28),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
-      ),
+          : accent.withValues(alpha: 0.16),
+      fallbackFg: mine ? _navyDark : accent,
+      borderColor: accent.withValues(alpha: 0.30),
     );
   }
 
@@ -2499,6 +2579,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final msgsAll = _parseMessages(snap.data?.snapshot.value);
+                    unawaited(
+                      _warmSenderIdentities(msgsAll.map((m) => m.fromUid)),
+                    );
                     unawaited(_markMessagesSeen(msgsAll));
                     final msgs = _applyLocalSearch(msgsAll);
                     _visibleMessages = msgs;
@@ -2549,10 +2632,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                       : null,
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       if (!mine) ...[
-                                        _buildSenderAvatar(mine: false),
+                                        _buildSenderAvatar(
+                                          uid: m.fromUid,
+                                          mine: false,
+                                        ),
                                         const SizedBox(width: 6),
                                       ],
                                       Column(
@@ -2587,12 +2674,23 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                           ),
                                           if (m.reactions.isNotEmpty)
                                             _buildReactionsRow(m, mine: mine),
-                                          _buildMessageMeta(m, mine: mine),
+                                          ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              maxWidth: _messageMaxWidth(m),
+                                            ),
+                                            child: _buildMessageMeta(
+                                              m,
+                                              mine: mine,
+                                            ),
+                                          ),
                                         ],
                                       ),
                                       if (mine) ...[
                                         const SizedBox(width: 6),
-                                        _buildSenderAvatar(mine: true),
+                                        _buildSenderAvatar(
+                                          uid: m.fromUid,
+                                          mine: true,
+                                        ),
                                       ],
                                     ],
                                   ),
