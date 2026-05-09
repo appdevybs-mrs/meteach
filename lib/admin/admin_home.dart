@@ -3289,8 +3289,9 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
           ? access.map((k, v) => MapEntry(k.toString(), v))
           : <String, dynamic>{};
       final expiresAt = _asInt(accessMap['expiresAt']);
-      if (effectiveSessionsPaidTotal <= 0 && expiresAt <= 0)
+      if (effectiveSessionsPaidTotal <= 0 && expiresAt <= 0) {
         return _PayFlag.black;
+      }
       if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
       if (isPaymentDueBySessions(
         sessionsPaidTotal: effectiveSessionsPaidTotal,
@@ -3298,8 +3299,9 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
       )) {
         return _PayFlag.red;
       }
-      if (expiresAt > 0 && _isNearExpiryMs(expiresAt, days: 10))
+      if (expiresAt > 0 && _isNearExpiryMs(expiresAt, days: 10)) {
         return _PayFlag.yellow;
+      }
       if (isPaymentWarningBySessions(
         sessionsPaidTotal: effectiveSessionsPaidTotal,
         sessionsPresent: sessionsDone,
