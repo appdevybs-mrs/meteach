@@ -21,14 +21,28 @@ class InternationalTeacherProfileScreen extends StatefulWidget {
 class _InternationalTeacherProfileScreenState
     extends State<InternationalTeacherProfileScreen> {
   final _db = FirebaseDatabase.instance.ref();
-  final _socialC = TextEditingController();
   final _passC = TextEditingController();
+  final _onlineMeetC = TextEditingController();
+
   bool _saving = false;
   bool _uploadingPhoto = false;
 
   String _name = 'International Teacher';
   String _photoUrl = '';
-  String _subText = 'Subscription not set';
+  Map<String, dynamic> _sub = <String, dynamic>{};
+  List<_SocialRow> _socialRows = <_SocialRow>[];
+
+  static const Map<String, IconData> _iconLibrary = {
+    'instagram': Icons.camera_alt_outlined,
+    'linkedin': Icons.business_center_outlined,
+    'facebook': Icons.thumb_up_alt_outlined,
+    'youtube': Icons.play_circle_outline,
+    'whatsapp': Icons.chat_bubble_outline,
+    'telegram': Icons.send_outlined,
+    'globe': Icons.public,
+    'tiktok': Icons.music_note_outlined,
+    'x': Icons.alternate_email,
+  };
 
   @override
   void initState() {
@@ -38,8 +52,11 @@ class _InternationalTeacherProfileScreenState
 
   @override
   void dispose() {
-    _socialC.dispose();
+    for (final row in _socialRows) {
+      row.controller.dispose();
+    }
     _passC.dispose();
+    _onlineMeetC.dispose();
     super.dispose();
   }
 
@@ -51,7 +68,7 @@ class _InternationalTeacherProfileScreenState
     ]);
     final u = _asMap(snaps[0].value);
     final p = _asMap(snaps[1].value);
-    final s = _asMap(snaps[2].value);
+    _sub = _asMap(snaps[2].value);
 
     final first = (u['first_name'] ?? '').toString().trim();
     final last = (u['last_name'] ?? '').toString().trim();
@@ -59,15 +76,53 @@ class _InternationalTeacherProfileScreenState
     if (_name.isEmpty) _name = 'International Teacher';
 
     _photoUrl = (u['profile_photo'] ?? '').toString().trim();
-    _socialC.text = (p['socialLinks'] ?? '').toString().trim();
+    _onlineMeetC.text = (p['onlineMeetUrl'] ?? '').toString().trim();
 
-    final expiresOn = (s['expiresOn'] ?? '').toString().trim();
-    final amount = (s['amountPaidUsd'] ?? '').toString().trim();
-    _subText = expiresOn.isEmpty
-        ? 'Subscription not set'
-        : 'USD ${amount.isEmpty ? '-' : amount} • Expires on $expiresOn';
-
+    for (final row in _socialRows) {
+      row.controller.dispose();
+    }
+    _socialRows = _readSocialRows(p['socialLinks']);
+    if (_socialRows.isEmpty) {
+      _socialRows = [
+        _SocialRow(iconKey: 'instagram'),
+        _SocialRow(iconKey: 'linkedin'),
+        _SocialRow(iconKey: 'globe'),
+      ];
+    }
     if (mounted) setState(() {});
+  }
+
+  List<_SocialRow> _readSocialRows(dynamic raw) {
+    final rows = <_SocialRow>[];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final m = item.map((k, v) => MapEntry(k.toString(), v));
+        rows.add(
+          _SocialRow(
+            iconKey: (m['iconKey'] ?? 'globe').toString(),
+            label: (m['label'] ?? '').toString(),
+            initialUrl: (m['url'] ?? '').toString(),
+          ),
+        );
+      }
+    } else if (raw is String && raw.trim().isNotEmpty) {
+      rows.add(_SocialRow(iconKey: 'globe', label: 'Link', initialUrl: raw));
+    }
+    return rows;
+  }
+
+  List<Map<String, String>> _socialPayload() {
+    return _socialRows
+        .map(
+          (r) => {
+            'iconKey': r.iconKey,
+            'label': r.label.trim().isEmpty ? r.iconKey : r.label.trim(),
+            'url': r.controller.text.trim(),
+          },
+        )
+        .where((m) => (m['url'] ?? '').trim().isNotEmpty)
+        .toList();
   }
 
   Future<String> _uploadPlatformFile(PlatformFile file) async {
@@ -107,9 +162,9 @@ class _InternationalTeacherProfileScreenState
       throw Exception(message);
     }
 
-    final ok = jsonBody['ok'] == true;
+    final success = jsonBody['success'] == true || jsonBody['ok'] == true;
     final url = (jsonBody['url'] ?? '').toString();
-    if (!ok || url.trim().isEmpty) {
+    if (!success || url.trim().isEmpty) {
       throw Exception((jsonBody['error'] ?? 'Upload failed').toString());
     }
     return url.trim();
@@ -125,16 +180,14 @@ class _InternationalTeacherProfileScreenState
         withData: kIsWeb,
       );
       if (result == null || result.files.isEmpty) return;
-
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
 
+      final url = await _uploadPlatformFile(file);
       await _db.child('users/${widget.uid}').update({
         'profile_photo': url,
         'profile_photos': [url],
         'updatedAt': ServerValue.timestamp,
       });
-
       _photoUrl = url;
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -154,7 +207,8 @@ class _InternationalTeacherProfileScreenState
     setState(() => _saving = true);
     try {
       await _db.child('international_teacher_profile/${widget.uid}').update({
-        'socialLinks': _socialC.text.trim(),
+        'socialLinks': _socialPayload(),
+        'onlineMeetUrl': _onlineMeetC.text.trim(),
         'updatedAt': ServerValue.timestamp,
       });
 
@@ -180,8 +234,87 @@ class _InternationalTeacherProfileScreenState
     }
   }
 
+  ({double remainingPct, int daysLeft, Color color, String label})
+  _subscriptionState() {
+    final start = DateTime.tryParse((_sub['startsOn'] ?? '').toString());
+    final end = DateTime.tryParse((_sub['expiresOn'] ?? '').toString());
+    if (start == null || end == null || !end.isAfter(start)) {
+      return (
+        remainingPct: 0,
+        daysLeft: 0,
+        color: const Color(0xFF8B8B8B),
+        label: 'Not set',
+      );
+    }
+    final now = DateTime.now();
+    final total = end.difference(start).inSeconds;
+    final left = end.difference(now).inSeconds;
+    final pct = (left / total).clamp(0, 1).toDouble();
+    final days = end.difference(DateTime(now.year, now.month, now.day)).inDays;
+    if (left <= 0) {
+      return (
+        remainingPct: 0,
+        daysLeft: 0,
+        color: const Color(0xFFC0392B),
+        label: 'Expired',
+      );
+    }
+    if (pct <= 0.10) {
+      return (
+        remainingPct: pct,
+        daysLeft: days,
+        color: const Color(0xFFD35400),
+        label: 'Critical',
+      );
+    }
+    if (pct <= 0.30) {
+      return (
+        remainingPct: pct,
+        daysLeft: days,
+        color: const Color(0xFFF39C12),
+        label: 'Expiring',
+      );
+    }
+    return (
+      remainingPct: pct,
+      daysLeft: days,
+      color: const Color(0xFF2E8B57),
+      label: 'Active',
+    );
+  }
+
+  Future<void> _pickIconForRow(int index) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) {
+        return ListView(
+          children: _iconLibrary.entries
+              .map(
+                (e) => ListTile(
+                  leading: Icon(e.value),
+                  title: Text(e.key),
+                  onTap: () => Navigator.of(ctx).pop(e.key),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+    if (picked == null) return;
+    setState(() {
+      _socialRows[index].iconKey = picked;
+      if (_socialRows[index].label.trim().isEmpty) {
+        _socialRows[index].label = picked;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sub = _subscriptionState();
+    final amount = (_sub['amountPaidUsd'] ?? '').toString();
+    final startsOn = (_sub['startsOn'] ?? '').toString();
+    final expiresOn = (_sub['expiresOn'] ?? '').toString();
     return Scaffold(
       backgroundColor: const Color(0xFFF3F6FA),
       appBar: AppBar(title: const Text('Profile')),
@@ -273,17 +406,148 @@ class _InternationalTeacherProfileScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Subscription',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sub.color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          sub.label,
+                          style: TextStyle(
+                            color: sub.color,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('USD ${amount.isEmpty ? '-' : amount}'),
+                  Text(
+                    startsOn.isEmpty || expiresOn.isEmpty
+                        ? 'No active period'
+                        : '$startsOn -> $expiresOn',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: sub.remainingPct,
+                      minHeight: 10,
+                      backgroundColor: const Color(0xFFEAECEF),
+                      color: sub.color,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    sub.daysLeft > 0
+                        ? '${sub.daysLeft} days remaining'
+                        : 'Expired',
+                    style: TextStyle(
+                      color: sub.color,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   const Text(
                     'Social Links',
                     style: TextStyle(fontWeight: FontWeight.w900),
                   ),
+                  const SizedBox(height: 10),
+                  for (int i = 0; i < _socialRows.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          InkWell(
+                            onTap: () => _pickIconForRow(i),
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE9EEF5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                _iconLibrary[_socialRows[i].iconKey] ??
+                                    Icons.public,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: _socialRows[i].controller,
+                              decoration: InputDecoration(
+                                border: const OutlineInputBorder(),
+                                labelText: _socialRows[i].label.isEmpty
+                                    ? 'URL'
+                                    : _socialRows[i].label,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _socialRows.add(
+                          _SocialRow(iconKey: 'globe', label: 'Link'),
+                        );
+                      });
+                    },
+                    icon: const Icon(Icons.add_link_rounded),
+                    label: const Text('Add another input'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Online Meet',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: _socialC,
-                    maxLines: 4,
+                    controller: _onlineMeetC,
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
-                      hintText: 'Instagram: ...\nLinkedIn: ...\nWebsite: ...',
+                      labelText: 'Online meet URL',
+                      hintText: 'https://meet.google.com/...',
                     ),
                   ),
                 ],
@@ -316,16 +580,6 @@ class _InternationalTeacherProfileScreenState
               ),
             ),
           ),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: ListTile(
-              leading: const Icon(Icons.workspace_premium_outlined),
-              title: const Text('Subscription'),
-              subtitle: Text(_subText),
-            ),
-          ),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _saving ? null : _save,
@@ -346,4 +600,13 @@ class _InternationalTeacherProfileScreenState
     }
     return <String, dynamic>{};
   }
+}
+
+class _SocialRow {
+  _SocialRow({required this.iconKey, this.label = '', String initialUrl = ''})
+    : controller = TextEditingController(text: initialUrl);
+
+  String iconKey;
+  String label;
+  final TextEditingController controller;
 }

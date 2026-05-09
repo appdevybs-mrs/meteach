@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
@@ -99,28 +100,15 @@ class _AdminInternationalTeacherDetailsScreenState
     extends State<_AdminInternationalTeacherDetailsScreen> {
   final _db = FirebaseDatabase.instance.ref();
   final _amountC = TextEditingController();
+  final _startC = TextEditingController();
   final _expiryC = TextEditingController();
+  final _noteC = TextEditingController();
+
   bool _saving = false;
+  bool _addingSubscription = false;
   Map<String, bool> _selected = <String, bool>{};
   List<Map<String, String>> _courses = <Map<String, String>>[];
-
-  Future<void> _pickExpiryDate() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final initial = DateTime.tryParse(_expiryC.text.trim()) ?? today;
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial.isBefore(today) ? today : initial,
-      firstDate: DateTime(today.year - 1, 1, 1),
-      lastDate: DateTime(today.year + 8, 12, 31),
-      helpText: 'Select expiry date',
-    );
-    if (picked == null) return;
-    final mm = picked.month.toString().padLeft(2, '0');
-    final dd = picked.day.toString().padLeft(2, '0');
-    _expiryC.text = '${picked.year}-$mm-$dd';
-    if (mounted) setState(() {});
-  }
+  List<Map<String, dynamic>> _subs = <Map<String, dynamic>>[];
 
   @override
   void initState() {
@@ -131,8 +119,28 @@ class _AdminInternationalTeacherDetailsScreenState
   @override
   void dispose() {
     _amountC.dispose();
+    _startC.dispose();
     _expiryC.dispose();
+    _noteC.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDate(TextEditingController c, String help) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = DateTime.tryParse(c.text.trim()) ?? today;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(today.year - 1, 1, 1),
+      lastDate: DateTime(today.year + 10, 12, 31),
+      helpText: help,
+    );
+    if (picked == null) return;
+    final mm = picked.month.toString().padLeft(2, '0');
+    final dd = picked.day.toString().padLeft(2, '0');
+    c.text = '${picked.year}-$mm-$dd';
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -141,8 +149,9 @@ class _AdminInternationalTeacherDetailsScreenState
       _db
           .child('international_teacher_assignments/${widget.uid}/courses')
           .get(),
-      _db.child('international_teacher_subscription/${widget.uid}').get(),
+      _db.child('international_teacher_subscriptions/${widget.uid}').get(),
     ]);
+
     final courses = <Map<String, String>>[];
     final cv = snaps[0].value;
     if (cv is Map) {
@@ -170,21 +179,35 @@ class _AdminInternationalTeacherDetailsScreenState
       });
     }
 
+    final subs = <Map<String, dynamic>>[];
     final sv = snaps[2].value;
     if (sv is Map) {
-      final m = sv.map((k, v) => MapEntry(k.toString(), v));
-      _amountC.text = (m['amountPaidUsd'] ?? '').toString();
-      _expiryC.text = (m['expiresOn'] ?? '').toString();
+      sv.forEach((k, v) {
+        if (v is! Map) return;
+        final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+        m['id'] = k.toString();
+        subs.add(m);
+      });
+      subs.sort((a, b) {
+        final at = (a['createdAt'] is num)
+            ? (a['createdAt'] as num).toInt()
+            : 0;
+        final bt = (b['createdAt'] is num)
+            ? (b['createdAt'] as num).toInt()
+            : 0;
+        return bt.compareTo(at);
+      });
     }
 
     if (!mounted) return;
     setState(() {
       _courses = courses;
       _selected = selected;
+      _subs = subs;
     });
   }
 
-  Future<void> _save() async {
+  Future<void> _saveAssignments() async {
     setState(() => _saving = true);
     try {
       final updates = <String, dynamic>{};
@@ -193,17 +216,11 @@ class _AdminInternationalTeacherDetailsScreenState
         updates['international_teacher_assignments/${widget.uid}/courses/$id'] =
             _selected[id] == true;
       }
-      updates['international_teacher_subscription/${widget.uid}/amountPaidUsd'] =
-          double.tryParse(_amountC.text.trim()) ?? 0;
-      updates['international_teacher_subscription/${widget.uid}/expiresOn'] =
-          _expiryC.text.trim();
-      updates['international_teacher_subscription/${widget.uid}/updatedAt'] =
-          ServerValue.timestamp;
       await _db.update(updates);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Saved.')));
+      ).showSnackBar(const SnackBar(content: Text('Assignments saved.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -212,6 +229,98 @@ class _AdminInternationalTeacherDetailsScreenState
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _addSubscription() async {
+    setState(() => _addingSubscription = true);
+    try {
+      final amount = double.tryParse(_amountC.text.trim()) ?? 0;
+      final startsOn = _startC.text.trim();
+      final expiresOn = _expiryC.text.trim();
+      if (startsOn.isEmpty || expiresOn.isEmpty) {
+        throw Exception('Please select start and expiry dates.');
+      }
+
+      final rowRef = _db
+          .child('international_teacher_subscriptions/${widget.uid}')
+          .push();
+      final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await rowRef.set({
+        'amountPaidUsd': amount,
+        'startsOn': startsOn,
+        'expiresOn': expiresOn,
+        'note': _noteC.text.trim(),
+        'status': 'active',
+        'createdAt': ServerValue.timestamp,
+        'createdBy': adminUid,
+      });
+
+      await _recomputeCurrentSubscription();
+
+      _amountC.clear();
+      _startC.clear();
+      _expiryC.clear();
+      _noteC.clear();
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Subscription added.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Add failed: $e')));
+    } finally {
+      if (mounted) setState(() => _addingSubscription = false);
+    }
+  }
+
+  Future<void> _recomputeCurrentSubscription() async {
+    final snap = await _db
+        .child('international_teacher_subscriptions/${widget.uid}')
+        .get();
+    if (!snap.exists || snap.value is! Map) {
+      await _db
+          .child('international_teacher_subscription/${widget.uid}')
+          .remove();
+      return;
+    }
+    final rows = <Map<String, dynamic>>[];
+    final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+    m.forEach((k, v) {
+      if (v is! Map) return;
+      final row = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+      row['id'] = k;
+      rows.add(row);
+    });
+
+    if (rows.isEmpty) {
+      await _db
+          .child('international_teacher_subscription/${widget.uid}')
+          .remove();
+      return;
+    }
+
+    rows.sort((a, b) {
+      final ae =
+          DateTime.tryParse((a['expiresOn'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final be =
+          DateTime.tryParse((b['expiresOn'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return be.compareTo(ae);
+    });
+    final best = rows.first;
+
+    await _db.child('international_teacher_subscription/${widget.uid}').set({
+      'amountPaidUsd': best['amountPaidUsd'] ?? 0,
+      'startsOn': (best['startsOn'] ?? '').toString(),
+      'expiresOn': (best['expiresOn'] ?? '').toString(),
+      'status': (best['status'] ?? 'active').toString(),
+      'sourceSubId': (best['id'] ?? '').toString(),
+      'updatedAt': ServerValue.timestamp,
+    });
   }
 
   @override
@@ -228,8 +337,8 @@ class _AdminInternationalTeacherDetailsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Subscription',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    'Add Subscription',
+                    style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -242,30 +351,48 @@ class _AdminInternationalTeacherDetailsScreenState
                   ),
                   const SizedBox(height: 10),
                   TextField(
+                    controller: _startC,
+                    readOnly: true,
+                    onTap: () => _pickDate(_startC, 'Select start date'),
+                    decoration: InputDecoration(
+                      labelText: 'Starts On (YYYY-MM-DD)',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        onPressed: () =>
+                            _pickDate(_startC, 'Select start date'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
                     controller: _expiryC,
                     readOnly: true,
-                    onTap: _pickExpiryDate,
+                    onTap: () => _pickDate(_expiryC, 'Select expiry date'),
                     decoration: InputDecoration(
                       labelText: 'Expires On (YYYY-MM-DD)',
                       border: const OutlineInputBorder(),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: 'Pick date',
-                            onPressed: _pickExpiryDate,
-                            icon: const Icon(Icons.calendar_month_outlined),
-                          ),
-                          IconButton(
-                            tooltip: 'Clear date',
-                            onPressed: () {
-                              _expiryC.clear();
-                              if (mounted) setState(() {});
-                            },
-                            icon: const Icon(Icons.clear),
-                          ),
-                        ],
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        onPressed: () =>
+                            _pickDate(_expiryC, 'Select expiry date'),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _noteC,
+                    decoration: const InputDecoration(
+                      labelText: 'Note (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: _addingSubscription ? null : _addSubscription,
+                    icon: const Icon(Icons.add_card_outlined),
+                    label: Text(
+                      _addingSubscription ? 'Adding...' : 'Add Subscription',
                     ),
                   ),
                 ],
@@ -280,7 +407,7 @@ class _AdminInternationalTeacherDetailsScreenState
                 children: [
                   const Text(
                     'Assigned Courses',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
                   for (final c in _courses)
@@ -299,9 +426,39 @@ class _AdminInternationalTeacherDetailsScreenState
               ),
             ),
           ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Subscription History',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_subs.isEmpty)
+                    const Text('No subscriptions yet.')
+                  else
+                    for (final s in _subs)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.history_rounded),
+                        title: Text(
+                          'USD ${(s['amountPaidUsd'] ?? 0).toString()}',
+                        ),
+                        subtitle: Text(
+                          '${(s['startsOn'] ?? '').toString()} -> ${(s['expiresOn'] ?? '').toString()}',
+                        ),
+                        trailing: Text((s['status'] ?? 'active').toString()),
+                      ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : _saveAssignments,
             child: Text(_saving ? 'Saving...' : 'Save Assignments'),
           ),
         ],

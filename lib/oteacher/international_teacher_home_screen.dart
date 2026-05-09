@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import '../services/topic_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/material_webview_screen.dart';
-import '../teacher/teacher_games_screen.dart';
-import '../teacher/teacher_stories_screen.dart';
+import '../learner/learner_games_screen.dart';
+import '../learner/learner_stories_screen.dart';
 import 'international_teacher_profile_screen.dart';
 
 class InternationalTeacherHomeScreen extends StatefulWidget {
@@ -27,6 +27,7 @@ class _InternationalTeacherHomeScreenState
   String _photo = '';
   Map<String, dynamic> _subscription = <String, dynamic>{};
   List<Map<String, String>> _courses = <Map<String, String>>[];
+  List<Map<String, dynamic>> _subscriptionHistory = <Map<String, dynamic>>[];
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -57,6 +58,7 @@ class _InternationalTeacherHomeScreenState
         _db.child('users/$uid').get(),
         _db.child('international_teacher_assignments/$uid/courses').get(),
         _db.child('international_teacher_subscription/$uid').get(),
+        _db.child('international_teacher_subscriptions/$uid').get(),
       ]);
 
       final userMap = _asMap(snaps[0].value);
@@ -67,6 +69,7 @@ class _InternationalTeacherHomeScreenState
       _photo = (userMap['profile_photo'] ?? '').toString().trim();
 
       _subscription = _asMap(snaps[2].value);
+      _subscriptionHistory = _asListMapWithId(snaps[3].value);
 
       final assigned = <String>[];
       final rawCourses = snaps[1].value;
@@ -140,10 +143,35 @@ class _InternationalTeacherHomeScreenState
             ),
             for (final m in modes)
               ListTile(
-                leading: Icon(
-                  appThemeController.mode == m
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_off,
+                leading: SizedBox(
+                  width: 70,
+                  child: Row(
+                    children: [
+                      Icon(
+                        appThemeController.mode == m
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      ...[
+                        appThemeController.paletteForMode(m).primary,
+                        appThemeController.paletteForMode(m).accent,
+                        appThemeController.paletteForMode(m).appBg,
+                      ].map(
+                        (c) => Container(
+                          margin: const EdgeInsets.only(right: 4),
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.black12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 title: Text(appThemeController.themeTitle(m)),
                 subtitle: Text(appThemeController.themeSubtitle(m)),
@@ -180,20 +208,23 @@ class _InternationalTeacherHomeScreenState
         onOpenStories: () {
           Navigator.of(context).pop();
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const TeacherStoriesScreen()),
+            MaterialPageRoute(builder: (_) => const LearnerStoriesScreen()),
           );
         },
         onOpenGames: () {
           Navigator.of(context).pop();
           Navigator.of(
             context,
-          ).push(MaterialPageRoute(builder: (_) => const TeacherGamesScreen()));
+          ).push(MaterialPageRoute(builder: (_) => const LearnerGamesScreen()));
         },
         onOpenSubscription: () {
           Navigator.of(context).pop();
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => _SubscriptionScreen(subscription: _subscription),
+              builder: (_) => _SubscriptionScreen(
+                subscription: _subscription,
+                history: _subscriptionHistory,
+              ),
             ),
           );
         },
@@ -365,6 +396,23 @@ class _InternationalTeacherHomeScreenState
       return raw.map((k, v) => MapEntry(k.toString(), v));
     }
     return <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _asListMapWithId(dynamic raw) {
+    if (raw is! Map) return <Map<String, dynamic>>[];
+    final rows = <Map<String, dynamic>>[];
+    raw.forEach((k, v) {
+      if (v is! Map) return;
+      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+      m['id'] = k.toString();
+      rows.add(m);
+    });
+    rows.sort((a, b) {
+      final at = (a['createdAt'] is num) ? (a['createdAt'] as num).toInt() : 0;
+      final bt = (b['createdAt'] is num) ? (b['createdAt'] as num).toInt() : 0;
+      return bt.compareTo(at);
+    });
+    return rows;
   }
 }
 
@@ -626,28 +674,152 @@ class _DrawerItem extends StatelessWidget {
 }
 
 class _SubscriptionScreen extends StatelessWidget {
-  const _SubscriptionScreen({required this.subscription});
+  const _SubscriptionScreen({
+    required this.subscription,
+    required this.history,
+  });
   final Map<String, dynamic> subscription;
+  final List<Map<String, dynamic>> history;
+
+  ({double pct, int days, Color color, String state}) _status() {
+    final start = DateTime.tryParse(
+      (subscription['startsOn'] ?? '').toString(),
+    );
+    final end = DateTime.tryParse((subscription['expiresOn'] ?? '').toString());
+    if (start == null || end == null || !end.isAfter(start)) {
+      return (
+        pct: 0,
+        days: 0,
+        color: const Color(0xFF8B8B8B),
+        state: 'Not set',
+      );
+    }
+    final now = DateTime.now();
+    final total = end.difference(start).inSeconds;
+    final left = end.difference(now).inSeconds;
+    final pct = (left / total).clamp(0, 1).toDouble();
+    final days = end.difference(DateTime(now.year, now.month, now.day)).inDays;
+    if (left <= 0) {
+      return (
+        pct: 0,
+        days: 0,
+        color: const Color(0xFFC0392B),
+        state: 'Expired',
+      );
+    }
+    if (pct <= 0.10) {
+      return (
+        pct: pct,
+        days: days,
+        color: const Color(0xFFD35400),
+        state: 'Critical',
+      );
+    }
+    if (pct <= 0.30) {
+      return (
+        pct: pct,
+        days: days,
+        color: const Color(0xFFF39C12),
+        state: 'Expiring',
+      );
+    }
+    return (
+      pct: pct,
+      days: days,
+      color: const Color(0xFF2E8B57),
+      state: 'Active',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final amount = (subscription['amountPaidUsd'] ?? '').toString();
+    final startsOn = (subscription['startsOn'] ?? '').toString();
     final expiresOn = (subscription['expiresOn'] ?? '').toString();
+    final st = _status();
     return Scaffold(
       appBar: AppBar(title: const Text('Subscription')),
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
           Card(
-            child: ListTile(
-              title: const Text('Amount paid'),
-              subtitle: Text('USD ${amount.isEmpty ? '-' : amount}'),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Current Subscription',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const Spacer(),
+                      Text(
+                        st.state,
+                        style: TextStyle(
+                          color: st.color,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('USD ${amount.isEmpty ? '-' : amount}'),
+                  Text(
+                    startsOn.isEmpty || expiresOn.isEmpty
+                        ? 'No active period'
+                        : '$startsOn -> $expiresOn',
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      minHeight: 10,
+                      value: st.pct,
+                      color: st.color,
+                      backgroundColor: const Color(0xFFE8EBEF),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    st.days > 0 ? '${st.days} days left' : 'Expired',
+                    style: TextStyle(
+                      color: st.color,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Card(
-            child: ListTile(
-              title: const Text('Expires on'),
-              subtitle: Text(expiresOn.isEmpty ? 'Not set' : expiresOn),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Previous Subscriptions',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  if (history.isEmpty)
+                    const Text('No subscription history yet.')
+                  else
+                    for (final h in history)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.history_rounded),
+                        title: Text(
+                          'USD ${(h['amountPaidUsd'] ?? '-').toString()}',
+                        ),
+                        subtitle: Text(
+                          '${(h['startsOn'] ?? '').toString()} -> ${(h['expiresOn'] ?? '').toString()}',
+                        ),
+                      ),
+                ],
+              ),
             ),
           ),
         ],
@@ -723,7 +895,20 @@ class _InternationalTeacherSyllabusScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.courseTitle)),
+      appBar: AppBar(
+        title: Text(widget.courseTitle),
+        actions: [
+          IconButton(
+            tooltip: 'Course book',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Book panel coming soon.')),
+              );
+            },
+            icon: const Icon(Icons.menu_book_rounded),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _lessons.isEmpty
