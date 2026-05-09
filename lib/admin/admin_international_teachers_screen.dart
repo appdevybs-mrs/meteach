@@ -52,30 +52,48 @@ class _AdminInternationalTeachersScreenState
               child: Text('No international teachers found in staff.'),
             );
           }
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: rows.length,
-            itemBuilder: (context, i) {
-              final t = rows[i];
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.person_outline),
-                  title: Text(t['name']!),
-                  subtitle: Text(t['email'] ?? ''),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => _AdminInternationalTeacherDetailsScreen(
-                          uid: t['uid']!,
-                          name: t['name']!,
-                        ),
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: Opacity(
+                      opacity: 0.05,
+                      child: Image.asset(
+                        'assets/images/ybs_logo.png',
+                        width: 300,
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              );
-            },
+              ),
+              ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: rows.length,
+                itemBuilder: (context, i) {
+                  final t = rows[i];
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: Text(t['name']!),
+                      subtitle: Text(t['email'] ?? ''),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                _AdminInternationalTeacherDetailsScreen(
+                                  uid: t['uid']!,
+                                  name: t['name']!,
+                                ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ],
           );
         },
       ),
@@ -327,141 +345,175 @@ class _AdminInternationalTeacherDetailsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.name)),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Add Subscription',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _amountC,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Amount Paid (USD)',
-                      border: OutlineInputBorder(),
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.05,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 320,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _startC,
-                    readOnly: true,
-                    onTap: () => _pickDate(_startC, 'Select start date'),
-                    decoration: InputDecoration(
-                      labelText: 'Starts On (YYYY-MM-DD)',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        onPressed: () =>
-                            _pickDate(_startC, 'Select start date'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _expiryC,
-                    readOnly: true,
-                    onTap: () => _pickDate(_expiryC, 'Select expiry date'),
-                    decoration: InputDecoration(
-                      labelText: 'Expires On (YYYY-MM-DD)',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        onPressed: () =>
-                            _pickDate(_expiryC, 'Select expiry date'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _noteC,
-                    decoration: const InputDecoration(
-                      labelText: 'Note (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton.icon(
-                    onPressed: _addingSubscription ? null : _addSubscription,
-                    icon: const Icon(Icons.add_card_outlined),
-                    label: Text(
-                      _addingSubscription ? 'Adding...' : 'Add Subscription',
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Assigned Courses',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final c in _courses)
-                    CheckboxListTile(
-                      dense: true,
-                      value: _selected[c['id']] == true,
-                      title: Text(
-                        (c['title'] ?? '').isEmpty ? 'Untitled' : c['title']!,
-                      ),
-                      subtitle: Text(c['code'] ?? ''),
-                      onChanged: (v) => setState(() {
-                        _selected[c['id']!] = v == true;
-                      }),
-                    ),
-                ],
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                12,
+                12,
+                12,
+                12 + MediaQuery.of(context).padding.bottom,
               ),
-            ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Subscription History',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_subs.isEmpty)
-                    const Text('No subscriptions yet.')
-                  else
-                    for (final s in _subs)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.history_rounded),
-                        title: Text(
-                          'USD ${(s['amountPaidUsd'] ?? 0).toString()}',
+              children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Add Subscription',
+                          style: TextStyle(fontWeight: FontWeight.w900),
                         ),
-                        subtitle: Text(
-                          '${(s['startsOn'] ?? '').toString()} -> ${(s['expiresOn'] ?? '').toString()}',
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _amountC,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Amount Paid (USD)',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
-                        trailing: Text((s['status'] ?? 'active').toString()),
-                      ),
-                ],
-              ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _startC,
+                          readOnly: true,
+                          onTap: () => _pickDate(_startC, 'Select start date'),
+                          decoration: InputDecoration(
+                            labelText: 'Starts On (YYYY-MM-DD)',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              onPressed: () =>
+                                  _pickDate(_startC, 'Select start date'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _expiryC,
+                          readOnly: true,
+                          onTap: () =>
+                              _pickDate(_expiryC, 'Select expiry date'),
+                          decoration: InputDecoration(
+                            labelText: 'Expires On (YYYY-MM-DD)',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              onPressed: () =>
+                                  _pickDate(_expiryC, 'Select expiry date'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _noteC,
+                          decoration: const InputDecoration(
+                            labelText: 'Note (optional)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _addingSubscription
+                              ? null
+                              : _addSubscription,
+                          icon: const Icon(Icons.add_card_outlined),
+                          label: Text(
+                            _addingSubscription
+                                ? 'Adding...'
+                                : 'Add Subscription',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Assigned Courses',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 8),
+                        for (final c in _courses)
+                          CheckboxListTile(
+                            dense: true,
+                            value: _selected[c['id']] == true,
+                            title: Text(
+                              (c['title'] ?? '').isEmpty
+                                  ? 'Untitled'
+                                  : c['title']!,
+                            ),
+                            subtitle: Text(c['code'] ?? ''),
+                            onChanged: (v) => setState(() {
+                              _selected[c['id']!] = v == true;
+                            }),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Subscription History',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_subs.isEmpty)
+                          const Text('No subscriptions yet.')
+                        else
+                          for (final s in _subs)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.history_rounded),
+                              title: Text(
+                                'USD ${(s['amountPaidUsd'] ?? 0).toString()}',
+                              ),
+                              subtitle: Text(
+                                '${(s['startsOn'] ?? '').toString()} -> ${(s['expiresOn'] ?? '').toString()}',
+                              ),
+                              trailing: Text(
+                                (s['status'] ?? 'active').toString(),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _saving ? null : _saveAssignments,
+                  child: Text(_saving ? 'Saving...' : 'Save Assignments'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _saving ? null : _saveAssignments,
-            child: Text(_saving ? 'Saving...' : 'Save Assignments'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

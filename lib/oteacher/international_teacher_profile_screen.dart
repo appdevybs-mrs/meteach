@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/backend_api.dart';
+import '../shared/app_theme.dart';
 
 class InternationalTeacherProfileScreen extends StatefulWidget {
   const InternationalTeacherProfileScreen({super.key, required this.uid});
@@ -47,7 +48,13 @@ class _InternationalTeacherProfileScreenState
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _load();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   @override
@@ -55,6 +62,7 @@ class _InternationalTeacherProfileScreenState
     for (final row in _socialRows) {
       row.controller.dispose();
     }
+    appThemeController.removeListener(_onThemeChanged);
     _passC.dispose();
     _onlineMeetC.dispose();
     super.dispose();
@@ -311,285 +319,319 @@ class _InternationalTeacherProfileScreenState
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
     final sub = _subscriptionState();
     final amount = (_sub['amountPaidUsd'] ?? '').toString();
     final startsOn = (_sub['startsOn'] ?? '').toString();
     final expiresOn = (_sub['expiresOn'] ?? '').toString();
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F6FA),
+      backgroundColor: p.appBg,
       appBar: AppBar(title: const Text('Profile')),
-      body: ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0D2B45), Color(0xFF284F70)],
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.055,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 320,
+                    ),
+                  ),
+                ),
               ),
             ),
-            child: Row(
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                14,
+                14,
+                14,
+                14 + MediaQuery.of(context).padding.bottom,
+              ),
               children: [
-                Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 34,
-                      backgroundColor: Colors.white24,
-                      backgroundImage: _photoUrl.isEmpty
-                          ? null
-                          : NetworkImage(_photoUrl),
-                      child: _photoUrl.isEmpty
-                          ? const Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 34,
-                            )
-                          : null,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    gradient: LinearGradient(
+                      colors: [
+                        p.primary,
+                        Color.lerp(p.primary, p.accent, 0.35) ?? p.primary,
+                      ],
                     ),
-                    Positioned(
-                      right: -2,
-                      bottom: -2,
-                      child: IconButton(
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFFBF6A3D),
-                        ),
-                        onPressed: _uploadingPhoto ? null : _pickAndUploadPhoto,
-                        icon: _uploadingPhoto
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.camera_alt, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                  child: Row(
                     children: [
-                      Text(
-                        _name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'International Teacher',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Subscription',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sub.color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          sub.label,
-                          style: TextStyle(
-                            color: sub.color,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text('USD ${amount.isEmpty ? '-' : amount}'),
-                  Text(
-                    startsOn.isEmpty || expiresOn.isEmpty
-                        ? 'No active period'
-                        : '$startsOn -> $expiresOn',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: LinearProgressIndicator(
-                      value: sub.remainingPct,
-                      minHeight: 10,
-                      backgroundColor: const Color(0xFFEAECEF),
-                      color: sub.color,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    sub.daysLeft > 0
-                        ? '${sub.daysLeft} days remaining'
-                        : 'Expired',
-                    style: TextStyle(
-                      color: sub.color,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Social Links',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 10),
-                  for (int i = 0; i < _socialRows.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
+                      Stack(
                         children: [
-                          InkWell(
-                            onTap: () => _pickIconForRow(i),
-                            child: Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE9EEF5),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(
-                                _iconLibrary[_socialRows[i].iconKey] ??
-                                    Icons.public,
-                              ),
-                            ),
+                          CircleAvatar(
+                            radius: 34,
+                            backgroundColor: Colors.white24,
+                            backgroundImage: _photoUrl.isEmpty
+                                ? null
+                                : NetworkImage(_photoUrl),
+                            child: _photoUrl.isEmpty
+                                ? const Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                    size: 34,
+                                  )
+                                : null,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              controller: _socialRows[i].controller,
-                              decoration: InputDecoration(
-                                border: const OutlineInputBorder(),
-                                labelText: _socialRows[i].label.isEmpty
-                                    ? 'URL'
-                                    : _socialRows[i].label,
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: IconButton(
+                              style: IconButton.styleFrom(
+                                backgroundColor: p.accent,
                               ),
+                              onPressed: _uploadingPhoto
+                                  ? null
+                                  : _pickAndUploadPhoto,
+                              icon: _uploadingPhoto
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.camera_alt,
+                                      color: Colors.white,
+                                    ),
                             ),
                           ),
                         ],
                       ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 20,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'International Teacher',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Subscription',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: sub.color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                sub.label,
+                                style: TextStyle(
+                                  color: sub.color,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text('USD ${amount.isEmpty ? '-' : amount}'),
+                        Text(
+                          startsOn.isEmpty || expiresOn.isEmpty
+                              ? 'No active period'
+                              : '$startsOn -> $expiresOn',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: LinearProgressIndicator(
+                            value: sub.remainingPct,
+                            minHeight: 10,
+                            backgroundColor: const Color(0xFFEAECEF),
+                            color: sub.color,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          sub.daysLeft > 0
+                              ? '${sub.daysLeft} days remaining'
+                              : 'Expired',
+                          style: TextStyle(
+                            color: sub.color,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _socialRows.add(
-                          _SocialRow(iconKey: 'globe', label: 'Link'),
-                        );
-                      });
-                    },
-                    icon: const Icon(Icons.add_link_rounded),
-                    label: const Text('Add another input'),
                   ),
-                ],
-              ),
-            ),
-          ),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Online Meet',
-                    style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _onlineMeetC,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: 'Online meet URL',
-                      hintText: 'https://meet.google.com/...',
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Social Links',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 10),
+                        for (int i = 0; i < _socialRows.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              children: [
+                                InkWell(
+                                  onTap: () => _pickIconForRow(i),
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: p.soft,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(
+                                      _iconLibrary[_socialRows[i].iconKey] ??
+                                          Icons.public,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _socialRows[i].controller,
+                                    decoration: InputDecoration(
+                                      border: const OutlineInputBorder(),
+                                      labelText: _socialRows[i].label.isEmpty
+                                          ? 'URL'
+                                          : _socialRows[i].label,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _socialRows.add(
+                                _SocialRow(iconKey: 'globe', label: 'Link'),
+                              );
+                            });
+                          },
+                          icon: const Icon(Icons.add_link_rounded),
+                          label: const Text('Add another input'),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Security',
-                    style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _passC,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: 'Change Password',
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Online Meet',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _onlineMeetC,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'Online meet URL',
+                            hintText: 'https://meet.google.com/...',
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Security',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _passC,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'Change Password',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: p.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: Text(_saving ? 'Saving...' : 'Save Profile'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0D2B45),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: Text(_saving ? 'Saving...' : 'Save Profile'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -114,11 +114,39 @@ class _InternationalTeacherHomeScreenState
   }
 
   Future<void> _logout() async {
-    final uid = _uid;
-    if (uid.isNotEmpty) {
-      await TopicService.clearForUser(uid);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.6),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Logging out...',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    try {
+      final uid = _uid;
+      if (uid.isNotEmpty) {
+        await TopicService.clearForUser(uid);
+      }
+      await FirebaseAuth.instance.signOut();
+    } finally {
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
     }
-    await FirebaseAuth.instance.signOut();
   }
 
   Future<void> _openThemePicker() async {
@@ -191,8 +219,9 @@ class _InternationalTeacherHomeScreenState
     final p = appThemeController.palette;
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: const Color(0xFFF2F5F9),
+      backgroundColor: p.appBg,
       drawer: _OTeacherDrawer(
+        palette: p,
         name: _name,
         photoUrl: _photo,
         onOpenProfile: () {
@@ -248,144 +277,182 @@ class _InternationalTeacherHomeScreenState
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0D2B45), Color(0xFF224D6E)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+              child: SafeArea(
+                top: false,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Opacity(
+                            opacity: 0.055,
+                            child: Image.asset(
+                              'assets/images/ybs_logo.png',
+                              width: 320,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
                       ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x220D2B45),
-                          blurRadius: 24,
-                          offset: Offset(0, 10),
-                        ),
-                      ],
                     ),
-                    child: Row(
+                    ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        14,
+                        4,
+                        14,
+                        20 + MediaQuery.of(context).padding.bottom,
+                      ),
                       children: [
-                        CircleAvatar(
-                          radius: 32,
-                          backgroundColor: Colors.white24,
-                          backgroundImage: _photo.isEmpty
-                              ? null
-                              : NetworkImage(_photo),
-                          child: _photo.isEmpty
-                              ? const Icon(
-                                  Icons.person,
-                                  color: Colors.white,
-                                  size: 30,
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            gradient: LinearGradient(
+                              colors: [
+                                p.primary,
+                                Color.lerp(p.primary, p.accent, 0.35) ??
+                                    p.primary,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x220D2B45),
+                                blurRadius: 24,
+                                offset: Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Row(
                             children: [
-                              const Text(
-                                'Welcome back',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              CircleAvatar(
+                                radius: 32,
+                                backgroundColor: Colors.white24,
+                                backgroundImage: _photo.isEmpty
+                                    ? null
+                                    : NetworkImage(_photo),
+                                child: _photo.isEmpty
+                                    ? const Icon(
+                                        Icons.person,
+                                        color: Colors.white,
+                                        size: 30,
+                                      )
+                                    : null,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 20,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Flexible course materials access',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Welcome back',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Flexible course materials access',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
                         ),
+                        if (_isExpired) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E8),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFF0B78B),
+                              ),
+                            ),
+                            child: const Text(
+                              'Your subscription has expired. Course start is locked until renewal.',
+                              style: TextStyle(
+                                color: Color(0xFF7A3E12),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Assigned Courses',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (_courses.isEmpty)
+                          const Card(
+                            child: ListTile(
+                              title: Text('No assigned courses yet.'),
+                              subtitle: Text(
+                                'Ask admin to assign your courses.',
+                              ),
+                            ),
+                          ),
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _courses.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                childAspectRatio: 1,
+                              ),
+                          itemBuilder: (context, i) {
+                            final c = _courses[i];
+                            return _CourseSquareCard(
+                              palette: p,
+                              title: (c['title'] ?? '').isEmpty
+                                  ? 'Untitled course'
+                                  : c['title']!,
+                              code: c['code'] ?? '',
+                              imageUrl: c['thumbnail'] ?? '',
+                              locked: _isExpired,
+                              onStart: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        _InternationalTeacherSyllabusScreen(
+                                          courseId: c['id']!,
+                                          courseTitle: c['title'] ?? 'Course',
+                                        ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
                       ],
                     ),
-                  ),
-                  if (_isExpired) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF3E8),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFF0B78B)),
-                      ),
-                      child: const Text(
-                        'Your subscription has expired. Course start is locked until renewal.',
-                        style: TextStyle(
-                          color: Color(0xFF7A3E12),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
                   ],
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Assigned Courses',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-                  ),
-                  const SizedBox(height: 10),
-                  if (_courses.isEmpty)
-                    const Card(
-                      child: ListTile(
-                        title: Text('No assigned courses yet.'),
-                        subtitle: Text('Ask admin to assign your courses.'),
-                      ),
-                    ),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _courses.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          childAspectRatio: 1,
-                        ),
-                    itemBuilder: (context, i) {
-                      final c = _courses[i];
-                      return _CourseSquareCard(
-                        title: (c['title'] ?? '').isEmpty
-                            ? 'Untitled course'
-                            : c['title']!,
-                        code: c['code'] ?? '',
-                        imageUrl: c['thumbnail'] ?? '',
-                        locked: _isExpired,
-                        onStart: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  _InternationalTeacherSyllabusScreen(
-                                    courseId: c['id']!,
-                                    courseTitle: c['title'] ?? 'Course',
-                                  ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
     );
@@ -418,6 +485,7 @@ class _InternationalTeacherHomeScreenState
 
 class _CourseSquareCard extends StatelessWidget {
   const _CourseSquareCard({
+    required this.palette,
     required this.title,
     required this.code,
     required this.imageUrl,
@@ -425,6 +493,7 @@ class _CourseSquareCard extends StatelessWidget {
     required this.onStart,
   });
 
+  final AppPalette palette;
   final String title;
   final String code;
   final String imageUrl;
@@ -436,7 +505,7 @@ class _CourseSquareCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: Colors.white,
+        color: palette.cardBg,
         boxShadow: const [
           BoxShadow(
             color: Color(0x110D2B45),
@@ -452,14 +521,14 @@ class _CourseSquareCard extends StatelessWidget {
             Positioned.fill(
               child: imageUrl.isEmpty
                   ? Container(
-                      color: const Color(0xFFE9EEF5),
+                      color: palette.soft,
                       child: const Icon(Icons.image_outlined, size: 36),
                     )
                   : Image.network(
                       imageUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => Container(
-                        color: const Color(0xFFE9EEF5),
+                        color: palette.soft,
                         child: const Icon(Icons.image_not_supported_outlined),
                       ),
                     ),
@@ -510,8 +579,10 @@ class _CourseSquareCard extends StatelessWidget {
                     child: FilledButton(
                       onPressed: locked ? null : onStart,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFBF6A3D),
-                        disabledBackgroundColor: const Color(0xFF8B8B8B),
+                        backgroundColor: palette.accent,
+                        disabledBackgroundColor: palette.text.withValues(
+                          alpha: 0.35,
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                       child: Text(locked ? 'Locked' : 'Start'),
@@ -529,6 +600,7 @@ class _CourseSquareCard extends StatelessWidget {
 
 class _OTeacherDrawer extends StatelessWidget {
   const _OTeacherDrawer({
+    required this.palette,
     required this.name,
     required this.photoUrl,
     required this.onOpenProfile,
@@ -539,6 +611,7 @@ class _OTeacherDrawer extends StatelessWidget {
     required this.onLogout,
   });
 
+  final AppPalette palette;
   final String name;
   final String photoUrl;
   final VoidCallback onOpenProfile;
@@ -551,7 +624,7 @@ class _OTeacherDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      backgroundColor: const Color(0xFFF6F8FB),
+      backgroundColor: palette.appBg,
       child: SafeArea(
         child: Column(
           children: [
@@ -561,8 +634,12 @@ class _OTeacherDrawer extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(22),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0D2B45), Color(0xFF224D6E)],
+                gradient: LinearGradient(
+                  colors: [
+                    palette.primary,
+                    Color.lerp(palette.primary, palette.accent, 0.3) ??
+                        palette.primary,
+                  ],
                 ),
               ),
               child: Row(
@@ -626,7 +703,7 @@ class _OTeacherDrawer extends StatelessWidget {
                   icon: const Icon(Icons.logout),
                   label: const Text('Logout'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFBF6A3D),
+                    backgroundColor: palette.accent,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
                 ),
@@ -654,13 +731,13 @@ class _DrawerItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: Material(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(14),
         child: ListTile(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          leading: Icon(icon, color: const Color(0xFF0D2B45)),
+          leading: Icon(icon, color: appThemeController.palette.primary),
           title: Text(
             title,
             style: const TextStyle(fontWeight: FontWeight.w800),
@@ -739,90 +816,115 @@ class _SubscriptionScreen extends StatelessWidget {
     final st = _status();
     return Scaffold(
       appBar: AppBar(title: const Text('Subscription')),
-      body: ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Current Subscription',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      const Spacer(),
-                      Text(
-                        st.state,
-                        style: TextStyle(
-                          color: st.color,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text('USD ${amount.isEmpty ? '-' : amount}'),
-                  Text(
-                    startsOn.isEmpty || expiresOn.isEmpty
-                        ? 'No active period'
-                        : '$startsOn -> $expiresOn',
-                  ),
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      minHeight: 10,
-                      value: st.pct,
-                      color: st.color,
-                      backgroundColor: const Color(0xFFE8EBEF),
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.05,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 300,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    st.days > 0 ? '${st.days} days left' : 'Expired',
-                    style: TextStyle(
-                      color: st.color,
-                      fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                14,
+                14,
+                14,
+                14 + MediaQuery.of(context).padding.bottom,
+              ),
+              children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Current Subscription',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            const Spacer(),
+                            Text(
+                              st.state,
+                              style: TextStyle(
+                                color: st.color,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text('USD ${amount.isEmpty ? '-' : amount}'),
+                        Text(
+                          startsOn.isEmpty || expiresOn.isEmpty
+                              ? 'No active period'
+                              : '$startsOn -> $expiresOn',
+                        ),
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: LinearProgressIndicator(
+                            minHeight: 10,
+                            value: st.pct,
+                            color: st.color,
+                            backgroundColor: const Color(0xFFE8EBEF),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          st.days > 0 ? '${st.days} days left' : 'Expired',
+                          style: TextStyle(
+                            color: st.color,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Previous Subscriptions',
-                    style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Previous Subscriptions',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 8),
+                        if (history.isEmpty)
+                          const Text('No subscription history yet.')
+                        else
+                          for (final h in history)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.history_rounded),
+                              title: Text(
+                                'USD ${(h['amountPaidUsd'] ?? '-').toString()}',
+                              ),
+                              subtitle: Text(
+                                '${(h['startsOn'] ?? '').toString()} -> ${(h['expiresOn'] ?? '').toString()}',
+                              ),
+                            ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  if (history.isEmpty)
-                    const Text('No subscription history yet.')
-                  else
-                    for (final h in history)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.history_rounded),
-                        title: Text(
-                          'USD ${(h['amountPaidUsd'] ?? '-').toString()}',
-                        ),
-                        subtitle: Text(
-                          '${(h['startsOn'] ?? '').toString()} -> ${(h['expiresOn'] ?? '').toString()}',
-                        ),
-                      ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -876,11 +978,16 @@ class _InternationalTeacherSyllabusScreenState
                 .toString()
                 .trim();
             final materialsUrl = (s['materialsUrl'] ?? '').toString().trim();
+            final objectives =
+                (s['objectives'] ?? s['objective'] ?? u['objectives'] ?? '')
+                    .toString()
+                    .trim();
             out.add(
               _SyllabusLesson(
                 unitTitle: unitTitle,
                 lessonTitle: title,
                 materialsUrl: materialsUrl,
+                objectives: objectives,
               ),
             );
           }
@@ -909,38 +1016,103 @@ class _InternationalTeacherSyllabusScreenState
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _lessons.isEmpty
-          ? const Center(child: Text('No flexible syllabus found.'))
-          : ListView.builder(
-              itemCount: _lessons.length,
-              itemBuilder: (context, i) {
-                final l = _lessons[i];
-                return Card(
-                  margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: ListTile(
-                    title: Text(l.lessonTitle),
-                    subtitle: Text(l.unitTitle),
-                    trailing: OutlinedButton(
-                      onPressed: l.materialsUrl.isEmpty
-                          ? null
-                          : () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => MaterialWebViewScreen.fromUrl(
-                                    title: l.lessonTitle,
-                                    url: l.materialsUrl,
-                                  ),
-                                ),
-                              );
-                            },
-                      child: const Text('Open Materials'),
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.05,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 300,
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
+            _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _lessons.isEmpty
+                ? const Center(child: Text('No flexible syllabus found.'))
+                : ListView.builder(
+                    padding: EdgeInsets.only(
+                      bottom: 10 + MediaQuery.of(context).padding.bottom,
+                    ),
+                    itemCount: _lessons.length,
+                    itemBuilder: (context, i) {
+                      final l = _lessons[i];
+                      return Card(
+                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        child: ListTile(
+                          title: Text(l.lessonTitle),
+                          subtitle: Text(l.unitTitle),
+                          trailing: SizedBox(
+                            width: 126,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Objectives',
+                                  onPressed: () {
+                                    showDialog<void>(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Course Objectives'),
+                                        content: Text(
+                                          l.objectives.trim().isEmpty
+                                              ? 'No objectives available for this lesson yet.'
+                                              : l.objectives,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.track_changes_outlined,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Open materials',
+                                  onPressed: l.materialsUrl.isEmpty
+                                      ? null
+                                      : () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  MaterialWebViewScreen.fromUrl(
+                                                    title: l.lessonTitle,
+                                                    url: l.materialsUrl,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                  icon: const Icon(Icons.folder_open_rounded),
+                                ),
+                                IconButton(
+                                  tooltip: 'Homework',
+                                  onPressed: () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Homework section coming soon.',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.assignment_outlined),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -966,8 +1138,10 @@ class _SyllabusLesson {
     required this.unitTitle,
     required this.lessonTitle,
     required this.materialsUrl,
+    required this.objectives,
   });
   final String unitTitle;
   final String lessonTitle;
   final String materialsUrl;
+  final String objectives;
 }
