@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../shared/app_theme.dart';
+
 class AdminInternationalTeachersScreen extends StatefulWidget {
   const AdminInternationalTeachersScreen({super.key});
 
@@ -15,8 +17,27 @@ class _AdminInternationalTeachersScreenState
   final _db = FirebaseDatabase.instance.ref();
 
   @override
+  void initState() {
+    super.initState();
+    appThemeController.addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
     return Scaffold(
+      backgroundColor: p.appBg,
       appBar: AppBar(title: const Text('International Teachers')),
       body: StreamBuilder<DatabaseEvent>(
         stream: _db.child('users').onValue,
@@ -73,6 +94,7 @@ class _AdminInternationalTeachersScreenState
                 itemBuilder: (context, i) {
                   final t = rows[i];
                   return Card(
+                    color: p.cardBg,
                     child: ListTile(
                       leading: const Icon(Icons.person_outline),
                       title: Text(t['name']!),
@@ -131,16 +153,23 @@ class _AdminInternationalTeacherDetailsScreenState
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _load();
   }
 
   @override
   void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
     _amountC.dispose();
     _startC.dispose();
     _expiryC.dispose();
     _noteC.dispose();
     super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _pickDate(TextEditingController c, String help) async {
@@ -343,7 +372,9 @@ class _AdminInternationalTeacherDetailsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
     return Scaffold(
+      backgroundColor: p.appBg,
       appBar: AppBar(title: Text(widget.name)),
       body: SafeArea(
         top: false,
@@ -371,6 +402,7 @@ class _AdminInternationalTeacherDetailsScreenState
               ),
               children: [
                 Card(
+                  color: p.cardBg,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(
@@ -445,6 +477,7 @@ class _AdminInternationalTeacherDetailsScreenState
                   ),
                 ),
                 Card(
+                  color: p.cardBg,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(
@@ -474,6 +507,7 @@ class _AdminInternationalTeacherDetailsScreenState
                   ),
                 ),
                 Card(
+                  color: p.cardBg,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(
@@ -508,6 +542,7 @@ class _AdminInternationalTeacherDetailsScreenState
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: _saving ? null : _saveAssignments,
+                  style: FilledButton.styleFrom(backgroundColor: p.primary),
                   child: Text(_saving ? 'Saving...' : 'Save Assignments'),
                 ),
               ],

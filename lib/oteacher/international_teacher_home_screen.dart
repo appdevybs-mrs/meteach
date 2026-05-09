@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/topic_service.dart';
 import '../shared/app_theme.dart';
@@ -151,63 +152,83 @@ class _InternationalTeacherHomeScreenState
 
   Future<void> _openThemePicker() async {
     final modes = AppThemeMode.values;
+    final p = appThemeController.palette;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: p.cardBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+        return Stack(
           children: [
-            const ListTile(
-              title: Text(
-                'Theme settings',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              subtitle: Text('Choose your app look'),
-            ),
-            for (final m in modes)
-              ListTile(
-                leading: SizedBox(
-                  width: 70,
-                  child: Row(
-                    children: [
-                      Icon(
-                        appThemeController.mode == m
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_off,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      ...[
-                        appThemeController.paletteForMode(m).primary,
-                        appThemeController.paletteForMode(m).accent,
-                        appThemeController.paletteForMode(m).appBg,
-                      ].map(
-                        (c) => Container(
-                          margin: const EdgeInsets.only(right: 4),
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: c,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.black12),
-                          ),
-                        ),
-                      ),
-                    ],
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.05,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 240,
+                    ),
                   ),
                 ),
-                title: Text(appThemeController.themeTitle(m)),
-                subtitle: Text(appThemeController.themeSubtitle(m)),
-                onTap: () async {
-                  await appThemeController.setTheme(m);
-                  if (ctx.mounted) Navigator.of(ctx).pop();
-                },
               ),
+            ),
+            ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+              children: [
+                const ListTile(
+                  title: Text(
+                    'Theme settings',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: Text('Choose your app look'),
+                ),
+                for (final m in modes)
+                  ListTile(
+                    leading: SizedBox(
+                      width: 70,
+                      child: Row(
+                        children: [
+                          Icon(
+                            appThemeController.mode == m
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          ...[
+                            appThemeController.paletteForMode(m).primary,
+                            appThemeController.paletteForMode(m).accent,
+                            appThemeController.paletteForMode(m).appBg,
+                          ].map(
+                            (c) => Container(
+                              margin: const EdgeInsets.only(right: 4),
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: c,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(context).dividerColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    title: Text(appThemeController.themeTitle(m)),
+                    subtitle: Text(appThemeController.themeSubtitle(m)),
+                    onTap: () async {
+                      await appThemeController.setTheme(m);
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                    },
+                  ),
+              ],
+            ),
           ],
         );
       },
@@ -345,6 +366,27 @@ class _InternationalTeacherHomeScreenState
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: p.accent.withValues(alpha: 0.28),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Premium Teacher Hub',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
                                     const Text(
                                       'Welcome back',
                                       style: TextStyle(
@@ -381,16 +423,16 @@ class _InternationalTeacherHomeScreenState
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFF3E8),
+                              color: p.soft.withValues(alpha: 0.45),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: const Color(0xFFF0B78B),
+                                color: p.accent.withValues(alpha: 0.55),
                               ),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Your subscription has expired. Course start is locked until renewal.',
                               style: TextStyle(
-                                color: Color(0xFF7A3E12),
+                                color: p.text,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -758,18 +800,13 @@ class _SubscriptionScreen extends StatelessWidget {
   final Map<String, dynamic> subscription;
   final List<Map<String, dynamic>> history;
 
-  ({double pct, int days, Color color, String state}) _status() {
+  ({double pct, int days, Color color, String state}) _status(AppPalette p) {
     final start = DateTime.tryParse(
       (subscription['startsOn'] ?? '').toString(),
     );
     final end = DateTime.tryParse((subscription['expiresOn'] ?? '').toString());
     if (start == null || end == null || !end.isAfter(start)) {
-      return (
-        pct: 0,
-        days: 0,
-        color: const Color(0xFF8B8B8B),
-        state: 'Not set',
-      );
+      return (pct: 0, days: 0, color: p.border, state: 'Not set');
     }
     final now = DateTime.now();
     final total = end.difference(start).inSeconds;
@@ -777,18 +814,13 @@ class _SubscriptionScreen extends StatelessWidget {
     final pct = (left / total).clamp(0, 1).toDouble();
     final days = end.difference(DateTime(now.year, now.month, now.day)).inDays;
     if (left <= 0) {
-      return (
-        pct: 0,
-        days: 0,
-        color: const Color(0xFFC0392B),
-        state: 'Expired',
-      );
+      return (pct: 0, days: 0, color: Colors.red.shade700, state: 'Expired');
     }
     if (pct <= 0.10) {
       return (
         pct: pct,
         days: days,
-        color: const Color(0xFFD35400),
+        color: Colors.orange.shade800,
         state: 'Critical',
       );
     }
@@ -796,25 +828,27 @@ class _SubscriptionScreen extends StatelessWidget {
       return (
         pct: pct,
         days: days,
-        color: const Color(0xFFF39C12),
+        color: Colors.amber.shade700,
         state: 'Expiring',
       );
     }
     return (
       pct: pct,
       days: days,
-      color: const Color(0xFF2E8B57),
+      color: Colors.green.shade700,
       state: 'Active',
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
     final amount = (subscription['amountPaidUsd'] ?? '').toString();
     final startsOn = (subscription['startsOn'] ?? '').toString();
     final expiresOn = (subscription['expiresOn'] ?? '').toString();
-    final st = _status();
+    final st = _status(p);
     return Scaffold(
+      backgroundColor: p.appBg,
       appBar: AppBar(title: const Text('Subscription')),
       body: SafeArea(
         top: false,
@@ -877,7 +911,7 @@ class _SubscriptionScreen extends StatelessWidget {
                             minHeight: 10,
                             value: st.pct,
                             color: st.color,
-                            backgroundColor: const Color(0xFFE8EBEF),
+                            backgroundColor: p.soft,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -969,6 +1003,10 @@ class _InternationalTeacherSyllabusScreenState
           final unitTitle = (u['title'] ?? u['name'] ?? 'Unit ${i + 1}')
               .toString()
               .trim();
+          final unitObjective =
+              (u['objectives'] ?? u['objective'] ?? u['description'] ?? '')
+                  .toString()
+                  .trim();
           final sessions = _asListMap(u['sessions']).isNotEmpty
               ? _asListMap(u['sessions'])
               : _asListMap(u['lessons']);
@@ -978,16 +1016,41 @@ class _InternationalTeacherSyllabusScreenState
                 .toString()
                 .trim();
             final materialsUrl = (s['materialsUrl'] ?? '').toString().trim();
-            final objectives =
-                (s['objectives'] ?? s['objective'] ?? u['objectives'] ?? '')
+            final objective =
+                (s['objectives'] ?? s['objective'] ?? unitObjective)
                     .toString()
                     .trim();
+            final content = (s['content'] ?? s['scope'] ?? '')
+                .toString()
+                .trim();
+            final homework = (s['homework'] ?? '').toString().trim();
+            final skillType = (s['skillType'] ?? s['skill'] ?? '')
+                .toString()
+                .trim();
+            final id = (s['id'] ?? '').toString().trim();
+            final orderRaw = (s['sessionNumber'] ?? s['order'] ?? (j + 1))
+                .toString()
+                .trim();
+            final durationRaw = (s['durationMinutes'] ?? s['duration'] ?? '')
+                .toString()
+                .trim();
+            final sessionLabel = orderRaw.isEmpty
+                ? 'Session ${j + 1}'
+                : 'Session $orderRaw';
             out.add(
               _SyllabusLesson(
                 unitTitle: unitTitle,
+                unitObjective: unitObjective,
+                sessionLabel: sessionLabel,
                 lessonTitle: title,
                 materialsUrl: materialsUrl,
-                objectives: objectives,
+                objective: objective,
+                content: content,
+                durationMinutes: durationRaw,
+                homework: homework,
+                skillType: skillType,
+                lessonId: id,
+                order: orderRaw,
               ),
             );
           }
@@ -1001,7 +1064,9 @@ class _InternationalTeacherSyllabusScreenState
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
     return Scaffold(
+      backgroundColor: p.appBg,
       appBar: AppBar(
         title: Text(widget.courseTitle),
         actions: [
@@ -1044,68 +1109,90 @@ class _InternationalTeacherSyllabusScreenState
                     itemCount: _lessons.length,
                     itemBuilder: (context, i) {
                       final l = _lessons[i];
+                      final accent = _skillColor(l.skillType);
                       return Card(
                         margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                        child: ListTile(
-                          title: Text(l.lessonTitle),
-                          subtitle: Text(l.unitTitle),
-                          trailing: SizedBox(
-                            width: 126,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Objectives',
-                                  onPressed: () {
-                                    showDialog<void>(
-                                      context: context,
-                                      builder: (_) => AlertDialog(
-                                        title: const Text('Course Objectives'),
-                                        content: Text(
-                                          l.objectives.trim().isEmpty
-                                              ? 'No objectives available for this lesson yet.'
-                                              : l.objectives,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(
-                                    Icons.track_changes_outlined,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Open materials',
-                                  onPressed: l.materialsUrl.isEmpty
-                                      ? null
-                                      : () {
-                                          Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  MaterialWebViewScreen.fromUrl(
-                                                    title: l.lessonTitle,
-                                                    url: l.materialsUrl,
-                                                  ),
-                                            ),
-                                          );
-                                        },
-                                  icon: const Icon(Icons.folder_open_rounded),
-                                ),
-                                IconButton(
-                                  tooltip: 'Homework',
-                                  onPressed: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Homework section coming soon.',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.assignment_outlined),
-                                ),
-                              ],
-                            ),
+                        shape: RoundedRectangleBorder(
+                          side: BorderSide(
+                            color: accent.withValues(alpha: 0.35),
                           ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final useMenu = constraints.maxWidth < 410;
+                            return ListTile(
+                              title: Text(l.lessonTitle),
+                              subtitle: Text(
+                                '${l.unitTitle} • ${l.sessionLabel}',
+                              ),
+                              leading: CircleAvatar(
+                                backgroundColor: accent.withValues(alpha: 0.14),
+                                foregroundColor: accent,
+                                child: const Icon(Icons.school_outlined),
+                              ),
+                              trailing: useMenu
+                                  ? PopupMenuButton<String>(
+                                      tooltip: 'Lesson actions',
+                                      onSelected: (value) {
+                                        if (value == 'objectives') {
+                                          _showLessonDetails(i);
+                                        } else if (value == 'materials') {
+                                          _openMaterials(l);
+                                        } else {
+                                          _showHomeworkToast();
+                                        }
+                                      },
+                                      itemBuilder: (context) => const [
+                                        PopupMenuItem<String>(
+                                          value: 'objectives',
+                                          child: Text('Objectives'),
+                                        ),
+                                        PopupMenuItem<String>(
+                                          value: 'materials',
+                                          child: Text('Materials'),
+                                        ),
+                                        PopupMenuItem<String>(
+                                          value: 'homework',
+                                          child: Text('Homework'),
+                                        ),
+                                      ],
+                                    )
+                                  : SizedBox(
+                                      width: 126,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'Objectives',
+                                            onPressed: () =>
+                                                _showLessonDetails(i),
+                                            icon: const Icon(
+                                              Icons.track_changes_outlined,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Open materials',
+                                            onPressed: l.materialsUrl.isEmpty
+                                                ? null
+                                                : () => _openMaterials(l),
+                                            icon: const Icon(
+                                              Icons.folder_open_rounded,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Homework',
+                                            onPressed: _showHomeworkToast,
+                                            icon: const Icon(
+                                              Icons.assignment_outlined,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                            );
+                          },
                         ),
                       );
                     },
@@ -1131,17 +1218,291 @@ class _InternationalTeacherSyllabusScreenState
     }
     return const <Map<String, dynamic>>[];
   }
+
+  void _openMaterials(_SyllabusLesson lesson) {
+    if (lesson.materialsUrl.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: lesson.lessonTitle,
+          url: lesson.materialsUrl,
+        ),
+      ),
+    );
+  }
+
+  void _showHomeworkToast() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Homework section coming soon.')),
+    );
+  }
+
+  Future<void> _showLessonDetails(int initialIndex) async {
+    if (_lessons.isEmpty) return;
+    final pageController = PageController(initialPage: initialIndex);
+    int page = initialIndex;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SizedBox(
+              height: MediaQuery.of(context).size.height * 0.84,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Lesson Details',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Copy details',
+                          onPressed: () {
+                            final lesson = _lessons[page];
+                            Clipboard.setData(
+                              ClipboardData(text: _copyPayload(lesson)),
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Lesson details copied.'),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.copy_all_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Text('Lesson ${page + 1} of ${_lessons.length}'),
+                        const Spacer(),
+                        Icon(
+                          Icons.swipe_rounded,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('Swipe left/right'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: PageView.builder(
+                      controller: pageController,
+                      itemCount: _lessons.length,
+                      onPageChanged: (value) {
+                        setSheetState(() => page = value);
+                      },
+                      itemBuilder: (context, index) {
+                        final lesson = _lessons[index];
+                        final accent = _skillColor(lesson.skillType);
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: accent.withValues(alpha: 0.40),
+                              ),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  accent.withValues(alpha: 0.14),
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.surface.withValues(alpha: 0.94),
+                                ],
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _detailBlock('Unit Title', lesson.unitTitle),
+                                  _detailBlock(
+                                    'Lesson Number (Session)',
+                                    lesson.sessionLabel,
+                                  ),
+                                  _detailBlock(
+                                    'Lesson Title',
+                                    lesson.lessonTitle,
+                                  ),
+                                  _detailBlock(
+                                    'Objective',
+                                    lesson.objective.isEmpty
+                                        ? 'No objective available yet.'
+                                        : lesson.objective,
+                                  ),
+                                  if (lesson.content.isNotEmpty)
+                                    _detailBlock('Content', lesson.content),
+                                  if (lesson.homework.isNotEmpty)
+                                    _detailBlock('Homework', lesson.homework),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      _metaChip(
+                                        context,
+                                        accent,
+                                        lesson.skillType.isEmpty
+                                            ? 'Skill: not set'
+                                            : 'Skill: ${lesson.skillType}',
+                                      ),
+                                      if (lesson.durationMinutes.isNotEmpty)
+                                        _metaChip(
+                                          context,
+                                          accent,
+                                          'Duration: ${lesson.durationMinutes} min',
+                                        ),
+                                      if (lesson.order.isNotEmpty)
+                                        _metaChip(
+                                          context,
+                                          accent,
+                                          'Order: ${lesson.order}',
+                                        ),
+                                      if (lesson.lessonId.isNotEmpty)
+                                        _metaChip(
+                                          context,
+                                          accent,
+                                          'ID: ${lesson.lessonId}',
+                                        ),
+                                      _metaChip(
+                                        context,
+                                        accent,
+                                        lesson.materialsUrl.isEmpty
+                                            ? 'Materials: not set'
+                                            : 'Materials: available',
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    pageController.dispose();
+  }
+
+  Widget _detailBlock(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          Text(value),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaChip(BuildContext context, Color accent, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+
+  String _copyPayload(_SyllabusLesson l) {
+    final buffer = StringBuffer()
+      ..writeln('Unit Title: ${l.unitTitle}')
+      ..writeln('Lesson Number (Session): ${l.sessionLabel}')
+      ..writeln('Lesson Title: ${l.lessonTitle}')
+      ..writeln(
+        'Objective: ${l.objective.isEmpty ? 'No objective available yet.' : l.objective}',
+      );
+    if (l.content.isNotEmpty) buffer.writeln('Content: ${l.content}');
+    if (l.homework.isNotEmpty) buffer.writeln('Homework: ${l.homework}');
+    if (l.skillType.isNotEmpty) buffer.writeln('Skill: ${l.skillType}');
+    if (l.durationMinutes.isNotEmpty) {
+      buffer.writeln('Duration (minutes): ${l.durationMinutes}');
+    }
+    if (l.order.isNotEmpty) buffer.writeln('Order: ${l.order}');
+    if (l.lessonId.isNotEmpty) buffer.writeln('ID: ${l.lessonId}');
+    if (l.materialsUrl.isNotEmpty) {
+      buffer.writeln('Materials: ${l.materialsUrl}');
+    }
+    return buffer.toString().trim();
+  }
+
+  Color _skillColor(String rawSkill) {
+    final v = rawSkill.toLowerCase();
+    if (v.contains('listen')) return Colors.purple;
+    if (v.contains('vocab')) return Colors.green;
+    if (v.contains('grammar')) return Colors.red;
+    if (v.contains('read')) return Colors.blue;
+    if (v.contains('writ')) return Colors.deepOrange;
+    if (v.contains('pronun')) return Colors.amber.shade700;
+    return Theme.of(context).colorScheme.primary;
+  }
 }
 
 class _SyllabusLesson {
   const _SyllabusLesson({
     required this.unitTitle,
+    required this.unitObjective,
+    required this.sessionLabel,
     required this.lessonTitle,
     required this.materialsUrl,
-    required this.objectives,
+    required this.objective,
+    required this.content,
+    required this.durationMinutes,
+    required this.homework,
+    required this.skillType,
+    required this.lessonId,
+    required this.order,
   });
   final String unitTitle;
+  final String unitObjective;
+  final String sessionLabel;
   final String lessonTitle;
   final String materialsUrl;
-  final String objectives;
+  final String objective;
+  final String content;
+  final String durationMinutes;
+  final String homework;
+  final String skillType;
+  final String lessonId;
+  final String order;
 }

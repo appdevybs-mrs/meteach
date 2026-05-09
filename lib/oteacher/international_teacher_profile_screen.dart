@@ -243,16 +243,11 @@ class _InternationalTeacherProfileScreenState
   }
 
   ({double remainingPct, int daysLeft, Color color, String label})
-  _subscriptionState() {
+  _subscriptionState(AppPalette p) {
     final start = DateTime.tryParse((_sub['startsOn'] ?? '').toString());
     final end = DateTime.tryParse((_sub['expiresOn'] ?? '').toString());
     if (start == null || end == null || !end.isAfter(start)) {
-      return (
-        remainingPct: 0,
-        daysLeft: 0,
-        color: const Color(0xFF8B8B8B),
-        label: 'Not set',
-      );
+      return (remainingPct: 0, daysLeft: 0, color: p.border, label: 'Not set');
     }
     final now = DateTime.now();
     final total = end.difference(start).inSeconds;
@@ -263,7 +258,7 @@ class _InternationalTeacherProfileScreenState
       return (
         remainingPct: 0,
         daysLeft: 0,
-        color: const Color(0xFFC0392B),
+        color: Colors.red.shade700,
         label: 'Expired',
       );
     }
@@ -271,7 +266,7 @@ class _InternationalTeacherProfileScreenState
       return (
         remainingPct: pct,
         daysLeft: days,
-        color: const Color(0xFFD35400),
+        color: Colors.orange.shade800,
         label: 'Critical',
       );
     }
@@ -279,32 +274,51 @@ class _InternationalTeacherProfileScreenState
       return (
         remainingPct: pct,
         daysLeft: days,
-        color: const Color(0xFFF39C12),
+        color: Colors.amber.shade700,
         label: 'Expiring',
       );
     }
     return (
       remainingPct: pct,
       daysLeft: days,
-      color: const Color(0xFF2E8B57),
+      color: Colors.green.shade700,
       label: 'Active',
     );
   }
 
   Future<void> _pickIconForRow(int index) async {
+    final p = appThemeController.palette;
     final picked = await showModalBottomSheet<String>(
       context: context,
+      backgroundColor: p.cardBg,
       builder: (ctx) {
-        return ListView(
-          children: _iconLibrary.entries
-              .map(
-                (e) => ListTile(
-                  leading: Icon(e.value),
-                  title: Text(e.key),
-                  onTap: () => Navigator.of(ctx).pop(e.key),
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.05,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 220,
+                    ),
+                  ),
                 ),
-              )
-              .toList(),
+              ),
+            ),
+            ListView(
+              children: _iconLibrary.entries
+                  .map(
+                    (e) => ListTile(
+                      leading: Icon(e.value),
+                      title: Text(e.key),
+                      onTap: () => Navigator.of(ctx).pop(e.key),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         );
       },
     );
@@ -320,7 +334,7 @@ class _InternationalTeacherProfileScreenState
   @override
   Widget build(BuildContext context) {
     final p = appThemeController.palette;
-    final sub = _subscriptionState();
+    final sub = _subscriptionState(p);
     final amount = (_sub['amountPaidUsd'] ?? '').toString();
     final startsOn = (_sub['startsOn'] ?? '').toString();
     final expiresOn = (_sub['expiresOn'] ?? '').toString();
@@ -485,7 +499,7 @@ class _InternationalTeacherProfileScreenState
                           child: LinearProgressIndicator(
                             value: sub.remainingPct,
                             minHeight: 10,
-                            backgroundColor: const Color(0xFFEAECEF),
+                            backgroundColor: p.soft,
                             color: sub.color,
                           ),
                         ),
