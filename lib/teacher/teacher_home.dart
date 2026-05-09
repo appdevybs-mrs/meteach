@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -394,6 +395,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     await FirebaseAuth.instance.signOut();
 
     unawaited(() async {
+      try {
+        await FirebaseMessaging.instance.deleteToken();
+      } catch (_) {}
+
       if (userId != null && userId.isNotEmpty) {
         try {
           await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();

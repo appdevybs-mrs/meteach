@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/topic_service.dart';
+import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/session_manager.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import '../learner/learner_games_screen.dart';
 import '../learner/learner_stories_screen.dart';
@@ -116,39 +121,38 @@ class _InternationalTeacherHomeScreenState
   }
 
   Future<void> _logout() async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.6),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Logging out...',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final uid = _uid;
+
+    await AppLoading.run(
+      context,
+      () async {
+        await SessionManager.stopListening();
+      },
+      message: 'Logging out...',
+      isLogout: true,
     );
-    try {
-      final uid = _uid;
+
+    await FirebaseAuth.instance.signOut();
+
+    unawaited(() async {
+      try {
+        await FirebaseMessaging.instance.deleteToken();
+      } catch (_) {}
+
       if (uid.isNotEmpty) {
-        await TopicService.clearForUser(uid);
+        try {
+          await TopicService.clearForUser(uid);
+        } catch (_) {}
+
+        try {
+          await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+        } catch (_) {}
       }
-      await FirebaseAuth.instance.signOut();
-    } finally {
-      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-    }
+
+      try {
+        await appThemeController.resetToDefault();
+      } catch (_) {}
+    }());
   }
 
   Future<void> _openThemePicker() async {
