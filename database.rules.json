@@ -138,6 +138,27 @@
       }
     },
 
+    "international_teacher_assignments": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+
+    "international_teacher_subscription": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+
+    "international_teacher_profile": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+
     "users_deleted": {
       "$uid": {
         ".read": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",

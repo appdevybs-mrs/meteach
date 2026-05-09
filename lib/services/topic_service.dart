@@ -11,6 +11,7 @@ class TopicService {
   static const Set<String> _knownRoleTopics = <String>{
     'admins',
     'teachers',
+    'oteachers',
     'learners',
   };
 
@@ -37,6 +38,13 @@ class TopicService {
       return 'teacher';
     }
     if ({
+      'oteacher',
+      'internationalteacher',
+      'international_teacher',
+    }.contains(r)) {
+      return 'oteacher';
+    }
+    if ({
       'learner',
       'learners',
       'learner(s)',
@@ -56,6 +64,7 @@ class TopicService {
     final topics = <String>{'all', 'user_$uid'};
     if (normalizedRole == 'admin') topics.add('admins');
     if (normalizedRole == 'teacher') topics.add('teachers');
+    if (normalizedRole == 'oteacher') topics.add('oteachers');
     if (normalizedRole == 'learner') topics.add('learners');
     return topics;
   }

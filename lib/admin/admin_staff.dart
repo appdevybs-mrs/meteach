@@ -2670,6 +2670,7 @@ class _TextField extends StatelessWidget {
 enum StaffRole {
   admin,
   teacher,
+  internationalTeacher,
   other;
 
   String get value {
@@ -2678,6 +2679,8 @@ enum StaffRole {
         return 'admin';
       case StaffRole.teacher:
         return 'teacher';
+      case StaffRole.internationalTeacher:
+        return 'oteacher';
       case StaffRole.other:
         return 'other';
     }
@@ -2689,6 +2692,8 @@ enum StaffRole {
         return 'Admin';
       case StaffRole.teacher:
         return 'Teacher';
+      case StaffRole.internationalTeacher:
+        return 'International Teacher';
       case StaffRole.other:
         return 'Other';
     }
@@ -2700,6 +2705,10 @@ enum StaffRole {
         return StaffRole.admin;
       case 'teacher':
         return StaffRole.teacher;
+      case 'oteacher':
+      case 'internationalteacher':
+      case 'international_teacher':
+        return StaffRole.internationalTeacher;
       case 'other':
       default:
         return StaffRole.other;
@@ -2869,7 +2878,7 @@ List<_StaffRow> _parseStaffMap(dynamic data) {
   if (data is Map) {
     final out = <_StaffRow>[];
 
-    const allowed = {'admin', 'teacher', 'other'}; // staff-only
+    const allowed = {'admin', 'teacher', 'oteacher', 'other'}; // staff-only
 
     data.forEach((key, value) {
       if (key == null || value == null) return;

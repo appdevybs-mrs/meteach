@@ -10,6 +10,7 @@ import '../shared/session_manager.dart';
 import '../learner/learner_home.dart';
 import '../admin/admin_home.dart';
 import '../teacher/teacher_home.dart';
+import '../oteacher/international_teacher_home_screen.dart';
 import 'not_authorized.dart';
 import '../services/topic_service.dart';
 import '../services/fcm_service.dart';
@@ -344,6 +345,17 @@ class _AuthGateState extends State<AuthGate> {
                     TeacherScheduleWidgetService.instance.clearSnapshot(),
                   );
                   return const PriorityAlertGate(child: LearnerHome());
+                }
+
+                if (role == 'oteacher' ||
+                    role == 'internationalteacher' ||
+                    role == 'international_teacher') {
+                  unawaited(
+                    TeacherScheduleWidgetService.instance.clearSnapshot(),
+                  );
+                  return const PriorityAlertGate(
+                    child: InternationalTeacherHomeScreen(),
+                  );
                 }
 
                 unawaited(

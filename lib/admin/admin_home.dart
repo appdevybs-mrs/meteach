@@ -49,6 +49,7 @@ import 'admin_finance_screen.dart';
 import '../services/window_access_service.dart';
 import 'admin_payment_summary_sync_service.dart';
 import 'admin_diary_screen.dart';
+import 'admin_international_teachers_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -577,6 +578,23 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+          ),
+        ),
+      ),
+      card(
+        'International Teachers',
+        'Assign courses & subscription',
+        child: _DashCard(
+          title: 'International Teachers',
+          subtitle: 'Assign courses & subscription',
+          tags: const ['OTeacher', 'Flexible'],
+          icon: AdminIcons.staff,
+          color: AdminHome.accentCyan,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminInternationalTeachersScreen(),
+            ),
           ),
         ),
       ),
