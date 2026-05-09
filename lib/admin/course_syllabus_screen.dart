@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../services/backend_api.dart';
@@ -63,9 +64,15 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   List<SyllabusUnit> _units = [];
   final Map<String, bool> _unitExpanded = {};
   final Map<String, bool> _moduleExpanded = {};
+  _CourseBookAsset? _courseBook;
+
+  bool _courseBookBusy = false;
 
   bool get _isRecordedVariant =>
       widget.variantKey.trim().toLowerCase() == 'recorded';
+
+  bool get _isFlexibleVariant =>
+      widget.variantKey.trim().toLowerCase() == 'flexible';
 
   @override
   void initState() {
@@ -105,16 +112,19 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         }
 
         _units = units;
+        _courseBook = _CourseBookAsset.fromAny(map['courseBook']);
         _ensureSessionNumbers();
         _bulkTouchedSessionIds.clear();
         _rebuildLessonPresenceFromRtdb();
       } else {
         _units = [];
+        _courseBook = null;
         _bulkTouchedSessionIds.clear();
         _lessonPresenceBySessionId.clear();
       }
     } catch (_) {
       _units = [];
+      _courseBook = null;
       _lessonPresenceBySessionId.clear();
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -415,6 +425,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'title': courseTitle,
         'duration': courseDuration,
         'updatedAt': ServerValue.timestamp,
+        if (_isFlexibleVariant && _courseBook != null)
+          'courseBook': _courseBook!.toMap(),
         if (_isRecordedVariant)
           'modules': _buildRecordedModulesPayload()
         else
@@ -1375,7 +1387,17 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               child: BrandedInlineLoader(message: 'Loading syllabus...'),
             )
           : _units.isEmpty
-          ? _EmptyState(onAddUnit: _addUnit, courseTitle: widget.courseTitle)
+          ? Column(
+              children: [
+                if (_isFlexibleVariant) _courseBookPanel(),
+                Expanded(
+                  child: _EmptyState(
+                    onAddUnit: _addUnit,
+                    courseTitle: widget.courseTitle,
+                  ),
+                ),
+              ],
+            )
           : Column(
               children: [
                 _HeaderStats(
@@ -1386,6 +1408,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   sessionsLabel: _isRecordedVariant ? 'Lessons' : 'Sessions',
                   hint: _isRecordedVariant ? '' : 'Drag units to reorder',
                 ),
+                if (_isFlexibleVariant) _courseBookPanel(),
                 if (_isRecordedVariant && _recordedAssetBusy)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -1400,11 +1423,34 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            _recordedAssetLabel.isEmpty
-                                ? 'Processing...'
-                                : _recordedAssetLabel,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          Builder(
+                            builder: (context) {
+                              final progress = _recordedAssetTotal <= 0
+                                  ? 0.0
+                                  : (_recordedAssetDone / _recordedAssetTotal)
+                                        .clamp(0.0, 1.0);
+                              final pct = (progress * 100).round();
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _recordedAssetLabel.isEmpty
+                                          ? 'Processing...'
+                                          : _recordedAssetLabel,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '$pct%',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 6),
                           LinearProgressIndicator(
@@ -1722,6 +1768,231 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
   }
 
+  String _fmtBytes(int bytes) {
+    if (bytes <= 0) return '-';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    double value = bytes.toDouble();
+    int unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
+    return '${value.toStringAsFixed(decimals)} ${units[unitIndex]}';
+  }
+
+  String _fmtDateFromMs(int ms) {
+    if (ms <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  Future<void> _openCourseBook() async {
+    final url = _courseBook?.url.trim() ?? '';
+    if (url.isEmpty) {
+      AppToast.show(
+        context,
+        'No course book uploaded yet.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      AppToast.show(
+        context,
+        'Course book URL is invalid.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      AppToast.show(
+        context,
+        'Could not open the course book.',
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  Future<void> _uploadCourseBook() async {
+    if (!_isFlexibleVariant || _courseBookBusy || _loading || _saving) return;
+    setState(() => _courseBookBusy = true);
+    try {
+      final pickedRes = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+        withData: true,
+      );
+      if (pickedRes == null || pickedRes.files.isEmpty) return;
+
+      final picked = pickedRes.files.single;
+      final ext = picked.extension?.trim().toLowerCase() ?? '';
+      if (ext != 'pdf') {
+        throw Exception('Only PDF files are allowed for course book.');
+      }
+
+      final courseMap = await _loadCourseMeta();
+      final courseCode = (courseMap['course_code'] ?? '').toString();
+      final courseTitle = (courseMap['title'] ?? widget.courseTitle).toString();
+      final folder = _SyllabusServerStorage.buildCourseFolderName(
+        courseCode: courseCode,
+        courseTitle: courseTitle,
+      );
+      final uploadPath = '$folder/books';
+
+      final url = await _SyllabusServerStorage.uploadPlatformFile(
+        file: picked,
+        root: 'courses',
+        path: uploadPath,
+        customName: 'course_book',
+      );
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      setState(() {
+        _courseBook = _CourseBookAsset(
+          url: url,
+          name: picked.name.trim(),
+          ext: 'pdf',
+          sizeBytes: picked.size,
+          uploadedAt: now,
+          uploadedByUid: uid,
+        );
+      });
+      await _saveSyllabus(showToast: false);
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Course book uploaded.',
+        type: AppToastType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not upload course book.'),
+        type: AppToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _courseBookBusy = false);
+    }
+  }
+
+  Future<void> _removeCourseBook() async {
+    if (_courseBookBusy || _courseBook == null) return;
+    final ok = await _confirm(
+      title: 'Remove course book?',
+      message:
+          'This removes the course-level PDF book from this flexible syllabus. Lesson materials are not affected.',
+      confirmText: 'Remove',
+      danger: true,
+    );
+    if (!ok) return;
+
+    setState(() => _courseBookBusy = true);
+    try {
+      setState(() => _courseBook = null);
+      await _saveSyllabus(showToast: false);
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Course book removed.',
+        type: AppToastType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not remove course book.'),
+        type: AppToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _courseBookBusy = false);
+    }
+  }
+
+  Widget _courseBookPanel() {
+    final book = _courseBook;
+    final hasBook = book != null && book.url.trim().isNotEmpty;
+    final uploadedAt = hasBook ? _fmtDateFromMs(book.uploadedAt) : '';
+    final fileSize = hasBook ? _fmtBytes(book.sizeBytes) : '';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.menu_book_rounded, color: Color(0xFF1A2B48)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Course Digital Book (PDF)',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hasBook
+                  ? '${book.name.isEmpty ? 'PDF uploaded' : book.name} ${fileSize.isEmpty ? '' : '• $fileSize'} ${uploadedAt.isEmpty ? '' : '• $uploadedAt'}'
+                  : 'Upload one PDF for the whole flexible course. This is separate from lesson materials.',
+              style: TextStyle(
+                color: Colors.black.withValues(alpha: 0.66),
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: (_courseBookBusy || _saving || _loading)
+                      ? null
+                      : _uploadCourseBook,
+                  icon: Icon(
+                    hasBook
+                        ? Icons.upload_file_rounded
+                        : Icons.attach_file_rounded,
+                  ),
+                  label: Text(hasBook ? 'Replace PDF' : 'Upload PDF'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: hasBook ? _openCourseBook : null,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Open'),
+                ),
+                if (hasBook)
+                  OutlinedButton.icon(
+                    onPressed: _courseBookBusy ? null : _removeCourseBook,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Remove'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _toggleExpanded(String unitId) {
     setState(() => _unitExpanded[unitId] = !(_unitExpanded[unitId] ?? true));
   }
@@ -1731,6 +2002,58 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       () => _moduleExpanded[moduleLabel] =
           !(_moduleExpanded[moduleLabel] ?? true),
     );
+  }
+}
+
+class _CourseBookAsset {
+  const _CourseBookAsset({
+    required this.url,
+    required this.name,
+    required this.ext,
+    required this.sizeBytes,
+    required this.uploadedAt,
+    required this.uploadedByUid,
+  });
+
+  final String url;
+  final String name;
+  final String ext;
+  final int sizeBytes;
+  final int uploadedAt;
+  final String uploadedByUid;
+
+  static _CourseBookAsset? fromAny(dynamic node) {
+    if (node is! Map) return null;
+    final map = Map<String, dynamic>.from(
+      node.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    final url = (map['url'] ?? '').toString().trim();
+    if (url.isEmpty) return null;
+    int asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    return _CourseBookAsset(
+      url: url,
+      name: (map['name'] ?? '').toString().trim(),
+      ext: (map['ext'] ?? 'pdf').toString().trim().toLowerCase(),
+      sizeBytes: asInt(map['sizeBytes']),
+      uploadedAt: asInt(map['uploadedAt']),
+      uploadedByUid: (map['uploadedByUid'] ?? '').toString().trim(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'url': url,
+      'name': name,
+      'ext': ext,
+      'sizeBytes': sizeBytes,
+      'uploadedAt': uploadedAt,
+      'uploadedByUid': uploadedByUid,
+    };
   }
 }
 

@@ -1475,9 +1475,19 @@ class _LearnersListState extends State<_LearnersList>
         : <String, dynamic>{};
 
     final attendance = courseMap['attendance'];
+    final classInfo = courseMap['class'];
+    final classMap = classInfo is Map
+        ? classInfo.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final classId = (classMap['class_id'] ?? courseMap['class_id'] ?? '')
+        .toString()
+        .trim();
     final sessionsDone = switch (variantKey) {
       'inclass' => countHeldAttendanceRecords(attendance),
-      'private' => countPresentUniqueAttendanceDates(attendance),
+      'private' => countPrivateConsumedAttendanceRecords(
+        attendance,
+        classId: classId,
+      ),
       'flexible' => _flexibleSessionsConsumedFromCourseMap(courseMap),
       _ => _LearnerExpandedTabsState._countUniqueAttendance(attendance),
     };
@@ -4343,6 +4353,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     required String uid,
     required String courseId,
     required String variantKey,
+    required String classId,
     required dynamic attendance,
   }) async {
     if (_variantIsFlexible(variantKey) && courseId.isNotEmpty) {
@@ -4358,7 +4369,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
     final v = _normalizeVariantKey(variantKey);
     if (v == 'private') {
-      return countPresentUniqueAttendanceDates(attendance);
+      return countPrivateConsumedAttendanceRecords(
+        attendance,
+        classId: classId,
+      );
     }
     if (v == 'inclass') {
       return countHeldAttendanceRecords(attendance);
@@ -4447,10 +4461,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         : _variantLabel(variantKey);
 
     final attendance = courseNode['attendance'];
+    final classInfo = courseNode['class'];
+    final classMap = classInfo is Map
+        ? classInfo.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final classId = (classMap['class_id'] ?? courseNode['class_id'] ?? '')
+        .toString()
+        .trim();
     final sessionsDoneFuture = _sessionsConsumedForCourse(
       uid: widget.uid,
       courseId: courseId,
       variantKey: variantKey,
+      classId: classId,
       attendance: attendance,
     );
 

@@ -42,6 +42,7 @@ import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/shared_pdf_reader_screen.dart';
 import '../services/course_feedback_service.dart';
 import '../services/learner_join_signal_service.dart';
 
@@ -94,6 +95,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Map<int, String> _sessionTitleByNumber =
       {}; // sessionNumber -> title (for online taughtSummary)
   Map<int, Map<String, dynamic>> _sessionReviewsByNo = {};
+  String _courseBookUrl = '';
 
   // ✅ meetings total (optional)
   int? _plannedMeetings;
@@ -1342,6 +1344,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       _sessionIdByNumber = {};
       _sessionTitleByNumber = {};
       _sessionReviewsByNo = {};
+      _courseBookUrl = '';
       _plannedMeetings = null;
       _derivedSessionsPaidTotal = 0;
       _derivedSessionsReady = false;
@@ -1475,6 +1478,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
+          final courseBookMap = (s['courseBook'] is Map)
+              ? Map<String, dynamic>.from(s['courseBook'] as Map)
+              : const <String, dynamic>{};
+          _courseBookUrl = (courseBookMap['url'] ?? '').toString().trim();
           final List<Map<String, dynamic>> flat = [];
           final modules = s['modules'];
           if (modules is List) {
@@ -2724,6 +2731,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ],
                   ),
                 ),
+                if (_deliveryKey == 'flexible')
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: FilledButton.icon(
+                      onPressed: _openCourseBook,
+                      icon: const Icon(Icons.menu_book_rounded, size: 18),
+                      label: const Text('Open Course Book'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: UiK.primaryBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
                 if (_isPrivateOnlineCourse && _privateMetaFuture != null)
                   FutureBuilder<_DetailPrivateMeta?>(
                     future: _privateMetaFuture,
@@ -3820,6 +3841,34 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       );
     } catch (_) {
       _showMissingMaterialMessage();
+    }
+  }
+
+  Future<void> _openCourseBook() async {
+    final url = _courseBookUrl.trim();
+    if (!_isHttpUrl(url)) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Course book is not available yet.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              SharedPdfReaderScreen(title: 'Course Book', pdfUrl: url),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open course book.')),
+      );
     }
   }
 

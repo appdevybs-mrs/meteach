@@ -78,6 +78,60 @@ int countHeldAttendanceRecords(dynamic attendance) {
   return held;
 }
 
+int countPrivateConsumedAttendanceRecords(
+  dynamic attendance, {
+  int absentGrace = 2,
+  String classId = '',
+}) {
+  if (attendance is! Map) return 0;
+
+  final wantedClassId = classId.trim();
+  bool hasAnyMatchingClassRecord = false;
+  bool hasAnyClassTaggedRecord = false;
+
+  if (wantedClassId.isNotEmpty) {
+    attendance.forEach((_, value) {
+      if (value is! Map) return;
+      final rec = value
+          .map((k, v) => MapEntry(k.toString(), v))
+          .cast<String, dynamic>();
+      final recClassId = (rec['class_id'] ?? '').toString().trim();
+      if (recClassId.isEmpty) return;
+      hasAnyClassTaggedRecord = true;
+      if (recClassId == wantedClassId) {
+        hasAnyMatchingClassRecord = true;
+      }
+    });
+  }
+
+  int present = 0;
+  int absent = 0;
+
+  attendance.forEach((_, value) {
+    if (value is! Map) return;
+    final rec = value
+        .map((k, v) => MapEntry(k.toString(), v))
+        .cast<String, dynamic>();
+    if (wantedClassId.isNotEmpty && hasAnyClassTaggedRecord) {
+      final recClassId = (rec['class_id'] ?? '').toString().trim();
+      if (hasAnyMatchingClassRecord) {
+        if (recClassId != wantedClassId) return;
+      }
+    }
+    final status = (rec['status'] ?? '').toString().trim().toLowerCase();
+    if (status == 'present') {
+      present += 1;
+      return;
+    }
+    if (status == 'absent') {
+      absent += 1;
+    }
+  });
+
+  final extraAbsent = absent - absentGrace;
+  return present + (extraAbsent > 0 ? extraAbsent : 0);
+}
+
 int countPresentOnlineAttendance(dynamic onlineAttendance) {
   if (onlineAttendance is! Map) return 0;
 

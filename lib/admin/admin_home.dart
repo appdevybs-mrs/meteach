@@ -2756,9 +2756,19 @@ class _PaymentAttentionLogic {
         : <String, dynamic>{};
 
     final attendance = courseMap['attendance'];
+    final classInfo = courseMap['class'];
+    final classMap = classInfo is Map
+        ? classInfo.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final classId = (classMap['class_id'] ?? courseMap['class_id'] ?? '')
+        .toString()
+        .trim();
     final sessionsDone = switch (variantKey) {
       'inclass' => countHeldAttendanceRecords(attendance),
-      'private' => countPresentUniqueAttendanceDates(attendance),
+      'private' => countPrivateConsumedAttendanceRecords(
+        attendance,
+        classId: classId,
+      ),
       'flexible' => _flexibleSessionsConsumed(courseMap),
       _ => countPresentUniqueAttendanceDates(attendance),
     };
@@ -3264,9 +3274,19 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
         ? paymentSummary.map((k, v) => MapEntry(k.toString(), v))
         : <String, dynamic>{};
     final attendance = courseMap['attendance'];
+    final classInfo = courseMap['class'];
+    final classMap = classInfo is Map
+        ? classInfo.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final classId = (classMap['class_id'] ?? courseMap['class_id'] ?? '')
+        .toString()
+        .trim();
     final sessionsDone = switch (variantKey) {
       'inclass' => countHeldAttendanceRecords(attendance),
-      'private' => countPresentUniqueAttendanceDates(attendance),
+      'private' => countPrivateConsumedAttendanceRecords(
+        attendance,
+        classId: classId,
+      ),
       'flexible' => _flexibleSessionsConsumed(courseMap),
       _ => countPresentUniqueAttendanceDates(attendance),
     };

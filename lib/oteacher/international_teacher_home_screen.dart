@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/topic_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/shared_pdf_reader_screen.dart';
 import '../learner/learner_games_screen.dart';
 import '../learner/learner_stories_screen.dart';
 import 'international_teacher_profile_screen.dart';
@@ -286,9 +287,11 @@ class _InternationalTeacherHomeScreenState
       ),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: p.primary,
-        title: const Text('International Teacher'),
+        backgroundColor: p.primary,
+        foregroundColor: Colors.white,
+        title: Text(
+          _name.trim().isEmpty ? 'International Teacher' : _name.trim(),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.menu_rounded),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
@@ -324,100 +327,6 @@ class _InternationalTeacherHomeScreenState
                         20 + MediaQuery.of(context).padding.bottom,
                       ),
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
-                            gradient: LinearGradient(
-                              colors: [
-                                p.primary,
-                                Color.lerp(p.primary, p.accent, 0.35) ??
-                                    p.primary,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x220D2B45),
-                                blurRadius: 24,
-                                offset: Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 32,
-                                backgroundColor: Colors.white24,
-                                backgroundImage: _photo.isEmpty
-                                    ? null
-                                    : NetworkImage(_photo),
-                                child: _photo.isEmpty
-                                    ? const Icon(
-                                        Icons.person,
-                                        color: Colors.white,
-                                        size: 30,
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: p.accent.withValues(alpha: 0.28),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Premium Teacher Hub',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    const Text(
-                                      'Welcome back',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    const Text(
-                                      'Flexible course materials access',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                         if (_isExpired) ...[
                           const SizedBox(height: 12),
                           Container(
@@ -676,13 +585,7 @@ class _OTeacherDrawer extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(22),
-                gradient: LinearGradient(
-                  colors: [
-                    palette.primary,
-                    Color.lerp(palette.primary, palette.accent, 0.3) ??
-                        palette.primary,
-                  ],
-                ),
+                color: palette.primary,
               ),
               child: Row(
                 children: [
@@ -981,6 +884,7 @@ class _InternationalTeacherSyllabusScreenState
     extends State<_InternationalTeacherSyllabusScreen> {
   final _db = FirebaseDatabase.instance.ref();
   bool _loading = true;
+  String _courseBookUrl = '';
   List<_SyllabusLesson> _lessons = <_SyllabusLesson>[];
 
   @override
@@ -997,6 +901,8 @@ class _InternationalTeacherSyllabusScreenState
       final out = <_SyllabusLesson>[];
       if (root is Map) {
         final m = root.map((k, v) => MapEntry(k.toString(), v));
+        final courseBookMap = _asMapAny(m['courseBook']);
+        _courseBookUrl = (courseBookMap['url'] ?? '').toString().trim();
         final units = _asListMap(m['units']);
         for (int i = 0; i < units.length; i++) {
           final u = units[i];
@@ -1055,6 +961,8 @@ class _InternationalTeacherSyllabusScreenState
             );
           }
         }
+      } else {
+        _courseBookUrl = '';
       }
       _lessons = out;
     } finally {
@@ -1072,11 +980,7 @@ class _InternationalTeacherSyllabusScreenState
         actions: [
           IconButton(
             tooltip: 'Course book',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Book panel coming soon.')),
-              );
-            },
+            onPressed: _openCourseBook,
             icon: const Icon(Icons.menu_book_rounded),
           ),
         ],
@@ -1110,89 +1014,87 @@ class _InternationalTeacherSyllabusScreenState
                     itemBuilder: (context, i) {
                       final l = _lessons[i];
                       final accent = _skillColor(l.skillType);
-                      return Card(
-                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                        shape: RoundedRectangleBorder(
-                          side: BorderSide(
-                            color: accent.withValues(alpha: 0.35),
+                      return TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: Duration(milliseconds: 220 + (i * 18)),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) {
+                          return Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(0, (1 - value) * 10),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: _skillCardGradient(accent),
+                            ),
+                            border: Border.all(color: accent, width: 1.25),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.16),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final useMenu = constraints.maxWidth < 410;
-                            return ListTile(
-                              title: Text(l.lessonTitle),
-                              subtitle: Text(
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            title: Text(
+                              l.lessonTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
                                 '${l.unitTitle} • ${l.sessionLabel}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.72),
+                                ),
                               ),
-                              leading: CircleAvatar(
-                                backgroundColor: accent.withValues(alpha: 0.14),
-                                foregroundColor: accent,
-                                child: const Icon(Icons.school_outlined),
-                              ),
-                              trailing: useMenu
-                                  ? PopupMenuButton<String>(
-                                      tooltip: 'Lesson actions',
-                                      onSelected: (value) {
-                                        if (value == 'objectives') {
-                                          _showLessonDetails(i);
-                                        } else if (value == 'materials') {
-                                          _openMaterials(l);
-                                        } else {
-                                          _showHomeworkToast();
-                                        }
-                                      },
-                                      itemBuilder: (context) => const [
-                                        PopupMenuItem<String>(
-                                          value: 'objectives',
-                                          child: Text('Objectives'),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'materials',
-                                          child: Text('Materials'),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'homework',
-                                          child: Text('Homework'),
-                                        ),
-                                      ],
-                                    )
-                                  : SizedBox(
-                                      width: 126,
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          IconButton(
-                                            tooltip: 'Objectives',
-                                            onPressed: () =>
-                                                _showLessonDetails(i),
-                                            icon: const Icon(
-                                              Icons.track_changes_outlined,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            tooltip: 'Open materials',
-                                            onPressed: l.materialsUrl.isEmpty
-                                                ? null
-                                                : () => _openMaterials(l),
-                                            icon: const Icon(
-                                              Icons.folder_open_rounded,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            tooltip: 'Homework',
-                                            onPressed: _showHomeworkToast,
-                                            icon: const Icon(
-                                              Icons.assignment_outlined,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                            );
-                          },
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _actionIconButton(
+                                  tooltip: 'Objectives',
+                                  icon: Icons.track_changes_outlined,
+                                  accent: accent,
+                                  onPressed: () => _showLessonDetails(i),
+                                ),
+                                _actionIconButton(
+                                  tooltip: 'Open materials',
+                                  icon: Icons.folder_open_rounded,
+                                  accent: accent,
+                                  onPressed: l.materialsUrl.isEmpty
+                                      ? null
+                                      : () => _openMaterials(l),
+                                ),
+                                _actionIconButton(
+                                  tooltip: 'Homework',
+                                  icon: Icons.assignment_outlined,
+                                  accent: accent,
+                                  onPressed: _showHomeworkToast,
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -1219,6 +1121,13 @@ class _InternationalTeacherSyllabusScreenState
     return const <Map<String, dynamic>>[];
   }
 
+  Map<String, dynamic> _asMapAny(dynamic raw) {
+    if (raw is Map) {
+      return raw.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return const <String, dynamic>{};
+  }
+
   void _openMaterials(_SyllabusLesson lesson) {
     if (lesson.materialsUrl.isEmpty) return;
     Navigator.of(context).push(
@@ -1237,6 +1146,28 @@ class _InternationalTeacherSyllabusScreenState
     );
   }
 
+  void _openCourseBook() {
+    final url = _courseBookUrl.trim();
+    final uri = Uri.tryParse(url);
+    final isHttp =
+        uri != null &&
+        uri.hasAbsolutePath &&
+        (uri.scheme == 'http' || uri.scheme == 'https');
+    if (!isHttp) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Course book is not available yet.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            SharedPdfReaderScreen(title: 'Course Book', pdfUrl: url),
+      ),
+    );
+  }
+
   Future<void> _showLessonDetails(int initialIndex) async {
     if (_lessons.isEmpty) return;
     final pageController = PageController(initialPage: initialIndex);
@@ -1244,166 +1175,225 @@ class _InternationalTeacherSyllabusScreenState
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      showDragHandle: false,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return SizedBox(
-              height: MediaQuery.of(context).size.height * 0.84,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                    child: Row(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            10,
+            0,
+            10,
+            10 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 230),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) {
+                  return Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - value) * 20),
+                      child: child,
+                    ),
+                  );
+                },
+                child: FractionallySizedBox(
+                  heightFactor: 0.74,
+                  child: Material(
+                    elevation: 28,
+                    borderRadius: BorderRadius.circular(24),
+                    clipBehavior: Clip.antiAlias,
+                    color: Theme.of(context).colorScheme.surface,
+                    child: Column(
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Lesson Details',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: 56,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6B7280),
+                            borderRadius: BorderRadius.circular(99),
                           ),
                         ),
-                        IconButton(
-                          tooltip: 'Copy details',
-                          onPressed: () {
-                            final lesson = _lessons[page];
-                            Clipboard.setData(
-                              ClipboardData(text: _copyPayload(lesson)),
-                            );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Lesson details copied.'),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                          child: Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Lesson Details',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.copy_all_rounded),
+                              IconButton(
+                                tooltip: 'Copy details',
+                                onPressed: () {
+                                  final lesson = _lessons[page];
+                                  Clipboard.setData(
+                                    ClipboardData(text: _copyPayload(lesson)),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Lesson details copied.'),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.copy_all_rounded),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Text('Lesson ${page + 1} of ${_lessons.length}'),
-                        const Spacer(),
-                        Icon(
-                          Icons.swipe_rounded,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              Text('Lesson ${page + 1} of ${_lessons.length}'),
+                              const Spacer(),
+                              Icon(
+                                Icons.swipe_rounded,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              const Text('Swipe left/right'),
+                            ],
+                          ),
                         ),
-                        const SizedBox(width: 6),
-                        const Text('Swipe left/right'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: PageView.builder(
-                      controller: pageController,
-                      itemCount: _lessons.length,
-                      onPageChanged: (value) {
-                        setSheetState(() => page = value);
-                      },
-                      itemBuilder: (context, index) {
-                        final lesson = _lessons[index];
-                        final accent = _skillColor(lesson.skillType);
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: accent.withValues(alpha: 0.40),
-                              ),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  accent.withValues(alpha: 0.14),
-                                  Theme.of(
-                                    context,
-                                  ).colorScheme.surface.withValues(alpha: 0.94),
-                                ],
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _detailBlock('Unit Title', lesson.unitTitle),
-                                  _detailBlock(
-                                    'Lesson Number (Session)',
-                                    lesson.sessionLabel,
-                                  ),
-                                  _detailBlock(
-                                    'Lesson Title',
-                                    lesson.lessonTitle,
-                                  ),
-                                  _detailBlock(
-                                    'Objective',
-                                    lesson.objective.isEmpty
-                                        ? 'No objective available yet.'
-                                        : lesson.objective,
-                                  ),
-                                  if (lesson.content.isNotEmpty)
-                                    _detailBlock('Content', lesson.content),
-                                  if (lesson.homework.isNotEmpty)
-                                    _detailBlock('Homework', lesson.homework),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      _metaChip(
-                                        context,
-                                        accent,
-                                        lesson.skillType.isEmpty
-                                            ? 'Skill: not set'
-                                            : 'Skill: ${lesson.skillType}',
-                                      ),
-                                      if (lesson.durationMinutes.isNotEmpty)
-                                        _metaChip(
-                                          context,
-                                          accent,
-                                          'Duration: ${lesson.durationMinutes} min',
-                                        ),
-                                      if (lesson.order.isNotEmpty)
-                                        _metaChip(
-                                          context,
-                                          accent,
-                                          'Order: ${lesson.order}',
-                                        ),
-                                      if (lesson.lessonId.isNotEmpty)
-                                        _metaChip(
-                                          context,
-                                          accent,
-                                          'ID: ${lesson.lessonId}',
-                                        ),
-                                      _metaChip(
-                                        context,
-                                        accent,
-                                        lesson.materialsUrl.isEmpty
-                                            ? 'Materials: not set'
-                                            : 'Materials: available',
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: PageView.builder(
+                            controller: pageController,
+                            itemCount: _lessons.length,
+                            onPageChanged: (value) {
+                              setSheetState(() => page = value);
+                            },
+                            itemBuilder: (context, index) {
+                              final lesson = _lessons[index];
+                              final accent = _skillColor(
+                                '${lesson.skillType} ${lesson.lessonTitle}',
+                              );
+                              return SingleChildScrollView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  4,
+                                  16,
+                                  16,
+                                ),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: accent,
+                                      width: 1.25,
+                                    ),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: _skillCardGradient(accent),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: accent.withValues(alpha: 0.14),
+                                        blurRadius: 14,
+                                        offset: const Offset(0, 6),
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _detailBlock(
+                                          'Unit Title',
+                                          lesson.unitTitle,
+                                        ),
+                                        _detailBlock(
+                                          'Lesson Number (Session)',
+                                          lesson.sessionLabel,
+                                        ),
+                                        _detailBlock(
+                                          'Lesson Title',
+                                          lesson.lessonTitle,
+                                        ),
+                                        _detailBlock(
+                                          'Objective',
+                                          lesson.objective.isEmpty
+                                              ? 'No objective available yet.'
+                                              : lesson.objective,
+                                        ),
+                                        if (lesson.content.isNotEmpty)
+                                          _detailBlock(
+                                            'Content',
+                                            lesson.content,
+                                          ),
+                                        if (lesson.homework.isNotEmpty)
+                                          _detailBlock(
+                                            'Homework',
+                                            lesson.homework,
+                                          ),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            _metaChip(
+                                              context,
+                                              accent,
+                                              lesson.skillType.isEmpty
+                                                  ? 'Skill: not set'
+                                                  : 'Skill: ${lesson.skillType}',
+                                            ),
+                                            if (lesson
+                                                .durationMinutes
+                                                .isNotEmpty)
+                                              _metaChip(
+                                                context,
+                                                accent,
+                                                'Duration: ${lesson.durationMinutes} min',
+                                              ),
+                                            if (lesson.order.isNotEmpty)
+                                              _metaChip(
+                                                context,
+                                                accent,
+                                                'Order: ${lesson.order}',
+                                              ),
+                                            if (lesson.lessonId.isNotEmpty)
+                                              _metaChip(
+                                                context,
+                                                accent,
+                                                'ID: ${lesson.lessonId}',
+                                              ),
+                                            _metaChip(
+                                              context,
+                                              accent,
+                                              lesson.materialsUrl.isEmpty
+                                                  ? 'Materials: not set'
+                                                  : 'Materials: available',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            );
-          },
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -1431,16 +1421,30 @@ class _InternationalTeacherSyllabusScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.15),
+        color: accent,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         text,
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.onSurface,
+          color: Colors.white,
         ),
       ),
+    );
+  }
+
+  Widget _actionIconButton({
+    required String tooltip,
+    required IconData icon,
+    required Color accent,
+    required VoidCallback? onPressed,
+  }) {
+    return _PremiumActionButton(
+      tooltip: tooltip,
+      icon: icon,
+      accent: accent,
+      onPressed: onPressed,
     );
   }
 
@@ -1468,13 +1472,89 @@ class _InternationalTeacherSyllabusScreenState
 
   Color _skillColor(String rawSkill) {
     final v = rawSkill.toLowerCase();
-    if (v.contains('listen')) return Colors.purple;
-    if (v.contains('vocab')) return Colors.green;
-    if (v.contains('grammar')) return Colors.red;
-    if (v.contains('read')) return Colors.blue;
-    if (v.contains('writ')) return Colors.deepOrange;
-    if (v.contains('pronun')) return Colors.amber.shade700;
+    if (v.contains('listen') || v.contains('speak')) {
+      return const Color(0xFF7E22CE);
+    }
+    if (v.contains('vocab')) return const Color(0xFF16A34A);
+    if (v.contains('read')) return const Color(0xFF2563EB);
+    if (v.contains('grammar')) return const Color(0xFFDC2626);
+    if (v.contains('writ')) return const Color(0xFFEA580C);
+    if (v.contains('pronun')) return const Color(0xFFB45309);
     return Theme.of(context).colorScheme.primary;
+  }
+
+  Color _skillSurface(Color accent) {
+    if (accent == const Color(0xFF16A34A)) return const Color(0xFFDFF4E6);
+    if (accent == const Color(0xFF7E22CE)) return const Color(0xFFEEDFFD);
+    if (accent == const Color(0xFFDC2626)) return const Color(0xFFFDE2E2);
+    if (accent == const Color(0xFF2563EB)) return const Color(0xFFE0EAFF);
+    if (accent == const Color(0xFFEA580C)) return const Color(0xFFFFE7D6);
+    return const Color(0xFFFFF4CC);
+  }
+
+  List<Color> _skillCardGradient(Color accent) {
+    return [_skillSurface(accent), Colors.white];
+  }
+}
+
+class _PremiumActionButton extends StatefulWidget {
+  const _PremiumActionButton({
+    required this.tooltip,
+    required this.icon,
+    required this.accent,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color accent;
+  final VoidCallback? onPressed;
+
+  @override
+  State<_PremiumActionButton> createState() => _PremiumActionButtonState();
+}
+
+class _PremiumActionButtonState extends State<_PremiumActionButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = widget.onPressed == null;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: GestureDetector(
+          onTapDown: disabled ? null : (_) => setState(() => _pressed = true),
+          onTapCancel: disabled ? null : () => setState(() => _pressed = false),
+          onTapUp: disabled ? null : (_) => setState(() => _pressed = false),
+          onTap: widget.onPressed,
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 110),
+            curve: Curves.easeOut,
+            scale: _pressed ? 0.92 : 1,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: disabled
+                    ? Colors.grey.withValues(alpha: 0.14)
+                    : widget.accent.withValues(alpha: _pressed ? 0.22 : 0.14),
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                widget.icon,
+                size: 20,
+                color: disabled ? Colors.grey : widget.accent,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

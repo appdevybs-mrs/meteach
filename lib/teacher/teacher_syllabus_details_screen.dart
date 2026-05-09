@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/shared_pdf_reader_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/teacher_web_layout.dart';
@@ -156,6 +157,9 @@ class _TeacherSyllabusDetailsScreenState
           code: code,
           duration: duration,
           updatedAt: updatedAt,
+          courseBookUrl: _readString(
+            _asStringKeyMap(variantMap?['courseBook'])?['url'],
+          ),
           units: units,
         );
       }
@@ -543,6 +547,31 @@ class _TeacherSyllabusDetailsScreenState
         ),
         const SizedBox(height: 12),
         _RecommendationsCard(variant: variant),
+        if (variant.key == 'flexible' &&
+            variant.courseBookUrl.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _openCourseBook(variant.courseBookUrl),
+                icon: const Icon(Icons.menu_book_rounded),
+                label: const Text(
+                  'Open Course Book',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: UiK.primaryBlue,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ),
         const SizedBox(height: 12),
         _SearchCard(
           controller: _search,
@@ -567,6 +596,29 @@ class _TeacherSyllabusDetailsScreenState
         const SizedBox(height: 12),
         const _FooterHint(),
       ],
+    );
+  }
+
+  Future<void> _openCourseBook(String url) async {
+    final cleanUrl = url.trim();
+    final uri = Uri.tryParse(cleanUrl);
+    final isHttp =
+        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+    if (cleanUrl.isEmpty || !isHttp) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid course book link.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            SharedPdfReaderScreen(title: 'Course Book', pdfUrl: cleanUrl),
+      ),
     );
   }
 }
@@ -1849,6 +1901,7 @@ class _SyllabusVariant {
     required this.code,
     required this.duration,
     required this.updatedAt,
+    required this.courseBookUrl,
     required this.units,
   });
 
@@ -1857,6 +1910,7 @@ class _SyllabusVariant {
   final String code;
   final String duration;
   final int updatedAt;
+  final String courseBookUrl;
   final List<_Unit> units;
 }
 

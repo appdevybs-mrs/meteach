@@ -1887,11 +1887,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }) {
     final v = _normalizeVariantKey(variantKey);
     final attendance = courseMap['attendance'];
+    final linkedClass = courseMap['class'];
+    final linkedClassMap = linkedClass is Map
+        ? linkedClass.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final classId = (linkedClassMap['class_id'] ?? courseMap['class_id'] ?? '')
+        .toString()
+        .trim();
     switch (v) {
       case 'inclass':
         return countHeldAttendanceRecords(attendance);
       case 'private':
-        return countPresentUniqueAttendanceDates(attendance);
+        return countPrivateConsumedAttendanceRecords(
+          attendance,
+          classId: classId,
+        );
       case 'flexible':
         final directOnline = countConsumedOnlineAttendance(
           courseMap['online_attendance'],
