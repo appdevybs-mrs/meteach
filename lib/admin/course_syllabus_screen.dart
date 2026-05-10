@@ -73,9 +73,6 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   bool get _isRecordedVariant =>
       widget.variantKey.trim().toLowerCase() == 'recorded';
 
-  bool get _isFlexibleVariant =>
-      widget.variantKey.trim().toLowerCase() == 'flexible';
-
   @override
   void initState() {
     super.initState();
@@ -147,23 +144,60 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
   }
 
-  Future<void> _refreshRecordedLessonPresenceFromServer() async {
-    if (!_isRecordedVariant || _recordedAssetBusy) return;
+  Future<String> _promptIntegrityFixActions({
+    required int staleRefs,
+    required int orphanFiles,
+  }) async {
+    return (await showDialog<String>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Integrity check found mismatches'),
+            content: Text(
+              'RTDB stale refs: $staleRefs\n'
+              'Orphan server files: $orphanFiles\n\n'
+              'Choose how to clean:',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'cancel'),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'stale'),
+                child: const Text('Clear RTDB stale'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'orphan'),
+                child: const Text('Delete orphan files'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, 'both'),
+                child: const Text('Clean all'),
+              ),
+            ],
+          ),
+        )) ??
+        'cancel';
+  }
+
+  Future<void> _refreshLessonPresenceFromServer() async {
+    if (_recordedAssetBusy) return;
     if (mounted) {
       setState(() {
         _recordedAssetBusy = true;
         _recordedAssetDone = 0;
         _recordedAssetTotal = _totalSessions;
-        _recordedAssetLabel = 'Syncing lesson assets with server...';
+        _recordedAssetLabel = 'Checking lesson files integrity...';
       });
     }
 
     final next = <String, _LessonAssetPresence>{};
     final listCache = <String, List<Map<String, dynamic>>>{};
     final nextUnits = <SyllabusUnit>[];
-    int checkedAssetCount = 0;
-    int clearedVideoCount = 0;
-    int clearedHtmlCount = 0;
+    int staleRefCount = 0;
+    int orphanCount = 0;
+    final orphanPaths = <String>[];
 
     Future<bool> existsOnServer(String url) async {
       final rel = _SyllabusServerStorage.extractRelativePathFromUrl(url);
@@ -190,6 +224,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
 
     try {
+      final courseFolderName = await _loadCourseFolderName();
       for (int ui = 0; ui < _units.length; ui++) {
         final unit = _units[ui];
         final sessions = <SyllabusSession>[];
@@ -203,11 +238,41 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           }
           final videoUrl = s.videoUrl.trim();
           final htmlUrl = s.materialsUrl.trim();
+          final variantFolder = _SyllabusServerStorage.sanitizeSegment(
+            widget.variantKey,
+            fallback: 'variant',
+          );
+          final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
+            sessionNumber: s.sessionNumber > 0 ? s.sessionNumber : (si + 1),
+            sessionTitle: s.title,
+          );
+          final fallbackFolder =
+              '$courseFolderName/$variantFolder/$sessionFolder';
+          final folderPath = _resolveServerFolderPath(s).isNotEmpty
+              ? _resolveServerFolderPath(s)
+              : fallbackFolder;
+
+          List<Map<String, dynamic>> serverItems =
+              const <Map<String, dynamic>>[];
+          try {
+            serverItems = await _SyllabusServerStorage.listItems(
+              root: 'courses',
+              path: folderPath,
+            );
+          } catch (_) {
+            serverItems = const <Map<String, dynamic>>[];
+          }
+          final serverFileNames = <String>{};
+          for (final item in serverItems) {
+            final type = (item['type'] ?? '').toString().trim().toLowerCase();
+            final name = (item['name'] ?? '').toString().trim();
+            if (type != 'folder' && name.isNotEmpty) {
+              serverFileNames.add(name);
+            }
+          }
+
           bool videoOk = videoUrl.isNotEmpty;
           bool htmlOk = htmlUrl.isNotEmpty;
-
-          if (videoUrl.isNotEmpty) checkedAssetCount += 1;
-          if (htmlUrl.isNotEmpty) checkedAssetCount += 1;
 
           if (videoUrl.isNotEmpty) {
             try {
@@ -227,15 +292,66 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           var updated = s;
           if (videoUrl.isNotEmpty && !videoOk) {
             updated = updated.copyWith(videoUrl: '', videoThumbnailUrl: '');
-            clearedVideoCount += 1;
+            staleRefCount += 1;
           }
           if (htmlUrl.isNotEmpty && !htmlOk) {
             updated = updated.copyWith(materialsUrl: '');
-            clearedHtmlCount += 1;
+            staleRefCount += 1;
           }
+
+          final currentFiles = List<LessonFileAsset>.from(updated.lessonFiles);
+          final nextFiles = <LessonFileAsset>[];
+          for (final lf in currentFiles) {
+            final u = lf.url.trim();
+            if (u.isEmpty) {
+              nextFiles.add(lf);
+              continue;
+            }
+            bool ok = false;
+            try {
+              ok = await existsOnServer(u);
+            } catch (_) {
+              ok = false;
+            }
+            if (ok) {
+              nextFiles.add(lf);
+            } else {
+              staleRefCount += 1;
+            }
+          }
+          if (nextFiles.length != currentFiles.length) {
+            updated = updated.copyWith(lessonFiles: nextFiles);
+          }
+
+          final trackedNames = <String>{};
+          String nameFromUrl(String url) {
+            final parsed = Uri.tryParse(url.trim());
+            if (parsed != null && parsed.pathSegments.isNotEmpty) {
+              return parsed.pathSegments.last;
+            }
+            final chunks = url.split('/');
+            return chunks.isNotEmpty ? chunks.last : '';
+          }
+
+          final vName = nameFromUrl(updated.videoUrl);
+          final hName = nameFromUrl(updated.materialsUrl);
+          if (vName.isNotEmpty) trackedNames.add(vName);
+          if (hName.isNotEmpty) trackedNames.add(hName);
+          for (final lf in updated.lessonFiles) {
+            final name = nameFromUrl(lf.url);
+            if (name.isNotEmpty) trackedNames.add(name);
+          }
+          for (final name in serverFileNames) {
+            if (!trackedNames.contains(name)) {
+              orphanCount += 1;
+              orphanPaths.add('$folderPath/$name');
+            }
+          }
+
           if (updated.videoUrl.trim().isEmpty &&
               updated.materialsUrl.trim().isEmpty &&
-              updated.serverFolderPath.trim().isNotEmpty) {
+              updated.serverFolderPath.trim().isNotEmpty &&
+              updated.lessonFiles.isEmpty) {
             updated = updated.copyWith(serverFolderPath: '');
           }
 
@@ -253,9 +369,42 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         nextUnits.add(unit.copyWith(sessions: sessions));
       }
 
-      final clearedTotal = clearedVideoCount + clearedHtmlCount;
+      if (staleRefCount == 0 && orphanCount == 0) {
+        if (mounted) {
+          setState(() {
+            _units = nextUnits;
+            _lessonPresenceBySessionId
+              ..clear()
+              ..addAll(next);
+          });
+          AppToast.show(
+            context,
+            'Integrity check complete. No mismatches found.',
+            type: AppToastType.success,
+          );
+        }
+        return;
+      }
 
-      if (mounted) {
+      final action = await _promptIntegrityFixActions(
+        staleRefs: staleRefCount,
+        orphanFiles: orphanCount,
+      );
+      if (action == 'cancel') {
+        if (mounted) {
+          AppToast.show(
+            context,
+            'Integrity check cancelled. No changes applied.',
+            type: AppToastType.info,
+          );
+        }
+        return;
+      }
+
+      final applyStale = action == 'stale' || action == 'both';
+      final applyOrphan = action == 'orphan' || action == 'both';
+
+      if (mounted && applyStale) {
         setState(() {
           _units = nextUnits;
           _lessonPresenceBySessionId
@@ -264,17 +413,36 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         });
       }
 
-      if (clearedTotal > 0) {
+      if (applyStale) {
         await _saveSyllabus(showToast: false, skipRecordedMerge: true);
       }
 
+      int orphanDeleted = 0;
+      int orphanDeleteFailed = 0;
+      if (applyOrphan) {
+        for (final path in orphanPaths) {
+          try {
+            await _SyllabusServerStorage.deletePath(
+              root: 'courses',
+              path: path,
+            );
+            orphanDeleted += 1;
+          } catch (_) {
+            orphanDeleteFailed += 1;
+          }
+        }
+      }
+
       if (mounted) {
-        final clearedText = clearedTotal > 0
-            ? ' • Cleared $clearedTotal stale URL${clearedTotal == 1 ? '' : 's'}'
+        final staleText = applyStale
+            ? ' Cleared $staleRefCount stale RTDB ref${staleRefCount == 1 ? '' : 's'}.'
+            : '';
+        final orphanText = applyOrphan
+            ? ' Deleted $orphanDeleted orphan file${orphanDeleted == 1 ? '' : 's'}${orphanDeleteFailed > 0 ? ' ($orphanDeleteFailed failed)' : ''}.'
             : '';
         AppToast.show(
           context,
-          'Sync complete. Checked $checkedAssetCount asset URL${checkedAssetCount == 1 ? '' : 's'}$clearedText.',
+          'Integrity check done.$staleText$orphanText',
           type: AppToastType.success,
         );
       }
@@ -427,8 +595,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'title': courseTitle,
         'duration': courseDuration,
         'updatedAt': ServerValue.timestamp,
-        if (_isFlexibleVariant && _courseBook != null)
-          'courseBook': _courseBook!.toMap(),
+        if (_courseBook != null) 'courseBook': _courseBook!.toMap(),
         if (_isRecordedVariant)
           'modules': _buildRecordedModulesPayload()
         else
@@ -840,7 +1007,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
       final serverPath = _resolveServerFolderPath(current).isNotEmpty
           ? _resolveServerFolderPath(current)
-          : '$courseFolderName/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: current.sessionNumber > 0 ? current.sessionNumber : localNo, sessionTitle: current.title)}';
+          : '$courseFolderName/${_SyllabusServerStorage.sanitizeSegment(widget.variantKey, fallback: 'variant')}/${_SyllabusServerStorage.buildSessionFolderName(sessionNumber: current.sessionNumber > 0 ? current.sessionNumber : localNo, sessionTitle: current.title)}';
 
       final url = await _SyllabusServerStorage.uploadPlatformFile(
         file: file,
@@ -1110,6 +1277,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           videoThumbnailUrl: '',
           materialsUrl: '',
           serverFolderPath: '',
+          lessonFiles: const <LessonFileAsset>[],
         ),
       ),
     );
@@ -1131,6 +1299,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
       materialsUrl: res.materialsUrl.trim(),
       serverFolderPath: res.serverFolderPath.trim(),
+      lessonFiles: res.lessonFiles,
     );
 
     setState(() {
@@ -1138,20 +1307,15 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       next[unitIndex] = unit.copyWith(sessions: [...unit.sessions, newSession]);
       _units = next;
     });
-    if (_isRecordedVariant) {
-      await _saveSyllabus(showToast: false);
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        'Lesson added and saved.',
-        type: AppToastType.success,
-      );
-      return;
-    }
-
-    if (mounted) {
-      AppToast.show(context, 'Session added.', type: AppToastType.success);
-    }
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      _isRecordedVariant
+          ? 'Lesson added and saved.'
+          : 'Session added and saved.',
+      type: AppToastType.success,
+    );
   }
 
   Future<void> _editSession(int unitIndex, int sessionIndex) async {
@@ -1182,6 +1346,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           videoThumbnailUrl: s.videoThumbnailUrl,
           materialsUrl: s.materialsUrl,
           serverFolderPath: _resolveServerFolderPath(s),
+          lessonFiles: s.lessonFiles,
         ),
       ),
     );
@@ -1199,6 +1364,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
       materialsUrl: res.materialsUrl.trim(),
       serverFolderPath: res.serverFolderPath.trim(),
+      lessonFiles: res.lessonFiles,
     );
 
     setState(() {
@@ -1208,20 +1374,15 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
       _units = nextUnits;
     });
-    if (_isRecordedVariant) {
-      await _saveSyllabus(showToast: false);
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        'Lesson updated and saved.',
-        type: AppToastType.success,
-      );
-      return;
-    }
-
-    if (mounted) {
-      AppToast.show(context, 'Session updated.', type: AppToastType.success);
-    }
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      _isRecordedVariant
+          ? 'Lesson updated and saved.'
+          : 'Session updated and saved.',
+      type: AppToastType.success,
+    );
   }
 
   Future<void> _deleteSession(int unitIndex, int sessionIndex) async {
@@ -1333,18 +1494,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               icon: const Icon(Icons.upload_file_rounded),
               color: const Color(0xFF2563EB),
             ),
-          if (_isRecordedVariant)
-            IconButton(
-              tooltip: 'Sync lesson files from server',
-              onPressed: (_loading || _saving || _recordedAssetBusy)
-                  ? null
-                  : _refreshRecordedLessonPresenceFromServer,
-              icon: const Icon(Icons.refresh_rounded),
-              color: const Color(0xFF2563EB),
-            ),
           IconButton(
-            tooltip: 'Reload',
-            onPressed: _loading ? null : _loadSyllabus,
+            tooltip: 'Check RTDB vs server',
+            onPressed: (_loading || _saving || _recordedAssetBusy)
+                ? null
+                : _refreshLessonPresenceFromServer,
             icon: const Icon(Icons.refresh),
           ),
           if (!_isRecordedVariant)
@@ -1391,7 +1545,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           : _units.isEmpty
           ? Column(
               children: [
-                if (_isFlexibleVariant) _courseBookPanel(),
+                _courseBookPanel(),
                 Expanded(
                   child: _EmptyState(
                     onAddUnit: _addUnit,
@@ -1410,7 +1564,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   sessionsLabel: _isRecordedVariant ? 'Lessons' : 'Sessions',
                   hint: _isRecordedVariant ? '' : 'Drag units to reorder',
                 ),
-                if (_isFlexibleVariant) _courseBookPanel(),
+                _courseBookPanel(),
                 if (_isRecordedVariant && _recordedAssetBusy)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -1821,7 +1975,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   }
 
   Future<void> _uploadCourseBook() async {
-    if (!_isFlexibleVariant || _courseBookBusy || _loading || _saving) return;
+    if (_courseBookBusy || _loading || _saving) return;
     setState(() => _courseBookBusy = true);
     try {
       if (mounted) {
@@ -1864,7 +2018,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         courseCode: courseCode,
         courseTitle: courseTitle,
       );
-      final uploadPath = '$folder/books';
+      final variantFolder = _SyllabusServerStorage.sanitizeSegment(
+        widget.variantKey,
+        fallback: 'variant',
+      );
+      final uploadPath = '$folder/$variantFolder/books';
 
       final url = await _SyllabusServerStorage.uploadPlatformFile(
         file: picked,
@@ -1982,7 +2140,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             Text(
               hasBook
                   ? '${book.name.isEmpty ? 'PDF uploaded' : book.name} ${fileSize.isEmpty ? '' : '• $fileSize'} ${uploadedAt.isEmpty ? '' : '• $uploadedAt'}'
-                  : 'Upload one PDF for the whole flexible course. This is separate from lesson materials.',
+                  : 'Upload one PDF for this variant. This is separate from lesson materials.',
               style: TextStyle(
                 color: Colors.black.withValues(alpha: 0.66),
                 fontWeight: FontWeight.w700,
@@ -2104,6 +2262,63 @@ class _CourseBookAsset {
       'sizeBytes': sizeBytes,
       'uploadedAt': uploadedAt,
       'uploadedByUid': uploadedByUid,
+    };
+  }
+}
+
+class LessonFileAsset {
+  const LessonFileAsset({
+    required this.url,
+    required this.name,
+    required this.ext,
+    required this.sizeBytes,
+    required this.uploadedAt,
+    required this.uploadedByUid,
+    required this.kind,
+  });
+
+  final String url;
+  final String name;
+  final String ext;
+  final int sizeBytes;
+  final int uploadedAt;
+  final String uploadedByUid;
+  final String kind;
+
+  static int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static LessonFileAsset? fromAny(dynamic node) {
+    if (node is! Map) return null;
+    final map = Map<String, dynamic>.from(
+      node.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    final url = (map['url'] ?? '').toString().trim();
+    if (url.isEmpty) return null;
+    final kind = (map['kind'] ?? '').toString().trim().toLowerCase();
+    return LessonFileAsset(
+      url: url,
+      name: (map['name'] ?? '').toString().trim(),
+      ext: (map['ext'] ?? '').toString().trim().toLowerCase(),
+      sizeBytes: _asInt(map['sizeBytes']),
+      uploadedAt: _asInt(map['uploadedAt']),
+      uploadedByUid: (map['uploadedByUid'] ?? '').toString().trim(),
+      kind: kind.isEmpty ? 'file' : kind,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'url': url,
+      'name': name,
+      'ext': ext,
+      'sizeBytes': sizeBytes,
+      'uploadedAt': uploadedAt,
+      'uploadedByUid': uploadedByUid,
+      'kind': kind,
     };
   }
 }
@@ -3009,6 +3224,7 @@ class _SessionDraft {
     this.videoThumbnailUrl = '',
     this.materialsUrl = '',
     this.serverFolderPath = '',
+    this.lessonFiles = const <LessonFileAsset>[],
   });
 
   final String title;
@@ -3021,6 +3237,60 @@ class _SessionDraft {
   final String videoThumbnailUrl;
   final String materialsUrl;
   final String serverFolderPath;
+  final List<LessonFileAsset> lessonFiles;
+}
+
+class _SessionUploadQueueItem {
+  const _SessionUploadQueueItem({
+    required this.fileName,
+    required this.kind,
+    required this.sizeBytes,
+    this.progress = 0,
+    this.status = 'queued',
+    this.startedAtMs = 0,
+    this.finishedAtMs = 0,
+    this.elapsedMs = 0,
+    this.speedBytesPerSec = 0,
+    this.etaMs = 0,
+    this.error = '',
+  });
+
+  final String fileName;
+  final String kind;
+  final int sizeBytes;
+  final double progress;
+  final String status;
+  final int startedAtMs;
+  final int finishedAtMs;
+  final int elapsedMs;
+  final double speedBytesPerSec;
+  final int etaMs;
+  final String error;
+
+  _SessionUploadQueueItem copyWith({
+    double? progress,
+    String? status,
+    int? startedAtMs,
+    int? finishedAtMs,
+    int? elapsedMs,
+    double? speedBytesPerSec,
+    int? etaMs,
+    String? error,
+  }) {
+    return _SessionUploadQueueItem(
+      fileName: fileName,
+      kind: kind,
+      sizeBytes: sizeBytes,
+      progress: progress ?? this.progress,
+      status: status ?? this.status,
+      startedAtMs: startedAtMs ?? this.startedAtMs,
+      finishedAtMs: finishedAtMs ?? this.finishedAtMs,
+      elapsedMs: elapsedMs ?? this.elapsedMs,
+      speedBytesPerSec: speedBytesPerSec ?? this.speedBytesPerSec,
+      etaMs: etaMs ?? this.etaMs,
+      error: error ?? this.error,
+    );
+  }
 }
 
 class _SessionEditorSheet extends StatefulWidget {
@@ -3084,6 +3354,144 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   bool _videoExistsOnServer = false;
   bool _materialsExistOnServer = false;
   late String _serverFolderPath;
+  late List<LessonFileAsset> _lessonFiles;
+  List<_SessionUploadQueueItem> _uploadQueue = <_SessionUploadQueueItem>[];
+
+  String _fmtDuration(int ms) {
+    final s = (ms / 1000).floor();
+    final mm = (s ~/ 60).toString().padLeft(2, '0');
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  String _fmtSpeed(double bytesPerSec) {
+    if (bytesPerSec <= 0) return '-';
+    const kb = 1024.0;
+    const mb = kb * 1024;
+    if (bytesPerSec >= mb) {
+      return '${(bytesPerSec / mb).toStringAsFixed(2)} MB/s';
+    }
+    return '${(bytesPerSec / kb).toStringAsFixed(0)} KB/s';
+  }
+
+  String _fmtEta(int etaMs) {
+    if (etaMs <= 0) return '-';
+    return _fmtDuration(etaMs);
+  }
+
+  Future<List<LessonFileAsset>> _uploadFilesWithTracking({
+    required List<PlatformFile> files,
+    required String path,
+    required String Function(String kind) suffixFor,
+    required String Function(PlatformFile file) kindFor,
+    required void Function(double progress) onOverallProgress,
+  }) async {
+    final uploaded = <LessonFileAsset>[];
+    if (mounted) {
+      setState(() {
+        _uploadQueue = files
+            .map(
+              (f) => _SessionUploadQueueItem(
+                fileName: f.name,
+                kind: kindFor(f),
+                sizeBytes: f.size,
+              ),
+            )
+            .toList();
+      });
+    }
+
+    for (int i = 0; i < files.length; i++) {
+      final file = files[i];
+      final kind = kindFor(file);
+      final startMs = DateTime.now().millisecondsSinceEpoch;
+      if (mounted) {
+        setState(() {
+          _uploadQueue[i] = _uploadQueue[i].copyWith(
+            status: 'uploading',
+            startedAtMs: startMs,
+          );
+        });
+      }
+
+      try {
+        final url = await _SyllabusServerStorage.uploadPlatformFile(
+          file: file,
+          root: 'courses',
+          path: path,
+          customName: _SyllabusServerStorage.buildCustomBaseName(
+            sessionNumber: widget.suggestedSessionNumber,
+            suffix: suffixFor(kind),
+          ),
+          onProgress: (p) {
+            final nowMs = DateTime.now().millisecondsSinceEpoch;
+            final elapsedMs = (nowMs - startMs).clamp(1, 1 << 30);
+            final uploadedBytes = file.size * p;
+            final speed = uploadedBytes / (elapsedMs / 1000.0);
+            final remainingBytes = (file.size - uploadedBytes).clamp(
+              0,
+              file.size,
+            );
+            final etaMs = speed > 0
+                ? ((remainingBytes / speed) * 1000).round()
+                : 0;
+            if (!mounted) return;
+            setState(() {
+              _uploadQueue[i] = _uploadQueue[i].copyWith(
+                progress: p.clamp(0.0, 1.0).toDouble(),
+                elapsedMs: elapsedMs,
+                speedBytesPerSec: speed,
+                etaMs: etaMs,
+              );
+              onOverallProgress(
+                ((i + p) / files.length).clamp(0.0, 1.0).toDouble(),
+              );
+            });
+          },
+        );
+
+        final finishedMs = DateTime.now().millisecondsSinceEpoch;
+        final elapsedMs = (finishedMs - startMs).clamp(1, 1 << 30);
+        final speed = file.size / (elapsedMs / 1000.0);
+        if (mounted) {
+          setState(() {
+            _uploadQueue[i] = _uploadQueue[i].copyWith(
+              status: 'done',
+              progress: 1,
+              finishedAtMs: finishedMs,
+              elapsedMs: elapsedMs,
+              speedBytesPerSec: speed,
+              etaMs: 0,
+            );
+            onOverallProgress(((i + 1) / files.length).clamp(0.0, 1.0));
+          });
+        }
+
+        uploaded.add(
+          LessonFileAsset(
+            url: url,
+            name: file.name,
+            ext: _fileExt(file.name),
+            sizeBytes: file.size,
+            uploadedAt: DateTime.now().millisecondsSinceEpoch,
+            uploadedByUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            kind: kind,
+          ),
+        );
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _uploadQueue[i] = _uploadQueue[i].copyWith(
+              status: 'failed',
+              error: e.toString(),
+            );
+          });
+        }
+      }
+    }
+
+    return uploaded;
+  }
 
   bool get _recordedAssetsBusy =>
       _recordedAssetFlowBusy ||
@@ -3110,6 +3518,39 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     videoThumbC = TextEditingController(text: widget.initial.videoThumbnailUrl);
     materialsUrlC = TextEditingController(text: widget.initial.materialsUrl);
     _serverFolderPath = widget.initial.serverFolderPath.trim();
+    _lessonFiles = List<LessonFileAsset>.from(widget.initial.lessonFiles);
+    if (_lessonFiles.isEmpty) {
+      final legacy = <LessonFileAsset>[];
+      final videoUrl = widget.initial.videoUrl.trim();
+      final htmlUrl = widget.initial.materialsUrl.trim();
+      if (videoUrl.isNotEmpty) {
+        legacy.add(
+          LessonFileAsset(
+            url: videoUrl,
+            name: _fileNameFromUrl(videoUrl),
+            ext: _fileExt(_fileNameFromUrl(videoUrl)),
+            sizeBytes: 0,
+            uploadedAt: 0,
+            uploadedByUid: '',
+            kind: 'video',
+          ),
+        );
+      }
+      if (htmlUrl.isNotEmpty) {
+        legacy.add(
+          LessonFileAsset(
+            url: htmlUrl,
+            name: _fileNameFromUrl(htmlUrl),
+            ext: _fileExt(_fileNameFromUrl(htmlUrl)),
+            sizeBytes: 0,
+            uploadedAt: 0,
+            uploadedByUid: '',
+            kind: 'html',
+          ),
+        );
+      }
+      _lessonFiles = legacy;
+    }
     _skill = widget.initial.skillType;
 
     if (widget.isRecorded) {
@@ -3169,9 +3610,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         false;
   }
 
-  String _resolvedSessionFolderPath() {
-    if (_serverFolderPath.trim().isNotEmpty) return _serverFolderPath.trim();
-
+  String _canonicalSessionFolderPath() {
     final variantFolder = _SyllabusServerStorage.sanitizeSegment(
       widget.variantKey,
       fallback: 'variant',
@@ -3184,6 +3623,18 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     _serverFolderPath =
         '${widget.courseFolderName}/$variantFolder/$sessionFolder';
     return _serverFolderPath;
+  }
+
+  String _resolvedSessionFolderPath() {
+    final canonical = _canonicalSessionFolderPath();
+    final stored = _serverFolderPath.trim();
+    if (stored.isEmpty) return canonical;
+    final expectedPrefix =
+        '${widget.courseFolderName}/${_SyllabusServerStorage.sanitizeSegment(widget.variantKey, fallback: 'variant')}/';
+    if (!stored.startsWith(expectedPrefix)) {
+      return canonical;
+    }
+    return stored;
   }
 
   Future<void> _clearVideoOnly() async {
@@ -3261,6 +3712,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() {
         videoUrlC.clear();
         videoThumbC.clear();
+        _lessonFiles.removeWhere((x) => x.kind == 'video');
         _videoExistsOnServer = false;
         _inlineError = null;
       });
@@ -3329,6 +3781,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       if (!mounted) return;
       setState(() {
         materialsUrlC.clear();
+        _lessonFiles.removeWhere((x) => x.kind == 'html');
         _materialsExistOnServer = false;
         _inlineError = null;
       });
@@ -3360,6 +3813,77 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     );
 
     return true;
+  }
+
+  String _fileExt(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot >= name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  bool _isVideoExt(String ext) {
+    return const {'mp4', 'm4v', 'mov', 'webm'}.contains(ext);
+  }
+
+  bool _isHtmlExt(String ext) {
+    return ext == 'html' || ext == 'htm';
+  }
+
+  Future<void> _removeLessonFileAt(int index) async {
+    if (index < 0 || index >= _lessonFiles.length) return;
+    final file = _lessonFiles[index];
+    final ok = await _confirmClearAsset(
+      title: 'Delete file?',
+      message: 'This will delete "${file.name}" from server and lesson data.',
+      confirmText: 'Delete',
+    );
+    if (!ok) return;
+
+    if (!mounted) return;
+    setState(() => _recordedAssetFlowBusy = true);
+    try {
+      final rel = _SyllabusServerStorage.extractRelativePathFromUrl(file.url);
+      if (rel.isNotEmpty) {
+        await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+      }
+      if (!mounted) return;
+      setState(() {
+        _lessonFiles.removeAt(index);
+        final video = _lessonFiles.lastWhere(
+          (x) => x.kind == 'video',
+          orElse: () => const LessonFileAsset(
+            url: '',
+            name: '',
+            ext: '',
+            sizeBytes: 0,
+            uploadedAt: 0,
+            uploadedByUid: '',
+            kind: 'video',
+          ),
+        );
+        final html = _lessonFiles.lastWhere(
+          (x) => x.kind == 'html',
+          orElse: () => const LessonFileAsset(
+            url: '',
+            name: '',
+            ext: '',
+            sizeBytes: 0,
+            uploadedAt: 0,
+            uploadedByUid: '',
+            kind: 'html',
+          ),
+        );
+        videoUrlC.text = video.url;
+        if (video.url.isEmpty) videoThumbC.clear();
+        materialsUrlC.text = html.url;
+        _videoExistsOnServer = video.url.isNotEmpty;
+        _materialsExistOnServer = html.url.isNotEmpty;
+      });
+    } catch (e) {
+      _showInlineError('Could not delete file: $e');
+    } finally {
+      if (mounted) setState(() => _recordedAssetFlowBusy = false);
+    }
   }
 
   Future<bool> _assetUrlExistsOnServer(
@@ -3475,9 +3999,6 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     try {
       _clearInlineError();
 
-      final oldVideoUrl = videoUrlC.text.trim();
-      final oldThumbUrl = videoThumbC.text.trim();
-
       final prepared = await _prepareRecordedReplacementIfNeeded();
       if (!prepared) {
         _debug('video upload aborted by prepareReplacement=false');
@@ -3488,7 +4009,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() => _videoUploadProgress = 0);
 
       final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
+        allowMultiple: true,
         withData: false,
         type: FileType.video,
       );
@@ -3498,68 +4019,27 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         return;
       }
 
-      final file = result.files.single;
       final path = _resolvedSessionFolderPath();
-      _debug(
-        'video upload picked file=${file.name} bytes=${file.size} path=$path',
-      );
-
-      final url = await _SyllabusServerStorage.uploadPlatformFile(
-        file: file,
-        root: 'courses',
+      final nextFiles = List<LessonFileAsset>.from(_lessonFiles);
+      final uploaded = await _uploadFilesWithTracking(
+        files: result.files,
         path: path,
-        customName: _SyllabusServerStorage.buildCustomBaseName(
-          sessionNumber: widget.suggestedSessionNumber,
-          suffix: 'video',
-        ),
-        onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _videoUploadProgress = p);
-        },
+        suffixFor: (_) => 'video',
+        kindFor: (_) => 'video',
+        onOverallProgress: (p) => _videoUploadProgress = p,
       );
+      nextFiles.addAll(uploaded);
+      final latest = uploaded.isNotEmpty ? uploaded.last.url : '';
 
       if (!mounted) return;
       setState(() {
-        videoUrlC.text = url;
+        _lessonFiles = nextFiles;
+        if (latest.isNotEmpty) videoUrlC.text = latest;
         videoThumbC.clear();
-        _videoExistsOnServer = true;
+        _videoExistsOnServer = latest.isNotEmpty;
         _inlineError = null;
       });
-      _debug('video upload success url=$url');
-
-      if (oldVideoUrl.isNotEmpty && oldVideoUrl != url) {
-        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
-          oldVideoUrl,
-        );
-        if (rel.isNotEmpty) {
-          try {
-            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
-            _debug('video replace removed old video relPath=$rel');
-          } catch (e) {
-            final msg = e.toString().toLowerCase();
-            if (!msg.contains('item not found')) {
-              _debug('video replace could not remove old video error=$e');
-            }
-          }
-        }
-      }
-
-      if (oldThumbUrl.isNotEmpty) {
-        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
-          oldThumbUrl,
-        );
-        if (rel.isNotEmpty) {
-          try {
-            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
-            _debug('video replace removed old thumbnail relPath=$rel');
-          } catch (e) {
-            final msg = e.toString().toLowerCase();
-            if (!msg.contains('item not found')) {
-              _debug('video replace could not remove old thumbnail error=$e');
-            }
-          }
-        }
-      }
+      _debug('video upload success count=${result.files.length}');
     } catch (e) {
       _debug('video upload error=$e');
       _showInlineError('Video upload failed: $e');
@@ -3597,8 +4077,6 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     try {
       _clearInlineError();
 
-      final oldHtmlUrl = materialsUrlC.text.trim();
-
       final prepared = await _prepareRecordedReplacementIfNeeded();
       if (!prepared) {
         _debug('html upload aborted by prepareReplacement=false');
@@ -3609,7 +4087,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() => _materialsUploadProgress = 0);
 
       final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
+        allowMultiple: true,
         withData: false,
         type: FileType.custom,
         allowedExtensions: const ['html', 'htm'],
@@ -3620,50 +4098,26 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         return;
       }
 
-      final file = result.files.single;
       final path = _resolvedSessionFolderPath();
-      _debug(
-        'html upload picked file=${file.name} bytes=${file.size} path=$path',
-      );
-
-      final url = await _SyllabusServerStorage.uploadPlatformFile(
-        file: file,
-        root: 'courses',
+      final nextFiles = List<LessonFileAsset>.from(_lessonFiles);
+      final uploaded = await _uploadFilesWithTracking(
+        files: result.files,
         path: path,
-        customName: _SyllabusServerStorage.buildCustomBaseName(
-          sessionNumber: widget.suggestedSessionNumber,
-          suffix: 'materials',
-        ),
-        onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _materialsUploadProgress = p);
-        },
+        suffixFor: (_) => 'materials',
+        kindFor: (_) => 'html',
+        onOverallProgress: (p) => _materialsUploadProgress = p,
       );
+      nextFiles.addAll(uploaded);
+      final latest = uploaded.isNotEmpty ? uploaded.last.url : '';
 
       if (!mounted) return;
       setState(() {
-        materialsUrlC.text = url;
-        _materialsExistOnServer = true;
+        _lessonFiles = nextFiles;
+        if (latest.isNotEmpty) materialsUrlC.text = latest;
+        _materialsExistOnServer = latest.isNotEmpty;
         _inlineError = null;
       });
-      _debug('html upload success url=$url');
-
-      if (oldHtmlUrl.isNotEmpty && oldHtmlUrl != url) {
-        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
-          oldHtmlUrl,
-        );
-        if (rel.isNotEmpty) {
-          try {
-            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
-            _debug('html replace removed old html relPath=$rel');
-          } catch (e) {
-            final msg = e.toString().toLowerCase();
-            if (!msg.contains('item not found')) {
-              _debug('html replace could not remove old html error=$e');
-            }
-          }
-        }
-      }
+      _debug('html upload success count=${result.files.length}');
     } catch (e) {
       _debug('html upload error=$e');
       _showInlineError('HTML upload failed: $e');
@@ -3678,6 +4132,66 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       _debug(
         'html upload finished uploading=$_uploadingMaterials busy=$_recordedAssetFlowBusy',
       );
+    }
+  }
+
+  Future<void> _pickAndUploadAnyFiles() async {
+    if (_recordedAssetsBusy) return;
+    final title = titleC.text.trim();
+    if (title.isEmpty) {
+      _showInlineError('Enter session title first.');
+      return;
+    }
+
+    if (mounted) setState(() => _recordedAssetFlowBusy = true);
+    try {
+      setState(() => _materialsUploadProgress = 0);
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: false,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final path = _resolvedSessionFolderPath();
+      final nextFiles = List<LessonFileAsset>.from(_lessonFiles);
+      final uploaded = await _uploadFilesWithTracking(
+        files: result.files,
+        path: path,
+        suffixFor: (kind) => kind,
+        kindFor: (file) {
+          final ext = _fileExt(file.name);
+          if (_isVideoExt(ext)) return 'video';
+          if (_isHtmlExt(ext)) return 'html';
+          return 'file';
+        },
+        onOverallProgress: (p) => _materialsUploadProgress = p,
+      );
+      nextFiles.addAll(uploaded);
+      for (final file in uploaded) {
+        if (file.kind == 'video') {
+          videoUrlC.text = file.url;
+          _videoExistsOnServer = true;
+        } else if (file.kind == 'html') {
+          materialsUrlC.text = file.url;
+          _materialsExistOnServer = true;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _lessonFiles = nextFiles;
+        _inlineError = null;
+      });
+    } catch (e) {
+      _showInlineError('File upload failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _materialsUploadProgress = 0;
+          _recordedAssetFlowBusy = false;
+        });
+      }
     }
   }
 
@@ -4083,6 +4597,127 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                   ),
                 ],
                 const SizedBox(height: 14),
+                const Text(
+                  'Lesson files in this session',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _recordedAssetsBusy
+                      ? null
+                      : _pickAndUploadAnyFiles,
+                  icon: const Icon(Icons.upload_file_rounded),
+                  label: const Text('Upload files'),
+                ),
+                const SizedBox(height: 8),
+                if (_uploadQueue.isNotEmpty) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.white,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Upload queue',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        ...List.generate(_uploadQueue.length, (i) {
+                          final q = _uploadQueue[i];
+                          final percent = (q.progress * 100).round();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${q.fileName} (${q.kind.toUpperCase()})',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Status: ${q.status}  $percent%  Time: ${_fmtDuration(q.elapsedMs)}  Speed: ${_fmtSpeed(q.speedBytesPerSec)}  ETA: ${_fmtEta(q.etaMs)}',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: q.status == 'failed'
+                                        ? Colors.red.shade700
+                                        : Colors.black.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    minHeight: 6,
+                                    value: q.progress
+                                        .clamp(0.0, 1.0)
+                                        .toDouble(),
+                                  ),
+                                ),
+                                if (q.error.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    q.error,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.red.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (_lessonFiles.isEmpty)
+                  Text(
+                    'No uploaded files yet.',
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                else
+                  ...List.generate(_lessonFiles.length, (i) {
+                    final f = _lessonFiles[i];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        title: Text(
+                          f.name.isEmpty ? _fileNameFromUrl(f.url) : f.name,
+                        ),
+                        subtitle: Text(
+                          '${f.kind.toUpperCase()}  ${f.ext.toUpperCase()}',
+                        ),
+                        trailing: IconButton(
+                          onPressed: _recordedAssetsBusy
+                              ? null
+                              : () => _removeLessonFileAt(i),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          color: Colors.red.shade700,
+                          tooltip: 'Delete from server',
+                        ),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -4111,9 +4746,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                                     ? videoThumbC.text.trim()
                                     : '',
                                 materialsUrl: materialsUrlC.text.trim(),
-                                serverFolderPath: widget.isRecorded
-                                    ? _serverFolderPath.trim()
-                                    : '',
+                                serverFolderPath: _serverFolderPath.trim(),
+                                lessonFiles: _lessonFiles,
                               ),
                             );
                           },
@@ -6353,6 +6987,7 @@ class SyllabusSession {
     this.videoThumbnailUrl = '',
     this.materialsUrl = '',
     this.serverFolderPath = '',
+    this.lessonFiles = const <LessonFileAsset>[],
   });
 
   final String id;
@@ -6368,6 +7003,7 @@ class SyllabusSession {
   final String videoThumbnailUrl;
   final String materialsUrl;
   final String serverFolderPath;
+  final List<LessonFileAsset> lessonFiles;
 
   SyllabusSession copyWith({
     String? title,
@@ -6382,6 +7018,7 @@ class SyllabusSession {
     String? videoThumbnailUrl,
     String? materialsUrl,
     String? serverFolderPath,
+    List<LessonFileAsset>? lessonFiles,
   }) {
     return SyllabusSession(
       id: id,
@@ -6397,6 +7034,7 @@ class SyllabusSession {
       videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
       materialsUrl: materialsUrl ?? this.materialsUrl,
       serverFolderPath: serverFolderPath ?? this.serverFolderPath,
+      lessonFiles: lessonFiles ?? this.lessonFiles,
     );
   }
 
@@ -6425,12 +7063,31 @@ class SyllabusSession {
 
     if (includeOnlineExtras) {
       map['materialsUrl'] = materialsUrl;
+      map['serverFolderPath'] = serverFolderPath;
+    }
+
+    if (lessonFiles.isNotEmpty) {
+      map['lessonFiles'] = lessonFiles.map((x) => x.toMap()).toList();
     }
 
     return map;
   }
 
   factory SyllabusSession.fromMap(Map m) {
+    final lessonFilesRaw = m['lessonFiles'];
+    final lessonFiles = <LessonFileAsset>[];
+    if (lessonFilesRaw is List) {
+      for (final item in lessonFilesRaw) {
+        final parsed = LessonFileAsset.fromAny(item);
+        if (parsed != null) lessonFiles.add(parsed);
+      }
+    } else if (lessonFilesRaw is Map) {
+      for (final item in lessonFilesRaw.values) {
+        final parsed = LessonFileAsset.fromAny(item);
+        if (parsed != null) lessonFiles.add(parsed);
+      }
+    }
+
     return SyllabusSession(
       id: (m['id'] ?? '').toString(),
       title: (m['title'] ?? '').toString(),
@@ -6451,6 +7108,7 @@ class SyllabusSession {
       videoThumbnailUrl: (m['videoThumbnailUrl'] ?? '').toString(),
       materialsUrl: (m['materialsUrl'] ?? '').toString(),
       serverFolderPath: (m['serverFolderPath'] ?? '').toString(),
+      lessonFiles: lessonFiles,
     );
   }
 }
