@@ -31,8 +31,6 @@ import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_learner_profile_screen.dart';
 import 'take_attendance_screen.dart';
-import 'attendance_history_screen.dart';
-import 'attendance_stats_screen.dart';
 import 'teacher_class_progress_screen.dart';
 import 'teacher_learner_gallery_screen.dart';
 
@@ -2431,8 +2429,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: Icon(Icons.history_rounded, color: p.primary),
-                  label: Text("History", style: TextStyle(color: p.primary)),
+                  icon: Icon(Icons.insights_rounded, color: p.primary),
+                  label: Text(
+                    "Progress",
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: p.border),
                     shape: RoundedRectangleBorder(
@@ -2440,70 +2444,22 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AttendanceHistoryScreen(classData: c),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: Icon(Icons.bar_chart_rounded, color: p.primary),
-                  label: Text("Stats", style: TextStyle(color: p.primary)),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: p.border),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AttendanceStatsScreen(classData: c),
-                      ),
-                    );
-                  },
+                  onPressed: classId.isEmpty
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TeacherClassProgressScreen(
+                                classId: classId,
+                                classData: c,
+                              ),
+                            ),
+                          );
+                        },
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: Icon(Icons.insights_rounded, color: p.primary),
-              label: Text(
-                "Progress",
-                style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: p.border),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: classId.isEmpty
-                  ? null
-                  : () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TeacherClassProgressScreen(
-                            classId: classId,
-                            classData: c,
-                          ),
-                        ),
-                      );
-                    },
-            ),
           ),
         ],
       ),

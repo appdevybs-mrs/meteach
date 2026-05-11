@@ -28,6 +28,7 @@ import 'teacher_profile.dart';
 import 'teacher_regulations_screen.dart';
 import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
+import 'teacher_class_progress_screen.dart';
 import 'teacher_shared_files_screen.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
@@ -378,6 +379,79 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     });
 
     await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
+  Future<Map<String, dynamic>?> _classDataForUpcoming(String classId) async {
+    final id = classId.trim();
+    if (id.isEmpty) return null;
+
+    try {
+      final byKey = await _db.child('$classesNode/$id').get();
+      if (byKey.exists && byKey.value is Map) {
+        final m = Map<String, dynamic>.from(byKey.value as Map);
+        if ((m['class_id'] ?? m['id'] ?? '').toString().trim().isEmpty) {
+          m['class_id'] = id;
+        }
+        return m;
+      }
+
+      final all = await _db.child(classesNode).get();
+      if (all.exists && all.value is Map) {
+        final raw = Map<dynamic, dynamic>.from(all.value as Map);
+        for (final e in raw.entries) {
+          if (e.value is! Map) continue;
+          final m = Map<String, dynamic>.from(e.value as Map);
+          final cid = (m['class_id'] ?? m['id'] ?? '').toString().trim();
+          if (cid == id) return m;
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  Future<void> _openUpcomingTake(_HomeUpcomingClass occ) async {
+    if (occ.isOnline) {
+      _openTeacherWindow(
+        AppWindowKeys.teacherOnlineAvailability,
+        () => _pushScreen(
+          const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 2),
+        ),
+      );
+      return;
+    }
+
+    final classData = await _classDataForUpcoming(occ.classId);
+    if (!mounted || classData == null) return;
+
+    _openTeacherWindow(
+      AppWindowKeys.teacherClasses,
+      () => _pushScreen(
+        TakeAttendanceScreen(classData: classData, initialDate: occ.start),
+      ),
+    );
+  }
+
+  Future<void> _openUpcomingProgress(_HomeUpcomingClass occ) async {
+    if (occ.isOnline) {
+      _openTeacherWindow(
+        AppWindowKeys.teacherOnlineAvailability,
+        () => _pushScreen(
+          const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 2),
+        ),
+      );
+      return;
+    }
+
+    final classData = await _classDataForUpcoming(occ.classId);
+    if (!mounted || classData == null) return;
+
+    _openTeacherWindow(
+      AppWindowKeys.teacherClasses,
+      () => _pushScreen(
+        TeacherClassProgressScreen(classId: occ.classId, classData: classData),
+      ),
+    );
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -1426,6 +1500,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                     }
                                     _openScheduleScreen();
                                   },
+                                  onTapTake: _openUpcomingTake,
+                                  onTapProgress: _openUpcomingProgress,
                                   onTapEmpty: _openScheduleScreen,
                                 ),
                               );
@@ -2453,12 +2529,16 @@ class _NextComingClassCard extends StatelessWidget {
     required this.palette,
     required this.upcomingClasses,
     required this.onTapClass,
+    required this.onTapTake,
+    required this.onTapProgress,
     required this.onTapEmpty,
   });
 
   final _HomePalette palette;
   final List<_HomeUpcomingClass> upcomingClasses;
   final ValueChanged<_HomeUpcomingClass> onTapClass;
+  final ValueChanged<_HomeUpcomingClass> onTapTake;
+  final ValueChanged<_HomeUpcomingClass> onTapProgress;
   final VoidCallback onTapEmpty;
 
   String _fmtCountdown(Duration d) {
@@ -2556,7 +2636,8 @@ class _NextComingClassCard extends StatelessWidget {
             final isLive = !now.isBefore(c.start) && !hasEnded;
             final untilStart = c.start.difference(now);
             final isUpcoming = !isLive && !hasEnded && untilStart.inSeconds > 0;
-            final isSoon = isUpcoming && untilStart.inSeconds <= 300;
+            final isSoon = isUpcoming && untilStart.inSeconds <= 600;
+            final isWarn = isUpcoming && untilStart.inSeconds <= 1800;
 
             final itemPrimary = isLive
                 ? const Color(0xFF1B5E20)
@@ -2578,18 +2659,29 @@ class _NextComingClassCard extends StatelessWidget {
                 : 'Starts in ${_fmtCountdown(untilStart)}';
 
             final countdownBg = isLive
-                ? const Color(0xFFE8F5E9)
+                ? const Color(0xFFFFEBEE)
                 : (isSoon
                       ? const Color(0xFFFFEBEE)
-                      : palette.soft.withValues(alpha: 0.72));
+                      : (isWarn
+                            ? const Color(0xFFFFF8E1)
+                            : const Color(0xFFE8F5E9)));
             final countdownBorder = isLive
-                ? const Color(0xFFB9E2C5)
+                ? const Color(0xFFE57373)
                 : (isSoon
                       ? const Color(0xFFE57373)
-                      : palette.border.withValues(alpha: 0.75));
+                      : (isWarn
+                            ? const Color(0xFFF9A825)
+                            : const Color(0xFF81C784)));
             final countdownColor = isLive
-                ? const Color(0xFF1B5E20)
-                : (isSoon ? const Color(0xFFB71C1C) : palette.primary);
+                ? const Color(0xFFB71C1C)
+                : (isSoon
+                      ? const Color(0xFFB71C1C)
+                      : (isWarn
+                            ? const Color(0xFF8D6E00)
+                            : const Color(0xFF1B5E20)));
+            final pulseScale = (isLive || isSoon)
+                ? ((now.second % 2 == 0) ? 1.04 : 0.98)
+                : 1.0;
 
             return Padding(
               padding: EdgeInsets.only(
@@ -2666,38 +2758,45 @@ class _NextComingClassCard extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: countdownBg,
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: countdownBorder),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    isLive
-                                        ? TeacherIcons.liveIndicator
-                                        : (isSoon
-                                              ? TeacherIcons.soonWarning
-                                              : TeacherIcons.countdown),
-                                    size: isLive ? 8 : 14,
-                                    color: isLive ? Colors.red : countdownColor,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    countdownText,
-                                    style: TextStyle(
-                                      color: countdownColor,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 11,
+                            AnimatedScale(
+                              scale: pulseScale,
+                              duration: const Duration(milliseconds: 550),
+                              curve: Curves.easeInOut,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: countdownBg,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(color: countdownBorder),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isLive
+                                          ? TeacherIcons.liveIndicator
+                                          : (isSoon
+                                                ? TeacherIcons.soonWarning
+                                                : TeacherIcons.countdown),
+                                      size: isLive ? 8 : 14,
+                                      color: isLive
+                                          ? Colors.red
+                                          : countdownColor,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      countdownText,
+                                      style: TextStyle(
+                                        color: countdownColor,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -2777,7 +2876,62 @@ class _NextComingClassCard extends StatelessWidget {
                               icon: TeacherIcons.nextClassBadge,
                               text: c.isOnline
                                   ? 'Online booking'
-                                  : 'ID: ${c.classId}',
+                                  : 'In-class session',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => onTapTake(c),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: itemBorder),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
+                                icon: Icon(
+                                  Icons.how_to_reg_rounded,
+                                  color: itemPrimary,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  'Take',
+                                  style: TextStyle(
+                                    color: itemPrimary,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () => onTapProgress(c),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: itemPrimary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.insights_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  'Progress',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
                             ),
                           ],
                         ),

@@ -23,7 +23,7 @@ import '../services/teacher_schedule_widget_service.dart';
 import '../shared/app_theme.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
-import 'attendance_history_screen.dart';
+import 'teacher_class_progress_screen.dart';
 import 'teacher_classes.dart';
 import 'teacher_schedule_data_service.dart';
 import 'take_attendance_screen.dart';
@@ -900,7 +900,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                   _toggleClassNotif(o.notificationClassId, displayList, allOcc);
                 },
                 onAttendance: () => _openAttendance(o, visibleClasses),
-                onHistory: () => _openHistory(o, visibleClasses),
+                onProgress: () => _openProgress(o, visibleClasses),
                 onOpenOnline: _openOnlineUpcomingTab,
               );
             }),
@@ -1198,7 +1198,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                       },
                       onAttendance: () =>
                           _openAttendance(events[i], visibleClasses),
-                      onHistory: () => _openHistory(events[i], visibleClasses),
+                      onProgress: () =>
+                          _openProgress(events[i], visibleClasses),
                       onOpenOnline: _openOnlineUpcomingTab,
                     );
                   },
@@ -1233,7 +1234,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     );
   }
 
-  void _openHistory(_Occ o, List<Map<String, dynamic>> visibleClasses) {
+  void _openProgress(_Occ o, List<Map<String, dynamic>> visibleClasses) {
     final classMap = visibleClasses.firstWhere(
       (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
@@ -1243,7 +1244,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AttendanceHistoryScreen(classData: classMap),
+        builder: (_) =>
+            TeacherClassProgressScreen(classId: o.classId, classData: classMap),
       ),
     );
   }
@@ -1644,7 +1646,7 @@ class _SessionCard extends StatelessWidget {
     required this.isConflict,
     required this.onToggle,
     required this.onAttendance,
-    required this.onHistory,
+    required this.onProgress,
     required this.onOpenOnline,
   });
 
@@ -1654,7 +1656,7 @@ class _SessionCard extends StatelessWidget {
   final bool isConflict;
   final VoidCallback onToggle;
   final VoidCallback onAttendance;
-  final VoidCallback onHistory;
+  final VoidCallback onProgress;
   final VoidCallback onOpenOnline;
 
   @override
@@ -1856,14 +1858,14 @@ class _SessionCard extends StatelessWidget {
                             const SizedBox(width: 8),
                             Expanded(
                               child: _ActionButton(
-                                label: o.isOnline ? 'View Online' : 'History',
+                                label: o.isOnline ? 'View Online' : 'Progress',
                                 icon: o.isOnline
                                     ? Icons.wifi_tethering_rounded
-                                    : Icons.history_rounded,
+                                    : Icons.insights_rounded,
                                 color: o.isOnline
                                     ? const Color(0xFFD32F2F)
                                     : palette.text.withValues(alpha: 0.72),
-                                onTap: o.isOnline ? onOpenOnline : onHistory,
+                                onTap: o.isOnline ? onOpenOnline : onProgress,
                               ),
                             ),
                           ],

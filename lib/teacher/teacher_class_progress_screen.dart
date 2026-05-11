@@ -6,6 +6,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
+import 'take_attendance_screen.dart';
 
 class TeacherClassProgressScreen extends StatefulWidget {
   final String classId;
@@ -1121,6 +1122,9 @@ class _TeacherClassProgressScreenState
     final bool passed = sessionId.isNotEmpty && coveredSet.contains(sessionId);
     final statusText = passed ? 'Passed' : 'Coming';
     final statusColor = passed ? successGreen : warningOrange;
+    final attendanceRecord = passed
+        ? _attendanceRecordForSession(sessionId)
+        : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1151,11 +1155,58 @@ class _TeacherClassProgressScreenState
                 color: statusColor,
               ),
             ),
-            title: Text(
-              title.isEmpty ? 'Session' : title,
-              style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title.isEmpty ? 'Session' : title,
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (passed && attendanceRecord != null) ...[
+                  const SizedBox(width: 6),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _showTaughtSessionDetails(s, attendanceRecord),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: p.primary.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.info_outline_rounded,
+                        color: p.primary,
+                        size: 17,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _openEditAttendance(attendanceRecord),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: p.primary.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.edit_note_rounded,
+                        color: p.primary,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
             subtitle: Text(
               [if (skill.isNotEmpty) skill, statusText].join(' • '),
@@ -1227,6 +1278,198 @@ class _TeacherClassProgressScreenState
           ),
         ),
       ),
+    );
+  }
+
+  Map<String, dynamic>? _attendanceRecordForSession(String sessionId) {
+    if (sessionId.trim().isEmpty) return null;
+    for (final entry in _attendance.entries) {
+      final raw = entry.value;
+      if (raw is! Map) continue;
+      final rec = Map<String, dynamic>.from(raw);
+
+      bool matched = false;
+      if (rec['taughtItems'] is List) {
+        final items = (rec['taughtItems'] as List).whereType<Map>().toList();
+        for (final item in items) {
+          final m = Map<String, dynamic>.from(item);
+          final sid = (m['sessionId'] ?? '').toString().trim();
+          if (sid == sessionId) {
+            matched = true;
+            break;
+          }
+        }
+      }
+
+      if (!matched && rec['taught'] is Map) {
+        final taught = Map<String, dynamic>.from(rec['taught'] as Map);
+        final sid = (taught['sessionId'] ?? '').toString().trim();
+        if (sid == sessionId) matched = true;
+      }
+
+      if (matched) {
+        return {'id': entry.key, ...rec};
+      }
+    }
+    return null;
+  }
+
+  int _safeMapLength(dynamic value) {
+    if (value is Map) return value.length;
+    return 0;
+  }
+
+  Future<void> _openEditAttendance(Map<String, dynamic> record) async {
+    final sessionId = (record['sessionId'] ?? record['id'] ?? '').toString();
+    if (sessionId.isEmpty) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TakeAttendanceScreen(
+          classData: widget.classData,
+          existingSessionId: sessionId,
+          existingRecord: record,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    await _boot();
+  }
+
+  Future<void> _showTaughtSessionDetails(
+    Map<String, dynamic> session,
+    Map<String, dynamic> record,
+  ) async {
+    final p = palette;
+    final date = (record['date'] ?? 'No date').toString();
+    final taughtTitle = (session['title'] ?? '').toString().trim();
+    final presentCount = _safeMapLength(record['present']);
+    final absentCount = _safeMapLength(record['absent']);
+    final homework = Map<String, dynamic>.from(record['homework'] ?? {});
+    final homeworkText = (homework['text'] ?? '').toString().trim();
+    final homeworkDue = (homework['dueDate'] ?? '').toString().trim();
+    final hasHomework = homeworkText.isNotEmpty || homeworkDue.isNotEmpty;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: p.cardBg,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Session Details',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  date,
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  taughtTitle.isEmpty ? 'Untitled session' : taughtTitle,
+                  style: TextStyle(
+                    color: p.text,
+                    fontWeight: FontWeight.w800,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _kpi(
+                      p,
+                      label: 'Present',
+                      value: '$presentCount',
+                      icon: Icons.check_circle_outline_rounded,
+                    ),
+                    _kpi(
+                      p,
+                      label: 'Absent',
+                      value: '$absentCount',
+                      icon: Icons.highlight_off_rounded,
+                    ),
+                  ],
+                ),
+                if (hasHomework) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Homework',
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (homeworkText.isNotEmpty)
+                    Text(
+                      homeworkText,
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  if (homeworkDue.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Due: $homeworkDue',
+                        style: TextStyle(
+                          color: p.text.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: p.accent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _openEditAttendance(record);
+                    },
+                    icon: const Icon(Icons.edit_note_rounded),
+                    label: const Text(
+                      'Edit Attendance',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
