@@ -1,7 +1,6 @@
-import 'dart:async';
-
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 class AppConnectivity {
   AppConnectivity._();
@@ -12,17 +11,23 @@ class AppConnectivity {
   final ValueNotifier<bool> isOfflineListenable = ValueNotifier<bool>(false);
 
   bool _started = false;
-
   bool get isOffline => isOfflineListenable.value;
 
   Future<void> start() async {
     if (_started) return;
+    if (kIsWeb) return;
     _started = true;
 
     await _refreshCurrentState();
-    _connectivity.onConnectivityChanged.listen((result) {
-      _setOffline(_isOfflineResult(result));
-    });
+    try {
+      _connectivity.onConnectivityChanged.listen((result) {
+        _setOffline(_isOfflineResult(result));
+      });
+    } on MissingPluginException catch (error) {
+      debugPrint('AppConnectivity: onConnectivityChanged unavailable: $error');
+    } catch (error) {
+      debugPrint('AppConnectivity: listener setup failed: $error');
+    }
   }
 
   Future<void> _refreshCurrentState() async {

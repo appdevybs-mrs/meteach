@@ -2801,12 +2801,12 @@ class _NextComingClassCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
                             Container(
-                              width: 50,
-                              height: 50,
+                              width: 46,
+                              height: 46,
                               decoration: BoxDecoration(
                                 color: itemSoft,
                                 borderRadius: BorderRadius.circular(16),
@@ -2835,11 +2835,9 @@ class _NextComingClassCard extends StatelessWidget {
                                       fontSize: 14,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 3),
                                   Text(
-                                    c.courseCode.isNotEmpty
-                                        ? c.courseCode
-                                        : 'No course code',
+                                    '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -2855,7 +2853,7 @@ class _NextComingClassCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -2867,12 +2865,6 @@ class _NextComingClassCard extends StatelessWidget {
                             ),
                             _InfoChip(
                               palette: palette,
-                              icon: TeacherIcons.nextClassSchedule,
-                              text:
-                                  '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
-                            ),
-                            _InfoChip(
-                              palette: palette,
                               icon: TeacherIcons.nextClassBadge,
                               text: c.isOnline
                                   ? 'Online booking'
@@ -2880,7 +2872,7 @@ class _NextComingClassCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
                             Expanded(

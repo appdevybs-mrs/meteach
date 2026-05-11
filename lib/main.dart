@@ -73,7 +73,9 @@ Future<void> main() async {
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     AppLaunchActionService.instance.init();
-    unawaited(AppConnectivity.instance.start());
+    if (!kIsWeb) {
+      unawaited(AppConnectivity.instance.start());
+    }
     unawaited(FCMService.I.init());
   });
 }

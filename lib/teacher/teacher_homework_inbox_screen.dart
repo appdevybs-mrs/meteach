@@ -35,6 +35,10 @@ class _TeacherHomeworkInboxScreenState
   final Set<String> _locallyDeletedThreadIds = <String>{};
   final Map<String, bool> _localReviewedOverrideByHwRef = <String, bool>{};
   String? _desktopSelectedKey;
+  bool _bulkMode = false;
+  final Set<String> _selectedThreadIds = <String>{};
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -43,6 +47,12 @@ class _TeacherHomeworkInboxScreenState
     if (_meUid.isNotEmpty) {
       _indexStream = _db.child('mail_index/$_meUid').onValue;
     }
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   bool _isHomework(Map<String, dynamic> m) {
@@ -697,6 +707,108 @@ class _TeacherHomeworkInboxScreenState
     }
   }
 
+  Future<void> _deleteThreadIdsForMe(List<String> threadIds) async {
+    final unique = threadIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    if (unique.isEmpty) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _locallyDeletedThreadIds.addAll(unique);
+    _rowsSignature = '';
+    _viewsFuture = null;
+    if (mounted) setState(() {});
+
+    try {
+      await Future.wait(
+        unique.map(
+          (tid) =>
+              _db.child('mail_index/$_meUid/$tid').update({'deletedAt': now}),
+        ),
+      );
+    } catch (_) {
+      _locallyDeletedThreadIds.removeAll(unique);
+      _rowsSignature = '';
+      _viewsFuture = null;
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _setBulkMode(bool enabled) {
+    if (_bulkMode == enabled) return;
+    setState(() {
+      _bulkMode = enabled;
+      if (!enabled) _selectedThreadIds.clear();
+    });
+  }
+
+  void _toggleBulkSelection(String threadId) {
+    final tid = threadId.trim();
+    if (tid.isEmpty) return;
+    setState(() {
+      if (_selectedThreadIds.contains(tid)) {
+        _selectedThreadIds.remove(tid);
+      } else {
+        _selectedThreadIds.add(tid);
+      }
+    });
+  }
+
+  void _selectAllVisible(List<_HomeworkThreadView> views) {
+    final ids = views
+        .map((v) => v.row.threadId.trim())
+        .where((tid) => tid.isNotEmpty)
+        .toSet();
+    setState(() {
+      _selectedThreadIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  Future<void> _bulkDeleteSelected() async {
+    if (_selectedThreadIds.isEmpty) return;
+    final count = _selectedThreadIds.length;
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Delete $count selected item${count == 1 ? '' : 's'}?'),
+            content: const Text(
+              'This hides the selected homework threads for you only. You can restore them later from Deleted.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete selected'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    final ids = _selectedThreadIds.toList();
+    await _deleteThreadIdsForMe(ids);
+    if (!mounted) return;
+    setState(() {
+      _selectedThreadIds.clear();
+      _bulkMode = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Deleted $count item${count == 1 ? '' : 's'}'),
+        duration: const Duration(milliseconds: 1300),
+      ),
+    );
+  }
+
   Future<void> _restoreForMe(String threadId) async {
     final tid = threadId.trim();
     if (tid.isNotEmpty) _locallyDeletedThreadIds.remove(tid);
@@ -803,20 +915,184 @@ class _TeacherHomeworkInboxScreenState
   }
 
   List<_HomeworkThreadView> _applyFilter(List<_HomeworkThreadView> views) {
+    List<_HomeworkThreadView> byTab;
     switch (_filter) {
       case _HomeworkFilter.notReviewed:
-        return views
+        byTab = views
             .where((v) => v.source == _HomeworkSource.inbox && !v.reviewed)
             .toList();
+        break;
       case _HomeworkFilter.reviewed:
-        return views
+        byTab = views
             .where((v) => v.source == _HomeworkSource.inbox && v.reviewed)
             .toList();
+        break;
       case _HomeworkFilter.sent:
-        return views.where((v) => v.source == _HomeworkSource.sent).toList();
+        byTab = views.where((v) => v.source == _HomeworkSource.sent).toList();
+        break;
       case _HomeworkFilter.all:
-        return views;
+        byTab = views;
+        break;
     }
+
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return byTab;
+    return byTab.where((v) {
+      final bag = <String>[
+        v.row.peerName,
+        v.courseTitle,
+        v.classId,
+        v.row.subject,
+        v.row.lastMessage,
+        v.homeworkText,
+      ].join(' ').toLowerCase();
+      return bag.contains(q);
+    }).toList();
+  }
+
+  Widget _buildSearchBox() {
+    return TextField(
+      controller: _searchCtrl,
+      onChanged: (value) => setState(() => _searchQuery = value),
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search students, subjects or keywords...',
+        prefixIcon: const Icon(Icons.search_rounded),
+        suffixIcon: _searchQuery.trim().isEmpty
+            ? const Icon(Icons.tune_rounded)
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: () {
+                  _searchCtrl.clear();
+                  setState(() => _searchQuery = '');
+                },
+                icon: const Icon(Icons.close_rounded),
+              ),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.indigo.withValues(alpha: 0.35)),
+        ),
+      ),
+    );
+  }
+
+  String _filterLabel(_HomeworkFilter f) {
+    switch (f) {
+      case _HomeworkFilter.all:
+        return 'All';
+      case _HomeworkFilter.notReviewed:
+        return 'Pending';
+      case _HomeworkFilter.reviewed:
+        return 'Reviewed';
+      case _HomeworkFilter.sent:
+        return 'Sent';
+    }
+  }
+
+  String _initialsOf(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'HW';
+    if (parts.length == 1) {
+      final s = parts.first;
+      final end = s.length < 2 ? s.length : 2;
+      return s.substring(0, end).toUpperCase();
+    }
+    return '${parts.first[0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Color _avatarTint(String seed) {
+    final palette = <Color>[
+      const Color(0xFFFDE9C9),
+      const Color(0xFFD9F2F2),
+      const Color(0xFFE4EEFF),
+      const Color(0xFFF7DDEF),
+    ];
+    final idx = seed.hashCode.abs() % palette.length;
+    return palette[idx];
+  }
+
+  Future<void> _openReviewPopup(_HomeworkThreadView v) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: const Color(0xFFF8FAFD),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Homework Review',
+                  style: TextStyle(
+                    color: const Color(0xFF163B5D),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  v.row.peerName,
+                  style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _markUnreviewed(v);
+                        },
+                        icon: const Icon(Icons.undo_rounded),
+                        label: const Text('Mark pending'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF163B5D),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _markReviewed(v);
+                        },
+                        icon: const Icon(Icons.check_circle_rounded),
+                        label: const Text('Mark reviewed'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showDetails(_HomeworkThreadView v) {
@@ -852,7 +1128,7 @@ class _TeacherHomeworkInboxScreenState
               Text('Submitted at: ${_fmtTime(v.submittedAtMs)}'),
             ],
             const SizedBox(height: 8),
-            Text('Status: ${v.reviewed ? 'Reviewed' : 'Not reviewed'}'),
+            Text('Status: ${v.reviewed ? 'Reviewed' : 'Pending'}'),
             if (v.needsRedo) ...[
               const SizedBox(height: 6),
               const Text('Needs redo: Yes'),
@@ -936,23 +1212,60 @@ class _TeacherHomeworkInboxScreenState
         .length;
     final sentCount = all.where((v) => v.source == _HomeworkSource.sent).length;
 
-    Widget chip(String text, _HomeworkFilter value, int count) {
-      return ChoiceChip(
-        selected: _filter == value,
-        label: Text('$text ($count)'),
-        onSelected: (_) => setState(() => _filter = value),
-      );
-    }
+    const tabs = <_HomeworkFilter>[
+      _HomeworkFilter.all,
+      _HomeworkFilter.notReviewed,
+      _HomeworkFilter.reviewed,
+      _HomeworkFilter.sent,
+    ];
+    final countByFilter = <_HomeworkFilter, int>{
+      _HomeworkFilter.all: allCount,
+      _HomeworkFilter.notReviewed: notReviewedCount,
+      _HomeworkFilter.reviewed: reviewedCount,
+      _HomeworkFilter.sent: sentCount,
+    };
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        chip('All', _HomeworkFilter.all, allCount),
-        chip('Not reviewed', _HomeworkFilter.notReviewed, notReviewedCount),
-        chip('Reviewed', _HomeworkFilter.reviewed, reviewedCount),
-        chip('Sent', _HomeworkFilter.sent, sentCount),
-      ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SegmentedButton<_HomeworkFilter>(
+        showSelectedIcon: false,
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.indigo.withValues(alpha: 0.12);
+            }
+            return Colors.white;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.indigo.shade700;
+            }
+            return Colors.black.withValues(alpha: 0.75);
+          }),
+          side: WidgetStatePropertyAll(
+            BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+          ),
+          textStyle: const WidgetStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.w800),
+          ),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          ),
+        ),
+        selected: <_HomeworkFilter>{_filter},
+        onSelectionChanged: (selected) {
+          if (selected.isEmpty) return;
+          setState(() => _filter = selected.first);
+        },
+        segments: tabs
+            .map(
+              (f) => ButtonSegment<_HomeworkFilter>(
+                value: f,
+                label: Text('${_filterLabel(f)} (${countByFilter[f] ?? 0})'),
+              ),
+            )
+            .toList(),
+      ),
     );
   }
 
@@ -1061,7 +1374,7 @@ class _TeacherHomeworkInboxScreenState
             spacing: 8,
             runSpacing: 8,
             children: [
-              Chip(label: Text(v.reviewed ? 'Reviewed' : 'Not reviewed')),
+              Chip(label: Text(v.reviewed ? 'Reviewed' : 'Pending')),
               Chip(
                 label: Text(
                   v.source == _HomeworkSource.sent ? 'Sent' : 'Inbox',
@@ -1138,9 +1451,19 @@ class _TeacherHomeworkInboxScreenState
     );
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: const Text('Homework Inbox'),
         actions: [
+          IconButton(
+            tooltip: _bulkMode ? 'Exit select mode' : 'Select multiple',
+            onPressed: () => _setBulkMode(!_bulkMode),
+            icon: Icon(
+              _bulkMode
+                  ? Icons.checklist_rtl_rounded
+                  : Icons.check_box_outlined,
+            ),
+          ),
           if (_viewsFuture != null)
             FutureBuilder<List<_HomeworkThreadView>>(
               future: _viewsFuture,
@@ -1251,501 +1574,602 @@ class _TeacherHomeworkInboxScreenState
                         onRefresh: _refreshInbox,
                         child: ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
                           itemCount: views.length + 1,
                           itemBuilder: (context, i) {
                             if (i == 0) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
-                                child: _buildFilterBar(activeViews),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSearchBox(),
+                                    const SizedBox(height: 10),
+                                    _buildFilterBar(activeViews),
+                                    if (_bulkMode) ...[
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue.withValues(
+                                            alpha: 0.08,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.blue.withValues(
+                                              alpha: 0.22,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _selectedThreadIds.isEmpty
+                                                    ? 'Select homework threads to delete'
+                                                    : '${_selectedThreadIds.length} selected',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  _selectAllVisible(views),
+                                              child: const Text('Select all'),
+                                            ),
+                                            TextButton(
+                                              onPressed:
+                                                  _selectedThreadIds.isEmpty
+                                                  ? null
+                                                  : () => setState(
+                                                      _selectedThreadIds.clear,
+                                                    ),
+                                              child: const Text('Clear'),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            FilledButton.icon(
+                                              onPressed:
+                                                  _selectedThreadIds.isEmpty
+                                                  ? null
+                                                  : _bulkDeleteSelected,
+                                              icon: const Icon(
+                                                Icons.delete_outline_rounded,
+                                              ),
+                                              label: const Text('Delete'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               );
                             }
 
                             final v = views[i - 1];
-                            return Dismissible(
-                              key: ValueKey(
-                                'hw_${v.row.threadId.isEmpty ? v.homeworkRefPath : v.row.threadId}',
-                              ),
-                              direction: DismissDirection.horizontal,
-                              confirmDismiss: (direction) async {
-                                if (direction == DismissDirection.startToEnd) {
-                                  if (v.reviewed) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Already reviewed'),
-                                          duration: Duration(
-                                            milliseconds: 1200,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return false;
+                            final hasSubmission =
+                                v.source == _HomeworkSource.inbox &&
+                                (v.homeworkText.trim().isNotEmpty ||
+                                    v.row.lastMessage.trim().isNotEmpty ||
+                                    v.submittedAtMs > 0);
+                            final waitingSubmission = !hasSubmission;
+                            final isPending = hasSubmission && !v.reviewed;
+                            final isReviewed = hasSubmission && v.reviewed;
+                            final showReviewButton =
+                                (_filter == _HomeworkFilter.notReviewed ||
+                                    _filter == _HomeworkFilter.all) &&
+                                isPending;
+                            final statusLabel = waitingSubmission
+                                ? 'Waiting for submission'
+                                : (isReviewed ? 'Reviewed' : 'Pending');
+                            final statusColor = waitingSubmission
+                                ? const Color(0xFFB45309)
+                                : (isReviewed
+                                      ? Colors.green.shade800
+                                      : const Color(0xFFEC740A));
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              color: waitingSubmission
+                                  ? const Color(0xFFFFF5EB)
+                                  : (isPending
+                                        ? const Color(0xFFFFFBF4)
+                                        : Colors.white),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onLongPress: v.row.threadId.isEmpty
+                                    ? null
+                                    : () => _deleteForMe(v),
+                                onTap: () {
+                                  if (desktopWorkspace) {
+                                    setState(
+                                      () => _desktopSelectedKey =
+                                          _desktopViewKey(v),
+                                    );
+                                    return;
                                   }
-                                  final ok =
-                                      await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: const Text(
-                                            'Mark as reviewed?',
-                                          ),
-                                          content: const Text(
-                                            'This will mark this homework thread as reviewed and remove it from "Not reviewed".',
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: const Text('Cancel'),
-                                            ),
-                                            FilledButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text(
-                                                'Mark reviewed',
-                                              ),
-                                            ),
-                                          ],
+                                  if (_bulkMode) {
+                                    final tid = v.row.threadId.trim();
+                                    if (tid.isNotEmpty) {
+                                      _toggleBulkSelection(tid);
+                                    }
+                                    return;
+                                  }
+                                  if (v.row.threadId.isNotEmpty) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => TeacherMailThreadScreen(
+                                          threadId: v.row.threadId,
+                                          peerUid: v.row.peerUid,
+                                          peerName: v.row.peerName,
+                                          subject: v.row.subject,
                                         ),
-                                      ) ??
-                                      false;
-                                  if (!ok) return false;
-                                  await _markReviewed(v);
-                                  if (!context.mounted) return false;
-                                  {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Marked reviewed'),
-                                        duration: Duration(milliseconds: 1200),
                                       ),
                                     );
+                                    return;
                                   }
-                                  return false;
-                                }
-
-                                if (direction == DismissDirection.endToStart) {
-                                  if (!v.reviewed) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Already not reviewed'),
-                                          duration: Duration(
-                                            milliseconds: 1200,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return false;
-                                  }
-                                  final ok =
-                                      await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: const Text(
-                                            'Mark as not reviewed?',
-                                          ),
-                                          content: const Text(
-                                            'This will move this homework thread back to "Not reviewed" and clear review details.',
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: const Text('Cancel'),
+                                  _showDetails(v);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 24,
+                                            backgroundColor: _avatarTint(
+                                              v.row.peerName,
                                             ),
-                                            FilledButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text(
-                                                'Mark not reviewed',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ) ??
-                                      false;
-                                  if (!ok) return false;
-                                  await _markUnreviewed(v);
-                                  if (!context.mounted) return false;
-                                  {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Marked not reviewed'),
-                                        duration: Duration(milliseconds: 1200),
-                                      ),
-                                    );
-                                  }
-                                  return false;
-                                }
-
-                                return false;
-                              },
-                              background: Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                alignment: Alignment.centerLeft,
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle_outline_rounded,
-                                      color: Colors.green,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Mark reviewed',
-                                      style: TextStyle(
-                                        color: Colors.green,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              secondaryBackground: Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                alignment: Alignment.centerRight,
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    Icon(
-                                      Icons.undo_rounded,
-                                      color: Colors.orange.shade800,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Mark not reviewed',
-                                      style: TextStyle(
-                                        color: Colors.orange.shade800,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              child: Card(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onLongPress: v.row.threadId.isEmpty
-                                      ? null
-                                      : () => _deleteForMe(v),
-                                  onTap: () {
-                                    if (desktopWorkspace) {
-                                      setState(
-                                        () => _desktopSelectedKey =
-                                            _desktopViewKey(v),
-                                      );
-                                      return;
-                                    }
-                                    if (v.row.threadId.isNotEmpty) {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              TeacherMailThreadScreen(
-                                                threadId: v.row.threadId,
-                                                peerUid: v.row.peerUid,
-                                                peerName: v.row.peerName,
-                                                subject: v.row.subject,
-                                              ),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    _showDetails(v);
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 18,
-                                          backgroundColor: v.reviewed
-                                              ? Colors.green.withValues(
-                                                  alpha: 0.14,
-                                                )
-                                              : Colors.orange.withValues(
-                                                  alpha: 0.14,
-                                                ),
-                                          child: Icon(
-                                            Icons.assignment_rounded,
-                                            color: v.reviewed
-                                                ? Colors.green.shade700
-                                                : Colors.orange.shade700,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                v.row.peerName,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 14.5,
+                                            child: Text(
+                                              _initialsOf(v.row.peerName),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.65,
                                                 ),
                                               ),
-                                              const SizedBox(height: 4),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 3,
+                                            ),
+                                          ),
+                                          Positioned(
+                                            left: -2,
+                                            top: -2,
+                                            child: Container(
+                                              width: 10,
+                                              height: 10,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: Colors.deepPurple,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 1.5,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(width: 10),
+                                      if (_bulkMode)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 2,
+                                          ),
+                                          child: Checkbox(
+                                            value: _selectedThreadIds.contains(
+                                              v.row.threadId.trim(),
+                                            ),
+                                            onChanged:
+                                                v.row.threadId.trim().isEmpty
+                                                ? null
+                                                : (_) => _toggleBulkSelection(
+                                                    v.row.threadId,
+                                                  ),
+                                          ),
+                                        ),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    v.row.peerName,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 14.5,
                                                     ),
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      v.source ==
-                                                          _HomeworkSource.sent
-                                                      ? Colors.blue.withValues(
-                                                          alpha: 0.12,
-                                                        )
-                                                      : Colors.purple
-                                                            .withValues(
-                                                              alpha: 0.12,
-                                                            ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
-                                                  border: Border.all(
-                                                    color:
-                                                        v.source ==
-                                                            _HomeworkSource.sent
-                                                        ? Colors.blue
-                                                              .withValues(
-                                                                alpha: 0.35,
-                                                              )
-                                                        : Colors.purple
-                                                              .withValues(
-                                                                alpha: 0.35,
-                                                              ),
                                                   ),
                                                 ),
-                                                child: Text(
-                                                  v.source ==
-                                                          _HomeworkSource.sent
-                                                      ? 'Sent'
-                                                      : 'Inbox',
-                                                  style: TextStyle(
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.w900,
-                                                    color:
-                                                        v.source ==
-                                                            _HomeworkSource.sent
-                                                        ? Colors.blue.shade800
-                                                        : Colors
-                                                              .purple
-                                                              .shade800,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                v.courseTitle,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.67),
-                                                  fontSize: 12.2,
-                                                ),
-                                              ),
-                                              if (v.classId.isNotEmpty) ...[
-                                                const SizedBox(height: 3),
+                                                const SizedBox(width: 8),
                                                 Text(
-                                                  'Class: ${v.classId}',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
+                                                  _fmtTime(v.row.updatedAtMs),
                                                   style: TextStyle(
-                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 11,
                                                     color: Colors.black
                                                         .withValues(
-                                                          alpha: 0.55,
+                                                          alpha: 0.58,
                                                         ),
-                                                    fontSize: 11.2,
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
                                               ],
-                                              const SizedBox(height: 6),
-                                              Text(
-                                                v.row.lastMessage.isEmpty
-                                                    ? '-'
-                                                    : v.row.lastMessage,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.62),
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Row(
-                                              mainAxisSize: MainAxisSize.min,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 6,
                                               children: [
-                                                if (v.unreadCount > 0)
-                                                  Container(
-                                                    margin:
-                                                        const EdgeInsets.only(
-                                                          right: 6,
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFFEEE8FF,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
                                                         ),
+                                                  ),
+                                                  child: Text(
+                                                    v.courseTitle,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color: Color(0xFF5B33D6),
+                                                      fontSize: 11.5,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (v.classId.isNotEmpty)
+                                                  Container(
                                                     padding:
                                                         const EdgeInsets.symmetric(
-                                                          horizontal: 8,
+                                                          horizontal: 10,
                                                           vertical: 4,
                                                         ),
                                                     decoration: BoxDecoration(
-                                                      color: Colors.red
-                                                          .withValues(
-                                                            alpha: 0.12,
-                                                          ),
+                                                      color: const Color(
+                                                        0xFFF2F4F8,
+                                                      ),
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                             999,
                                                           ),
                                                     ),
-                                                    child: Text(
-                                                      v.unreadCount.toString(),
-                                                      style: const TextStyle(
-                                                        color: Colors.red,
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                IconButton(
-                                                  tooltip: 'Homework details',
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  onPressed: () =>
-                                                      _showDetails(v),
-                                                  icon: Icon(
-                                                    Icons.info_outline_rounded,
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.65,
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Icon(
+                                                          Icons
+                                                              .groups_2_outlined,
+                                                          size: 13,
+                                                          color: Colors.black
+                                                              .withValues(
+                                                                alpha: 0.55,
+                                                              ),
                                                         ),
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  tooltip: 'Edit homework',
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  onPressed: () =>
-                                                      _editHomework(v),
-                                                  icon: Icon(
-                                                    Icons.edit_rounded,
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.65,
+                                                        const SizedBox(
+                                                          width: 4,
                                                         ),
-                                                  ),
-                                                ),
-                                                if (v.homeworkText
-                                                    .trim()
-                                                    .isNotEmpty)
-                                                  IconButton(
-                                                    tooltip: 'Copy text',
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    onPressed: () =>
-                                                        _copyHomeworkText(v),
-                                                    icon: Icon(
-                                                      Icons.copy_rounded,
-                                                      color: Colors.black
-                                                          .withValues(
-                                                            alpha: 0.65,
+                                                        Text(
+                                                          v.classId,
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            fontSize: 11.5,
+                                                            color: Colors.black
+                                                                .withValues(
+                                                                  alpha: 0.62,
+                                                                ),
                                                           ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   ),
                                               ],
                                             ),
+                                            const SizedBox(height: 6),
                                             Text(
-                                              _fmtTime(v.row.updatedAtMs),
+                                              'Homework ($statusLabel)',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.58,
-                                                ),
-                                                fontWeight: FontWeight.w700,
+                                                color: statusColor,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w800,
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
+                                            if (v.row.lastMessage
+                                                .trim()
+                                                .isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 4,
+                                                ),
+                                                child: Text(
+                                                  v.row.lastMessage,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.58,
+                                                        ),
+                                                    fontSize: 11.5,
                                                   ),
-                                              decoration: BoxDecoration(
-                                                color: v.reviewed
-                                                    ? Colors.green.withValues(
-                                                        alpha: 0.12,
-                                                      )
-                                                    : Colors.orange.withValues(
-                                                        alpha: 0.12,
-                                                      ),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
+                                                ),
                                               ),
-                                              child: Text(
-                                                v.needsRedo
-                                                    ? 'Redo'
-                                                    : (v.reviewed
-                                                          ? 'Reviewed'
-                                                          : 'Not reviewed'),
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w900,
-                                                  color: v.needsRedo
-                                                      ? Colors.orange.shade800
-                                                      : (v.reviewed
-                                                            ? Colors
-                                                                  .green
-                                                                  .shade800
-                                                            : Colors
-                                                                  .orange
-                                                                  .shade800),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (v.unreadCount > 0)
+                                                Container(
+                                                  margin: const EdgeInsets.only(
+                                                    right: 6,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red
+                                                        .withValues(
+                                                          alpha: 0.12,
+                                                        ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    v.unreadCount.toString(),
+                                                    style: const TextStyle(
+                                                      color: Colors.red,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              PopupMenuButton<String>(
+                                                tooltip: 'More actions',
+                                                color: const Color(0xFFF5F8FC),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(14),
+                                                  side: BorderSide(
+                                                    color: const Color(
+                                                      0xFF163B5D,
+                                                    ).withValues(alpha: 0.12),
+                                                  ),
+                                                ),
+                                                onSelected: (value) async {
+                                                  if (value == 'details') {
+                                                    _showDetails(v);
+                                                    return;
+                                                  }
+                                                  if (value == 'edit') {
+                                                    await _editHomework(v);
+                                                    return;
+                                                  }
+                                                  if (value == 'copy') {
+                                                    await _copyHomeworkText(v);
+                                                    return;
+                                                  }
+                                                  if (value == 'delete') {
+                                                    await _deleteForMe(v);
+                                                  }
+                                                },
+                                                itemBuilder: (context) => [
+                                                  const PopupMenuItem(
+                                                    value: 'details',
+                                                    child: ListTile(
+                                                      dense: true,
+                                                      leading: Icon(
+                                                        Icons
+                                                            .info_outline_rounded,
+                                                        color: Color(
+                                                          0xFF163B5D,
+                                                        ),
+                                                      ),
+                                                      title: Text('Details'),
+                                                    ),
+                                                  ),
+                                                  const PopupMenuItem(
+                                                    value: 'edit',
+                                                    child: ListTile(
+                                                      dense: true,
+                                                      leading: Icon(
+                                                        Icons.edit_rounded,
+                                                        color: Color(
+                                                          0xFF1F4E79,
+                                                        ),
+                                                      ),
+                                                      title: Text('Edit'),
+                                                    ),
+                                                  ),
+                                                  if (v.homeworkText
+                                                      .trim()
+                                                      .isNotEmpty)
+                                                    const PopupMenuItem(
+                                                      value: 'copy',
+                                                      child: ListTile(
+                                                        dense: true,
+                                                        leading: Icon(
+                                                          Icons.copy_rounded,
+                                                          color: Color(
+                                                            0xFFEC740A,
+                                                          ),
+                                                        ),
+                                                        title: Text(
+                                                          'Copy Homework',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  const PopupMenuItem(
+                                                    value: 'delete',
+                                                    child: ListTile(
+                                                      dense: true,
+                                                      leading: Icon(
+                                                        Icons
+                                                            .delete_outline_rounded,
+                                                        color: Color(
+                                                          0xFFB42318,
+                                                        ),
+                                                      ),
+                                                      title: Text(
+                                                        'Delete for me',
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFFEAF0F8,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.more_vert_rounded,
+                                                    color: const Color(
+                                                      0xFF163B5D,
+                                                    ).withValues(alpha: 0.9),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Container(
+                                            constraints: const BoxConstraints(
+                                              minWidth: 154,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: waitingSubmission
+                                                  ? const Color(0xFFFDE7D8)
+                                                  : const Color(0xFFFFF4DF),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              statusLabel,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w900,
+                                                color: statusColor,
+                                              ),
+                                            ),
+                                          ),
+                                          if (showReviewButton) ...[
+                                            const SizedBox(height: 6),
+                                            SizedBox(
+                                              width: 154,
+                                              child: DecoratedBox(
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  gradient:
+                                                      const LinearGradient(
+                                                        colors: [
+                                                          Color(0xFF1F4E79),
+                                                          Color(0xFF163B5D),
+                                                        ],
+                                                      ),
+                                                ),
+                                                child: FilledButton(
+                                                  onPressed: () =>
+                                                      _openReviewPopup(v),
+                                                  style: FilledButton.styleFrom(
+                                                    backgroundColor:
+                                                        Colors.transparent,
+                                                    shadowColor:
+                                                        Colors.transparent,
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    minimumSize:
+                                                        const Size.fromHeight(
+                                                          36,
+                                                        ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            12,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Text(
+                                                        'Review',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w900,
+                                                        ),
+                                                      ),
+                                                      SizedBox(width: 6),
+                                                      Icon(
+                                                        Icons
+                                                            .chevron_right_rounded,
+                                                        size: 18,
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ],
-                                        ),
-                                      ],
-                                    ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),

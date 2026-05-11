@@ -106,6 +106,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
+  final FocusNode _bodyFocus = FocusNode();
 
   final _searchC = TextEditingController();
   bool _searching = false;
@@ -152,6 +153,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   bool _loadedLearnerCourses = false;
   int _peerLastDeliveredAtMs = 0;
   bool _isGroupThread = false;
+  String _homeworkRefPath = '';
+  String _homeworkSessionId = '';
+  String _homeworkLessonTitle = '';
+  int _homeworkSubmittedAtMs = 0;
+  int _homeworkReviewedAtMs = 0;
+  bool _homeworkNeedsRedo = false;
+  bool _homeworkAvailable = false;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -252,6 +260,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
     _bodyC.dispose();
+    _bodyFocus.dispose();
     _searchC.dispose();
 
     _posSub?.cancel();
@@ -737,6 +746,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _threadCourseKey = ck;
         _threadCourseTitle = (title != null && title.isNotEmpty) ? title : null;
       });
+      unawaited(_refreshHomeworkContext());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -745,6 +755,355 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _threadCourseTitle = null;
       });
     }
+  }
+
+  Future<void> _refreshHomeworkContext() async {
+    try {
+      final tSnap = await _threadRef.get();
+      if (!tSnap.exists || tSnap.value is! Map) {
+        if (!mounted) return;
+        setState(() {
+          _homeworkAvailable = false;
+          _homeworkRefPath = '';
+        });
+        return;
+      }
+      final t = Map<String, dynamic>.from(tSnap.value as Map);
+      var hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+      final learnerUid = (t['learnerUid'] ?? '').toString().trim();
+      final courseKey = (t['courseKey'] ?? '').toString().trim();
+      final sessionId = (t['sessionId'] ?? '').toString().trim();
+      final sessionTitle = (t['sessionTitle'] ?? t['lessonTitle'] ?? '')
+          .toString()
+          .trim();
+
+      if (hwRefPath.isEmpty &&
+          learnerUid.isNotEmpty &&
+          courseKey.isNotEmpty &&
+          sessionId.isNotEmpty) {
+        hwRefPath =
+            'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework';
+      }
+
+      if (hwRefPath.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _homeworkAvailable = false;
+          _homeworkRefPath = '';
+        });
+        return;
+      }
+
+      final hwSnap = await _db.ref(hwRefPath).get();
+      if (!hwSnap.exists || hwSnap.value is! Map) {
+        if (!mounted) return;
+        setState(() {
+          _homeworkAvailable = false;
+          _homeworkRefPath = hwRefPath;
+        });
+        return;
+      }
+
+      final hw = Map<String, dynamic>.from(hwSnap.value as Map);
+      final submittedAt = (hw['submittedAt'] is num)
+          ? (hw['submittedAt'] as num).toInt()
+          : 0;
+      final reviewedAt = (hw['reviewedAt'] is num)
+          ? (hw['reviewedAt'] as num).toInt()
+          : 0;
+      final st = (hw['reviewStatus'] ?? '').toString().trim().toLowerCase();
+      final needsRedo =
+          hw['needsRedo'] == true || st == 'redo' || st == 'needs_work';
+
+      if (!mounted) return;
+      setState(() {
+        _homeworkAvailable = true;
+        _homeworkRefPath = hwRefPath;
+        _homeworkSessionId = sessionId;
+        _homeworkLessonTitle = sessionTitle;
+        _homeworkSubmittedAtMs = submittedAt;
+        _homeworkReviewedAtMs = reviewedAt;
+        _homeworkNeedsRedo = needsRedo;
+      });
+    } catch (_) {}
+  }
+
+  void _insertQuickFeedback(String text) {
+    final msg = text.trim();
+    if (msg.isEmpty) return;
+    final current = _bodyC.text.trim();
+    final next = current.isEmpty ? msg : '$current $msg';
+    setState(() {
+      _bodyC.text = next;
+      _bodyC.selection = TextSelection.fromPosition(
+        TextPosition(offset: _bodyC.text.length),
+      );
+    });
+    _bodyFocus.requestFocus();
+  }
+
+  String get _homeworkStatusLabel {
+    if (_homeworkNeedsRedo) return 'Redo required';
+    if (_homeworkReviewedAtMs > 0) return 'Reviewed';
+    return 'Pending review';
+  }
+
+  Color get _homeworkStatusColor {
+    if (_homeworkNeedsRedo) return Colors.deepOrange;
+    if (_homeworkReviewedAtMs > 0) return Colors.green;
+    return const Color(0xFFE28B15);
+  }
+
+  void _focusComposerForFeedback() {
+    _bodyFocus.requestFocus();
+  }
+
+  void _showHomeworkSnapshot() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Homework details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Status: $_homeworkStatusLabel'),
+            if (_homeworkLessonTitle.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Lesson: $_homeworkLessonTitle'),
+            ],
+            if (_homeworkSessionId.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Session: $_homeworkSessionId'),
+            ],
+            if (_homeworkSubmittedAtMs > 0) ...[
+              const SizedBox(height: 6),
+              Text('Submitted: ${_fmtReceiptAt(_homeworkSubmittedAtMs)}'),
+            ],
+            if (_homeworkReviewedAtMs > 0) ...[
+              const SizedBox(height: 6),
+              Text('Reviewed: ${_fmtReceiptAt(_homeworkReviewedAtMs)}'),
+            ],
+            if (_homeworkRefPath.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Reference: ready',
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _reviewHomeworkFromThread();
+            },
+            child: const Text('Open review'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeworkEvaluationCard() {
+    if (!_homeworkAvailable || _selectionMode || _isGroupThread) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _navy.withValues(alpha: 0.09),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.assignment_rounded, color: _navy),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Homework Evaluation',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                    color: _navy,
+                  ),
+                ),
+              ),
+              Text(
+                _homeworkSubmittedAtMs > 0
+                    ? _fmtReceiptAt(_homeworkSubmittedAtMs)
+                    : '-',
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.58),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: _navy.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              _homeworkLessonTitle.isNotEmpty
+                  ? _homeworkLessonTitle
+                  : (_homeworkSessionId.isNotEmpty
+                        ? 'Session: $_homeworkSessionId'
+                        : 'Homework submission'),
+              style: TextStyle(
+                color: _navy.withValues(alpha: 0.82),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _showHomeworkSnapshot,
+                icon: const Icon(Icons.visibility_outlined),
+                label: const Text('View homework'),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: _navy.withValues(alpha: 0.24)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _focusComposerForFeedback,
+                icon: const Icon(Icons.chat_bubble_outline_rounded),
+                label: const Text('Add feedback'),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: _navy.withValues(alpha: 0.24)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _reviewHomeworkFromThread,
+                icon: const Icon(Icons.check_circle_outline_rounded),
+                label: const Text('Mark reviewed'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _navy,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickFeedbackChips() {
+    if (_selectionMode || _isGroupThread || !_homeworkAvailable) {
+      return const SizedBox.shrink();
+    }
+    final chips = <Map<String, dynamic>>[
+      {
+        'icon': Icons.star_rounded,
+        'label': 'Excellent',
+        'msg': 'Excellent work.',
+      },
+      {
+        'icon': Icons.thumb_up_alt_outlined,
+        'label': 'Good effort',
+        'msg': 'Good effort. Keep going.',
+      },
+      {
+        'icon': Icons.error_outline_rounded,
+        'label': 'Incomplete',
+        'msg': 'Your homework is incomplete. Please finish all parts.',
+      },
+      {
+        'icon': Icons.refresh_rounded,
+        'label': 'Rewrite',
+        'msg': 'Please rewrite this homework carefully.',
+      },
+      {
+        'icon': Icons.spellcheck_rounded,
+        'label': 'Check spelling',
+        'msg': 'Please check spelling and punctuation.',
+      },
+      {
+        'icon': Icons.photo_camera_outlined,
+        'label': 'Send clearer photo',
+        'msg': 'Please send a clearer photo of your homework.',
+      },
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: chips
+              .map(
+                (c) => ActionChip(
+                  avatar: Icon(c['icon'] as IconData, size: 16),
+                  label: Text(c['label'] as String),
+                  onPressed: () => _insertQuickFeedback(c['msg'] as String),
+                  side: BorderSide(color: _navy.withValues(alpha: 0.14)),
+                  backgroundColor: _navy.withValues(alpha: 0.04),
+                  labelStyle: TextStyle(
+                    color: _navy.withValues(alpha: 0.9),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadLearnerCoursesTitles() async {
@@ -3484,6 +3843,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       );
 
       _snack('Saved + sent ✅');
+      unawaited(_refreshHomeworkContext());
       scoreC.dispose();
       noteC.dispose();
     } catch (e) {
@@ -4037,14 +4397,21 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               icon: const Icon(Icons.close_rounded, color: _navy),
               onPressed: () => setState(() => _selectedMessageIds.clear()),
             ),
-          if (!_isGroupThread)
-            IconButton(
-              tooltip: 'Evaluate homework',
-              icon: Icon(
-                Icons.assignment_turned_in_rounded,
-                color: Colors.deepOrange.withValues(alpha: 0.95),
+          if (!_isGroupThread && _homeworkAvailable && !_selectionMode)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilledButton.icon(
+                onPressed: _reviewHomeworkFromThread,
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Mark reviewed'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _navy,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
               ),
-              onPressed: _reviewHomeworkFromThread,
             ),
           IconButton(
             tooltip: 'Manage group members',
@@ -4052,49 +4419,103 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             onPressed: _openManageGroupMembers,
           ),
         ],
-        bottom: (subjectTrim.isEmpty)
+        bottom: (subjectTrim.isEmpty && (!_homeworkAvailable || _selectionMode))
             ? null
             : PreferredSize(
-                preferredSize: const Size.fromHeight(46),
+                preferredSize: Size.fromHeight(
+                  _homeworkAvailable && !_selectionMode ? 92 : 46,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _orange.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: _orange.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.topic_rounded,
-                            size: 18,
-                            color: _navy.withValues(alpha: 0.9),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              subjectTrim,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: _navy.withValues(alpha: 0.92),
+                  child: Column(
+                    children: [
+                      if (subjectTrim.isNotEmpty)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _orange.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: _orange.withValues(alpha: 0.35),
                               ),
                             ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.menu_book_rounded,
+                                  size: 18,
+                                  color: _navy.withValues(alpha: 0.9),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    subjectTrim,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: _navy.withValues(alpha: 0.92),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      if (_homeworkAvailable && !_selectionMode) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _homeworkLessonTitle.isNotEmpty
+                                    ? _homeworkLessonTitle
+                                    : (_homeworkSessionId.isNotEmpty
+                                          ? 'Session: $_homeworkSessionId'
+                                          : 'Homework Evaluation'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _navy.withValues(alpha: 0.82),
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _homeworkStatusColor.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: _homeworkStatusColor.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                _homeworkStatusLabel,
+                                style: TextStyle(
+                                  color: _homeworkStatusColor,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
@@ -4104,6 +4525,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         maxWidth: 1520,
         child: Column(
           children: [
+            _buildHomeworkEvaluationCard(),
             Expanded(
               child: StreamBuilder<DatabaseEvent>(
                 stream: _msgStream,
@@ -4262,6 +4684,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       const SizedBox(height: 8),
                     ],
 
+                    _buildQuickFeedbackChips(),
+
                     _buildRecordingBar(),
 
                     Row(
@@ -4288,6 +4712,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         ),
                         Expanded(
                           child: TextField(
+                            focusNode: _bodyFocus,
                             controller: _bodyC,
                             onChanged: (_) => setState(() {}),
                             minLines: 1,
