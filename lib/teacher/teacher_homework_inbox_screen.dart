@@ -1058,34 +1058,36 @@ class _TeacherHomeworkInboxScreenState
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          await _markUnreviewed(v);
-                        },
-                        icon: const Icon(Icons.undo_rounded),
-                        label: const Text('Mark pending'),
-                      ),
+                const Text(
+                  'Open this learner thread to review and submit feedback.',
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF163B5D),
+                      foregroundColor: Colors.white,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF163B5D),
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          await _markReviewed(v);
-                        },
-                        icon: const Icon(Icons.check_circle_rounded),
-                        label: const Text('Mark reviewed'),
-                      ),
-                    ),
-                  ],
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      if (v.row.threadId.isNotEmpty) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TeacherMailThreadScreen(
+                              threadId: v.row.threadId,
+                              peerUid: v.row.peerUid,
+                              peerName: v.row.peerName,
+                              subject: v.row.subject,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.rate_review_rounded),
+                    label: const Text('Open review popup'),
+                  ),
                 ),
               ],
             ),
@@ -1093,6 +1095,19 @@ class _TeacherHomeworkInboxScreenState
         );
       },
     );
+  }
+
+  String _emptyStateText() {
+    switch (_filter) {
+      case _HomeworkFilter.notReviewed:
+        return 'No pending homework. Everything looks reviewed.';
+      case _HomeworkFilter.reviewed:
+        return 'No reviewed homework yet.';
+      case _HomeworkFilter.sent:
+        return 'No sent homework yet.';
+      case _HomeworkFilter.all:
+        return 'No homework items found.';
+    }
   }
 
   void _showDetails(_HomeworkThreadView v) {
@@ -1562,9 +1577,13 @@ class _TeacherHomeworkInboxScreenState
                           onRefresh: _refreshInbox,
                           child: ListView(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            children: const [
-                              SizedBox(height: 180),
-                              Center(child: Text('No homework items found.')),
+                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                            children: [
+                              _buildSearchBox(),
+                              const SizedBox(height: 10),
+                              _buildFilterBar(activeViews),
+                              const SizedBox(height: 120),
+                              Center(child: Text(_emptyStateText())),
                             ],
                           ),
                         );
@@ -1673,6 +1692,10 @@ class _TeacherHomeworkInboxScreenState
                                 : (isReviewed
                                       ? Colors.green.shade800
                                       : const Color(0xFFEC740A));
+                            final preview = v.row.lastMessage.trim();
+                            final showPreview =
+                                preview.isNotEmpty &&
+                                preview.toLowerCase() != 'homework';
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
                               color: waitingSubmission
@@ -1797,15 +1820,22 @@ class _TeacherHomeworkInboxScreenState
                                                   ),
                                                 ),
                                                 const SizedBox(width: 8),
-                                                Text(
-                                                  _fmtTime(v.row.updatedAtMs),
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.58,
-                                                        ),
-                                                    fontWeight: FontWeight.w700,
+                                                Expanded(
+                                                  child: Text(
+                                                    _fmtTime(v.row.updatedAtMs),
+                                                    textAlign: TextAlign.right,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.black
+                                                          .withValues(
+                                                            alpha: 0.58,
+                                                          ),
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -1900,15 +1930,13 @@ class _TeacherHomeworkInboxScreenState
                                                 fontWeight: FontWeight.w800,
                                               ),
                                             ),
-                                            if (v.row.lastMessage
-                                                .trim()
-                                                .isNotEmpty)
+                                            if (showPreview)
                                               Padding(
                                                 padding: const EdgeInsets.only(
                                                   top: 4,
                                                 ),
                                                 child: Text(
-                                                  v.row.lastMessage,
+                                                  preview,
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -2077,33 +2105,8 @@ class _TeacherHomeworkInboxScreenState
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            constraints: const BoxConstraints(
-                                              minWidth: 154,
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: waitingSubmission
-                                                  ? const Color(0xFFFDE7D8)
-                                                  : const Color(0xFFFFF4DF),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                            ),
-                                            child: Text(
-                                              statusLabel,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w900,
-                                                color: statusColor,
-                                              ),
-                                            ),
-                                          ),
                                           if (showReviewButton) ...[
-                                            const SizedBox(height: 6),
+                                            const SizedBox(height: 8),
                                             SizedBox(
                                               width: 154,
                                               child: DecoratedBox(

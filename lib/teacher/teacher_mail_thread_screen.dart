@@ -160,6 +160,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   int _homeworkReviewedAtMs = 0;
   bool _homeworkNeedsRedo = false;
   bool _homeworkAvailable = false;
+  bool _evalExpanded = true;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -828,20 +829,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (_) {}
   }
 
-  void _insertQuickFeedback(String text) {
-    final msg = text.trim();
-    if (msg.isEmpty) return;
-    final current = _bodyC.text.trim();
-    final next = current.isEmpty ? msg : '$current $msg';
-    setState(() {
-      _bodyC.text = next;
-      _bodyC.selection = TextSelection.fromPosition(
-        TextPosition(offset: _bodyC.text.length),
-      );
-    });
-    _bodyFocus.requestFocus();
-  }
-
   String get _homeworkStatusLabel {
     if (_homeworkNeedsRedo) return 'Redo required';
     if (_homeworkReviewedAtMs > 0) return 'Reviewed';
@@ -858,8 +845,23 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     _bodyFocus.requestFocus();
   }
 
-  void _showHomeworkSnapshot() {
-    showDialog<void>(
+  Future<void> _showHomeworkSnapshot() async {
+    String homeworkText = '';
+    try {
+      if (_homeworkRefPath.isNotEmpty) {
+        final snap = await _db.ref(_homeworkRefPath).get();
+        if (snap.exists && snap.value is Map) {
+          final hw = Map<String, dynamic>.from(snap.value as Map);
+          homeworkText =
+              (hw['text'] ?? hw['answer'] ?? hw['body'] ?? hw['message'] ?? '')
+                  .toString()
+                  .trim();
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Homework details'),
@@ -891,6 +893,15 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
               ),
             ],
+            if (homeworkText.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Homework text',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(homeworkText),
+            ],
           ],
         ),
         actions: [
@@ -903,7 +914,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               Navigator.pop(ctx);
               _reviewHomeworkFromThread();
             },
-            child: const Text('Open review'),
+            child: const Text('Edit review'),
           ),
         ],
       ),
@@ -915,8 +926,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       return const SizedBox.shrink();
     }
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -932,176 +942,210 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: _navy.withValues(alpha: 0.09),
-                  borderRadius: BorderRadius.circular(12),
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            onTap: () => setState(() => _evalExpanded = !_evalExpanded),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE9CF),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFFEC740A).withValues(alpha: 0.35),
                 ),
-                child: const Icon(Icons.assignment_rounded, color: _navy),
               ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Homework Evaluation',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                    color: _navy,
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEC740A).withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.assignment_rounded,
+                      color: Color(0xFFB45D07),
+                    ),
                   ),
-                ),
-              ),
-              Text(
-                _homeworkSubmittedAtMs > 0
-                    ? _fmtReceiptAt(_homeworkSubmittedAtMs)
-                    : '-',
-                style: TextStyle(
-                  color: Colors.black.withValues(alpha: 0.58),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: _navy.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              _homeworkLessonTitle.isNotEmpty
-                  ? _homeworkLessonTitle
-                  : (_homeworkSessionId.isNotEmpty
-                        ? 'Session: $_homeworkSessionId'
-                        : 'Homework submission'),
-              style: TextStyle(
-                color: _navy.withValues(alpha: 0.82),
-                fontWeight: FontWeight.w800,
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Homework Evaluation',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: _navy,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _evalExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: const Color(0xFFB45D07),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _showHomeworkSnapshot,
-                icon: const Icon(Icons.visibility_outlined),
-                label: const Text('View homework'),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _navy.withValues(alpha: 0.24)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _focusComposerForFeedback,
-                icon: const Icon(Icons.chat_bubble_outline_rounded),
-                label: const Text('Add feedback'),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _navy.withValues(alpha: 0.24)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
+          if (_evalExpanded) ...[
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _navy.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _homeworkLessonTitle.isNotEmpty
+                          ? _homeworkLessonTitle
+                          : (_homeworkSessionId.isNotEmpty
+                                ? 'Session: $_homeworkSessionId'
+                                : 'Homework submission'),
+                      style: TextStyle(
+                        color: _navy.withValues(alpha: 0.82),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              FilledButton.icon(
-                onPressed: _reviewHomeworkFromThread,
-                icon: const Icon(Icons.check_circle_outline_rounded),
-                label: const Text('Mark reviewed'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _navy,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                const SizedBox(width: 8),
+                Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _homeworkStatusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: _homeworkStatusColor.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 14,
+                        color: _homeworkStatusColor,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _homeworkStatusLabel,
+                        style: TextStyle(
+                          color: _homeworkStatusColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _showHomeworkSnapshot,
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('View homework'),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _navy.withValues(alpha: 0.24)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _focusComposerForFeedback,
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    label: const Text('Add feedback'),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _navy.withValues(alpha: 0.24)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _reviewHomeworkFromThread,
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                    label: const Text('Edit review'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF5B33D6),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
               ),
-            ],
-          ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.image_outlined,
+                    size: 18,
+                    color: _navy.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Homework submission',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    _homeworkSubmittedAtMs > 0
+                        ? _fmtTime(_homeworkSubmittedAtMs)
+                        : '-',
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildQuickFeedbackChips() {
-    if (_selectionMode || _isGroupThread || !_homeworkAvailable) {
-      return const SizedBox.shrink();
-    }
-    final chips = <Map<String, dynamic>>[
-      {
-        'icon': Icons.star_rounded,
-        'label': 'Excellent',
-        'msg': 'Excellent work.',
-      },
-      {
-        'icon': Icons.thumb_up_alt_outlined,
-        'label': 'Good effort',
-        'msg': 'Good effort. Keep going.',
-      },
-      {
-        'icon': Icons.error_outline_rounded,
-        'label': 'Incomplete',
-        'msg': 'Your homework is incomplete. Please finish all parts.',
-      },
-      {
-        'icon': Icons.refresh_rounded,
-        'label': 'Rewrite',
-        'msg': 'Please rewrite this homework carefully.',
-      },
-      {
-        'icon': Icons.spellcheck_rounded,
-        'label': 'Check spelling',
-        'msg': 'Please check spelling and punctuation.',
-      },
-      {
-        'icon': Icons.photo_camera_outlined,
-        'label': 'Send clearer photo',
-        'msg': 'Please send a clearer photo of your homework.',
-      },
-    ];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: chips
-              .map(
-                (c) => ActionChip(
-                  avatar: Icon(c['icon'] as IconData, size: 16),
-                  label: Text(c['label'] as String),
-                  onPressed: () => _insertQuickFeedback(c['msg'] as String),
-                  side: BorderSide(color: _navy.withValues(alpha: 0.14)),
-                  backgroundColor: _navy.withValues(alpha: 0.04),
-                  labelStyle: TextStyle(
-                    color: _navy.withValues(alpha: 0.9),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              )
-              .toList(),
-        ),
       ),
     );
   }
@@ -3220,414 +3264,199 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               });
             }
 
-            return Dialog(
-              insetPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 24,
+            return AnimatedPadding(
+              duration: const Duration(milliseconds: 160),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
-              backgroundColor: Colors.transparent,
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 560),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+              child: Dialog(
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-                      decoration: BoxDecoration(
-                        color: _navy,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(28),
+                backgroundColor: Colors.transparent,
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: 560,
+                    maxHeight: MediaQuery.of(ctx).size.height * 0.72,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                        decoration: BoxDecoration(
+                          color: _navy,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(28),
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Icon(
-                              Icons.fact_check_rounded,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Homework Review',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  _peerNameShown,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.85),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                        child: Row(
                           children: [
                             Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
+                              width: 42,
+                              height: 42,
                               decoration: BoxDecoration(
-                                color: _orange.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: _orange.withValues(alpha: 0.28),
-                                ),
+                                color: Colors.white.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(14),
                               ),
+                              child: const Icon(
+                                Icons.fact_check_rounded,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
                               child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    '${liveScore.clamp(0, 100)} / 100',
-                                    style: const TextStyle(
-                                      fontSize: 32,
+                                  const Text(
+                                    'Homework Review',
+                                    style: TextStyle(
+                                      color: Colors.white,
                                       fontWeight: FontWeight.w900,
-                                      color: _navy,
+                                      fontSize: 18,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    alignment: WrapAlignment.center,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 7,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _navy.withValues(alpha: 0.10),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          'Grade $liveGrade',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: _navy,
-                                          ),
-                                        ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _peerNameShown,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.85,
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 7,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: status == 'redo'
-                                              ? Colors.red.withValues(
-                                                  alpha: 0.12,
-                                                )
-                                              : Colors.green.withValues(
-                                                  alpha: 0.12,
-                                                ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: status == 'redo'
-                                                ? Colors.red.withValues(
-                                                    alpha: 0.25,
-                                                  )
-                                                : Colors.green.withValues(
-                                                    alpha: 0.25,
-                                                  ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          status == 'redo'
-                                              ? 'Redo required'
-                                              : 'Pass',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: status == 'redo'
-                                                ? Colors.red.shade700
-                                                : Colors.green.shade700,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
-
-                            TextField(
-                              controller: scoreC,
-                              onChanged: (_) => recalcGradeFromText(),
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                labelText: 'Score (0-100)',
-                                hintText: 'Enter score',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide(
-                                    color: _orange.withValues(alpha: 0.75),
-                                    width: 1.4,
-                                  ),
-                                ),
-                                prefixIcon: const Icon(Icons.percent_rounded),
+                            IconButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.white,
                               ),
                             ),
-
-                            const SizedBox(height: 16),
-
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(18),
-                                    onTap: () => setLocal(() {
-                                      status = 'pass';
-                                    }),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 160,
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: _orange.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: _orange.withValues(alpha: 0.28),
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      '${liveScore.clamp(0, 100)} / 100',
+                                      style: const TextStyle(
+                                        fontSize: 32,
+                                        fontWeight: FontWeight.w900,
+                                        color: _navy,
                                       ),
-                                      padding: const EdgeInsets.all(14),
-                                      decoration: BoxDecoration(
-                                        color: status == 'pass'
-                                            ? Colors.green.withValues(
-                                                alpha: 0.12,
-                                              )
-                                            : Colors.grey.withValues(
-                                                alpha: 0.06,
-                                              ),
-                                        borderRadius: BorderRadius.circular(18),
-                                        border: Border.all(
-                                          color: status == 'pass'
-                                              ? Colors.green.withValues(
-                                                  alpha: 0.45,
-                                                )
-                                              : Colors.black.withValues(
-                                                  alpha: 0.08,
-                                                ),
-                                          width: status == 'pass' ? 1.4 : 1,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Icon(
-                                            Icons.check_circle_rounded,
-                                            color: status == 'pass'
-                                                ? Colors.green.shade700
-                                                : Colors.black.withValues(
-                                                    alpha: 0.45,
-                                                  ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      alignment: WrapAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 7,
                                           ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Pass',
-                                            style: TextStyle(
+                                          decoration: BoxDecoration(
+                                            color: _navy.withValues(
+                                              alpha: 0.10,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Grade $liveGrade',
+                                            style: const TextStyle(
                                               fontWeight: FontWeight.w900,
-                                              color: status == 'pass'
-                                                  ? Colors.green.shade700
-                                                  : Colors.black.withValues(
-                                                      alpha: 0.72,
+                                              color: _navy,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 7,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: status == 'redo'
+                                                ? Colors.red.withValues(
+                                                    alpha: 0.12,
+                                                  )
+                                                : Colors.green.withValues(
+                                                    alpha: 0.12,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: status == 'redo'
+                                                  ? Colors.red.withValues(
+                                                      alpha: 0.25,
+                                                    )
+                                                  : Colors.green.withValues(
+                                                      alpha: 0.25,
                                                     ),
                                             ),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Homework accepted',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.black.withValues(
-                                                alpha: 0.55,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(18),
-                                    onTap: () => setLocal(() {
-                                      status = 'redo';
-                                    }),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 160,
-                                      ),
-                                      padding: const EdgeInsets.all(14),
-                                      decoration: BoxDecoration(
-                                        color: status == 'redo'
-                                            ? Colors.red.withValues(alpha: 0.10)
-                                            : Colors.grey.withValues(
-                                                alpha: 0.06,
-                                              ),
-                                        borderRadius: BorderRadius.circular(18),
-                                        border: Border.all(
-                                          color: status == 'redo'
-                                              ? Colors.red.withValues(
-                                                  alpha: 0.40,
-                                                )
-                                              : Colors.black.withValues(
-                                                  alpha: 0.08,
-                                                ),
-                                          width: status == 'redo' ? 1.4 : 1,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Icon(
-                                            Icons.refresh_rounded,
-                                            color: status == 'redo'
-                                                ? Colors.red.shade700
-                                                : Colors.black.withValues(
-                                                    alpha: 0.45,
-                                                  ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Redo',
+                                          child: Text(
+                                            status == 'redo'
+                                                ? 'Redo required'
+                                                : 'Pass',
                                             style: TextStyle(
                                               fontWeight: FontWeight.w900,
                                               color: status == 'redo'
                                                   ? Colors.red.shade700
-                                                  : Colors.black.withValues(
-                                                      alpha: 0.72,
-                                                    ),
+                                                  : Colors.green.shade700,
                                             ),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Student should try again',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.black.withValues(
-                                                alpha: 0.55,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 18),
-
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'Quick feedback',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.black.withValues(alpha: 0.78),
+                                  ],
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 10),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children:
-                                    [
-                                      'Great effort.',
-                                      'Well done.',
-                                      'Nice improvement.',
-                                      'Please check spelling.',
-                                      'Please review grammar.',
-                                      'Complete all parts next time.',
-                                      'Please redo carefully.',
-                                    ].map((text) {
-                                      return ActionChip(
-                                        label: Text(text),
-                                        onPressed: () {
-                                          final current = noteC.text.trim();
-                                          final next = current.isEmpty
-                                              ? text
-                                              : '$current $text';
-                                          noteC.text = next;
-                                          noteC.selection =
-                                              TextSelection.fromPosition(
-                                                TextPosition(
-                                                  offset: noteC.text.length,
-                                                ),
-                                              );
-                                          setLocal(() {});
-                                        },
-                                        backgroundColor: _navy.withValues(
-                                          alpha: 0.06,
-                                        ),
-                                        side: BorderSide(
-                                          color: _navy.withValues(alpha: 0.10),
-                                        ),
-                                        labelStyle: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: _navy.withValues(alpha: 0.88),
-                                        ),
-                                      );
-                                    }).toList(),
-                              ),
-                            ),
+                              const SizedBox(height: 12),
 
-                            const SizedBox(height: 16),
-
-                            SizedBox(
-                              height: 150,
-                              child: TextField(
-                                controller: noteC,
-                                expands: true,
-                                maxLines: null,
-                                minLines: null,
-                                textAlignVertical: TextAlignVertical.top,
+                              TextField(
+                                controller: scoreC,
+                                onChanged: (_) => recalcGradeFromText(),
+                                keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
-                                  labelText: 'Personal feedback',
-                                  hintText:
-                                      'Example: Great effort. Please review verb forms in exercise 2.',
-                                  alignLabelWithHint: true,
+                                  labelText: 'Score (0-100)',
+                                  hintText: 'Enter score',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -3638,138 +3467,394 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                       width: 1.4,
                                     ),
                                   ),
+                                  prefixIcon: const Icon(Icons.percent_rounded),
                                 ),
                               ),
-                            ),
 
-                            const SizedBox(height: 18),
+                              const SizedBox(height: 12),
 
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'Student preview',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.black.withValues(alpha: 0.78),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              Row(
                                 children: [
-                                  Text(
-                                    status == 'redo'
-                                        ? '🔁 Homework: REDO (do it again)'
-                                        : '✅ Homework: PASS',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: status == 'redo'
-                                          ? Colors.red.shade700
-                                          : Colors.green.shade700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Score: ${liveScore.clamp(0, 100)}/100',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: _navy,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Grade: $liveGrade',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: _navy,
-                                    ),
-                                  ),
-                                  if (noteC.text.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Comment: ${noteC.text.trim()}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.black.withValues(
-                                          alpha: 0.72,
+                                  Expanded(
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(18),
+                                      onTap: () => setLocal(() {
+                                        status = 'pass';
+                                      }),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 160,
                                         ),
-                                        height: 1.3,
+                                        padding: const EdgeInsets.all(14),
+                                        decoration: BoxDecoration(
+                                          color: status == 'pass'
+                                              ? Colors.green.withValues(
+                                                  alpha: 0.12,
+                                                )
+                                              : Colors.grey.withValues(
+                                                  alpha: 0.06,
+                                                ),
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          border: Border.all(
+                                            color: status == 'pass'
+                                                ? Colors.green.withValues(
+                                                    alpha: 0.45,
+                                                  )
+                                                : Colors.black.withValues(
+                                                    alpha: 0.08,
+                                                  ),
+                                            width: status == 'pass' ? 1.4 : 1,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Icon(
+                                              Icons.check_circle_rounded,
+                                              color: status == 'pass'
+                                                  ? Colors.green.shade700
+                                                  : Colors.black.withValues(
+                                                      alpha: 0.45,
+                                                    ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Pass',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: status == 'pass'
+                                                    ? Colors.green.shade700
+                                                    : Colors.black.withValues(
+                                                        alpha: 0.72,
+                                                      ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Homework accepted',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.55,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ],
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(18),
+                                      onTap: () => setLocal(() {
+                                        status = 'redo';
+                                      }),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 160,
+                                        ),
+                                        padding: const EdgeInsets.all(14),
+                                        decoration: BoxDecoration(
+                                          color: status == 'redo'
+                                              ? Colors.red.withValues(
+                                                  alpha: 0.10,
+                                                )
+                                              : Colors.grey.withValues(
+                                                  alpha: 0.06,
+                                                ),
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          border: Border.all(
+                                            color: status == 'redo'
+                                                ? Colors.red.withValues(
+                                                    alpha: 0.40,
+                                                  )
+                                                : Colors.black.withValues(
+                                                    alpha: 0.08,
+                                                  ),
+                                            width: status == 'redo' ? 1.4 : 1,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Icon(
+                                              Icons.refresh_rounded,
+                                              color: status == 'redo'
+                                                  ? Colors.red.shade700
+                                                  : Colors.black.withValues(
+                                                      alpha: 0.45,
+                                                    ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Redo',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: status == 'redo'
+                                                    ? Colors.red.shade700
+                                                    : Colors.black.withValues(
+                                                        alpha: 0.72,
+                                                      ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Student should try again',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.55,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ],
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Quick feedback',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.black.withValues(alpha: 0.78),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children:
+                                      [
+                                        'Great effort',
+                                        'Well done',
+                                        'Nice improvement',
+                                        'Check spelling',
+                                        'Review grammar',
+                                        'Complete all parts',
+                                        'Redo carefully',
+                                      ].map((text) {
+                                        return ActionChip(
+                                          label: Text(text),
+                                          onPressed: () {
+                                            final current = noteC.text.trim();
+                                            final next = current.isEmpty
+                                                ? text
+                                                : '$current $text';
+                                            noteC.text = next;
+                                            noteC.selection =
+                                                TextSelection.fromPosition(
+                                                  TextPosition(
+                                                    offset: noteC.text.length,
+                                                  ),
+                                                );
+                                            setLocal(() {});
+                                          },
+                                          backgroundColor: _navy.withValues(
+                                            alpha: 0.06,
+                                          ),
+                                          visualDensity: const VisualDensity(
+                                            horizontal: -2,
+                                            vertical: -2,
+                                          ),
+                                          labelPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                              ),
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          side: BorderSide(
+                                            color: _navy.withValues(
+                                              alpha: 0.10,
+                                            ),
+                                          ),
+                                          labelStyle: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                            color: _navy.withValues(
+                                              alpha: 0.88,
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                ),
+                              ),
+
+                              const SizedBox(height: 10),
+
+                              SizedBox(
+                                height: 120,
+                                child: TextField(
+                                  controller: noteC,
+                                  expands: true,
+                                  maxLines: null,
+                                  minLines: null,
+                                  textAlignVertical: TextAlignVertical.top,
+                                  decoration: InputDecoration(
+                                    labelText: 'Personal feedback',
+                                    hintText:
+                                        'Example: Great effort. Please review verb forms in exercise 2.',
+                                    alignLabelWithHint: true,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(
+                                        color: _orange.withValues(alpha: 0.75),
+                                        width: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 10),
+
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Student preview',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.black.withValues(alpha: 0.78),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: Colors.black.withValues(alpha: 0.08),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      status == 'redo'
+                                          ? '🔁 Homework: REDO (do it again)'
+                                          : '✅ Homework: PASS',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: status == 'redo'
+                                            ? Colors.red.shade700
+                                            : Colors.green.shade700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Score: ${liveScore.clamp(0, 100)}/100',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: _navy,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Grade: $liveGrade',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: _navy,
+                                      ),
+                                    ),
+                                    if (noteC.text.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Comment: ${noteC.text.trim()}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black.withValues(
+                                            alpha: 0.72,
+                                          ),
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(28),
+                          ),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.black.withValues(alpha: 0.06),
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(52),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  side: BorderSide(
+                                    color: _navy.withValues(alpha: 0.18),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _navy,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size.fromHeight(52),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Save',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(28),
-                        ),
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.black.withValues(alpha: 0.06),
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(52),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                side: BorderSide(
-                                  color: _navy.withValues(alpha: 0.18),
-                                ),
-                              ),
-                              child: const Text(
-                                'Cancel',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _navy,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(52),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: const Text(
-                                'Save',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -3778,8 +3863,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       );
 
       if (ok != true) {
-        scoreC.dispose();
-        noteC.dispose();
         return;
       }
 
@@ -3844,8 +3927,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
       _snack('Saved + sent ✅');
       unawaited(_refreshHomeworkContext());
-      scoreC.dispose();
-      noteC.dispose();
     } catch (e) {
       await AuditLogService.logFailure(
         actionKey: AuditActionKeys.teacherHomeworkReviewPass,
@@ -4257,7 +4338,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: _navy,
+                backgroundColor: const Color(0xFF7C3AED),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -4277,7 +4358,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: _navy.withValues(alpha: 0.35),
+        color: const Color(0xFF9AA6B8),
         borderRadius: BorderRadius.circular(18),
       ),
       child: const Icon(Icons.mic_off_rounded, color: Colors.white),
@@ -4294,7 +4375,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: _navy,
+          color: const Color(0xFF7C3AED),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Icon(
@@ -4397,33 +4478,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               icon: const Icon(Icons.close_rounded, color: _navy),
               onPressed: () => setState(() => _selectedMessageIds.clear()),
             ),
-          if (!_isGroupThread && _homeworkAvailable && !_selectionMode)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.icon(
-                onPressed: _reviewHomeworkFromThread,
-                icon: const Icon(Icons.check_rounded, size: 18),
-                label: const Text('Mark reviewed'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _navy,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Manage group members',
-            icon: const Icon(Icons.group_rounded, color: _navy),
-            onPressed: _openManageGroupMembers,
-          ),
         ],
         bottom: (subjectTrim.isEmpty && (!_homeworkAvailable || _selectionMode))
             ? null
             : PreferredSize(
                 preferredSize: Size.fromHeight(
-                  _homeworkAvailable && !_selectionMode ? 92 : 46,
+                  _homeworkAvailable && !_selectionMode ? 52 : 46,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -4439,10 +4499,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               vertical: 9,
                             ),
                             decoration: BoxDecoration(
-                              color: _orange.withValues(alpha: 0.14),
+                              color: const Color(0xFFF4F0FF),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: _orange.withValues(alpha: 0.35),
+                                color: const Color(
+                                  0xFF5B33D6,
+                                ).withValues(alpha: 0.2),
                               ),
                             ),
                             child: Row(
@@ -4450,7 +4512,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                 Icon(
                                   Icons.menu_book_rounded,
                                   size: 18,
-                                  color: _navy.withValues(alpha: 0.9),
+                                  color: const Color(0xFF5B33D6),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
@@ -4460,7 +4522,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w900,
-                                      color: _navy.withValues(alpha: 0.92),
+                                      color: const Color(0xFF233B64),
                                     ),
                                   ),
                                 ),
@@ -4468,53 +4530,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                             ),
                           ),
                         ),
-                      if (_homeworkAvailable && !_selectionMode) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _homeworkLessonTitle.isNotEmpty
-                                    ? _homeworkLessonTitle
-                                    : (_homeworkSessionId.isNotEmpty
-                                          ? 'Session: $_homeworkSessionId'
-                                          : 'Homework Evaluation'),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _navy.withValues(alpha: 0.82),
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _homeworkStatusColor.withValues(
-                                  alpha: 0.12,
-                                ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: _homeworkStatusColor.withValues(
-                                    alpha: 0.3,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                _homeworkStatusLabel,
-                                style: TextStyle(
-                                  color: _homeworkStatusColor,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -4684,31 +4699,31 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       const SizedBox(height: 8),
                     ],
 
-                    _buildQuickFeedbackChips(),
-
                     _buildRecordingBar(),
 
                     Row(
                       children: [
                         IconButton(
                           tooltip: 'Camera',
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFFEC740A),
+                            foregroundColor: Colors.white,
+                          ),
                           onPressed: _disableAttachActions
                               ? null
                               : _takePhotoAndAttach,
-                          icon: Icon(
-                            Icons.photo_camera_rounded,
-                            color: _navy.withValues(alpha: 0.9),
-                          ),
+                          icon: const Icon(Icons.photo_camera_rounded),
                         ),
                         IconButton(
                           tooltip: 'Attach',
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFF1F4E79),
+                            foregroundColor: Colors.white,
+                          ),
                           onPressed: _disableAttachActions
                               ? null
                               : _pickAndUploadAttachment,
-                          icon: Icon(
-                            Icons.attach_file,
-                            color: _navy.withValues(alpha: 0.9),
-                          ),
+                          icon: const Icon(Icons.attach_file),
                         ),
                         Expanded(
                           child: TextField(
@@ -4759,7 +4774,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                             _attachments.isNotEmpty)
                           FilledButton(
                             style: FilledButton.styleFrom(
-                              backgroundColor: _navy,
+                              backgroundColor: const Color(0xFF7C3AED),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 14,
