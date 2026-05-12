@@ -1,20 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 import 'app_theme.dart';
 import 'app_feedback.dart';
+import 'story_audio_controller.dart';
 
 class SharedPdfReaderScreen extends StatefulWidget {
   const SharedPdfReaderScreen({
     super.key,
     required this.title,
     required this.pdfUrl,
+    this.audioController,
   });
 
   final String title;
   final String pdfUrl;
+  final StoryAudioController? audioController;
 
   @override
   State<SharedPdfReaderScreen> createState() => _SharedPdfReaderScreenState();
@@ -32,6 +36,13 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
   int _pageCount = 0;
   bool _focusMode = true;
   int _viewerEpoch = 0;
+  bool _audioPillExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_enterFullscreen());
+  }
 
   _PdfPalette get palette => _toPdfPalette(appThemeController.palette);
 
@@ -186,7 +197,148 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
   @override
   void dispose() {
     _chromeTimer?.cancel();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  Future<void> _enterFullscreen() async {
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (_) {}
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (h > 0) return '$h:$m:$s';
+    return '${d.inMinutes}:$s';
+  }
+
+  Widget _buildAudioPill(_PdfPalette p) {
+    final controller = widget.audioController;
+    if (controller == null || !controller.hasSource) {
+      return const SizedBox.shrink();
+    }
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final isPlaying = controller.playerState.name == 'playing';
+        final maxMs = controller.duration.inMilliseconds > 0
+            ? controller.duration.inMilliseconds.toDouble()
+            : 1.0;
+        final value = controller.position.inMilliseconds
+            .toDouble()
+            .clamp(0, maxMs)
+            .toDouble();
+
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: EdgeInsets.fromLTRB(
+                _audioPillExpanded ? 12 : 8,
+                8,
+                _audioPillExpanded ? 12 : 8,
+                8,
+              ),
+              decoration: BoxDecoration(
+                color: p.cardBg.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: p.border.withValues(alpha: 0.9)),
+              ),
+              child: _audioPillExpanded
+                  ? Row(
+                      children: [
+                        IconButton(
+                          onPressed: controller.loading
+                              ? null
+                              : () => unawaited(controller.togglePlayPause()),
+                          icon: Icon(
+                            isPlaying
+                                ? Icons.pause_circle_rounded
+                                : Icons.play_circle_rounded,
+                            color: p.primary,
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Slider(
+                                value: value,
+                                max: maxMs,
+                                onChanged: (v) => unawaited(
+                                  controller.seekTo(
+                                    Duration(milliseconds: v.round()),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${_formatDuration(controller.position)} / ${_formatDuration(controller.duration)}',
+                                style: TextStyle(
+                                  color: p.text,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _audioPillExpanded = false;
+                            });
+                          },
+                          icon: Icon(
+                            Icons.expand_more_rounded,
+                            color: p.primary,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: controller.loading
+                              ? null
+                              : () => unawaited(controller.togglePlayPause()),
+                          icon: Icon(
+                            isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: p.primary,
+                          ),
+                        ),
+                        Text(
+                          'Audio',
+                          style: TextStyle(
+                            color: p.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _audioPillExpanded = true;
+                            });
+                          },
+                          icon: Icon(
+                            Icons.expand_less_rounded,
+                            color: p.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -199,7 +351,10 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
       backgroundColor: p.appBg,
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTap: _toggleChrome,
+        onTap: () {
+          _toggleChrome();
+          unawaited(_enterFullscreen());
+        },
         child: Stack(
           children: [
             Positioned.fill(
@@ -434,6 +589,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                   ),
                 ),
               ),
+            Positioned.fill(child: _buildAudioPill(p)),
           ],
         ),
       ),

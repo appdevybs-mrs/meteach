@@ -2280,6 +2280,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     }
   }
 
+  Color _storyAccentColor(String thumbnail, Color fallback) {
+    final clean = thumbnail.trim();
+    if (clean.isEmpty) return fallback;
+    final hash = clean.hashCode.abs();
+    final hue = (hash % 360).toDouble();
+    return HSVColor.fromAHSV(1, hue, 0.62, 0.92).toColor();
+  }
+
   String _sortLabel(String value) {
     switch (value) {
       case 'updated_desc':
@@ -2785,6 +2793,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final audioUrl = (story['audioUrl'] ?? '').toString().trim();
     final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
+    final accent = _storyAccentColor(thumbnail, cs.primary);
+    final accentSoft = accent.withValues(alpha: 0.14);
+    final accentEdge = accent.withValues(alpha: 0.34);
     final ownerName = _teacherName(story);
     final genre = (story['genre'] ?? '').toString().trim();
     final lengthApprox = (story['lengthApprox'] ?? '').toString().trim();
@@ -2802,17 +2813,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [theme.cardColor, cs.primary.withValues(alpha: 0.03)],
+          colors: [theme.cardColor, accentSoft],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.primary.withValues(alpha: 0.16)),
+        border: Border.all(color: accentEdge),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 7),
+          ),
+          BoxShadow(
+            color: accent.withValues(alpha: 0.09),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -2888,9 +2904,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           context: context,
                           icon: Icons.sell_rounded,
                           text: tag,
-                          backgroundColor: cs.secondary.withValues(alpha: 0.14),
-                          borderColor: cs.secondary.withValues(alpha: 0.30),
-                          iconColor: cs.secondary,
+                          backgroundColor: accent.withValues(alpha: 0.12),
+                          borderColor: accent.withValues(alpha: 0.30),
+                          iconColor: accent,
                         ),
                       ),
                 ],
@@ -2950,12 +2966,16 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest.withValues(
-                          alpha: 0.70,
+                        color: accent.withValues(alpha: 0.13),
+                        border: Border.all(
+                          color: accent.withValues(alpha: 0.32),
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.more_horiz_rounded),
+                      child: Icon(
+                        Icons.more_horiz_rounded,
+                        color: accent.withValues(alpha: 0.95),
+                      ),
                     ),
                   )
                 : const Icon(Icons.expand_more_rounded),

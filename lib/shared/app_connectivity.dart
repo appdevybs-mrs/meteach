@@ -18,11 +18,16 @@ class AppConnectivity {
     if (kIsWeb) return;
     _started = true;
 
-    await _refreshCurrentState();
     try {
-      _connectivity.onConnectivityChanged.listen((result) {
-        _setOffline(_isOfflineResult(result));
-      });
+      await _refreshCurrentState();
+      _connectivity.onConnectivityChanged.listen(
+        (result) {
+          _setOffline(_isOfflineResult(result));
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('AppConnectivity: stream error: $error');
+        },
+      );
     } on MissingPluginException catch (error) {
       debugPrint('AppConnectivity: onConnectivityChanged unavailable: $error');
     } catch (error) {

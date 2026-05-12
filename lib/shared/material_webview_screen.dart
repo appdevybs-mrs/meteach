@@ -8,12 +8,15 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
+import 'story_audio_controller.dart';
+
 class MaterialWebViewScreen extends StatefulWidget {
   const MaterialWebViewScreen.fromUrl({
     super.key,
     required this.title,
     required this.url,
     this.headers = const <String, String>{},
+    this.audioController,
   }) : htmlString = null,
        assetPath = null;
 
@@ -21,6 +24,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     super.key,
     required this.title,
     required this.assetPath,
+    this.audioController,
   }) : url = null,
        htmlString = null,
        headers = const <String, String>{};
@@ -29,6 +33,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     super.key,
     required this.title,
     required this.htmlString,
+    this.audioController,
   }) : url = null,
        assetPath = null,
        headers = const <String, String>{};
@@ -38,6 +43,7 @@ class MaterialWebViewScreen extends StatefulWidget {
   final String? assetPath;
   final String? htmlString;
   final Map<String, String> headers;
+  final StoryAudioController? audioController;
 
   bool get isUrl => url != null && url!.trim().isNotEmpty;
   bool get isAsset => assetPath != null && assetPath!.trim().isNotEmpty;
@@ -58,6 +64,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   String? _lastError;
   bool _didApplyInitialEnhancements = false;
   bool _openedWebUrl = false;
+  bool _audioPillExpanded = false;
 
   bool get _isWebRuntime => kIsWeb;
   bool get _hasController => _controller != null;
@@ -116,6 +123,140 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     try {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } catch (_) {}
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (h > 0) return '$h:$m:$s';
+    return '${d.inMinutes}:$s';
+  }
+
+  Widget _buildAudioPill() {
+    final controller = widget.audioController;
+    if (controller == null || !controller.hasSource) {
+      return const SizedBox.shrink();
+    }
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final isPlaying = controller.playerState.name == 'playing';
+        final maxMs = controller.duration.inMilliseconds > 0
+            ? controller.duration.inMilliseconds.toDouble()
+            : 1.0;
+        final value = controller.position.inMilliseconds
+            .toDouble()
+            .clamp(0, maxMs)
+            .toDouble();
+
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: EdgeInsets.fromLTRB(
+                _audioPillExpanded ? 12 : 8,
+                8,
+                _audioPillExpanded ? 12 : 8,
+                8,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: _audioPillExpanded
+                  ? Row(
+                      children: [
+                        IconButton(
+                          onPressed: controller.loading
+                              ? null
+                              : () => unawaited(controller.togglePlayPause()),
+                          icon: Icon(
+                            isPlaying
+                                ? Icons.pause_circle_rounded
+                                : Icons.play_circle_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Slider(
+                                value: value,
+                                max: maxMs,
+                                onChanged: (v) => unawaited(
+                                  controller.seekTo(
+                                    Duration(milliseconds: v.round()),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${_formatDuration(controller.position)} / ${_formatDuration(controller.duration)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _audioPillExpanded = false;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.expand_more_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: controller.loading
+                              ? null
+                              : () => unawaited(controller.togglePlayPause()),
+                          icon: Icon(
+                            isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const Text(
+                          'Audio',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _audioPillExpanded = true;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.expand_less_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _handleWebStartup() async {
@@ -967,6 +1108,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               children: [
                 Positioned.fill(child: _buildBody()),
                 if (_isLoading) Positioned.fill(child: _buildOverlayLoading()),
+                Positioned.fill(child: _buildAudioPill()),
               ],
             ),
           ),

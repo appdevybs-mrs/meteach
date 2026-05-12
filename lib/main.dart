@@ -61,23 +61,66 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
     FirebaseCrashlytics.instance.recordFlutterFatalError(details);
   };
 
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    debugPrint('Uncaught platform error: $error\n$stack');
     return true;
   };
 
-  runApp(const YourBridgeSchoolApp());
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    final exception = details.exceptionAsString();
+    return Material(
+      color: const Color(0xFFFDF2F2),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SelectableText(
+                  'Unexpected UI error.\n\n$exception',
+                  style: const TextStyle(
+                    color: Color(0xFF7F1D1D),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  };
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    AppLaunchActionService.instance.init();
-    if (!kIsWeb) {
-      unawaited(AppConnectivity.instance.start());
-    }
-    unawaited(FCMService.I.init());
-  });
+  runZonedGuarded(
+    () {
+      runApp(const YourBridgeSchoolApp());
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppLaunchActionService.instance.init();
+        if (!kIsWeb) {
+          unawaited(AppConnectivity.instance.start());
+        }
+        unawaited(FCMService.I.init());
+      });
+    },
+    (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      debugPrint('Uncaught zone error: $error\n$stack');
+    },
+  );
 }
 
 class Brand {

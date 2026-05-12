@@ -12,6 +12,9 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'app_theme.dart';
+import 'material_webview_screen.dart';
+import 'shared_pdf_reader_screen.dart';
+import 'story_audio_controller.dart';
 
 class SharedStoryStudyScreen extends StatefulWidget {
   const SharedStoryStudyScreen({
@@ -36,22 +39,9 @@ class SharedStoryStudyScreen extends StatefulWidget {
 enum _RepeatMode { off, one }
 
 class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
-  final AudioPlayer _player = AudioPlayer();
+  late final StoryAudioController _audio;
   final PdfViewerController _pdfController = PdfViewerController();
-
-  StreamSubscription<Duration>? _durationSub;
-  StreamSubscription<Duration>? _positionSub;
-  StreamSubscription<PlayerState>? _stateSub;
-  StreamSubscription<void>? _completeSub;
-
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-  PlayerState _playerState = PlayerState.stopped;
-  double _speed = 1.0;
   _RepeatMode _repeatMode = _RepeatMode.off;
-
-  bool _audioLoading = false;
-  String? _audioError;
 
   bool _pdfLoading = true;
   String? _pdfError;
@@ -65,22 +55,18 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   String? _htmlError;
   int _htmlProgress = 0;
 
-  bool _readerExpanded = false;
-
   bool get _hasAudio => widget.audioUrl.trim().isNotEmpty;
   bool get _hasPdf => widget.pdfUrl.trim().isNotEmpty;
   bool get _hasHtml => widget.htmlUrl.trim().isNotEmpty;
 
   _StudyPalette get palette => _toStudyPalette(appThemeController.palette);
 
-  static const Duration _audioLoadTimeout = Duration(seconds: 30);
-
   @override
   void initState() {
     super.initState();
-    _bindAudio();
+    _audio = StoryAudioController()..addListener(_onAudioChanged);
     if (_hasAudio) {
-      unawaited(_loadAudio());
+      unawaited(_audio.ensureLoaded(widget.audioUrl.trim()));
     }
     if (_hasHtml && !kIsWeb) {
       _setupInlineHtml();
@@ -92,12 +78,14 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
 
   @override
   void dispose() {
-    _durationSub?.cancel();
-    _positionSub?.cancel();
-    _stateSub?.cancel();
-    _completeSub?.cancel();
-    _player.dispose();
+    _audio.removeListener(_onAudioChanged);
+    _audio.dispose();
     super.dispose();
+  }
+
+  void _onAudioChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   _StudyPalette _toStudyPalette(AppPalette p) {
@@ -112,109 +100,13 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     );
   }
 
-  void _bindAudio() {
-    _durationSub = _player.onDurationChanged.listen((d) {
-      if (!mounted) return;
-      setState(() {
-        _duration = d;
-      });
-    });
-
-    _positionSub = _player.onPositionChanged.listen((p) {
-      if (!mounted) return;
-      setState(() {
-        _position = p;
-      });
-    });
-
-    _stateSub = _player.onPlayerStateChanged.listen((s) {
-      if (!mounted) return;
-      setState(() {
-        _playerState = s;
-      });
-    });
-
-    _completeSub = _player.onPlayerComplete.listen((_) async {
-      if (!mounted) return;
-      if (_repeatMode == _RepeatMode.one) {
-        await _player.seek(Duration.zero);
-        await _player.resume();
-        return;
-      }
-      setState(() {
-        _position = Duration.zero;
-        _playerState = PlayerState.completed;
-      });
-    });
-  }
-
   Future<void> _loadAudio() async {
-    try {
-      setState(() {
-        _audioLoading = true;
-        _audioError = null;
-      });
-      await _player
-          .setSourceUrl(widget.audioUrl.trim())
-          .timeout(_audioLoadTimeout);
-      await _player.setPlaybackRate(_speed).timeout(const Duration(seconds: 8));
-      await _player
-          .setReleaseMode(ReleaseMode.stop)
-          .timeout(const Duration(seconds: 8));
-      if (!mounted) return;
-      setState(() {
-        _audioLoading = false;
-      });
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() {
-        _audioLoading = false;
-        _audioError =
-            'Audio is taking too long to load. Check your internet and try again.';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _audioLoading = false;
-        _audioError = _humanAudioError(e);
-      });
-    }
+    await _audio.ensureLoaded(widget.audioUrl.trim());
   }
 
   Future<void> _togglePlayPause() async {
-    if (!_hasAudio || _audioLoading) return;
-    try {
-      if (_playerState == PlayerState.playing) {
-        await _player.pause();
-      } else {
-        if (_playerState == PlayerState.completed) {
-          await _player.seek(Duration.zero);
-        }
-        await _player.resume();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _audioError = _humanAudioError(e, fallback: 'Could not play audio.');
-      });
-    }
-  }
-
-  String _humanAudioError(Object error, {String? fallback}) {
-    final raw = error.toString();
-    final low = raw.toLowerCase();
-
-    if (low.contains('timeoutexception') || low.contains('timeout')) {
-      return 'Audio is taking too long to load. Check your internet and try again.';
-    }
-    if (low.contains('socket') || low.contains('network')) {
-      return 'Network issue while loading audio. Please try again.';
-    }
-    if (low.contains('source') || low.contains('url') || low.contains('404')) {
-      return 'Audio file is not available right now.';
-    }
-
-    return fallback ?? 'Could not load audio. Please try again.';
+    if (!_hasAudio || _audio.loading) return;
+    await _audio.togglePlayPause();
   }
 
   String _humanPdfError(String raw) {
@@ -254,17 +146,11 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   }
 
   Future<void> _setSpeed(double speed) async {
-    try {
-      await _player.setPlaybackRate(speed);
-      if (!mounted) return;
-      setState(() {
-        _speed = speed;
-      });
-    } catch (_) {}
+    await _audio.setSpeed(speed);
   }
 
   Future<void> _seekTo(double ms) async {
-    await _player.seek(Duration(milliseconds: ms.round()));
+    await _audio.seekTo(Duration(milliseconds: ms.round()));
   }
 
   Future<void> _preparePdf({bool forceRefresh = false}) async {
@@ -386,70 +272,75 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     final accent = _thumbAccent(p);
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 390;
-    final pdfHeight = _readerExpanded
-        ? MediaQuery.sizeOf(context).height - 130
-        : (compact ? 360.0 : 480.0);
+    final pdfHeight = compact ? 360.0 : 480.0;
     final title = widget.title.trim().isEmpty
         ? 'Story Study'
         : widget.title.trim();
 
-    return PopScope(
-      canPop: !_readerExpanded,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop || !_readerExpanded) return;
-        setState(() {
-          _readerExpanded = false;
-        });
-      },
-      child: Scaffold(
-        backgroundColor: p.appBg,
-        appBar: AppBar(
-          backgroundColor: accent.withValues(alpha: 0.45),
-          surfaceTintColor: accent.withValues(alpha: 0.45),
-          leading: _readerExpanded
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () {
-                    setState(() {
-                      _readerExpanded = false;
-                    });
-                  },
-                )
-              : null,
-          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-        body: SafeArea(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [accent.withValues(alpha: 0.12), p.appBg],
-              ),
-            ),
-            child: ListView(
-              physics: _readerExpanded
-                  ? const NeverScrollableScrollPhysics()
-                  : const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                compact ? 10 : 12,
-                12,
-                compact ? 10 : 12,
-                _readerExpanded ? 0 : 20,
-              ),
-              children: [
-                if (_hasAudio && !_readerExpanded) ...[
-                  _buildAudioCard(p, compact),
-                  const SizedBox(height: 12),
-                ],
-                if (_hasHtml) ...[_buildHtmlViewerCard(p, pdfHeight, compact)],
-                if (!_hasHtml && _hasPdf) ...[
-                  _buildPdfCard(p, pdfHeight, compact),
-                ],
-                if (!_hasHtml && !_hasPdf) _buildEmptyCard(p, compact),
-              ],
+    return Scaffold(
+      backgroundColor: p.appBg,
+      appBar: AppBar(
+        backgroundColor: accent.withValues(alpha: 0.45),
+        surfaceTintColor: accent.withValues(alpha: 0.45),
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+      body: SafeArea(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [accent.withValues(alpha: 0.12), p.appBg],
             ),
           ),
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 10 : 12,
+              12,
+              compact ? 10 : 12,
+              20,
+            ),
+            children: [
+              if (_hasAudio) ...[
+                _buildAudioCard(p, compact),
+                const SizedBox(height: 12),
+              ],
+              if (_hasHtml) ...[_buildHtmlViewerCard(p, pdfHeight, compact)],
+              if (!_hasHtml && _hasPdf) ...[
+                _buildPdfCard(p, pdfHeight, compact),
+              ],
+              if (!_hasHtml && !_hasPdf) _buildEmptyCard(p, compact),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPdfFullscreen() async {
+    if (!_hasPdf) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SharedPdfReaderScreen(
+          title: widget.title,
+          pdfUrl: widget.pdfUrl.trim(),
+          audioController: _audio,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openHtmlFullscreen() async {
+    if (!_hasHtml) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: widget.title,
+          url: widget.htmlUrl.trim(),
+          audioController: _audio,
         ),
       ),
     );
@@ -477,41 +368,36 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
-      padding: EdgeInsets.all(_readerExpanded ? 0 : 10),
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!_readerExpanded)
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                Icon(Icons.picture_as_pdf_rounded, color: p.accent),
-                Text(
-                  _pageCount > 0
-                      ? 'Page $_pageNumber of $_pageCount'
-                      : (_pdfProgress == null
-                            ? 'Loading'
-                            : 'Loading ${_pdfProgress!}%'),
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: compact ? 12 : 14,
-                  ),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Icon(Icons.picture_as_pdf_rounded, color: p.accent),
+              Text(
+                _pageCount > 0
+                    ? 'Page $_pageNumber of $_pageCount'
+                    : (_pdfProgress == null
+                          ? 'Loading'
+                          : 'Loading ${_pdfProgress!}%'),
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 14,
                 ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _readerExpanded = true;
-                    });
-                  },
-                  icon: Icon(Icons.fullscreen_rounded, color: p.primary),
-                ),
-              ],
-            ),
-          if (!_readerExpanded) const SizedBox(height: 8),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _openPdfFullscreen,
+                icon: Icon(Icons.fullscreen_rounded, color: p.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             height: pdfHeight,
             child: ClipRRect(
@@ -599,7 +485,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                 ],
               ),
             ),
-          if (!_readerExpanded && _pageCount > 0) ...[
+          if (_pageCount > 0) ...[
             const SizedBox(height: 14),
             Row(
               children: [
@@ -650,26 +536,26 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
       child: Column(
         children: [
           Slider(
-            value: _position.inMilliseconds.toDouble().clamp(
+            value: _audio.position.inMilliseconds.toDouble().clamp(
               0,
-              _duration.inMilliseconds > 0
-                  ? _duration.inMilliseconds.toDouble()
+              _audio.duration.inMilliseconds > 0
+                  ? _audio.duration.inMilliseconds.toDouble()
                   : 1,
             ),
-            max: _duration.inMilliseconds > 0
-                ? _duration.inMilliseconds.toDouble()
+            max: _audio.duration.inMilliseconds > 0
+                ? _audio.duration.inMilliseconds.toDouble()
                 : 1,
             onChanged: (value) => _seekTo(value),
           ),
           Row(
             children: [
               Text(
-                _format(_position),
+                _format(_audio.position),
                 style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
               ),
               const Spacer(),
               Text(
-                _format(_duration),
+                _format(_audio.duration),
                 style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
               ),
             ],
@@ -680,11 +566,11 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             child: Row(
               children: [
                 _iconControl(
-                  icon: _playerState == PlayerState.playing
+                  icon: _audio.playerState == PlayerState.playing
                       ? Icons.pause_rounded
                       : Icons.play_arrow_rounded,
                   onTap: _togglePlayPause,
-                  color: _playerState == PlayerState.playing
+                  color: _audio.playerState == PlayerState.playing
                       ? const Color(0xFFEF6C00)
                       : p.primary,
                 ),
@@ -697,6 +583,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                           ? _RepeatMode.one
                           : _RepeatMode.off;
                     });
+                    _audio.toggleRepeatOne();
                   },
                   color: _repeatMode == _RepeatMode.one
                       ? p.accent
@@ -711,7 +598,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                         ? Icons.keyboard_double_arrow_right_rounded
                         : Icons.speed_rounded,
                     onTap: () => _setSpeed(speed),
-                    color: _speed == speed
+                    color: _audio.speed == speed
                         ? p.accent
                         : p.text.withValues(alpha: 0.70),
                   ),
@@ -720,7 +607,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
               ],
             ),
           ),
-          if (_audioLoading)
+          if (_audio.loading)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
@@ -728,14 +615,14 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                 style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
               ),
             ),
-          if (_audioError != null)
+          if (_audio.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      _audioError!,
+                      _audio.error!,
                       style: TextStyle(
                         color: p.accent,
                         fontSize: compact ? 12 : 14,
@@ -785,39 +672,34 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
-      padding: EdgeInsets.all(_readerExpanded ? 0 : 10),
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!_readerExpanded)
-            Row(
-              children: [
-                Icon(Icons.language_rounded, color: p.accent),
-                const SizedBox(width: 8),
-                Text(
-                  _htmlLoading
-                      ? (_htmlProgress > 0
-                            ? 'Loading $_htmlProgress%'
-                            : 'Loading')
-                      : 'Reading',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: compact ? 12 : 14,
-                  ),
+          Row(
+            children: [
+              Icon(Icons.language_rounded, color: p.accent),
+              const SizedBox(width: 8),
+              Text(
+                _htmlLoading
+                    ? (_htmlProgress > 0
+                          ? 'Loading $_htmlProgress%'
+                          : 'Loading')
+                    : 'Reading',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 14,
                 ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _readerExpanded = true;
-                    });
-                  },
-                  icon: Icon(Icons.fullscreen_rounded, color: p.primary),
-                ),
-              ],
-            ),
-          if (!_readerExpanded) const SizedBox(height: 8),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _openHtmlFullscreen,
+                icon: Icon(Icons.fullscreen_rounded, color: p.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             height: viewerHeight,
             child: ClipRRect(
