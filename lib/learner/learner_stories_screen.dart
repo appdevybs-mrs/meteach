@@ -10,6 +10,7 @@ import '../shared/material_webview_screen.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/shared_story_study_screen.dart';
+import '../services/story_preload_service.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
@@ -1375,8 +1376,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
             }
 
             final rawValue = snap.data?.snapshot.value;
+            final warmItems = StoryPreloadService.warmStories();
 
-            if (rawValue == null || rawValue is! Map) {
+            if ((rawValue == null || rawValue is! Map) && warmItems.isEmpty) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -1415,16 +1417,17 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
               );
             }
 
-            final raw = Map<dynamic, dynamic>.from(rawValue);
-            final items = raw.entries.map((entry) {
-              final storyId = entry.key.toString();
-              final storyValue = entry.value;
-              final story = storyValue is Map
-                  ? Map<String, dynamic>.from(storyValue)
-                  : <String, dynamic>{};
-              story['storyId'] = storyId;
-              return MapEntry(storyId, story);
-            }).toList();
+            final items = (rawValue is Map)
+                ? Map<dynamic, dynamic>.from(rawValue).entries.map((entry) {
+                    final storyId = entry.key.toString();
+                    final storyValue = entry.value;
+                    final story = storyValue is Map
+                        ? Map<String, dynamic>.from(storyValue)
+                        : <String, dynamic>{};
+                    story['storyId'] = storyId;
+                    return MapEntry(storyId, story);
+                  }).toList()
+                : warmItems;
 
             final allGenres = _extractAllGenres(items);
             final allLevels = _extractAllLevels(items);

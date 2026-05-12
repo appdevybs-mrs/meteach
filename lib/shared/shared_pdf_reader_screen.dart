@@ -51,6 +51,20 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
 
   bool get _isChromeVisible => !_focusMode;
 
+  String _humanPdfError(String raw) {
+    final low = raw.toLowerCase();
+    if (low.contains('timeout')) {
+      return 'Loading is taking too long. Check your internet and try again.';
+    }
+    if (low.contains('socket') || low.contains('network')) {
+      return 'Network issue while loading the file. Please try again.';
+    }
+    if (low.contains('404') || low.contains('not found')) {
+      return 'This file is not available right now.';
+    }
+    return 'Could not open this file. Please try again.';
+  }
+
   Future<void> _showJumpToPageDialog() async {
     if (!_hasDocument) return;
 
@@ -229,7 +243,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                   if (!mounted) return;
                   setState(() {
                     _loading = false;
-                    _error = details.description;
+                    _error = _humanPdfError(details.description);
                   });
                 },
                 onPageChanged: (details) {
@@ -354,7 +368,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'Opening...',
+                          'Loading',
                           style: TextStyle(
                             color: p.primary,
                             fontWeight: FontWeight.w800,

@@ -36,6 +36,7 @@ import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
 import '../services/notification_service.dart';
 import '../services/learner_join_signal_service.dart';
+import '../services/story_preload_service.dart';
 import '../services/window_access_service.dart';
 
 class LearnerHome extends StatefulWidget {
@@ -80,6 +81,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       if (!mounted) return;
       FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
       unawaited(_showPaymentDueToastOnLoginIfNeeded());
+      unawaited(StoryPreloadService.preloadFromHome(context));
     });
   }
 

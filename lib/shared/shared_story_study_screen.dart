@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'app_theme.dart';
-import 'material_webview_screen.dart';
 
 class SharedStoryStudyScreen extends StatefulWidget {
   const SharedStoryStudyScreen({
@@ -52,11 +53,17 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   int _pageNumber = 1;
   int _pageCount = 0;
 
+  WebViewController? _htmlController;
+  bool _htmlLoading = true;
+  String? _htmlError;
+
   bool get _hasAudio => widget.audioUrl.trim().isNotEmpty;
   bool get _hasPdf => widget.pdfUrl.trim().isNotEmpty;
   bool get _hasHtml => widget.htmlUrl.trim().isNotEmpty;
 
   _StudyPalette get palette => _toStudyPalette(appThemeController.palette);
+
+  static const Duration _audioLoadTimeout = Duration(seconds: 30);
 
   @override
   void initState() {
@@ -64,6 +71,9 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     _bindAudio();
     if (_hasAudio) {
       unawaited(_loadAudio());
+    }
+    if (_hasHtml && !_hasPdf && !kIsWeb) {
+      _setupInlineHtml();
     }
   }
 
@@ -131,18 +141,29 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         _audioLoading = true;
         _audioError = null;
       });
-      await _player.setSourceUrl(widget.audioUrl.trim());
-      await _player.setPlaybackRate(_speed);
-      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player
+          .setSourceUrl(widget.audioUrl.trim())
+          .timeout(_audioLoadTimeout);
+      await _player.setPlaybackRate(_speed).timeout(const Duration(seconds: 8));
+      await _player
+          .setReleaseMode(ReleaseMode.stop)
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       setState(() {
         _audioLoading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _audioLoading = false;
+        _audioError =
+            'Audio is taking too long to load. Check your internet and try again.';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _audioLoading = false;
-        _audioError = 'Could not load audio.\n$e';
+        _audioError = _humanAudioError(e);
       });
     }
   }
@@ -161,9 +182,54 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _audioError = 'Playback failed.\n$e';
+        _audioError = _humanAudioError(e, fallback: 'Could not play audio.');
       });
     }
+  }
+
+  String _humanAudioError(Object error, {String? fallback}) {
+    final raw = error.toString();
+    final low = raw.toLowerCase();
+
+    if (low.contains('timeoutexception') || low.contains('timeout')) {
+      return 'Audio is taking too long to load. Check your internet and try again.';
+    }
+    if (low.contains('socket') || low.contains('network')) {
+      return 'Network issue while loading audio. Please try again.';
+    }
+    if (low.contains('source') || low.contains('url') || low.contains('404')) {
+      return 'Audio file is not available right now.';
+    }
+
+    return fallback ?? 'Could not load audio. Please try again.';
+  }
+
+  String _humanPdfError(String raw) {
+    final low = raw.toLowerCase();
+    if (low.contains('timeout')) {
+      return 'Loading is taking too long. Check your internet and try again.';
+    }
+    if (low.contains('socket') || low.contains('network')) {
+      return 'Network issue while loading the file. Please try again.';
+    }
+    if (low.contains('404') || low.contains('not found')) {
+      return 'This file is not available right now.';
+    }
+    return 'Could not open this file. Please try again.';
+  }
+
+  String _humanHtmlError(String raw) {
+    final low = raw.toLowerCase();
+    if (low.contains('timeout')) {
+      return 'Loading is taking too long. Check your internet and try again.';
+    }
+    if (low.contains('socket') || low.contains('network')) {
+      return 'Network issue while loading the page. Please try again.';
+    }
+    if (low.contains('404') || low.contains('not found')) {
+      return 'This page is not available right now.';
+    }
+    return 'Could not open this page. Please try again.';
   }
 
   Future<void> _setSpeed(double speed) async {
@@ -180,17 +246,38 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     await _player.seek(Duration(milliseconds: ms.round()));
   }
 
-  Future<void> _openHtmlInsideApp() async {
-    if (!_hasHtml) return;
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MaterialWebViewScreen.fromUrl(
-          title: widget.title.trim().isEmpty ? 'Story Material' : widget.title,
-          url: widget.htmlUrl.trim(),
+  void _setupInlineHtml() {
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..enableZoom(true)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (!mounted) return;
+            setState(() {
+              _htmlLoading = true;
+              _htmlError = null;
+            });
+          },
+          onPageFinished: (_) {
+            if (!mounted) return;
+            setState(() {
+              _htmlLoading = false;
+              _htmlError = null;
+            });
+          },
+          onWebResourceError: (error) {
+            if (!mounted) return;
+            setState(() {
+              _htmlLoading = false;
+              _htmlError = _humanHtmlError(error.description);
+            });
+          },
         ),
-      ),
-    );
+      )
+      ..loadRequest(Uri.parse(widget.htmlUrl.trim()));
+
+    _htmlController = controller;
   }
 
   String _format(Duration d) {
@@ -206,7 +293,6 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     final p = palette;
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 390;
-    final thumbnailHeight = compact ? 152.0 : 180.0;
     final pdfHeight = compact ? 360.0 : 480.0;
     final title = widget.title.trim().isEmpty
         ? 'Story Study'
@@ -228,74 +314,16 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             20,
           ),
           children: [
-            _buildThumbnailCard(p, title, thumbnailHeight, compact),
-            if (_hasPdf) ...[
-              const SizedBox(height: 12),
-              _buildPdfCard(p, pdfHeight, compact),
-            ],
             if (_hasAudio) ...[
-              const SizedBox(height: 12),
               _buildAudioCard(p, compact),
-            ],
-            if (!_hasPdf && !_hasAudio && _hasHtml) ...[
               const SizedBox(height: 12),
-              _buildHtmlCard(p),
+            ],
+            if (_hasPdf) ...[_buildPdfCard(p, pdfHeight, compact)],
+            if (!_hasPdf && _hasHtml) ...[
+              _buildHtmlViewerCard(p, pdfHeight, compact),
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildThumbnailCard(
-    _StudyPalette p,
-    String title,
-    double height,
-    bool compact,
-  ) {
-    final hasImage = widget.thumbnailUrl.trim().isNotEmpty;
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        gradient: LinearGradient(
-          colors: [
-            p.primary.withValues(alpha: 0.25),
-            p.accent.withValues(alpha: 0.22),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (hasImage)
-            Image.network(
-              widget.thumbnailUrl.trim(),
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          Container(color: Colors.black.withValues(alpha: 0.28)),
-          Align(
-            alignment: Alignment.bottomLeft,
-            child: Padding(
-              padding: EdgeInsets.all(compact ? 10 : 14),
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: compact ? 16 : 18,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -318,24 +346,13 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             children: [
               Icon(Icons.picture_as_pdf_rounded, color: p.accent),
               Text(
-                _pageCount > 0
-                    ? 'Page $_pageNumber / $_pageCount'
-                    : 'Loading PDF...',
+                _pageCount > 0 ? 'Page $_pageNumber / $_pageCount' : 'Loading',
                 style: TextStyle(
                   color: p.primary,
                   fontWeight: FontWeight.w800,
                   fontSize: compact ? 12 : 14,
                 ),
               ),
-              if (_hasHtml)
-                TextButton.icon(
-                  onPressed: _openHtmlInsideApp,
-                  icon: const Icon(Icons.open_in_browser_rounded),
-                  label: Text(
-                    'HTML',
-                    style: TextStyle(fontSize: compact ? 11 : 13),
-                  ),
-                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -365,7 +382,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                   if (!mounted) return;
                   setState(() {
                     _pdfLoading = false;
-                    _pdfError = details.description;
+                    _pdfError = _humanPdfError(details.description);
                   });
                 },
                 onPageChanged: (details) {
@@ -381,20 +398,36 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Opening PDF...',
+                'Loading',
                 style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
               ),
             ),
           if (_pdfError != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _pdfError!,
-                style: TextStyle(
-                  color: p.accent,
-                  fontWeight: FontWeight.w700,
-                  fontSize: compact ? 12 : 14,
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _pdfError!,
+                      style: TextStyle(
+                        color: p.accent,
+                        fontWeight: FontWeight.w700,
+                        fontSize: compact ? 12 : 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _pdfLoading = true;
+                        _pdfError = null;
+                      });
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
               ),
             ),
         ],
@@ -409,7 +442,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(compact ? 10 : 12),
       child: Column(
         children: [
           Wrap(
@@ -457,7 +490,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           compact
               ? Column(
                   children: [
@@ -477,7 +510,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -535,13 +568,15 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                     ),
                   ],
                 ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               for (final speed in const <double>[0.75, 1.0, 1.25])
                 ChoiceChip(
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
                   label: Text(
                     '${speed}x',
                     style: TextStyle(fontSize: compact ? 11 : 13),
@@ -562,9 +597,21 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
           if (_audioError != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _audioError!,
-                style: TextStyle(color: p.accent, fontSize: compact ? 12 : 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _audioError!,
+                      style: TextStyle(
+                        color: p.accent,
+                        fontSize: compact ? 12 : 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(onPressed: _loadAudio, child: const Text('Retry')),
+                ],
               ),
             ),
         ],
@@ -572,27 +619,108 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     );
   }
 
-  Widget _buildHtmlCard(_StudyPalette p) {
+  Widget _buildHtmlViewerCard(
+    _StudyPalette p,
+    double viewerHeight,
+    bool compact,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'This story is HTML material.',
-            style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
+          Row(
+            children: [
+              Icon(Icons.language_rounded, color: p.accent),
+              const SizedBox(width: 8),
+              Text(
+                'Reading',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 14,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: _openHtmlInsideApp,
-            icon: const Icon(Icons.open_in_browser_rounded),
-            label: const Text('Open Material'),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: viewerHeight,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: kIsWeb
+                  ? Container(
+                      color: p.soft,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Loading',
+                        style: TextStyle(
+                          color: p.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: compact ? 12 : 14,
+                        ),
+                      ),
+                    )
+                  : (_htmlController == null
+                        ? Container(
+                            color: p.soft,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Loading',
+                              style: TextStyle(
+                                color: p.text,
+                                fontWeight: FontWeight.w700,
+                                fontSize: compact ? 12 : 14,
+                              ),
+                            ),
+                          )
+                        : WebViewWidget(controller: _htmlController!)),
+            ),
           ),
+          if (_htmlLoading)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Loading',
+                style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
+              ),
+            ),
+          if (_htmlError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _htmlError!,
+                      style: TextStyle(
+                        color: p.accent,
+                        fontSize: compact ? 12 : 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      if (_hasHtml && !_hasPdf && !kIsWeb) {
+                        setState(() {
+                          _htmlLoading = true;
+                          _htmlError = null;
+                        });
+                        _setupInlineHtml();
+                      }
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
