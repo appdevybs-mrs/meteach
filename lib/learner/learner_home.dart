@@ -4956,6 +4956,22 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                             ? Image.network(
                                                 c.thumbnailUrl,
                                                 fit: BoxFit.cover,
+                                                filterQuality:
+                                                    FilterQuality.low,
+                                                cacheWidth:
+                                                    (52 *
+                                                            MediaQuery.of(
+                                                              context,
+                                                            ).devicePixelRatio)
+                                                        .round()
+                                                        .clamp(96, 320),
+                                                cacheHeight:
+                                                    (52 *
+                                                            MediaQuery.of(
+                                                              context,
+                                                            ).devicePixelRatio)
+                                                        .round()
+                                                        .clamp(96, 320),
                                                 errorBuilder:
                                                     (
                                                       _,
@@ -6359,6 +6375,21 @@ class _LearnerDrawer extends StatelessWidget {
                                 ? Image.network(
                                     profilePhotoUrl,
                                     fit: BoxFit.cover,
+                                    filterQuality: FilterQuality.low,
+                                    cacheWidth:
+                                        (48 *
+                                                MediaQuery.of(
+                                                  context,
+                                                ).devicePixelRatio)
+                                            .round()
+                                            .clamp(96, 320),
+                                    cacheHeight:
+                                        (48 *
+                                                MediaQuery.of(
+                                                  context,
+                                                ).devicePixelRatio)
+                                            .round()
+                                            .clamp(96, 320),
                                     errorBuilder: (_, _, _) => const Icon(
                                       Icons.person_rounded,
                                       color: Colors.white,

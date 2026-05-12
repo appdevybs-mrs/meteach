@@ -2072,6 +2072,13 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 ? Image.network(
                     _profilePhotoUrl!,
                     fit: BoxFit.cover,
+                    filterQuality: FilterQuality.low,
+                    cacheWidth: (112 * MediaQuery.of(context).devicePixelRatio)
+                        .round()
+                        .clamp(160, 500),
+                    cacheHeight: (112 * MediaQuery.of(context).devicePixelRatio)
+                        .round()
+                        .clamp(160, 500),
                     errorBuilder: (_, _, _) => const Icon(
                       Icons.person_rounded,
                       size: 56,
@@ -2192,6 +2199,13 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   child: Image.network(
                     url,
                     fit: BoxFit.cover,
+                    filterQuality: FilterQuality.low,
+                    cacheWidth: (96 * MediaQuery.of(context).devicePixelRatio)
+                        .round()
+                        .clamp(160, 420),
+                    cacheHeight: (96 * MediaQuery.of(context).devicePixelRatio)
+                        .round()
+                        .clamp(160, 420),
                     errorBuilder: (_, _, _) => Center(
                       child: Icon(
                         Icons.broken_image_outlined,

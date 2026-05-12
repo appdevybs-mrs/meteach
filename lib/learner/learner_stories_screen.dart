@@ -26,6 +26,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Map<String, String> _teacherPhotoCache = {};
   final Map<String, Future<String>> _teacherPhotoPending = {};
+  final Set<String> _thumbPrecachedUrls = <String>{};
+
+  int _thumbPrecacheRunId = 0;
+  String _lastThumbPrecacheKey = '';
 
   String _searchQuery = '';
   String _genreFilter = 'all';
@@ -35,6 +39,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
 
   bool _showSearch = false;
   bool _showFilters = false;
+
+  static const int _thumbPrecacheBatchSize = 4;
 
   @override
   void dispose() {
@@ -413,6 +419,53 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return HSVColor.fromAHSV(1, hue, 0.68, 0.84).toColor();
   }
 
+  void _scheduleThumbPrecache(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
+    final urls = <String>[];
+    for (final entry in items) {
+      final url = (entry.value['thumbnail'] ?? '').toString().trim();
+      if (url.isNotEmpty) urls.add(url);
+    }
+    if (urls.isEmpty) return;
+
+    final deduped = <String>[];
+    final seen = <String>{};
+    for (final url in urls) {
+      if (seen.add(url)) deduped.add(url);
+    }
+
+    final key = deduped.take(40).join('|');
+    if (key == _lastThumbPrecacheKey) return;
+    _lastThumbPrecacheKey = key;
+
+    final runId = ++_thumbPrecacheRunId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || runId != _thumbPrecacheRunId) return;
+      unawaited(_precacheThumbsInBatches(deduped, runId));
+    });
+  }
+
+  Future<void> _precacheThumbsInBatches(List<String> urls, int runId) async {
+    for (var i = 0; i < urls.length; i += _thumbPrecacheBatchSize) {
+      if (!mounted || runId != _thumbPrecacheRunId) return;
+      final end = (i + _thumbPrecacheBatchSize < urls.length)
+          ? i + _thumbPrecacheBatchSize
+          : urls.length;
+      final batch = urls.sublist(i, end);
+
+      await Future.wait(
+        batch.map((url) async {
+          if (_thumbPrecachedUrls.contains(url)) return;
+          _thumbPrecachedUrls.add(url);
+          try {
+            await precacheImage(NetworkImage(url), context);
+          } catch (_) {}
+        }),
+      );
+    }
+  }
+
   void _showStoryDetails(Map<String, dynamic> story) {
     _incrementStoryStat(story, 'opens');
     final p = palette;
@@ -462,9 +515,40 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     borderRadius: BorderRadius.circular(22),
                     child: Image.network(
                       thumbnail,
+                      filterQuality: FilterQuality.low,
+                      cacheWidth:
+                          (screenWidth * MediaQuery.of(ctx).devicePixelRatio)
+                              .round()
+                              .clamp(320, 1600),
+                      cacheHeight:
+                          ((narrow ? 180 : 200) *
+                                  MediaQuery.of(ctx).devicePixelRatio)
+                              .round()
+                              .clamp(320, 1200),
                       width: double.infinity,
                       height: narrow ? 180 : 200,
                       fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          height: narrow ? 180 : 200,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: p.soft,
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                p.primary.withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                       errorBuilder: (_, _, _) => Container(
                         height: narrow ? 180 : 200,
                         alignment: Alignment.center,
@@ -941,6 +1025,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
         topTags.length >= 2 && level.isNotEmpty && genre.isNotEmpty;
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final teacher = _teacherName(story);
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cardCacheWidth = (210 * dpr).round().clamp(320, 900);
+    final cardCacheHeight = (120 * dpr).round().clamp(180, 700);
 
     return SizedBox(
       width: 210,
@@ -978,6 +1065,27 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                             ? Image.network(
                                 thumbnail,
                                 fit: BoxFit.cover,
+                                filterQuality: FilterQuality.low,
+                                cacheWidth: cardCacheWidth,
+                                cacheHeight: cardCacheHeight,
+                                loadingBuilder: (context, child, progress) {
+                                  if (progress == null) return child;
+                                  return Container(
+                                    color: p.soft,
+                                    alignment: Alignment.center,
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              p.primary.withValues(alpha: 0.7),
+                                            ),
+                                      ),
+                                    ),
+                                  );
+                                },
                                 errorBuilder: (_, _, _) => _fallbackCover(p),
                               )
                             : _fallbackCover(p),
@@ -1322,6 +1430,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
             final allLevels = _extractAllLevels(items);
             final allLengths = _extractAllLengths(items);
             final visibleItems = _applyFiltersAndSort(items: items);
+            _scheduleThumbPrecache(visibleItems);
             final groupedStories = _groupStoriesByGenre(visibleItems);
 
             return LayoutBuilder(

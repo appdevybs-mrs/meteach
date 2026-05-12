@@ -20,12 +20,64 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Map<String, String> _teacherPhotoCache = {};
   final Map<String, Future<String>> _teacherPhotoPending = {};
+  final Set<String> _thumbPrecachedUrls = <String>{};
+
+  int _thumbPrecacheRunId = 0;
+  String _lastThumbPrecacheKey = '';
 
   String _searchQuery = '';
   String _selectedTag = 'All';
 
   static const Color _funOrange = Color(0xFFF98D28);
   static const Color _funOrangeDark = Color(0xFFE67612);
+  static const int _thumbPrecacheBatchSize = 4;
+
+  void _scheduleThumbPrecache(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
+    final urls = <String>[];
+    for (final item in items) {
+      final url = (item.value['thumbnail'] ?? '').toString().trim();
+      if (url.isNotEmpty) urls.add(url);
+    }
+    if (urls.isEmpty) return;
+
+    final deduped = <String>[];
+    final seen = <String>{};
+    for (final url in urls) {
+      if (seen.add(url)) deduped.add(url);
+    }
+
+    final key = deduped.take(40).join('|');
+    if (key == _lastThumbPrecacheKey) return;
+    _lastThumbPrecacheKey = key;
+
+    final runId = ++_thumbPrecacheRunId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || runId != _thumbPrecacheRunId) return;
+      _precacheThumbsInBatches(deduped, runId);
+    });
+  }
+
+  Future<void> _precacheThumbsInBatches(List<String> urls, int runId) async {
+    for (var i = 0; i < urls.length; i += _thumbPrecacheBatchSize) {
+      if (!mounted || runId != _thumbPrecacheRunId) return;
+      final end = (i + _thumbPrecacheBatchSize < urls.length)
+          ? i + _thumbPrecacheBatchSize
+          : urls.length;
+      final batch = urls.sublist(i, end);
+
+      await Future.wait(
+        batch.map((url) async {
+          if (_thumbPrecachedUrls.contains(url)) return;
+          _thumbPrecachedUrls.add(url);
+          try {
+            await precacheImage(NetworkImage(url), context);
+          } catch (_) {}
+        }),
+      );
+    }
+  }
 
   String _normalizeLabel(String raw) {
     var cleaned = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
@@ -172,9 +224,39 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       borderRadius: BorderRadius.circular(18),
                       child: Image.network(
                         thumbnail,
+                        filterQuality: FilterQuality.low,
+                        cacheWidth:
+                            (MediaQuery.of(context).size.width *
+                                    MediaQuery.of(context).devicePixelRatio)
+                                .round()
+                                .clamp(480, 1800),
+                        cacheHeight:
+                            (200 * MediaQuery.of(context).devicePixelRatio)
+                                .round()
+                                .clamp(300, 1200),
                         height: 200,
                         width: double.infinity,
                         fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return Container(
+                            height: 200,
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.35,
+                            ),
+                            alignment: Alignment.center,
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  cs.primary.withValues(alpha: 0.7),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                         errorBuilder: (_, _, _) => Container(
                           height: 200,
                           alignment: Alignment.center,
@@ -712,6 +794,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     final name = (game['name'] ?? '').toString().trim();
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final thumbCacheWidth = (220 * dpr).round().clamp(320, 900);
+    final thumbCacheHeight = (180 * dpr).round().clamp(240, 700);
     final opens = _gameStat(game, 'opens');
     final views = _gameStat(game, 'views');
     final plays = _gameStat(game, 'plays');
@@ -749,6 +834,24 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       ? Image.network(
                           thumbnail,
                           fit: BoxFit.cover,
+                          filterQuality: FilterQuality.low,
+                          cacheWidth: thumbCacheWidth,
+                          cacheHeight: thumbCacheHeight,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return Center(
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    cs.primary.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                           errorBuilder: (_, _, _) => Center(
                             child: Icon(
                               Icons.sports_esports_rounded,
@@ -967,6 +1070,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               return _matchesSearch(game: game, query: _searchQuery) &&
                   _matchesTag(game: game, selectedTag: _selectedTag);
             }).toList();
+            _scheduleThumbPrecache(filteredItems);
 
             final grouped = _groupByCategory(filteredItems);
 

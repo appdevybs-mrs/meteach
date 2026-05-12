@@ -183,6 +183,39 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                                     Image.network(
                                       url,
                                       fit: BoxFit.cover,
+                                      filterQuality: FilterQuality.low,
+                                      cacheWidth:
+                                          (220 *
+                                                  MediaQuery.of(
+                                                    context,
+                                                  ).devicePixelRatio)
+                                              .round()
+                                              .clamp(320, 900),
+                                      cacheHeight:
+                                          (220 *
+                                                  MediaQuery.of(
+                                                    context,
+                                                  ).devicePixelRatio)
+                                              .round()
+                                              .clamp(320, 900),
+                                      loadingBuilder:
+                                          (context, child, progress) {
+                                            if (progress == null) {
+                                              return child;
+                                            }
+                                            return Container(
+                                              color: Colors.grey.shade100,
+                                              alignment: Alignment.center,
+                                              child: const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            );
+                                          },
                                       errorBuilder: (_, _, _) => Container(
                                         color: Colors.grey.shade200,
                                         alignment: Alignment.center,
@@ -675,6 +708,26 @@ class _LearnerGalleryViewerScreen extends StatelessWidget {
                                 child: Image.network(
                                   url,
                                   fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.low,
+                                  cacheWidth:
+                                      (constraints.maxWidth *
+                                              MediaQuery.of(
+                                                context,
+                                              ).devicePixelRatio)
+                                          .round()
+                                          .clamp(640, 2400),
+                                  loadingBuilder: (context, child, progress) {
+                                    if (progress == null) return child;
+                                    return const SizedBox(
+                                      height: 260,
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                   errorBuilder: (_, _, _) => const SizedBox(
                                     height: 260,
                                     child: Center(
