@@ -250,7 +250,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         ? widget.title
         : widget.thumbnailUrl.trim();
     final hue = seed.hashCode.abs() % 360;
-    return HSVColor.fromAHSV(1, hue.toDouble(), 0.55, 0.78).toColor();
+    return HSVColor.fromAHSV(1, hue.toDouble(), 0.74, 0.92).toColor();
   }
 
   Future<void> _setSpeed(double speed) async {
@@ -393,56 +393,62 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         ? 'Story Study'
         : widget.title.trim();
 
-    return Scaffold(
-      backgroundColor: p.appBg,
-      appBar: AppBar(
-        backgroundColor: accent.withValues(alpha: 0.16),
-        surfaceTintColor: accent.withValues(alpha: 0.16),
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      body: SafeArea(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [accent.withValues(alpha: 0.08), p.appBg],
+    return PopScope(
+      canPop: !_readerExpanded,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || !_readerExpanded) return;
+        setState(() {
+          _readerExpanded = false;
+        });
+      },
+      child: Scaffold(
+        backgroundColor: p.appBg,
+        appBar: AppBar(
+          backgroundColor: accent.withValues(alpha: 0.45),
+          surfaceTintColor: accent.withValues(alpha: 0.45),
+          leading: _readerExpanded
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () {
+                    setState(() {
+                      _readerExpanded = false;
+                    });
+                  },
+                )
+              : null,
+          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        body: SafeArea(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [accent.withValues(alpha: 0.12), p.appBg],
+              ),
             ),
-          ),
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(
-              compact ? 10 : 12,
-              12,
-              compact ? 10 : 12,
-              20,
+            child: ListView(
+              physics: _readerExpanded
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                compact ? 10 : 12,
+                12,
+                compact ? 10 : 12,
+                _readerExpanded ? 0 : 20,
+              ),
+              children: [
+                if (_hasAudio && !_readerExpanded) ...[
+                  _buildAudioCard(p, compact),
+                  const SizedBox(height: 12),
+                ],
+                if (_hasHtml) ...[_buildHtmlViewerCard(p, pdfHeight, compact)],
+                if (!_hasHtml && _hasPdf) ...[
+                  _buildPdfCard(p, pdfHeight, compact),
+                ],
+                if (!_hasHtml && !_hasPdf) _buildEmptyCard(p, compact),
+              ],
             ),
-            children: [
-              if (_hasAudio && !_readerExpanded) ...[
-                _buildAudioCard(p, compact),
-                const SizedBox(height: 12),
-              ],
-              if (_hasHtml) ...[_buildHtmlViewerCard(p, pdfHeight, compact)],
-              if (!_hasHtml && _hasPdf) ...[
-                _buildPdfCard(p, pdfHeight, compact),
-              ],
-              if (!_hasHtml && !_hasPdf) _buildEmptyCard(p, compact),
-              if (_hasHtml && _hasPdf && !_readerExpanded)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    _pdfLoading
-                        ? (_pdfProgress == null
-                              ? 'Preparing PDF in background...'
-                              : 'Preparing PDF in background... ${_pdfProgress!}%')
-                        : 'PDF ready in background',
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.74),
-                      fontWeight: FontWeight.w700,
-                      fontSize: compact ? 12 : 13,
-                    ),
-                  ),
-                ),
-            ],
           ),
         ),
       ),
@@ -471,45 +477,41 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
-      padding: const EdgeInsets.all(10),
+      padding: EdgeInsets.all(_readerExpanded ? 0 : 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              Icon(Icons.picture_as_pdf_rounded, color: p.accent),
-              Text(
-                _pageCount > 0
-                    ? 'Page $_pageNumber of $_pageCount'
-                    : (_pdfProgress == null
-                          ? 'Loading'
-                          : 'Loading ${_pdfProgress!}%'),
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w800,
-                  fontSize: compact ? 12 : 14,
+          if (!_readerExpanded)
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Icon(Icons.picture_as_pdf_rounded, color: p.accent),
+                Text(
+                  _pageCount > 0
+                      ? 'Page $_pageNumber of $_pageCount'
+                      : (_pdfProgress == null
+                            ? 'Loading'
+                            : 'Loading ${_pdfProgress!}%'),
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: compact ? 12 : 14,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: () {
-                  setState(() {
-                    _readerExpanded = !_readerExpanded;
-                  });
-                },
-                icon: Icon(
-                  _readerExpanded
-                      ? Icons.fullscreen_exit_rounded
-                      : Icons.fullscreen_rounded,
-                  color: p.primary,
+                const Spacer(),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _readerExpanded = true;
+                    });
+                  },
+                  icon: Icon(Icons.fullscreen_rounded, color: p.primary),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+              ],
+            ),
+          if (!_readerExpanded) const SizedBox(height: 8),
           SizedBox(
             height: pdfHeight,
             child: ClipRRect(
@@ -597,6 +599,41 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                 ],
               ),
             ),
+          if (!_readerExpanded && _pageCount > 0) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pageNumber > 1
+                        ? () => _pdfController.previousPage()
+                        : null,
+                    icon: const Icon(Icons.chevron_left_rounded),
+                    label: const Text('Back'),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '$_pageNumber / $_pageCount',
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _pageNumber < _pageCount
+                        ? () => _pdfController.nextPage()
+                        : null,
+                    icon: const Icon(Icons.chevron_right_rounded),
+                    label: const Text('Next'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -612,26 +649,6 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
       padding: EdgeInsets.all(compact ? 10 : 12),
       child: Column(
         children: [
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              Icon(Icons.headphones_rounded, color: p.primary),
-              Text(
-                'Listening',
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: compact ? 13 : 15,
-                ),
-              ),
-              Text(
-                _repeatMode == _RepeatMode.one ? 'Repeat: One' : 'Repeat: Off',
-                style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
-              ),
-            ],
-          ),
           Slider(
             value: _position.inMilliseconds.toDouble().clamp(
               0,
@@ -657,101 +674,51 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          compact
-              ? Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _togglePlayPause,
-                        icon: Icon(
-                          _playerState == PlayerState.playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                        ),
-                        label: Text(
-                          _playerState == PlayerState.playing
-                              ? 'Pause'
-                              : 'Play',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _repeatMode = _repeatMode == _RepeatMode.off
-                                ? _RepeatMode.one
-                                : _RepeatMode.off;
-                          });
-                        },
-                        icon: const Icon(Icons.repeat_rounded),
-                        label: Text(
-                          _repeatMode == _RepeatMode.off
-                              ? 'Repeat Off'
-                              : 'Repeat One',
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _togglePlayPause,
-                        icon: Icon(
-                          _playerState == PlayerState.playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                        ),
-                        label: Text(
-                          _playerState == PlayerState.playing
-                              ? 'Pause'
-                              : 'Play',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _repeatMode = _repeatMode == _RepeatMode.off
-                                ? _RepeatMode.one
-                                : _RepeatMode.off;
-                          });
-                        },
-                        icon: const Icon(Icons.repeat_rounded),
-                        label: Text(
-                          _repeatMode == _RepeatMode.off
-                              ? 'Repeat Off'
-                              : 'Repeat One',
-                        ),
-                      ),
-                    ),
-                  ],
+          const SizedBox(height: 4),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _iconControl(
+                  icon: _playerState == PlayerState.playing
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                  onTap: _togglePlayPause,
+                  color: _playerState == PlayerState.playing
+                      ? const Color(0xFFEF6C00)
+                      : p.primary,
                 ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final speed in const <double>[0.75, 1.0, 1.25])
-                ChoiceChip(
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  label: Text(
-                    '${speed}x',
-                    style: TextStyle(fontSize: compact ? 11 : 13),
+                const SizedBox(width: 8),
+                _iconControl(
+                  icon: Icons.repeat_rounded,
+                  onTap: () {
+                    setState(() {
+                      _repeatMode = _repeatMode == _RepeatMode.off
+                          ? _RepeatMode.one
+                          : _RepeatMode.off;
+                    });
+                  },
+                  color: _repeatMode == _RepeatMode.one
+                      ? p.accent
+                      : p.text.withValues(alpha: 0.70),
+                ),
+                const SizedBox(width: 8),
+                for (final speed in const <double>[0.75, 1.0, 1.25]) ...[
+                  _iconControl(
+                    icon: speed < 1
+                        ? Icons.keyboard_double_arrow_left_rounded
+                        : speed > 1
+                        ? Icons.keyboard_double_arrow_right_rounded
+                        : Icons.speed_rounded,
+                    onTap: () => _setSpeed(speed),
+                    color: _speed == speed
+                        ? p.accent
+                        : p.text.withValues(alpha: 0.70),
                   ),
-                  selected: _speed == speed,
-                  onSelected: (_) => _setSpeed(speed),
-                ),
-            ],
+                  const SizedBox(width: 8),
+                ],
+              ],
+            ),
           ),
           if (_audioLoading)
             Padding(
@@ -786,6 +753,27 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     );
   }
 
+  Widget _iconControl({
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 40,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.44)),
+        ),
+        child: Icon(icon, color: color, size: 22),
+      ),
+    );
+  }
+
   Widget _buildHtmlViewerCard(
     _StudyPalette p,
     double viewerHeight,
@@ -797,43 +785,39 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
-      padding: const EdgeInsets.all(10),
+      padding: EdgeInsets.all(_readerExpanded ? 0 : 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.language_rounded, color: p.accent),
-              const SizedBox(width: 8),
-              Text(
-                _htmlLoading
-                    ? (_htmlProgress > 0
-                          ? 'Loading $_htmlProgress%'
-                          : 'Loading')
-                    : 'Reading',
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w800,
-                  fontSize: compact ? 12 : 14,
+          if (!_readerExpanded)
+            Row(
+              children: [
+                Icon(Icons.language_rounded, color: p.accent),
+                const SizedBox(width: 8),
+                Text(
+                  _htmlLoading
+                      ? (_htmlProgress > 0
+                            ? 'Loading $_htmlProgress%'
+                            : 'Loading')
+                      : 'Reading',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: compact ? 12 : 14,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: () {
-                  setState(() {
-                    _readerExpanded = !_readerExpanded;
-                  });
-                },
-                icon: Icon(
-                  _readerExpanded
-                      ? Icons.fullscreen_exit_rounded
-                      : Icons.fullscreen_rounded,
-                  color: p.primary,
+                const Spacer(),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _readerExpanded = true;
+                    });
+                  },
+                  icon: Icon(Icons.fullscreen_rounded, color: p.primary),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+              ],
+            ),
+          if (!_readerExpanded) const SizedBox(height: 8),
           SizedBox(
             height: viewerHeight,
             child: ClipRRect(
