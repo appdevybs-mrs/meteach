@@ -4,13 +4,12 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
-import '../shared/shared_story_audio_player_screen.dart';
-import '../shared/shared_pdf_reader_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/material_webview_screen.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/profile_avatar.dart';
+import '../shared/shared_story_study_screen.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
@@ -228,14 +227,14 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return future;
   }
 
-  bool _hasWatch(Map<String, dynamic> story) =>
-      (story['link'] ?? '').toString().trim().isNotEmpty;
-
   bool _hasListen(Map<String, dynamic> story) =>
       (story['audioUrl'] ?? '').toString().trim().isNotEmpty;
 
   bool _hasRead(Map<String, dynamic> story) =>
       (story['pdfUrl'] ?? '').toString().trim().isNotEmpty;
+
+  bool _hasHtml(Map<String, dynamic> story) =>
+      (story['link'] ?? '').toString().trim().isNotEmpty;
 
   List<MapEntry<String, Map<String, dynamic>>> _applyFiltersAndSort({
     required List<MapEntry<String, Map<String, dynamic>>> items,
@@ -349,66 +348,69 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return result;
   }
 
-  Future<void> _openWatch(Map<String, dynamic> story) async {
-    await _incrementStoryStat(story, 'plays');
-    final url = (story['link'] ?? '').toString().trim();
+  Future<void> _openHtmlRead(Map<String, dynamic> story) async {
+    final htmlUrl = (story['link'] ?? '').toString().trim();
+    final title = (story['name'] ?? 'Story Material').toString().trim();
+    if (htmlUrl.isEmpty) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: title.isEmpty ? 'Story Material' : title,
+          url: htmlUrl,
+        ),
+      ),
+    );
+  }
 
-    if (url.isEmpty) return;
+  Future<void> _openStudy(Map<String, dynamic> story) async {
+    final audioUrl = (story['audioUrl'] ?? '').toString().trim();
+    final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
+    final htmlUrl = (story['link'] ?? '').toString().trim();
+    final title = (story['name'] ?? 'Story Study').toString().trim();
+    final imageUrl = (story['thumbnail'] ?? '').toString().trim();
 
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
+    if (pdfUrl.isEmpty && audioUrl.isEmpty && htmlUrl.isNotEmpty) {
+      await _openHtmlRead(story);
+      return;
+    }
+
+    if (pdfUrl.isEmpty && audioUrl.isEmpty) {
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
-        const SnackBar(content: Text('Invalid story link.')),
+        const SnackBar(content: Text('No media available for this story.')),
       );
       return;
     }
 
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-
-    if (!ok && mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open browser.')),
-      );
+    if (pdfUrl.isNotEmpty) {
+      unawaited(_incrementStoryStat(story, 'views'));
     }
-  }
+    if (audioUrl.isNotEmpty) {
+      unawaited(_incrementStoryStat(story, 'listens'));
+    }
 
-  void _openListen(Map<String, dynamic> story) {
-    _incrementStoryStat(story, 'listens');
-    final audioUrl = (story['audioUrl'] ?? '').toString().trim();
-    final title = (story['name'] ?? 'Story Audio').toString().trim();
-    final imageUrl = (story['thumbnail'] ?? '').toString().trim();
-
-    if (audioUrl.isEmpty) return;
-
-    Navigator.of(context).push(
+    if (!mounted) return;
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SharedAudioPlayerScreen(
-          title: title.isEmpty ? 'Story Audio' : title,
+        builder: (_) => SharedStoryStudyScreen(
+          title: title.isEmpty ? 'Story Study' : title,
+          thumbnailUrl: imageUrl,
           audioUrl: audioUrl,
-          imageUrl: imageUrl,
+          pdfUrl: pdfUrl,
+          htmlUrl: htmlUrl,
         ),
       ),
     );
   }
 
-  void _openRead(Map<String, dynamic> story) {
-    _incrementStoryStat(story, 'views');
-    final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
-    final title = (story['name'] ?? 'Story PDF').toString().trim();
-
-    if (pdfUrl.isEmpty) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SharedPdfReaderScreen(
-          title: title.isEmpty ? 'Story PDF' : title,
-          pdfUrl: pdfUrl,
-        ),
-      ),
-    );
+  Color _storyActionColor(Map<String, dynamic> story, _StoriesPalette p) {
+    final thumbnail = (story['thumbnail'] ?? '').toString().trim();
+    if (thumbnail.isEmpty) return p.accent;
+    final hash = thumbnail.hashCode.abs();
+    final hue = (hash % 360).toDouble();
+    return HSVColor.fromAHSV(1, hue, 0.68, 0.84).toColor();
   }
 
   void _showStoryDetails(Map<String, dynamic> story) {
@@ -416,7 +418,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final p = palette;
     final hasRead = _hasRead(story);
     final hasListen = _hasListen(story);
-    final hasWatch = _hasWatch(story);
+    final actionColor = _storyActionColor(story, p);
     final title = (story['name'] ?? 'Story').toString().trim();
     final description = (story['description'] ?? '').toString().trim();
     final genre = (story['genre'] ?? '').toString().trim();
@@ -550,12 +552,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       _detailChip(p, Icons.schedule_rounded, lengthApprox),
                     if (scriptType.isNotEmpty)
                       _detailChip(p, Icons.article_rounded, scriptType),
-                    if (hasRead)
-                      _detailChip(p, Icons.picture_as_pdf_rounded, 'Read'),
-                    if (hasListen)
-                      _detailChip(p, Icons.headphones_rounded, 'Listen'),
-                    if (hasWatch)
-                      _detailChip(p, Icons.ondemand_video_rounded, 'Watch'),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -656,98 +652,29 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   ),
                 ],
                 const SizedBox(height: 20),
-                if (narrow) ...[
-                  if (hasRead)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          _openRead(story);
-                        },
-                        icon: const Icon(Icons.picture_as_pdf_rounded),
-                        label: const Text('Read'),
-                      ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: actionColor,
+                      foregroundColor: Colors.white,
                     ),
-                  if (hasRead && hasListen) const SizedBox(height: 10),
-                  if (hasListen)
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          _openListen(story);
-                        },
-                        icon: const Icon(Icons.headphones_rounded),
-                        label: const Text('Listen'),
-                      ),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _openStudy(story);
+                    },
+                    icon: Icon(
+                      hasRead
+                          ? Icons.auto_stories_rounded
+                          : hasListen
+                          ? Icons.headphones_rounded
+                          : Icons.language_rounded,
                     ),
-                ] else ...[
-                  if (hasRead && hasListen)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () {
-                              Navigator.of(ctx).pop();
-                              _openRead(story);
-                            },
-                            icon: const Icon(Icons.picture_as_pdf_rounded),
-                            label: const Text('Read'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.of(ctx).pop();
-                              _openListen(story);
-                            },
-                            icon: const Icon(Icons.headphones_rounded),
-                            label: const Text('Listen'),
-                          ),
-                        ),
-                      ],
-                    )
-                  else if (hasRead)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          _openRead(story);
-                        },
-                        icon: const Icon(Icons.picture_as_pdf_rounded),
-                        label: const Text('Read'),
-                      ),
-                    )
-                  else if (hasListen)
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          _openListen(story);
-                        },
-                        icon: const Icon(Icons.headphones_rounded),
-                        label: const Text('Listen'),
-                      ),
-                    ),
-                ],
-                if (hasWatch) ...[
-                  if (hasRead || hasListen) const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                        _openWatch(story);
-                      },
-                      icon: const Icon(Icons.ondemand_video_rounded),
-                      label: const Text('Watch'),
+                    label: Text(
+                      hasRead || hasListen ? 'Read + Listen' : 'Read',
                     ),
                   ),
-                ],
+                ),
               ],
             ),
           ),
@@ -1003,11 +930,15 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final p = palette;
     final hasRead = _hasRead(story);
     final hasListen = _hasListen(story);
-    final hasWatch = _hasWatch(story);
-    final hasAnyAction = hasRead || hasListen || hasWatch;
+    final hasHtml = _hasHtml(story);
+    final hasAnyAction = hasRead || hasListen || hasHtml;
+    final actionColor = _storyActionColor(story, p);
     final title = (story['name'] ?? 'Story').toString().trim();
     final genre = (story['genre'] ?? '').toString().trim();
     final level = (story['level'] ?? '').toString().trim();
+    final topTags = _tagsFromStory(story).take(2).toList();
+    final denseMeta =
+        topTags.length >= 2 && level.isNotEmpty && genre.isNotEmpty;
     final thumbnail = (story['thumbnail'] ?? '').toString().trim();
     final teacher = _teacherName(story);
 
@@ -1020,9 +951,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
           onTap: () => _showStoryDetails(story),
           child: Container(
             decoration: BoxDecoration(
-              color: p.cardBg,
+              color: actionColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: p.border.withValues(alpha: 0.90)),
+              border: Border.all(color: actionColor.withValues(alpha: 0.50)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),
@@ -1086,9 +1017,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                                     size: 14,
                                   ),
                                 ),
-                              if (hasWatch)
+                              if (!hasRead && !hasListen && hasHtml)
                                 const Icon(
-                                  Icons.ondemand_video_rounded,
+                                  Icons.language_rounded,
                                   color: Colors.white,
                                   size: 14,
                                 ),
@@ -1155,11 +1086,21 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       ),
                       const SizedBox(height: 8),
                       Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+                        spacing: denseMeta ? 5 : 6,
+                        runSpacing: denseMeta ? 5 : 6,
                         children: [
-                          if (genre.isNotEmpty) _smallTag(p, genre),
-                          if (level.isNotEmpty) _smallTag(p, level),
+                          ...topTags.map(
+                            (tag) => _smallTag(
+                              p,
+                              tag,
+                              isAccent: true,
+                              compact: denseMeta,
+                            ),
+                          ),
+                          if (level.isNotEmpty)
+                            _smallTag(p, level, compact: denseMeta),
+                          if (genre.isNotEmpty)
+                            _smallTag(p, genre, compact: denseMeta),
                         ],
                       ),
                     ],
@@ -1207,9 +1148,13 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     _StoriesPalette p,
     String text, {
     bool isAccent = false,
+    bool compact = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 9,
+        vertical: compact ? 5 : 6,
+      ),
       decoration: BoxDecoration(
         color: isAccent ? p.accent.withValues(alpha: 0.10) : p.soft,
         borderRadius: BorderRadius.circular(999),
@@ -1226,7 +1171,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
         style: TextStyle(
           color: isAccent ? p.accent : p.text,
           fontWeight: FontWeight.w800,
-          fontSize: 11,
+          fontSize: compact ? 10 : 11,
         ),
       ),
     );

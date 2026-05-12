@@ -8,13 +8,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
 import '../services/audit_log_service.dart';
 import '../services/storage_existence.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/material_webview_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/teacher_web_layout.dart';
@@ -400,6 +400,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   Future<void> _openStory(Map<String, dynamic> story) async {
     _incrementStoryStat(story, 'plays');
     final link = (story['link'] ?? '').toString().trim();
+    final name = (story['name'] ?? 'Story').toString().trim();
     if (link.isEmpty) {
       if (!mounted) return;
       AppToast.fromSnackBar(
@@ -419,13 +420,15 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       return;
     }
 
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open browser.')),
-      );
-    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: name.isEmpty ? 'Story Viewer' : name,
+          url: link,
+        ),
+      ),
+    );
   }
 
   Future<void> _openAudio(Map<String, dynamic> story) async {
@@ -756,6 +759,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       if (isEdit)
         ...selectedTags.where((e) => e.trim().isNotEmpty).map((e) => e.trim()),
     };
+    TextEditingController? tagFieldController;
 
     bool localSaving = false;
     bool localUploadingStory = false;
@@ -818,10 +822,31 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               if (tag.isEmpty) return;
 
               setLocalState(() {
-                selectedTags.add(tag);
-                chosenTags.add(tag);
+                final normalized = tag.toLowerCase();
+                final existing = selectedTags.cast<String?>().firstWhere(
+                  (t) => (t ?? '').trim().toLowerCase() == normalized,
+                  orElse: () => null,
+                );
+                final finalTag = (existing ?? tag).trim();
+                if (finalTag.isEmpty) return;
+                selectedTags.add(finalTag);
+                chosenTags.add(finalTag);
                 tagInputController.clear();
+                tagFieldController?.clear();
               });
+            }
+
+            List<String> filteredTagSuggestions(String query) {
+              final q = query.trim().toLowerCase();
+              final sorted = selectedTags.toList()
+                ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+              if (q.isEmpty) {
+                return sorted.take(8).toList();
+              }
+              return sorted
+                  .where((tag) => tag.toLowerCase().contains(q))
+                  .take(8)
+                  .toList();
             }
 
             Future<void> uploadStoryFile() async {
@@ -1557,13 +1582,77 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: tagInputController,
-                              onSubmitted: addTag,
-                              decoration: const InputDecoration(
-                                labelText: 'Add tag',
-                                border: OutlineInputBorder(),
-                              ),
+                            child: Autocomplete<String>(
+                              optionsBuilder: (textEditingValue) {
+                                return filteredTagSuggestions(
+                                  textEditingValue.text,
+                                );
+                              },
+                              displayStringForOption: (option) => option,
+                              onSelected: (selection) {
+                                addTag(selection);
+                              },
+                              fieldViewBuilder:
+                                  (
+                                    context,
+                                    textEditingController,
+                                    focusNode,
+                                    onFieldSubmitted,
+                                  ) {
+                                    tagFieldController = textEditingController;
+
+                                    return TextField(
+                                      controller: textEditingController,
+                                      focusNode: focusNode,
+                                      onChanged: (value) {
+                                        if (tagInputController.text != value) {
+                                          tagInputController.text = value;
+                                        }
+                                      },
+                                      onSubmitted: (value) {
+                                        addTag(value);
+                                        onFieldSubmitted();
+                                      },
+                                      decoration: const InputDecoration(
+                                        labelText: 'Add tag',
+                                        hintText: 'Type to select or add new',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                    );
+                                  },
+                              optionsViewBuilder:
+                                  (context, onSelected, options) {
+                                    final optionList = options.toList();
+                                    if (optionList.isEmpty) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Align(
+                                      alignment: Alignment.topLeft,
+                                      child: Material(
+                                        elevation: 4,
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxHeight: 220,
+                                            maxWidth: 360,
+                                          ),
+                                          child: ListView.builder(
+                                            padding: EdgeInsets.zero,
+                                            shrinkWrap: true,
+                                            itemCount: optionList.length,
+                                            itemBuilder: (context, index) {
+                                              final option = optionList[index];
+                                              return ListTile(
+                                                dense: true,
+                                                title: Text(option),
+                                                onTap: () => onSelected(option),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2712,9 +2801,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        gradient: LinearGradient(
+          colors: [theme.cardColor, cs.primary.withValues(alpha: 0.03)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.16)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -2768,98 +2861,104 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 fontSize: 16,
                 color: cs.primary,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Text(
-                    'By: $ownerName',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withValues(
-                        alpha: 0.70,
-                      ),
-                    ),
+                  _buildMiniInfoChip(
+                    context: context,
+                    icon: Icons.verified_rounded,
+                    text: status,
+                    backgroundColor: _statusColor(
+                      status,
+                    ).withValues(alpha: 0.12),
+                    borderColor: _statusColor(status).withValues(alpha: 0.35),
+                    iconColor: _statusColor(status),
+                    textColor: _statusColor(status),
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildMiniInfoChip(
-                        context: context,
-                        icon: Icons.verified_rounded,
-                        text: status,
-                        backgroundColor: _statusColor(
-                          status,
-                        ).withValues(alpha: 0.12),
-                        borderColor: _statusColor(
-                          status,
-                        ).withValues(alpha: 0.35),
-                        iconColor: _statusColor(status),
-                        textColor: _statusColor(status),
-                      ),
-                      if (genre.isNotEmpty)
-                        _buildMiniInfoChip(
+                  ...tags
+                      .take(2)
+                      .map(
+                        (tag) => _buildMiniInfoChip(
                           context: context,
-                          icon: Icons.category_rounded,
-                          text: genre,
+                          icon: Icons.sell_rounded,
+                          text: tag,
+                          backgroundColor: cs.secondary.withValues(alpha: 0.14),
+                          borderColor: cs.secondary.withValues(alpha: 0.30),
+                          iconColor: cs.secondary,
                         ),
-                      if (lengthApprox.isNotEmpty)
-                        _buildMiniInfoChip(
-                          context: context,
-                          icon: Icons.schedule_rounded,
-                          text: lengthApprox,
-                        ),
-                      if (scriptType.isNotEmpty)
-                        _buildMiniInfoChip(
-                          context: context,
-                          icon: Icons.article_rounded,
-                          text: scriptType,
-                        ),
-                      _buildMiniInfoChip(
-                        context: context,
-                        icon: Icons.open_in_new_rounded,
-                        text: 'Opens $opens',
                       ),
-                      _buildMiniInfoChip(
-                        context: context,
-                        icon: Icons.headphones_rounded,
-                        text: 'Listens $listens',
-                      ),
-                      _buildMiniInfoChip(
-                        context: context,
-                        icon: Icons.visibility_rounded,
-                        text: 'Views $views',
-                      ),
-                      _buildMiniInfoChip(
-                        context: context,
-                        icon: Icons.play_arrow_rounded,
-                        text: 'Plays $plays',
-                      ),
-                      ...tags
-                          .take(2)
-                          .map(
-                            (tag) => _buildMiniInfoChip(
-                              context: context,
-                              icon: Icons.sell_rounded,
-                              text: tag,
-                              backgroundColor: cs.secondary.withValues(
-                                alpha: 0.08,
-                              ),
-                              borderColor: cs.secondary.withValues(alpha: 0.14),
-                              iconColor: cs.secondary,
-                            ),
-                          ),
-                    ],
-                  ),
                 ],
               ),
             ),
+            trailing: canEdit
+                ? PopupMenuButton<String>(
+                    tooltip: 'More options',
+                    onSelected: (value) => _handleStoryMenuAction(
+                      action: value,
+                      storyId: storyId,
+                      story: story,
+                      knownTags: knownTags,
+                    ),
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.edit_rounded),
+                          title: Text('Edit'),
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'duplicate',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.copy_rounded),
+                          title: Text('Duplicate'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'archive',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            status == 'archived'
+                                ? Icons.unarchive_rounded
+                                : Icons.archive_rounded,
+                          ),
+                          title: Text(
+                            status == 'archived' ? 'Restore' : 'Archive',
+                          ),
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.delete_rounded),
+                          title: Text('Delete'),
+                        ),
+                      ),
+                    ],
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerHighest.withValues(
+                          alpha: 0.70,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.more_horiz_rounded),
+                    ),
+                  )
+                : const Icon(Icons.expand_more_rounded),
             children: [
               if (thumbnail.isNotEmpty) ...[
                 ClipRRect(
@@ -2883,6 +2982,43 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 ),
                 const SizedBox(height: 14),
               ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMiniInfoChip(
+                      context: context,
+                      icon: Icons.person_rounded,
+                      text: ownerName,
+                    ),
+                    _buildMiniInfoChip(
+                      context: context,
+                      icon: Icons.open_in_new_rounded,
+                      text: 'Opens $opens',
+                    ),
+                    _buildMiniInfoChip(
+                      context: context,
+                      icon: Icons.headphones_rounded,
+                      text: 'Listens $listens',
+                    ),
+                    _buildMiniInfoChip(
+                      context: context,
+                      icon: Icons.visibility_rounded,
+                      text: 'Views $views',
+                    ),
+                    _buildMiniInfoChip(
+                      context: context,
+                      icon: Icons.play_arrow_rounded,
+                      text: 'Plays $plays',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(height: 1, color: cs.outline.withValues(alpha: 0.14)),
+              const SizedBox(height: 14),
               if (genre.isNotEmpty ||
                   lengthApprox.isNotEmpty ||
                   scriptType.isNotEmpty ||
@@ -3147,83 +3283,35 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         FilledButton.icon(
                           onPressed: () => _openStory(story),
                           icon: const Icon(Icons.ondemand_video_rounded),
-                          label: const Text('Open'),
+                          label: const Text('Watch'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: cs.primary,
+                            foregroundColor: cs.onPrimary,
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: () => _openAudio(story),
                           icon: const Icon(Icons.headphones_rounded),
-                          label: const Text('Audio'),
+                          label: const Text('Listen'),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                              color: cs.primary.withValues(alpha: 0.28),
+                            ),
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: () => _openPdf(story),
                           icon: const Icon(Icons.picture_as_pdf_rounded),
-                          label: const Text('PDF'),
+                          label: const Text('Read'),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                              color: cs.primary.withValues(alpha: 0.28),
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  if (canEdit)
-                    PopupMenuButton<String>(
-                      tooltip: 'More options',
-                      onSelected: (value) => _handleStoryMenuAction(
-                        action: value,
-                        storyId: storyId,
-                        story: story,
-                        knownTags: knownTags,
-                      ),
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.edit_rounded),
-                            title: Text('Edit'),
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'duplicate',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.copy_rounded),
-                            title: Text('Duplicate'),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'archive',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              status == 'archived'
-                                  ? Icons.unarchive_rounded
-                                  : Icons.archive_rounded,
-                            ),
-                            title: Text(
-                              status == 'archived' ? 'Restore' : 'Archive',
-                            ),
-                          ),
-                        ),
-                        const PopupMenuDivider(),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.delete_rounded),
-                            title: Text('Delete'),
-                          ),
-                        ),
-                      ],
-                      child: Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerHighest.withValues(
-                            alpha: 0.55,
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(Icons.more_horiz_rounded),
-                      ),
-                    ),
                 ],
               ),
             ],
