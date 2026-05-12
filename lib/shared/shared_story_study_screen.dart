@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -52,10 +57,15 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   String? _pdfError;
   int _pageNumber = 1;
   int _pageCount = 0;
+  int? _pdfProgress;
+  String? _localPdfPath;
 
   WebViewController? _htmlController;
   bool _htmlLoading = true;
   String? _htmlError;
+  int _htmlProgress = 0;
+
+  bool _readerExpanded = false;
 
   bool get _hasAudio => widget.audioUrl.trim().isNotEmpty;
   bool get _hasPdf => widget.pdfUrl.trim().isNotEmpty;
@@ -72,8 +82,11 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     if (_hasAudio) {
       unawaited(_loadAudio());
     }
-    if (_hasHtml && !_hasPdf && !kIsWeb) {
+    if (_hasHtml && !kIsWeb) {
       _setupInlineHtml();
+    }
+    if (_hasPdf) {
+      unawaited(_preparePdf());
     }
   }
 
@@ -232,6 +245,14 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     return 'Could not open this page. Please try again.';
   }
 
+  Color _thumbAccent(_StudyPalette p) {
+    final seed = widget.thumbnailUrl.trim().isEmpty
+        ? widget.title
+        : widget.thumbnailUrl.trim();
+    final hue = seed.hashCode.abs() % 360;
+    return HSVColor.fromAHSV(1, hue.toDouble(), 0.55, 0.78).toColor();
+  }
+
   Future<void> _setSpeed(double speed) async {
     try {
       await _player.setPlaybackRate(speed);
@@ -246,6 +267,69 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     await _player.seek(Duration(milliseconds: ms.round()));
   }
 
+  Future<void> _preparePdf({bool forceRefresh = false}) async {
+    final url = widget.pdfUrl.trim();
+    if (url.isEmpty) return;
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final digest = sha1.convert(utf8.encode(url)).toString();
+      final file = File('${cacheDir.path}/story_pdf_$digest.pdf');
+
+      if (!forceRefresh && await file.exists()) {
+        if (!mounted) return;
+        setState(() {
+          _localPdfPath = file.path;
+          _pdfLoading = false;
+          _pdfError = null;
+          _pdfProgress = 100;
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _pdfLoading = true;
+        _pdfError = null;
+        _pdfProgress = 0;
+      });
+
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await http.Client().send(request);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('status ${response.statusCode}');
+      }
+      final sink = file.openWrite();
+      final total = response.contentLength ?? 0;
+      var received = 0;
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0 && mounted) {
+          setState(() {
+            _pdfProgress = ((received / total) * 100).clamp(0, 100).round();
+          });
+        }
+      }
+      await sink.flush();
+      await sink.close();
+
+      if (!mounted) return;
+      setState(() {
+        _localPdfPath = file.path;
+        _pdfLoading = false;
+        _pdfError = null;
+        _pdfProgress = 100;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pdfLoading = false;
+        _pdfError = _humanPdfError(e.toString());
+      });
+    }
+  }
+
   void _setupInlineHtml() {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -257,6 +341,13 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             setState(() {
               _htmlLoading = true;
               _htmlError = null;
+              _htmlProgress = 0;
+            });
+          },
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _htmlProgress = progress;
             });
           },
           onPageFinished: (_) {
@@ -264,6 +355,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             setState(() {
               _htmlLoading = false;
               _htmlError = null;
+              _htmlProgress = 100;
             });
           },
           onWebResourceError: (error) {
@@ -291,9 +383,12 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final accent = _thumbAccent(p);
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 390;
-    final pdfHeight = compact ? 360.0 : 480.0;
+    final pdfHeight = _readerExpanded
+        ? MediaQuery.sizeOf(context).height - 130
+        : (compact ? 360.0 : 480.0);
     final title = widget.title.trim().isEmpty
         ? 'Story Study'
         : widget.title.trim();
@@ -301,29 +396,70 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: p.cardBg,
-        surfaceTintColor: p.cardBg,
+        backgroundColor: accent.withValues(alpha: 0.16),
+        surfaceTintColor: accent.withValues(alpha: 0.16),
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            compact ? 10 : 12,
-            12,
-            compact ? 10 : 12,
-            20,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [accent.withValues(alpha: 0.08), p.appBg],
+            ),
           ),
-          children: [
-            if (_hasAudio) ...[
-              _buildAudioCard(p, compact),
-              const SizedBox(height: 12),
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(
+              compact ? 10 : 12,
+              12,
+              compact ? 10 : 12,
+              20,
+            ),
+            children: [
+              if (_hasAudio && !_readerExpanded) ...[
+                _buildAudioCard(p, compact),
+                const SizedBox(height: 12),
+              ],
+              if (_hasHtml) ...[_buildHtmlViewerCard(p, pdfHeight, compact)],
+              if (!_hasHtml && _hasPdf) ...[
+                _buildPdfCard(p, pdfHeight, compact),
+              ],
+              if (!_hasHtml && !_hasPdf) _buildEmptyCard(p, compact),
+              if (_hasHtml && _hasPdf && !_readerExpanded)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _pdfLoading
+                        ? (_pdfProgress == null
+                              ? 'Preparing PDF in background...'
+                              : 'Preparing PDF in background... ${_pdfProgress!}%')
+                        : 'PDF ready in background',
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.74),
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 12 : 13,
+                    ),
+                  ),
+                ),
             ],
-            if (_hasPdf) ...[_buildPdfCard(p, pdfHeight, compact)],
-            if (!_hasPdf && _hasHtml) ...[
-              _buildHtmlViewerCard(p, pdfHeight, compact),
-            ],
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyCard(_StudyPalette p, bool compact) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
+      ),
+      child: Text(
+        'No readable content available.',
+        style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
       ),
     );
   }
@@ -346,11 +482,29 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             children: [
               Icon(Icons.picture_as_pdf_rounded, color: p.accent),
               Text(
-                _pageCount > 0 ? 'Page $_pageNumber / $_pageCount' : 'Loading',
+                _pageCount > 0
+                    ? 'Page $_pageNumber of $_pageCount'
+                    : (_pdfProgress == null
+                          ? 'Loading'
+                          : 'Loading ${_pdfProgress!}%'),
                 style: TextStyle(
                   color: p.primary,
                   fontWeight: FontWeight.w800,
                   fontSize: compact ? 12 : 14,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _readerExpanded = !_readerExpanded;
+                  });
+                },
+                icon: Icon(
+                  _readerExpanded
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.fullscreen_rounded,
+                  color: p.primary,
                 ),
               ),
             ],
@@ -360,38 +514,54 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             height: pdfHeight,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
-              child: SfPdfViewer.network(
-                widget.pdfUrl.trim(),
-                controller: _pdfController,
-                canShowPaginationDialog: false,
-                canShowScrollHead: false,
-                canShowScrollStatus: false,
-                enableDoubleTapZooming: true,
-                pageLayoutMode: PdfPageLayoutMode.single,
-                scrollDirection: PdfScrollDirection.horizontal,
-                onDocumentLoaded: (details) {
-                  if (!mounted) return;
-                  setState(() {
-                    _pdfLoading = false;
-                    _pdfError = null;
-                    _pageCount = details.document.pages.count;
-                    _pageNumber = _pageCount > 0 ? 1 : 0;
-                  });
-                },
-                onDocumentLoadFailed: (details) {
-                  if (!mounted) return;
-                  setState(() {
-                    _pdfLoading = false;
-                    _pdfError = _humanPdfError(details.description);
-                  });
-                },
-                onPageChanged: (details) {
-                  if (!mounted) return;
-                  setState(() {
-                    _pageNumber = details.newPageNumber;
-                  });
-                },
-              ),
+              child: _localPdfPath == null
+                  ? Container(
+                      color: p.soft,
+                      alignment: Alignment.center,
+                      child: Text(
+                        _pdfProgress == null
+                            ? 'Loading'
+                            : 'Loading ${_pdfProgress!}%',
+                        style: TextStyle(
+                          color: p.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: compact ? 12 : 14,
+                        ),
+                      ),
+                    )
+                  : SfPdfViewer.file(
+                      File(_localPdfPath!),
+                      controller: _pdfController,
+                      canShowPaginationDialog: false,
+                      canShowScrollHead: false,
+                      canShowScrollStatus: false,
+                      enableDoubleTapZooming: true,
+                      pageLayoutMode: PdfPageLayoutMode.single,
+                      scrollDirection: PdfScrollDirection.horizontal,
+                      onDocumentLoaded: (details) {
+                        if (!mounted) return;
+                        setState(() {
+                          _pdfLoading = false;
+                          _pdfError = null;
+                          _pageCount = details.document.pages.count;
+                          _pageNumber = _pageCount > 0 ? 1 : 0;
+                          _pdfProgress = 100;
+                        });
+                      },
+                      onDocumentLoadFailed: (details) {
+                        if (!mounted) return;
+                        setState(() {
+                          _pdfLoading = false;
+                          _pdfError = _humanPdfError(details.description);
+                        });
+                      },
+                      onPageChanged: (details) {
+                        if (!mounted) return;
+                        setState(() {
+                          _pageNumber = details.newPageNumber;
+                        });
+                      },
+                    ),
             ),
           ),
           if (_pdfLoading)
@@ -420,10 +590,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: () {
-                      setState(() {
-                        _pdfLoading = true;
-                        _pdfError = null;
-                      });
+                      unawaited(_preparePdf(forceRefresh: true));
                     },
                     child: const Text('Retry'),
                   ),
@@ -639,11 +806,29 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
               Icon(Icons.language_rounded, color: p.accent),
               const SizedBox(width: 8),
               Text(
-                'Reading',
+                _htmlLoading
+                    ? (_htmlProgress > 0
+                          ? 'Loading $_htmlProgress%'
+                          : 'Loading')
+                    : 'Reading',
                 style: TextStyle(
                   color: p.primary,
                   fontWeight: FontWeight.w800,
                   fontSize: compact ? 12 : 14,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _readerExpanded = !_readerExpanded;
+                  });
+                },
+                icon: Icon(
+                  _readerExpanded
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.fullscreen_rounded,
+                  color: p.primary,
                 ),
               ),
             ],
@@ -712,6 +897,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                         setState(() {
                           _htmlLoading = true;
                           _htmlError = null;
+                          _htmlProgress = 0;
                         });
                         _setupInlineHtml();
                       }
