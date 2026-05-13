@@ -85,6 +85,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String? selectedTeacherId;
   int? selectedLessonForFlow;
   String helpLang = 'en'; // en | ar | fr | tr | ur
+  bool lessonChoiceArabic = false;
+  final Set<String> _expandedLessonChoiceCards = <String>{};
+  final Set<int> _expandedSyllabusObjectives = <int>{};
   late final AnimationController _sessionPulseCtrl;
   Map<String, List<_BusyRange>>? _busyRangesCache;
   DateTime? _busyRangesCacheAt;
@@ -2605,6 +2608,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     required String title,
     required String subtitle,
     required String cta,
+    required String objective,
+    required bool expanded,
+    required VoidCallback onToggleExpand,
     required VoidCallback onTap,
     bool primary = false,
     String? badge,
@@ -2669,6 +2675,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       ),
                     ),
                   ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: onToggleExpand,
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: primary
+                          ? Colors.white.withValues(alpha: 0.16)
+                          : primaryBlue.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: primary ? Colors.white : primaryBlue,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 7),
@@ -2690,6 +2718,41 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 fontWeight: FontWeight.w900,
               ),
             ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: primary
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : const Color(0xFFF6F8FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: primary
+                          ? Colors.white.withValues(alpha: 0.2)
+                          : uiBorder,
+                    ),
+                  ),
+                  child: Text(
+                    objective,
+                    style: TextStyle(
+                      color: primary
+                          ? Colors.white.withValues(alpha: 0.95)
+                          : Colors.grey.shade800,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ),
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 180),
+            ),
           ],
         ),
       ),
@@ -2697,46 +2760,118 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildLessonChoiceStep() {
+    final isAr = lessonChoiceArabic;
     final nextTitle = _flowLessonTitle(currentSession);
+    final followExpanded = _expandedLessonChoiceCards.contains('follow');
+    final customExpanded = _expandedLessonChoiceCards.contains('custom');
+    final nextObjective = _sessionObjectiveFor(currentSession);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'What would you like to study?',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-            color: primaryBlue,
+        Directionality(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: Column(
+            crossAxisAlignment: isAr
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      isAr
+                          ? 'ماذا تريد أن تدرس؟'
+                          : 'What would you like to study?',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        lessonChoiceArabic = !lessonChoiceArabic;
+                      });
+                    },
+                    icon: const Icon(Icons.translate_rounded, size: 18),
+                    label: Text(isAr ? 'English' : 'العربية'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryBlue,
+                      side: const BorderSide(color: uiBorder),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildPremiumActionCard(
+                title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
+                subtitle: isAr
+                    ? '$nextTitle\nتابع مع الدرس المقترح التالي لك.'
+                    : '$nextTitle\nContinue with your recommended next session.',
+                cta: isAr ? 'احجز الدرس التالي' : 'Book next lesson',
+                objective: isAr
+                    ? (nextObjective.isEmpty
+                          ? 'الهدف: متابعة التدرج الطبيعي للدورة مع نفس تسلسل التعلم.'
+                          : 'الهدف: $nextObjective')
+                    : (nextObjective.isEmpty
+                          ? 'Objective: Continue your normal course sequence and keep steady progress.'
+                          : 'Objective: $nextObjective'),
+                badge: isAr ? 'موصى به' : 'Recommended',
+                expanded: followExpanded,
+                onToggleExpand: () {
+                  setState(() {
+                    if (followExpanded) {
+                      _expandedLessonChoiceCards.remove('follow');
+                    } else {
+                      _expandedLessonChoiceCards.add('follow');
+                    }
+                  });
+                },
+                primary: true,
+                onTap: () {
+                  setState(() {
+                    studyMode = 'follow';
+                    selectedLessonForFlow = currentSession;
+                    selectedSessionNo = currentSession;
+                    _resetScheduleSelections();
+                    flowStep = _BookingFlowStep.schedule;
+                  });
+                },
+              ),
+              const SizedBox(height: 14),
+              _buildPremiumActionCard(
+                title: isAr ? 'اختر درسك' : 'Pick your lesson',
+                subtitle: isAr
+                    ? 'اختر درساً محدداً من المنهج.'
+                    : 'Choose a specific lesson from the syllabus.',
+                cta: isAr ? 'اختر من المنهج' : 'Choose from syllabus',
+                objective: isAr
+                    ? 'الهدف: استعرض أهداف كل درس في المنهج واختر الدرس الذي يناسب احتياجك الآن.'
+                    : 'Objective: Browse lesson objectives in the syllabus and pick the lesson that matches your current learning need.',
+                expanded: customExpanded,
+                onToggleExpand: () {
+                  setState(() {
+                    if (customExpanded) {
+                      _expandedLessonChoiceCards.remove('custom');
+                    } else {
+                      _expandedLessonChoiceCards.add('custom');
+                    }
+                  });
+                },
+                onTap: () {
+                  setState(() {
+                    studyMode = 'custom';
+                    flowStep = _BookingFlowStep.syllabus;
+                  });
+                },
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        _buildPremiumActionCard(
-          title: 'Book the next lesson',
-          subtitle: '$nextTitle\nContinue with your recommended next session.',
-          cta: 'Book next lesson',
-          badge: 'Recommended',
-          primary: true,
-          onTap: () {
-            setState(() {
-              studyMode = 'follow';
-              selectedLessonForFlow = currentSession;
-              selectedSessionNo = currentSession;
-              _resetScheduleSelections();
-              flowStep = _BookingFlowStep.schedule;
-            });
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildPremiumActionCard(
-          title: 'Pick your lesson',
-          subtitle: 'Choose a specific lesson from the syllabus.',
-          cta: 'Choose from syllabus',
-          onTap: () {
-            setState(() {
-              studyMode = 'custom';
-              flowStep = _BookingFlowStep.syllabus;
-            });
-          },
         ),
       ],
     );
@@ -2780,49 +2915,116 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           final status = no < currentSession
               ? 'Studied'
               : (no == currentSession ? 'Next lesson' : 'Available');
+          final objective = _sessionObjectiveFor(no);
+          final expanded = _expandedSyllabusObjectives.contains(no);
           return Container(
-            margin: const EdgeInsets.only(bottom: 8),
+            margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: uiBorder),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Session $no${title.isEmpty ? '' : ' - $title'}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primaryBlue,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Status: $status',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
                 ),
-                FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: actionOrange),
-                  onPressed: () {
-                    setState(() {
-                      selectedLessonForFlow = no;
-                      selectedSessionNo = no;
-                      _resetScheduleSelections();
-                      flowStep = _BookingFlowStep.schedule;
-                    });
-                  },
-                  child: const Text('Select'),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Session $no${title.isEmpty ? '' : ' - $title'}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: primaryBlue,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Status: $status',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (expanded) {
+                            _expandedSyllabusObjectives.remove(no);
+                          } else {
+                            _expandedSyllabusObjectives.add(no);
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(999),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: AnimatedRotation(
+                          turns: expanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: primaryBlue,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: actionOrange,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          selectedLessonForFlow = no;
+                          selectedSessionNo = no;
+                          _resetScheduleSelections();
+                          flowStep = _BookingFlowStep.schedule;
+                        });
+                      },
+                      child: const Text('Select'),
+                    ),
+                  ],
+                ),
+                AnimatedCrossFade(
+                  firstChild: const SizedBox.shrink(),
+                  secondChild: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF6F8FA),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: uiBorder),
+                    ),
+                    child: Text(
+                      objective.isEmpty
+                          ? 'Objective: Build skills for this lesson part and prepare for the next step.'
+                          : 'Objective: $objective',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade800,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  crossFadeState: expanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  duration: const Duration(milliseconds: 180),
                 ),
               ],
             ),
@@ -3303,6 +3505,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       final m = info.map((k, v) => MapEntry(k.toString(), v));
       final t = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
       if (t.isNotEmpty) return t;
+    }
+    return '';
+  }
+
+  String _sessionObjectiveFor(int sessionNo) {
+    final info = curriculumSessions['$sessionNo'];
+    if (info is Map) {
+      final m = info.map((k, v) => MapEntry(k.toString(), v));
+      final objective = (m['objective'] ?? m['goal'] ?? '').toString().trim();
+      if (objective.isNotEmpty) return objective;
     }
     return '';
   }

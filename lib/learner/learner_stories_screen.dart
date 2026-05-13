@@ -1336,28 +1336,46 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: p.cardBg,
-        surfaceTintColor: p.cardBg,
+        backgroundColor: p.appBg,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         elevation: 0,
+        toolbarHeight: 64,
+        titleSpacing: 16,
         title: _showSearch
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value.trim().toLowerCase();
-                  });
-                },
-                decoration: InputDecoration(
-                  hintText: 'Search stories...',
-                  isDense: true,
-                  border: InputBorder.none,
-                  hintStyle: TextStyle(
-                    color: p.text.withValues(alpha: 0.55),
-                    fontWeight: FontWeight.w600,
+            ? Container(
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: p.border.withValues(alpha: 0.92)),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value.trim().toLowerCase();
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Search stories...',
+                    isDense: true,
+                    border: InputBorder.none,
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: p.primary.withValues(alpha: 0.7),
+                    ),
+                    hintStyle: TextStyle(
+                      color: p.text.withValues(alpha: 0.55),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
               )
             : const SizedBox.shrink(),
         actions: [

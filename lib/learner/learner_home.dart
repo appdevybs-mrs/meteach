@@ -4824,333 +4824,398 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
   final schoolContact = await _loadSchoolContactInfo(db);
   if (!context.mounted) return;
+
+  if (courses.length == 1) {
+    final single = courses.first;
+    if (single.hasCreditInfo && single.sessionsLeft <= 0) {
+      await _showBookingRefillDialog(
+        context,
+        p: p,
+        course: single,
+        school: schoolContact,
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LearnerBookingScreen(courseId: single.courseId),
+      ),
+    );
+    return;
+  }
+
   final pageController = PageController(viewportFraction: 0.94);
   var currentPage = 0;
 
-  await showModalBottomSheet(
-    context: context,
-    backgroundColor: p.appBg,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (ctx) {
-      return StatefulBuilder(
-        builder: (sheetCtx, setSheetState) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Choose course to book',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                      color: p.primary,
-                    ),
+  try {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 22,
+          ),
+          child: StatefulBuilder(
+            builder: (dialogCtx, setDialogState) {
+              return ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 760,
+                  maxHeight: MediaQuery.of(context).size.height * 0.76,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: p.appBg,
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: p.border.withValues(alpha: 0.9)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 26,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 5),
-                  Text(
-                    'Swipe left or right to view all courses',
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.64),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 245,
-                    child: PageView.builder(
-                      controller: pageController,
-                      itemCount: courses.length,
-                      onPageChanged: (index) {
-                        setSheetState(() => currentPage = index);
-                      },
-                      itemBuilder: (_, i) {
-                        final c = courses[i];
-                        final hasCreditInfo = c.hasCreditInfo;
-                        final left = c.sessionsLeft;
-                        final progress = hasCreditInfo && c.totalSessions > 0
-                            ? (c.consumedSessions / c.totalSessions).clamp(
-                                0.0,
-                                1.0,
-                              )
-                            : 0.0;
-                        final statColor = !hasCreditInfo
-                            ? p.primary
-                            : left <= 0
-                            ? const Color(0xFFD32F2F)
-                            : left <= 3
-                            ? const Color(0xFFE09F1F)
-                            : const Color(0xFF2E7D32);
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(20),
-                            onTap: () async {
-                              if (hasCreditInfo && left <= 0) {
-                                await _showBookingRefillDialog(
-                                  context,
-                                  p: p,
-                                  course: c,
-                                  school: schoolContact,
-                                );
-                                return;
-                              }
-
-                              Navigator.of(sheetCtx).pop();
-                              if (!context.mounted) return;
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => LearnerBookingScreen(
-                                    courseId: c.courseId,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    p.cardBg,
-                                    p.soft.withValues(alpha: 0.9),
-                                  ],
-                                ),
-                                border: Border.all(
-                                  color: p.border.withValues(alpha: 0.8),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.06),
-                                    blurRadius: 14,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 52,
-                                        height: 52,
-                                        decoration: BoxDecoration(
-                                          color: p.appBg,
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                          border: Border.all(
-                                            color: p.border.withValues(
-                                              alpha: 0.9,
-                                            ),
-                                          ),
-                                        ),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: c.thumbnailUrl.isNotEmpty
-                                            ? Image.network(
-                                                c.thumbnailUrl,
-                                                fit: BoxFit.cover,
-                                                filterQuality:
-                                                    FilterQuality.low,
-                                                cacheWidth:
-                                                    (52 *
-                                                            MediaQuery.of(
-                                                              context,
-                                                            ).devicePixelRatio)
-                                                        .round()
-                                                        .clamp(96, 320),
-                                                cacheHeight:
-                                                    (52 *
-                                                            MediaQuery.of(
-                                                              context,
-                                                            ).devicePixelRatio)
-                                                        .round()
-                                                        .clamp(96, 320),
-                                                errorBuilder:
-                                                    (
-                                                      _,
-                                                      error,
-                                                      stackTrace,
-                                                    ) => Icon(
-                                                      Icons.menu_book_rounded,
-                                                      color: p.primary,
-                                                    ),
-                                              )
-                                            : Icon(
-                                                Icons.menu_book_rounded,
-                                                color: p.primary,
-                                              ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              c.title,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: p.primary,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              c.code.isEmpty
-                                                  ? 'Code: —'
-                                                  : 'Code: ${c.code}',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                color: p.text.withValues(
-                                                  alpha: 0.65,
-                                                ),
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: statColor.withValues(
-                                            alpha: 0.12,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: statColor.withValues(
-                                              alpha: 0.4,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          hasCreditInfo
-                                              ? (left <= 0
-                                                    ? 'Refill needed'
-                                                    : '$left left')
-                                              : 'Credits pending',
-                                          style: TextStyle(
-                                            color: statColor,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    _formatAssignedDate(c.assignedAt),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.66),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: LinearProgressIndicator(
-                                      minHeight: 8,
-                                      value: progress,
-                                      backgroundColor: p.border.withValues(
-                                        alpha: 0.4,
-                                      ),
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        statColor,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      _bookingStatChip(
-                                        p,
-                                        'Used',
-                                        '${c.consumedSessions}',
-                                      ),
-                                      const SizedBox(width: 6),
-                                      _bookingStatChip(
-                                        p,
-                                        'Total',
-                                        hasCreditInfo
-                                            ? '${c.totalSessions}'
-                                            : '—',
-                                      ),
-                                      const SizedBox(width: 6),
-                                      _bookingStatChip(
-                                        p,
-                                        'Left',
-                                        hasCreditInfo ? '$left' : '—',
-                                      ),
-                                      const Spacer(),
-                                      Text(
-                                        left <= 0 && hasCreditInfo
-                                            ? 'Tap for refill info'
-                                            : 'Tap to book',
-                                        style: TextStyle(
-                                          color: p.primary,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
+                  child: SafeArea(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Choose course to book',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                              color: p.primary,
                             ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(courses.length, (index) {
-                        final selected = currentPage == index;
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          width: selected ? 18 : 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? p.primary
-                                : p.border.withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(999),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Swipe left or right to view all courses',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.64),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
                           ),
-                        );
-                      }),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 245,
+                            child: PageView.builder(
+                              controller: pageController,
+                              itemCount: courses.length,
+                              onPageChanged: (index) {
+                                setDialogState(() => currentPage = index);
+                              },
+                              itemBuilder: (_, i) {
+                                final c = courses[i];
+                                final hasCreditInfo = c.hasCreditInfo;
+                                final left = c.sessionsLeft;
+                                final progress =
+                                    hasCreditInfo && c.totalSessions > 0
+                                    ? (c.consumedSessions / c.totalSessions)
+                                          .clamp(0.0, 1.0)
+                                    : 0.0;
+                                final statColor = !hasCreditInfo
+                                    ? p.primary
+                                    : left <= 0
+                                    ? const Color(0xFFD32F2F)
+                                    : left <= 3
+                                    ? const Color(0xFFE09F1F)
+                                    : const Color(0xFF2E7D32);
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(20),
+                                    onTap: () async {
+                                      if (hasCreditInfo && left <= 0) {
+                                        await _showBookingRefillDialog(
+                                          context,
+                                          p: p,
+                                          course: c,
+                                          school: schoolContact,
+                                        );
+                                        return;
+                                      }
+
+                                      Navigator.of(dialogCtx).pop();
+                                      if (!context.mounted) return;
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => LearnerBookingScreen(
+                                            courseId: c.courseId,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            p.cardBg,
+                                            p.soft.withValues(alpha: 0.9),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: p.border.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.06,
+                                            ),
+                                            blurRadius: 14,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 52,
+                                                height: 52,
+                                                decoration: BoxDecoration(
+                                                  color: p.appBg,
+                                                  borderRadius:
+                                                      BorderRadius.circular(14),
+                                                  border: Border.all(
+                                                    color: p.border.withValues(
+                                                      alpha: 0.9,
+                                                    ),
+                                                  ),
+                                                ),
+                                                clipBehavior: Clip.antiAlias,
+                                                child: c.thumbnailUrl.isNotEmpty
+                                                    ? Image.network(
+                                                        c.thumbnailUrl,
+                                                        fit: BoxFit.cover,
+                                                        filterQuality:
+                                                            FilterQuality.low,
+                                                        cacheWidth:
+                                                            (52 *
+                                                                    MediaQuery.of(
+                                                                      context,
+                                                                    ).devicePixelRatio)
+                                                                .round()
+                                                                .clamp(96, 320),
+                                                        cacheHeight:
+                                                            (52 *
+                                                                    MediaQuery.of(
+                                                                      context,
+                                                                    ).devicePixelRatio)
+                                                                .round()
+                                                                .clamp(96, 320),
+                                                        errorBuilder:
+                                                            (
+                                                              _,
+                                                              error,
+                                                              stackTrace,
+                                                            ) => Icon(
+                                                              Icons
+                                                                  .menu_book_rounded,
+                                                              color: p.primary,
+                                                            ),
+                                                      )
+                                                    : Icon(
+                                                        Icons.menu_book_rounded,
+                                                        color: p.primary,
+                                                      ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      c.title,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: p.primary,
+                                                        fontSize: 15,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      c.code.isEmpty
+                                                          ? 'Code: —'
+                                                          : 'Code: ${c.code}',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: p.text
+                                                            .withValues(
+                                                              alpha: 0.65,
+                                                            ),
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: statColor.withValues(
+                                                    alpha: 0.12,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                  border: Border.all(
+                                                    color: statColor.withValues(
+                                                      alpha: 0.4,
+                                                    ),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  hasCreditInfo
+                                                      ? (left <= 0
+                                                            ? 'Refill needed'
+                                                            : '$left left')
+                                                      : 'Credits pending',
+                                                  style: TextStyle(
+                                                    color: statColor,
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            _formatAssignedDate(c.assignedAt),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: p.text.withValues(
+                                                alpha: 0.66,
+                                              ),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: LinearProgressIndicator(
+                                              minHeight: 8,
+                                              value: progress,
+                                              backgroundColor: p.border
+                                                  .withValues(alpha: 0.4),
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    statColor,
+                                                  ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              _bookingStatChip(
+                                                p,
+                                                'Used',
+                                                '${c.consumedSessions}',
+                                              ),
+                                              const SizedBox(width: 6),
+                                              _bookingStatChip(
+                                                p,
+                                                'Total',
+                                                hasCreditInfo
+                                                    ? '${c.totalSessions}'
+                                                    : '—',
+                                              ),
+                                              const SizedBox(width: 6),
+                                              _bookingStatChip(
+                                                p,
+                                                'Left',
+                                                hasCreditInfo ? '$left' : '—',
+                                              ),
+                                              const Spacer(),
+                                              Text(
+                                                left <= 0 && hasCreditInfo
+                                                    ? 'Tap for refill info'
+                                                    : 'Tap to book',
+                                                style: TextStyle(
+                                                  color: p.primary,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(courses.length, (index) {
+                                final selected = currentPage == index;
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 220),
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 3,
+                                  ),
+                                  width: selected ? 18 : 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? p.primary
+                                        : p.border.withValues(alpha: 0.75),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    },
-  );
-
-  pageController.dispose();
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  } finally {
+    pageController.dispose();
+  }
 }
 
 Widget _bookingStatChip(_HomePalette p, String label, String value) {

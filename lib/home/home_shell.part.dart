@@ -292,26 +292,57 @@ class MediaHome extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.95),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Brand.uiBorder),
+                  color: Colors.white.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Brand.uiBorder.withValues(alpha: 0.85),
+                  ),
                 ),
                 child: TabBar(
-                  labelColor: Brand.primaryBlue,
-                  unselectedLabelColor: Brand.mainText.withValues(alpha: 0.74),
+                  dividerColor: Colors.transparent,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicatorPadding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 5,
+                  ),
+                  labelPadding: EdgeInsets.zero,
+                  splashBorderRadius: BorderRadius.circular(16),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Brand.primaryBlue.withValues(
+                    alpha: 0.72,
+                  ),
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                  indicator: BoxDecoration(
+                    color: Brand.primaryBlue.withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Brand.primaryBlue.withValues(alpha: 0.16),
+                        blurRadius: 9,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
                   tabs: [
                     Tab(
-                      height: 40,
+                      height: 46,
                       icon: Icon(Icons.auto_stories_rounded, size: 18),
                       text: 'Stories',
                     ),
                     Tab(
-                      height: 40,
+                      height: 46,
                       icon: Icon(Icons.sports_esports_rounded, size: 18),
                       text: 'Games',
                     ),
                     Tab(
-                      height: 40,
+                      height: 46,
                       icon: Icon(Icons.photo_library_rounded, size: 18),
                       text: 'Gallery',
                     ),

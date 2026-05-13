@@ -938,6 +938,42 @@ class _AdminJobApplicationsScreenState
         ]);
       }
 
+      bool hasArabic(String text) {
+        return RegExp(
+          r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]',
+        ).hasMatch(text);
+      }
+
+      pw.Widget buildCell(
+        String text, {
+        bool isHeader = false,
+        bool center = false,
+        bool isName = false,
+      }) {
+        final arabicName = isName && hasArabic(text);
+        final align = center
+            ? pw.Alignment.center
+            : (arabicName ? pw.Alignment.centerRight : pw.Alignment.centerLeft);
+        final dir = arabicName ? pw.TextDirection.rtl : pw.TextDirection.ltr;
+        return pw.Container(
+          alignment: align,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          child: pw.Directionality(
+            textDirection: dir,
+            child: pw.Text(
+              text,
+              style: pw.TextStyle(
+                fontSize: isHeader ? 9 : 8,
+                fontWeight: isHeader
+                    ? pw.FontWeight.bold
+                    : pw.FontWeight.normal,
+                color: isHeader ? PdfColors.white : PdfColors.black,
+              ),
+            ),
+          ),
+        );
+      }
+
       doc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
@@ -1005,32 +1041,8 @@ class _AdminJobApplicationsScreenState
               ),
             ),
             pw.SizedBox(height: 10),
-            pw.TableHelper.fromTextArray(
-              headers: tableHeaders,
-              data: tableRows,
-              headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 9,
-                color: PdfColors.white,
-              ),
-              headerDecoration: const pw.BoxDecoration(
-                color: PdfColors.blue700,
-              ),
-              cellStyle: const pw.TextStyle(fontSize: 8),
-              cellHeight: 22,
-              cellAlignments: {
-                0: pw.Alignment.center,
-                1: pw.Alignment.centerLeft,
-                2: pw.Alignment.centerLeft,
-                3: pw.Alignment.centerLeft,
-                4: pw.Alignment.centerLeft,
-                5: pw.Alignment.centerLeft,
-                6: pw.Alignment.center,
-                7: pw.Alignment.center,
-                8: pw.Alignment.centerLeft,
-                9: pw.Alignment.centerLeft,
-                10: pw.Alignment.centerLeft,
-              },
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.black, width: 0.6),
               columnWidths: {
                 0: const pw.FixedColumnWidth(20),
                 1: const pw.FlexColumnWidth(1.4),
@@ -1044,15 +1056,37 @@ class _AdminJobApplicationsScreenState
                 9: const pw.FlexColumnWidth(1.0),
                 10: const pw.FlexColumnWidth(1.4),
               },
-              rowDecoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(
-                    color: PdfColors.blueGrey100,
-                    width: 0.3,
-                  ),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.blue700),
+                  children: [
+                    for (var i = 0; i < tableHeaders.length; i++)
+                      buildCell(
+                        tableHeaders[i],
+                        isHeader: true,
+                        center: i == 0 || i == 6 || i == 7,
+                      ),
+                  ],
                 ),
-              ),
-              oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey50),
+                ...List.generate(tableRows.length, (rowIndex) {
+                  final row = tableRows[rowIndex];
+                  return pw.TableRow(
+                    decoration: pw.BoxDecoration(
+                      color: rowIndex.isOdd
+                          ? PdfColors.grey50
+                          : PdfColors.white,
+                    ),
+                    children: [
+                      for (var col = 0; col < row.length; col++)
+                        buildCell(
+                          row[col],
+                          center: col == 0 || col == 6 || col == 7,
+                          isName: col == 1,
+                        ),
+                    ],
+                  );
+                }),
+              ],
             ),
           ],
         ),
