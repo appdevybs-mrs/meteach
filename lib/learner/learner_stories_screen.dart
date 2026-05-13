@@ -687,12 +687,19 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w700,
-                      height: 1.5,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.18,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Text(
+                        description,
+                        style: TextStyle(
+                          color: p.text,
+                          fontWeight: FontWeight.w700,
+                          height: 1.5,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -755,9 +762,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                           ? Icons.headphones_rounded
                           : Icons.language_rounded,
                     ),
-                    label: Text(
-                      hasRead || hasListen ? 'Read + Listen' : 'Read',
-                    ),
+                    label: Text(hasRead || hasListen ? 'Enjoy' : 'Read'),
                   ),
                 ),
               ],
