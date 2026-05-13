@@ -15,8 +15,7 @@ import '../services/storage_existence.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/material_webview_screen.dart';
-import '../shared/shared_pdf_reader_screen.dart';
-import '../shared/shared_story_audio_player_screen.dart';
+import '../shared/shared_story_study_screen.dart';
 import '../shared/teacher_web_layout.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
@@ -397,85 +396,58 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     } catch (_) {}
   }
 
-  Future<void> _openStory(Map<String, dynamic> story) async {
-    _incrementStoryStat(story, 'plays');
-    final link = (story['link'] ?? '').toString().trim();
-    final name = (story['name'] ?? 'Story').toString().trim();
-    if (link.isEmpty) {
+  Future<void> _openHtmlRead(Map<String, dynamic> story) async {
+    final htmlUrl = (story['link'] ?? '').toString().trim();
+    final title = (story['name'] ?? 'Story Material').toString().trim();
+    if (htmlUrl.isEmpty) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: title.isEmpty ? 'Story Material' : title,
+          url: htmlUrl,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openStudy(Map<String, dynamic> story) async {
+    final audioUrl = (story['audioUrl'] ?? '').toString().trim();
+    final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
+    final htmlUrl = (story['link'] ?? '').toString().trim();
+    final title = (story['name'] ?? 'Story Study').toString().trim();
+    final imageUrl = (story['thumbnail'] ?? '').toString().trim();
+
+    if (pdfUrl.isEmpty && audioUrl.isEmpty && htmlUrl.isNotEmpty) {
+      await _openHtmlRead(story);
+      return;
+    }
+
+    if (pdfUrl.isEmpty && audioUrl.isEmpty) {
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
-        const SnackBar(content: Text('This story has no file.')),
+        const SnackBar(content: Text('No media available for this story.')),
       );
       return;
     }
 
-    final uri = Uri.tryParse(link);
-    if (uri == null) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Invalid story link.')),
-      );
-      return;
+    if (pdfUrl.isNotEmpty) {
+      unawaited(_incrementStoryStat(story, 'views'));
+    }
+    if (audioUrl.isNotEmpty) {
+      unawaited(_incrementStoryStat(story, 'listens'));
     }
 
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MaterialWebViewScreen.fromUrl(
-          title: name.isEmpty ? 'Story Viewer' : name,
-          url: link,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openAudio(Map<String, dynamic> story) async {
-    _incrementStoryStat(story, 'listens');
-    final audioUrl = (story['audioUrl'] ?? '').toString().trim();
-    final name = (story['name'] ?? 'Story Audio').toString().trim();
-    final imageUrl = (story['thumbnail'] ?? '').toString().trim();
-
-    if (audioUrl.isEmpty) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('This story has no audio.')),
-      );
-      return;
-    }
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SharedAudioPlayerScreen(
-          title: name.isEmpty ? 'Story Audio' : name,
+        builder: (_) => SharedStoryStudyScreen(
+          title: title.isEmpty ? 'Story Study' : title,
+          thumbnailUrl: imageUrl,
           audioUrl: audioUrl,
-          imageUrl: imageUrl,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openPdf(Map<String, dynamic> story) async {
-    _incrementStoryStat(story, 'views');
-    final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
-    final name = (story['name'] ?? 'Story PDF').toString().trim();
-
-    if (pdfUrl.isEmpty) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('This story has no PDF.')),
-      );
-      return;
-    }
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SharedPdfReaderScreen(
-          title: name.isEmpty ? 'Story PDF' : name,
           pdfUrl: pdfUrl,
+          htmlUrl: htmlUrl,
         ),
       ),
     );
@@ -3301,32 +3273,20 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       runSpacing: 8,
                       children: [
                         FilledButton.icon(
-                          onPressed: () => _openStory(story),
-                          icon: const Icon(Icons.ondemand_video_rounded),
-                          label: const Text('Watch'),
+                          onPressed: () => _openStudy(story),
+                          icon: Icon(
+                            audioUrl.isNotEmpty || pdfUrl.isNotEmpty
+                                ? Icons.auto_stories_rounded
+                                : Icons.language_rounded,
+                          ),
+                          label: Text(
+                            audioUrl.isNotEmpty || pdfUrl.isNotEmpty
+                                ? 'Read + Listen'
+                                : 'Read',
+                          ),
                           style: FilledButton.styleFrom(
                             backgroundColor: cs.primary,
                             foregroundColor: cs.onPrimary,
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () => _openAudio(story),
-                          icon: const Icon(Icons.headphones_rounded),
-                          label: const Text('Listen'),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                              color: cs.primary.withValues(alpha: 0.28),
-                            ),
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () => _openPdf(story),
-                          icon: const Icon(Icons.picture_as_pdf_rounded),
-                          label: const Text('Read'),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                              color: cs.primary.withValues(alpha: 0.28),
-                            ),
                           ),
                         ),
                       ],

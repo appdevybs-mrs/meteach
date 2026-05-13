@@ -14,11 +14,16 @@ class _HomeShellState extends State<HomeShell> {
 
   static const double _desktopShellMinWidth = 1100;
 
-  late final List<Widget> _pages = const [
-    AssistantHome(),
-    MediaHome(),
-    JobsHome(),
-  ];
+  Widget _pageForMode(AppMode value) {
+    switch (value) {
+      case AppMode.home:
+        return const AssistantHome();
+      case AppMode.media:
+        return const MediaHome();
+      case AppMode.jobs:
+        return const JobsHome();
+    }
+  }
 
   Future<void> _openLogin(BuildContext context) async {
     await Navigator.of(
@@ -42,7 +47,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Widget _buildDesktopShell(BuildContext context) {
-    final currentPage = IndexedStack(index: mode.index, children: _pages);
+    final currentPage = _pageForMode(mode);
     return SafeArea(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -198,39 +203,28 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final desktopShell = _isDesktopShell(context);
     return Scaffold(
       backgroundColor: Brand.appBg,
       resizeToAvoidBottomInset: true,
-      body: desktopShell
-          ? _buildDesktopShell(context)
-          : SafeArea(
-              child: IndexedStack(index: mode.index, children: _pages),
-            ),
-      floatingActionButton: desktopShell || mode == AppMode.jobs
+      body: SafeArea(child: _pageForMode(mode)),
+      floatingActionButton: mode == AppMode.jobs
           ? null
           : _PulsingLoginFab(onPressed: () => _openLogin(context)),
-      bottomNavigationBar: desktopShell
-          ? null
-          : NavigationBar(
-              selectedIndex: mode.index,
-              onDestinationSelected: (i) =>
-                  setState(() => mode = AppMode.values[i]),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.home_rounded),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.perm_media_rounded),
-                  label: 'Media',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.work_outline_rounded),
-                  label: 'Jobs',
-                ),
-              ],
-            ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: mode.index,
+        onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
+          NavigationDestination(
+            icon: Icon(Icons.perm_media_rounded),
+            label: 'Media',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.work_outline_rounded),
+            label: 'Jobs',
+          ),
+        ],
+      ),
     );
   }
 }
