@@ -48,6 +48,7 @@ dependencies:
 
   # 📸 Image picker (thumbnail upload)
   image_picker: ^1.1.2
+  flutter_image_compress: ^2.3.0
 
   # 🌐 HTTP (PHP upload endpoint)
   http: ^1.2.2

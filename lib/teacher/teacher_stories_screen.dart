@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -144,6 +146,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     void Function(double progress)? onProgress,
     void Function(String fileName)? onSelectedName,
     void Function(PlatformFile picked)? onSelectedFile,
+    void Function(bool optimized)? onClientOptimized,
   }) async {
     final FileType pickerType;
     if (allowedExtensions != null && allowedExtensions.isNotEmpty) {
@@ -186,6 +189,19 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     onSelectedName?.call(_friendlyFileName(picked.name));
     onSelectedFile?.call(picked);
+
+    Uint8List? uploadBytes;
+    var usedClientOptimization = false;
+    if (isThumbnail) {
+      final optimized = await _compressThumbnailBytes(picked);
+      if (optimized != null && optimized.isNotEmpty) {
+        uploadBytes = optimized;
+        usedClientOptimization = true;
+      }
+    }
+
+    onClientOptimized?.call(usedClientOptimization);
+
     final uploadUri = await BackendApi.withAuthQuery(_uploadUrl);
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
@@ -193,7 +209,15 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     req.fields['root'] = 'stories';
     req.fields['path'] = folderPath;
 
-    if (picked.path != null && picked.path!.isNotEmpty) {
+    if (uploadBytes != null) {
+      req.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          uploadBytes,
+          filename: picked.name,
+        ),
+      );
+    } else if (picked.path != null && picked.path!.isNotEmpty) {
       req.files.add(
         await http.MultipartFile.fromPath(
           'file',
@@ -241,6 +265,33 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     }
 
     throw Exception((data['message'] ?? 'Upload failed').toString());
+  }
+
+  Future<Uint8List?> _compressThumbnailBytes(PlatformFile picked) async {
+    try {
+      final ext = (picked.extension ?? '').trim().toLowerCase();
+      if (ext == 'gif') return null;
+
+      final sourceBytes =
+          picked.bytes ??
+          ((picked.path != null && picked.path!.isNotEmpty)
+              ? await File(picked.path!).readAsBytes()
+              : null);
+      if (sourceBytes == null || sourceBytes.isEmpty) return null;
+
+      final compressed = await FlutterImageCompress.compressWithList(
+        sourceBytes,
+        minWidth: 960,
+        quality: 72,
+        format: CompressFormat.jpeg,
+      );
+
+      if (compressed.isEmpty) return null;
+      if (compressed.length >= sourceBytes.length) return null;
+      return Uint8List.fromList(compressed);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _deleteFromServer({required String folderPath}) async {
@@ -1082,6 +1133,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               try {
                 final folderPath = ensureFolderPath(uid);
+                var optimizedBeforeUpload = false;
 
                 final url = await _uploadToServer(
                   folderPath: folderPath,
@@ -1112,6 +1164,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       localThumbUploadProgress = p;
                     });
                   },
+                  onClientOptimized: (optimized) {
+                    optimizedBeforeUpload = optimized;
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
@@ -1123,8 +1178,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   if (!context.mounted) return;
                   AppToast.fromSnackBar(
                     context,
-                    const SnackBar(
-                      content: Text('Thumbnail uploaded successfully.'),
+                    SnackBar(
+                      content: Text(
+                        optimizedBeforeUpload
+                            ? 'Thumbnail optimized and uploaded successfully.'
+                            : 'Thumbnail uploaded successfully.',
+                      ),
                     ),
                   );
                 }

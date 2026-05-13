@@ -697,23 +697,29 @@ class AssistantHome extends StatelessWidget {
         children: [
           SimpleTopBar(title: 'Your Bridge School', right: _CvnVerifyButton()),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _LevelTestCard(),
-                  const SizedBox(height: 18),
-                  const SizedBox(height: 10),
-                  const _JoinOnlineCircleEntryButton(),
-                  const SizedBox(height: 18),
-                  const _SectionHeader(
-                    title: 'Courses',
-                    subtitle: 'Browse all available courses here.',
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 980),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _LevelTestCard(),
+                      const SizedBox(height: 18),
+                      const SizedBox(height: 10),
+                      const _JoinOnlineCircleEntryButton(),
+                      const SizedBox(height: 18),
+                      const _SectionHeader(
+                        title: 'Courses',
+                        subtitle: 'Browse all available courses here.',
+                      ),
+                      const SizedBox(height: 10),
+                      const _CoursesByCategory(),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  const _CoursesByCategory(),
-                ],
+                ),
               ),
             ),
           ),
@@ -3659,6 +3665,10 @@ class _CategoryGridCardState extends State<_CategoryGridCard> {
   }
 
   Future<void> _loadAdaptiveColor() async {
+    if (kIsWeb) {
+      if (mounted) setState(() => _adaptiveColor = null);
+      return;
+    }
     if (_loadingColor) return;
     _loadingColor = true;
 
