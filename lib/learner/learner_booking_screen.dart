@@ -2593,8 +2593,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   Widget _buildFlowShell(Widget child) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 920),
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFFCFAF7),
         borderRadius: BorderRadius.circular(20),
@@ -3057,7 +3057,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -3106,12 +3106,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         const Text(
           'Choose a day',
           style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         SizedBox(
           height: 44,
           child: ListView.separated(
@@ -3154,12 +3154,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           ),
         ),
         if (selectedDay != null) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           const Text(
             'Choose a time',
             style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -3177,12 +3177,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           ),
         ],
         if (selectedTime != null) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           const Text(
             'Choose a teacher',
             style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
             final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
@@ -3411,9 +3411,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     )
                   : (cid == null)
                   ? const Center(child: Text('No course selected.'))
-                  : Center(
+                  : Align(
+                      alignment: Alignment.topCenter,
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.only(bottom: 98),
+                        padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
                         child: _buildFlowShell(_buildFlowContent()),
                       ),
                     ),
