@@ -289,45 +289,32 @@ class MediaHome extends StatelessWidget {
           children: [
             const SimpleTopBar(title: 'Media'),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.97),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Brand.uiBorder.withValues(alpha: 0.92),
-                  ),
+                  color: Colors.white.withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Brand.uiBorder),
                 ),
                 child: TabBar(
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  dividerColor: Colors.transparent,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  indicatorPadding: const EdgeInsets.all(4),
-                  splashBorderRadius: BorderRadius.circular(10),
                   labelColor: Brand.primaryBlue,
-                  unselectedLabelColor: Brand.mainText.withValues(alpha: 0.62),
-                  labelStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.2,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  indicator: BoxDecoration(
-                    color: Brand.primaryBlue.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(
-                      color: Brand.primaryBlue.withValues(alpha: 0.24),
-                    ),
-                  ),
+                  unselectedLabelColor: Brand.mainText.withValues(alpha: 0.74),
                   tabs: [
-                    Tab(height: 34, text: 'Stories'),
-                    Tab(height: 34, text: 'Games'),
-                    Tab(height: 34, text: 'Gallery'),
+                    Tab(
+                      height: 40,
+                      icon: Icon(Icons.auto_stories_rounded, size: 18),
+                      text: 'Stories',
+                    ),
+                    Tab(
+                      height: 40,
+                      icon: Icon(Icons.sports_esports_rounded, size: 18),
+                      text: 'Games',
+                    ),
+                    Tab(
+                      height: 40,
+                      icon: Icon(Icons.photo_library_rounded, size: 18),
+                      text: 'Gallery',
+                    ),
                   ],
                 ),
               ),

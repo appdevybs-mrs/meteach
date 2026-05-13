@@ -799,6 +799,20 @@ class _AdminJobApplicationsScreenState
     return out.join(' | ');
   }
 
+  String _compactExportNote(_JobApplicationItem item) {
+    String clip(String text) {
+      final clean = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (clean.isEmpty) return '';
+      if (clean.length <= 72) return clean;
+      return '${clean.substring(0, 72)}...';
+    }
+
+    final latest = clip(_latestNote(item));
+    if (latest.isNotEmpty) return latest;
+    final compact = clip(_timelineNotesCompact(item));
+    return compact.isEmpty ? '-' : compact;
+  }
+
   Future<void> _showApplicationDetails(_JobApplicationItem item) async {
     await _showSettledRootDialog<void>(
       builder: (dialogContext) => _JobApplicationDetailsDialog(
@@ -882,13 +896,57 @@ class _AdminJobApplicationsScreenState
         stageCounts[key] = (stageCounts[key] ?? 0) + 1;
       }
 
+      final baseFont = await PdfGoogleFonts.notoSansRegular();
+      final boldFont = await PdfGoogleFonts.notoSansBold();
+      final arabicFont = await PdfGoogleFonts.notoNaskhArabicRegular();
+      final arabicBoldFont = await PdfGoogleFonts.notoNaskhArabicBold();
+
+      String safe(String value) {
+        final v = value.trim();
+        return v.isEmpty ? '-' : v;
+      }
+
+      final tableHeaders = <String>[
+        '#',
+        'Full Name',
+        'Phone',
+        'Email',
+        'Position',
+        'Stage',
+        'Status',
+        'Priority',
+        'Submitted',
+        'Interview',
+        'Notes',
+      ];
+
+      final tableRows = <List<String>>[];
+      for (var i = 0; i < source.length; i++) {
+        final item = source[i];
+        tableRows.add([
+          '${i + 1}',
+          safe(item.fullName.isEmpty ? 'Unnamed Applicant' : item.fullName),
+          safe(item.phone),
+          safe(item.email),
+          safe(item.position),
+          _stageLabel(item.stage),
+          safe(item.status),
+          safe(item.priority),
+          _fmtDate(item.createdAt),
+          item.interviewAt > 0 ? _fmtDate(item.interviewAt) : '-',
+          _compactExportNote(item),
+        ]);
+      }
+
       doc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
+            pageFormat: PdfPageFormat.a4.landscape,
             margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 24),
             theme: pw.ThemeData.withFont(
-              base: await PdfGoogleFonts.nunitoRegular(),
-              bold: await PdfGoogleFonts.nunitoBold(),
+              base: baseFont,
+              bold: boldFont,
+              fontFallback: [arabicFont, arabicBoldFont],
             ),
           ),
           build: (context) => [
@@ -947,54 +1005,55 @@ class _AdminJobApplicationsScreenState
               ),
             ),
             pw.SizedBox(height: 10),
-            ...source.map((item) {
-              final latestNote = _latestNote(item);
-              final timelineNotes = _timelineNotesCompact(item);
-              return pw.Container(
-                margin: const pw.EdgeInsets.only(bottom: 8),
-                padding: const pw.EdgeInsets.all(8),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.blueGrey200),
-                  borderRadius: pw.BorderRadius.circular(6),
+            pw.TableHelper.fromTextArray(
+              headers: tableHeaders,
+              data: tableRows,
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.white,
+              ),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.blue700,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              cellHeight: 22,
+              cellAlignments: {
+                0: pw.Alignment.center,
+                1: pw.Alignment.centerLeft,
+                2: pw.Alignment.centerLeft,
+                3: pw.Alignment.centerLeft,
+                4: pw.Alignment.centerLeft,
+                5: pw.Alignment.centerLeft,
+                6: pw.Alignment.center,
+                7: pw.Alignment.center,
+                8: pw.Alignment.centerLeft,
+                9: pw.Alignment.centerLeft,
+                10: pw.Alignment.centerLeft,
+              },
+              columnWidths: {
+                0: const pw.FixedColumnWidth(20),
+                1: const pw.FlexColumnWidth(1.4),
+                2: const pw.FlexColumnWidth(0.9),
+                3: const pw.FlexColumnWidth(1.4),
+                4: const pw.FlexColumnWidth(1.3),
+                5: const pw.FlexColumnWidth(0.9),
+                6: const pw.FlexColumnWidth(0.7),
+                7: const pw.FlexColumnWidth(0.7),
+                8: const pw.FlexColumnWidth(1.0),
+                9: const pw.FlexColumnWidth(1.0),
+                10: const pw.FlexColumnWidth(1.4),
+              },
+              rowDecoration: const pw.BoxDecoration(
+                border: pw.Border(
+                  bottom: pw.BorderSide(
+                    color: PdfColors.blueGrey100,
+                    width: 0.3,
+                  ),
                 ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      item.fullName.isEmpty
-                          ? 'Unnamed Applicant'
-                          : item.fullName,
-                      style: pw.TextStyle(
-                        fontWeight: pw.FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                    pw.SizedBox(height: 3),
-                    pw.Text('ID: ${item.id}'),
-                    pw.Text('Phone: ${item.phone.isEmpty ? '-' : item.phone}'),
-                    pw.Text('Email: ${item.email.isEmpty ? '-' : item.email}'),
-                    pw.Text(
-                      'Position: ${item.position.isEmpty ? '-' : item.position}',
-                    ),
-                    pw.Text('Stage: ${_stageLabel(item.stage)}'),
-                    pw.Text(
-                      'Status: ${item.status.isEmpty ? '-' : item.status}',
-                    ),
-                    pw.Text('Priority: ${item.priority}'),
-                    pw.Text('Submitted: ${_fmtDate(item.createdAt)}'),
-                    pw.Text(
-                      'Interview: ${item.interviewAt > 0 ? _fmtDate(item.interviewAt) : '-'}',
-                    ),
-                    pw.Text(
-                      'Latest note: ${latestNote.isEmpty ? '-' : latestNote}',
-                    ),
-                    pw.Text(
-                      'Timeline notes: ${timelineNotes.isEmpty ? '-' : timelineNotes}',
-                    ),
-                  ],
-                ),
-              );
-            }),
+              ),
+              oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey50),
+            ),
           ],
         ),
       );

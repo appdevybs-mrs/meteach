@@ -597,7 +597,7 @@ class SimpleTopBar extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
       child: Row(
         children: [
           InkWell(
