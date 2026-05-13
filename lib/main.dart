@@ -3193,11 +3193,16 @@ class _CourseLite {
   }
 
   static String _fixUrl(String url) {
-    final u = url.trim();
+    var u = url.trim();
     if (u.isEmpty) return u;
-    if (u.startsWith('//')) return 'https:$u';
-    if (u.startsWith('www.')) return 'https://$u';
-    return u;
+    if (u.startsWith('//')) u = 'https:$u';
+    if (u.startsWith('www.')) u = 'https://$u';
+    if (u.startsWith('http://')) u = 'https://${u.substring('http://'.length)}';
+    final uri = Uri.tryParse(u);
+    if (uri == null) return '';
+    if (uri.scheme != 'https' && uri.scheme != 'http') return '';
+    if (uri.host.trim().isEmpty) return '';
+    return uri.toString();
   }
 
   factory _CourseLite.fromMap(String id, Map<dynamic, dynamic> raw) {

@@ -43,6 +43,21 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
 
   static const int _thumbPrecacheBatchSize = 4;
 
+  String _normalizeMediaUrl(String raw) {
+    var value = raw.trim();
+    if (value.isEmpty) return '';
+    if (value.startsWith('//')) value = 'https:$value';
+    if (value.startsWith('www.')) value = 'https://$value';
+    if (value.startsWith('http://')) {
+      value = 'https://${value.substring('http://'.length)}';
+    }
+    final uri = Uri.tryParse(value);
+    if (uri == null) return '';
+    if (uri.scheme != 'https' && uri.scheme != 'http') return '';
+    if (uri.host.trim().isEmpty) return '';
+    return uri.toString();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -235,13 +250,13 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   bool _hasListen(Map<String, dynamic> story) =>
-      (story['audioUrl'] ?? '').toString().trim().isNotEmpty;
+      _normalizeMediaUrl((story['audioUrl'] ?? '').toString()).isNotEmpty;
 
   bool _hasRead(Map<String, dynamic> story) =>
-      (story['pdfUrl'] ?? '').toString().trim().isNotEmpty;
+      _normalizeMediaUrl((story['pdfUrl'] ?? '').toString()).isNotEmpty;
 
   bool _hasHtml(Map<String, dynamic> story) =>
-      (story['link'] ?? '').toString().trim().isNotEmpty;
+      _normalizeMediaUrl((story['link'] ?? '').toString()).isNotEmpty;
 
   List<MapEntry<String, Map<String, dynamic>>> _applyFiltersAndSort({
     required List<MapEntry<String, Map<String, dynamic>>> items,
@@ -356,7 +371,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   Future<void> _openHtmlRead(Map<String, dynamic> story) async {
-    final htmlUrl = (story['link'] ?? '').toString().trim();
+    final htmlUrl = _normalizeMediaUrl((story['link'] ?? '').toString());
     final title = (story['name'] ?? 'Story Material').toString().trim();
     if (htmlUrl.isEmpty) return;
     if (!mounted) return;
@@ -371,11 +386,11 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   Future<void> _openStudy(Map<String, dynamic> story) async {
-    final audioUrl = (story['audioUrl'] ?? '').toString().trim();
-    final pdfUrl = (story['pdfUrl'] ?? '').toString().trim();
-    final htmlUrl = (story['link'] ?? '').toString().trim();
+    final audioUrl = _normalizeMediaUrl((story['audioUrl'] ?? '').toString());
+    final pdfUrl = _normalizeMediaUrl((story['pdfUrl'] ?? '').toString());
+    final htmlUrl = _normalizeMediaUrl((story['link'] ?? '').toString());
     final title = (story['name'] ?? 'Story Study').toString().trim();
-    final imageUrl = (story['thumbnail'] ?? '').toString().trim();
+    final imageUrl = _normalizeMediaUrl((story['thumbnail'] ?? '').toString());
 
     if (pdfUrl.isEmpty && audioUrl.isEmpty && htmlUrl.isNotEmpty) {
       await _openHtmlRead(story);
@@ -425,7 +440,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   ) {
     final urls = <String>[];
     for (final entry in items) {
-      final url = (entry.value['thumbnail'] ?? '').toString().trim();
+      final url = _normalizeMediaUrl(
+        (entry.value['thumbnail'] ?? '').toString(),
+      );
       if (url.isNotEmpty) urls.add(url);
     }
     if (urls.isEmpty) return;
@@ -480,7 +497,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final lengthApprox = (story['lengthApprox'] ?? '').toString().trim();
     final scriptType = (story['scriptType'] ?? '').toString().trim();
     final authorSource = (story['authorSource'] ?? '').toString().trim();
-    final thumbnail = (story['thumbnail'] ?? '').toString().trim();
+    final thumbnail = _normalizeMediaUrl((story['thumbnail'] ?? '').toString());
     final teacher = _teacherName(story);
     final teacherUid = _teacherUid(story);
     final teacherPhotoFuture = _teacherPhotoUrl(teacherUid);
@@ -1029,7 +1046,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final topTags = _tagsFromStory(story).take(2).toList();
     final denseMeta =
         topTags.length >= 2 && level.isNotEmpty && genre.isNotEmpty;
-    final thumbnail = (story['thumbnail'] ?? '').toString().trim();
+    final thumbnail = _normalizeMediaUrl((story['thumbnail'] ?? '').toString());
     final teacher = _teacherName(story);
     final dpr = MediaQuery.of(context).devicePixelRatio;
     final cardCacheWidth = (210 * dpr).round().clamp(320, 900);

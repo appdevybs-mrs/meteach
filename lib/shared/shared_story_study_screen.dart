@@ -49,7 +49,6 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   int _pageCount = 0;
   int? _pdfProgress;
   String? _localPdfPath;
-  bool _pdfOpened = false;
 
   WebViewController? _htmlController;
   bool _htmlLoading = true;
@@ -71,6 +70,9 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     }
     if (_hasHtml && !kIsWeb) {
       _setupInlineHtml();
+    }
+    if (_hasPdf) {
+      unawaited(_preparePdf());
     }
   }
 
@@ -305,11 +307,8 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                 const SizedBox(height: 12),
               ],
               if (_hasHtml) ...[_buildHtmlViewerCard(p, pdfHeight, compact)],
-              if (_hasPdf) ...[
-                if (_hasHtml) const SizedBox(height: 12),
-                _pdfOpened
-                    ? _buildPdfCard(p, pdfHeight, compact)
-                    : _buildPdfEntryCard(p, compact),
+              if (_hasPdf && !_hasHtml) ...[
+                _buildPdfCard(p, pdfHeight, compact),
               ],
               if (!_hasHtml && !_hasPdf) _buildEmptyCard(p, compact),
             ],
@@ -526,55 +525,6 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     );
   }
 
-  Widget _buildPdfEntryCard(_StudyPalette p, bool compact) {
-    return Container(
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withValues(alpha: 0.9)),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: compact ? 38 : 42,
-            height: compact ? 38 : 42,
-            decoration: BoxDecoration(
-              color: p.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(Icons.picture_as_pdf_rounded, color: p.accent),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Ready to read the story pages?',
-              style: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w700,
-                fontSize: compact ? 12 : 14,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                _pdfOpened = true;
-              });
-              if (_localPdfPath == null && !_pdfLoading) {
-                unawaited(_preparePdf());
-              } else if (_localPdfPath == null && _pdfProgress == null) {
-                unawaited(_preparePdf());
-              }
-            },
-            child: const Text('Read Story Pages'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAudioCard(_StudyPalette p, bool compact) {
     return Container(
       decoration: BoxDecoration(
@@ -641,16 +591,11 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                 ),
                 const SizedBox(width: 8),
                 for (final speed in const <double>[0.75, 1.0, 1.25]) ...[
-                  _iconControl(
-                    icon: speed < 1
-                        ? Icons.keyboard_double_arrow_left_rounded
-                        : speed > 1
-                        ? Icons.keyboard_double_arrow_right_rounded
-                        : Icons.speed_rounded,
+                  _speedChip(
+                    label: '${speed}x',
                     onTap: () => _setSpeed(speed),
-                    color: _audio.speed == speed
-                        ? p.accent
-                        : p.text.withValues(alpha: 0.70),
+                    selected: _audio.speed == speed,
+                    palette: p,
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -686,6 +631,45 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _speedChip({
+    required String label,
+    required VoidCallback onTap,
+    required bool selected,
+    required _StudyPalette palette,
+  }) {
+    final fg = selected
+        ? palette.primary
+        : palette.text.withValues(alpha: 0.80);
+    final border = selected
+        ? palette.accent.withValues(alpha: 0.65)
+        : palette.border.withValues(alpha: 0.95);
+    final bg = selected
+        ? palette.accent.withValues(alpha: 0.20)
+        : palette.cardBg;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: fg,
+            fontWeight: FontWeight.w800,
+            fontSize: 14,
+          ),
+        ),
       ),
     );
   }

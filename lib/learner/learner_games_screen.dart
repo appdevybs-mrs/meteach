@@ -32,12 +32,29 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   static const Color _funOrangeDark = Color(0xFFE67612);
   static const int _thumbPrecacheBatchSize = 4;
 
+  String _normalizeMediaUrl(String raw) {
+    var value = raw.trim();
+    if (value.isEmpty) return '';
+    if (value.startsWith('//')) value = 'https:$value';
+    if (value.startsWith('www.')) value = 'https://$value';
+    if (value.startsWith('http://')) {
+      value = 'https://${value.substring('http://'.length)}';
+    }
+    final uri = Uri.tryParse(value);
+    if (uri == null) return '';
+    if (uri.scheme != 'https' && uri.scheme != 'http') return '';
+    if (uri.host.trim().isEmpty) return '';
+    return uri.toString();
+  }
+
   void _scheduleThumbPrecache(
     List<MapEntry<String, Map<String, dynamic>>> items,
   ) {
     final urls = <String>[];
     for (final item in items) {
-      final url = (item.value['thumbnail'] ?? '').toString().trim();
+      final url = _normalizeMediaUrl(
+        (item.value['thumbnail'] ?? '').toString(),
+      );
       if (url.isNotEmpty) urls.add(url);
     }
     if (urls.isEmpty) return;
@@ -161,7 +178,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   Future<void> _openGame(Map<String, dynamic> game) async {
     _incrementGameStat(game, 'views');
     _incrementGameStat(game, 'plays');
-    final link = (game['link'] ?? '').toString().trim();
+    final link = _normalizeMediaUrl((game['link'] ?? '').toString());
     final name = (game['name'] ?? 'Game').toString().trim();
 
     if (link.isEmpty) {
@@ -195,7 +212,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final ownerName = _teacherName(game);
     final ownerUid = _teacherUid(game);
     final ownerPhotoFuture = _teacherPhotoUrl(ownerUid);
-    final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+    final thumbnail = _normalizeMediaUrl((game['thumbnail'] ?? '').toString());
     final category = _normalizeLabel((game['category'] ?? '').toString());
     final level = (game['level'] ?? '').toString().trim();
     final durationMinutes = _toInt(game['durationMinutes']);
@@ -793,7 +810,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final cs = theme.colorScheme;
 
     final name = (game['name'] ?? '').toString().trim();
-    final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+    final thumbnail = _normalizeMediaUrl((game['thumbnail'] ?? '').toString());
     final dpr = MediaQuery.of(context).devicePixelRatio;
     final thumbCacheWidth = (220 * dpr).round().clamp(320, 900);
     final thumbCacheHeight = (180 * dpr).round().clamp(240, 700);
