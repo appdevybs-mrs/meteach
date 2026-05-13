@@ -14,10 +14,10 @@ class AdminBookingScreen extends StatefulWidget {
 
 class _AdminBookingScreenState extends State<AdminBookingScreen> {
   // ===== Colors =====
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
+  static const primaryBlue = Color(0xFF0E7C86);
+  static const actionOrange = Color(0xFFBF5D39);
+  static const appBg = Color(0xFFF6F2E8);
+  static const uiBorder = Color(0xFFD8CFC1);
   static const successGreen = Color(0xFF2F9E44);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -247,6 +247,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   }
 
   String _statusLabelForSlot(_AdminBookedSlot s) {
+    if (_isLiveBooking(s)) return 'Live';
     if (s.start.isBefore(DateTime.now())) return 'Past';
     if (s.learnerCount >= 6) return 'Full';
     if (s.learnerCount >= 2) return 'Group';
@@ -272,10 +273,21 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return slot.start.isBefore(DateTime.now());
   }
 
+  bool _isLiveBooking(_AdminBookedSlot slot) {
+    final now = DateTime.now();
+    final openFrom = slot.start.subtract(const Duration(minutes: 10));
+    final dur = slot.durationMinutes <= 0 ? 60 : slot.durationMinutes;
+    final openUntil = slot.start
+        .add(Duration(minutes: dur))
+        .add(const Duration(minutes: 15));
+    return now.isAfter(openFrom) && now.isBefore(openUntil);
+  }
+
   String _bookingKey(String courseId, String dayKey, String hhmm) =>
       '$courseId|$dayKey|$hhmm';
 
   Color _statusColorForSlot(_AdminBookedSlot s) {
+    if (_isLiveBooking(s)) return const Color(0xFF0B7285);
     if (s.start.isBefore(DateTime.now())) return Colors.grey.shade700;
     if (s.learnerCount >= 6) return Colors.red.shade700;
     if (s.learnerCount >= 2) return actionOrange;
@@ -480,6 +492,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     teacherName: (slotNode['teacherName'] ?? 'Teacher')
                         .toString()
                         .trim(),
+                    durationMinutes: _toInt(
+                      slotNode['durationMinutes'] ?? slotNode['duration'],
+                      fallback: 60,
+                    ),
                     sessionNo: _toInt(slotNode['sessionNo'], fallback: 0),
                     learnerUids: learnerUids,
                     createdAt: _toInt(slotNode['createdAt'], fallback: 0),
@@ -2918,6 +2934,22 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   Widget build(BuildContext context) {
     final course = _selectedCourse();
     final filtered = _filteredSlots();
+    final now = DateTime.now();
+    final past = <_AdminBookedSlot>[];
+    final live = <_AdminBookedSlot>[];
+    final upcoming = <_AdminBookedSlot>[];
+
+    for (final s in filtered) {
+      if (_isLiveBooking(s)) {
+        live.add(s);
+        continue;
+      }
+      if (s.start.isAfter(now)) {
+        upcoming.add(s);
+        continue;
+      }
+      past.add(s);
+    }
 
     final teacherMap = <String, String>{};
     for (final s in bookedSlots) {
@@ -3132,191 +3164,68 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                               style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                           )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryBlue,
+                        : DefaultTabController(
+                            length: 3,
+                            initialIndex: 1,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: primaryBlue,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              webDesktop
-                                  ? _buildWebFrozenBookingsTable(filtered)
-                                  : ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: DataTable(
-                                          horizontalMargin: 10,
-                                          columnSpacing: 14,
-                                          headingRowHeight: 38,
-                                          dataRowMinHeight: 48,
-                                          dataRowMaxHeight: 56,
-                                          columns: const [
-                                            DataColumn(label: Text('Day')),
-                                            DataColumn(label: Text('Time')),
-                                            DataColumn(label: Text('Course')),
-                                            DataColumn(label: Text('Teacher')),
-                                            DataColumn(label: Text('Sess')),
-                                            DataColumn(label: Text('Lrnrs')),
-                                            DataColumn(label: Text('Status')),
-                                            DataColumn(label: Text('Act')),
-                                          ],
-                                          rows: filtered.map((s) {
-                                            final statusColor =
-                                                _statusColorForSlot(s);
-                                            final isPast = s.start.isBefore(
-                                              DateTime.now(),
-                                            );
-
-                                            return DataRow(
-                                              cells: [
-                                                DataCell(
-                                                  Text(
-                                                    _friendlyDate(s.start),
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  Text(
-                                                    s.time,
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      fontSize: 12,
-                                                      color: isPast
-                                                          ? Colors.grey.shade700
-                                                          : actionOrange,
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  ConstrainedBox(
-                                                    constraints:
-                                                        const BoxConstraints(
-                                                          maxWidth: 150,
-                                                        ),
-                                                    child: Text(
-                                                      _courseTitle(s.courseId),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  ConstrainedBox(
-                                                    constraints:
-                                                        const BoxConstraints(
-                                                          maxWidth: 110,
-                                                        ),
-                                                    child: Text(
-                                                      s.teacherName,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  Text(
-                                                    s.sessionNo <= 0
-                                                        ? '—'
-                                                        : '${s.sessionNo}',
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  Text(
-                                                    '${s.learnerCount}',
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 7,
-                                                          vertical: 4,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: statusColor
-                                                          .withValues(
-                                                            alpha: 0.10,
-                                                          ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            999,
-                                                          ),
-                                                    ),
-                                                    child: Text(
-                                                      _statusLabelForSlot(s),
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                        color: statusColor,
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        _openSlotDetails(s),
-                                                    style: TextButton.styleFrom(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 6,
-                                                          ),
-                                                      minimumSize: Size.zero,
-                                                      tapTargetSize:
-                                                          MaterialTapTargetSize
-                                                              .shrinkWrap,
-                                                    ),
-                                                    child: const Text(
-                                                      'View',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          }).toList(),
-                                        ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: uiBorder),
+                                  ),
+                                  child: TabBar(
+                                    labelColor: primaryBlue,
+                                    unselectedLabelColor: primaryBlue
+                                        .withValues(alpha: 0.70),
+                                    indicatorColor: actionOrange,
+                                    tabs: [
+                                      Tab(text: 'Past (${past.length})'),
+                                      Tab(text: 'Live (${live.length})'),
+                                      Tab(
+                                        text: 'Upcoming (${upcoming.length})',
                                       ),
-                                    ),
-                            ],
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  height: webDesktop ? 520 : 540,
+                                  child: TabBarView(
+                                    children: [
+                                      _buildBookingsPane(
+                                        items: past,
+                                        webDesktop: webDesktop,
+                                        emptyText:
+                                            'No past bookings in this selection.',
+                                      ),
+                                      _buildBookingsPane(
+                                        items: live,
+                                        webDesktop: webDesktop,
+                                        emptyText:
+                                            'No live bookings in this selection.',
+                                      ),
+                                      _buildBookingsPane(
+                                        items: upcoming,
+                                        webDesktop: webDesktop,
+                                        emptyText:
+                                            'No upcoming bookings in this selection.',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                   ),
                 ],
@@ -3374,6 +3283,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
     Widget frozenRow(_AdminBookedSlot s, int i) {
       final rowBg = i.isEven ? Colors.white : appBg.withValues(alpha: 0.7);
+      final timeColor = _isLiveBooking(s)
+          ? const Color(0xFF0B7285)
+          : s.start.isBefore(DateTime.now())
+          ? Colors.grey.shade700
+          : actionOrange;
       return Container(
         height: 44,
         color: rowBg,
@@ -3381,14 +3295,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         child: Row(
           children: [
             rowCell(_friendlyDate(s.start), 132, strong: true),
-            rowCell(
-              s.time,
-              98,
-              strong: true,
-              color: s.start.isBefore(DateTime.now())
-                  ? Colors.grey.shade700
-                  : actionOrange,
-            ),
+            rowCell(s.time, 98, strong: true, color: timeColor),
           ],
         ),
       );
@@ -3537,6 +3444,170 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBookingsPane({
+    required List<_AdminBookedSlot> items,
+    required bool webDesktop,
+    required String emptyText,
+  }) {
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          emptyText,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      );
+    }
+
+    if (webDesktop) {
+      return _buildWebFrozenBookingsTable(items);
+    }
+
+    return SingleChildScrollView(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            horizontalMargin: 10,
+            columnSpacing: 14,
+            headingRowHeight: 38,
+            dataRowMinHeight: 48,
+            dataRowMaxHeight: 56,
+            columns: const [
+              DataColumn(label: Text('Day')),
+              DataColumn(label: Text('Time')),
+              DataColumn(label: Text('Course')),
+              DataColumn(label: Text('Teacher')),
+              DataColumn(label: Text('Sess')),
+              DataColumn(label: Text('Lrnrs')),
+              DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Act')),
+            ],
+            rows: items.map((s) {
+              final statusColor = _statusColorForSlot(s);
+              final timeColor = _isLiveBooking(s)
+                  ? const Color(0xFF0B7285)
+                  : s.start.isBefore(DateTime.now())
+                  ? Colors.grey.shade700
+                  : actionOrange;
+
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Text(
+                      _friendlyDate(s.start),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      s.time,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                        color: timeColor,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(
+                        _courseTitle(s.courseId),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 110),
+                      child: Text(
+                        s.teacherName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      s.sessionNo <= 0 ? '—' : '${s.sessionNo}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      '${s.learnerCount}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        _statusLabelForSlot(s),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: statusColor,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    TextButton(
+                      onPressed: () => _openSlotDetails(s),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'View',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
@@ -3771,6 +3842,7 @@ class _AdminBookedSlot {
   final DateTime start;
   final String teacherId;
   final String teacherName;
+  final int durationMinutes;
   final int sessionNo;
   final List<String> learnerUids;
   final int createdAt;
@@ -3782,6 +3854,7 @@ class _AdminBookedSlot {
     required this.start,
     required this.teacherId,
     required this.teacherName,
+    required this.durationMinutes,
     required this.sessionNo,
     required this.learnerUids,
     required this.createdAt,

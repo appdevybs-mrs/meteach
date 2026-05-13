@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
@@ -168,11 +169,17 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final id = _storyId(story);
     if (id.isEmpty) return;
     try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
       await _storiesRef.child(id).child('stats').child(key).runTransaction((v) {
         final cur = _toInt(v);
         return Transaction.success(cur + 1);
       });
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('story stat increment failed ($key): $e');
+      debugPrint('$st');
+    }
   }
 
   Widget _storyStatChip(_StoriesPalette p, IconData icon, String label) {

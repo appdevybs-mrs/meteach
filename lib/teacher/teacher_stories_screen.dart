@@ -438,13 +438,19 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final storyId = _storyIdFrom(story);
     if (storyId.isEmpty) return;
     try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
       await _storiesRef.child(storyId).child('stats').child(key).runTransaction(
         (v) {
           final cur = _toInt(v);
           return Transaction.success(cur + 1);
         },
       );
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('story stat increment failed ($key): $e');
+      debugPrint('$st');
+    }
   }
 
   Future<void> _openHtmlRead(Map<String, dynamic> story) async {

@@ -3,19 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../services/push_dispatch_service.dart';
-import '../services/learner_join_signal_service.dart';
 import '../services/notification_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
-import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_web_layout.dart';
-import '../shared/responsive_layout.dart';
-import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
@@ -75,7 +70,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   // Slots window / schedule
   int daysAhead = 14;
-  static const int timetableDays = 7;
   List<_Slot> generatedSlots = [];
 
   // My bookings map: "yyyy-mm-dd|HH:MM|teacherId" -> sessionNo
@@ -84,19 +78,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   // Slot group summary: "yyyy-mm-dd|HH:MM|teacherId" -> summary
   Map<String, _SlotSummary> slotSummary = {};
 
-  // Filters
-  String teacherFilter = 'all';
-  String timeFilter = 'all'; // all | morning | afternoon
-  bool onlyJoinable = false;
-  bool onlyPeerGroups = false;
-
   // UI state
-  bool filtersExpanded = false;
+  _BookingFlowStep flowStep = _BookingFlowStep.lessonChoice;
+  DateTime? selectedDay;
+  String? selectedTime;
+  String? selectedTeacherId;
+  int? selectedLessonForFlow;
   String helpLang = 'en'; // en | ar | fr | tr | ur
-  Timer? _modeLabelsTimer;
-  int _modeLabelIndex = 0;
-  bool _didShowFollowModeHint = false;
-  bool _didShowCustomModeHint = false;
   late final AnimationController _sessionPulseCtrl;
   Map<String, List<_BusyRange>>? _busyRangesCache;
   DateTime? _busyRangesCacheAt;
@@ -110,18 +98,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 980),
     )..repeat(reverse: true);
-    _modeLabelsTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted) return;
-      setState(() {
-        _modeLabelIndex = (_modeLabelIndex + 1) % 3;
-      });
-    });
     _init();
   }
 
   @override
   void dispose() {
-    _modeLabelsTimer?.cancel();
     _sessionPulseCtrl.dispose();
     super.dispose();
   }
@@ -251,39 +232,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       return selectedSessionNo.clamp(1, maxSessions).toInt();
     }
     return currentSession.clamp(1, maxSessions).toInt();
-  }
-
-  int get _sessionsLeft {
-    final left = _effectiveTotalSessions - studiedSessionsConsumed;
-    return left < 0 ? 0 : left;
-  }
-
-  String _verticalTimeLabel(String time) {
-    final cleaned = time.trim();
-    if (cleaned.contains(':')) {
-      final parts = cleaned.split(':');
-      final hh = parts.isNotEmpty ? parts.first.trim() : cleaned;
-      final mm = parts.length > 1 ? parts[1].trim() : '00';
-      final hhNorm = hh.padLeft(2, '0');
-      final mmNorm = mm.isEmpty ? '00' : mm.padLeft(2, '0');
-      return '$hhNorm:$mmNorm';
-    }
-    final n = int.tryParse(cleaned);
-    if (n != null) return '${n.toString().padLeft(2, '0')}:00';
-    return cleaned;
-  }
-
-  String _shortTeacherName(String fullName) {
-    final parts = fullName
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return 'Teacher';
-    if (parts.length == 1) return parts.first;
-    final first = parts.first;
-    final lastInitial = parts.last[0].toUpperCase();
-    return '$first $lastInitial';
   }
 
   DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
@@ -650,23 +598,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return false;
   }
 
-  Future<void> _openExternalUrl(String url) async {
-    final u = url.trim();
-    if (u.isEmpty) {
-      _toast('Missing meeting link.');
-      return;
-    }
-
-    final uri = Uri.tryParse(u);
-    if (uri == null) {
-      _toast('Invalid meeting link.');
-      return;
-    }
-
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok) _toast('Could not open the link.');
-  }
-
   Future<String> _loadTeacherProfileMeetUrl(String teacherId) async {
     final id = teacherId.trim();
     if (id.isEmpty) return '';
@@ -676,26 +607,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     } catch (_) {
       return '';
     }
-  }
-
-  Future<void> _notifyTeacherJoinTap(_Slot slot) async {
-    try {
-      final learnerUid = myUid.trim();
-      if (learnerUid.isEmpty) return;
-
-      final learnerName = await _getMyFullName();
-      await LearnerJoinSignalService.notifyTeacherJoinTap(
-        learnerUid: learnerUid,
-        teacherUid: slot.teacherId,
-        learnerName: learnerName,
-        source: 'learner/learner_booking',
-        courseId: slot.courseId,
-        courseTitle: courseTitle.trim(),
-        dayKey: slot.dayKey,
-        time: slot.time,
-        sessionStartMs: slot.start.millisecondsSinceEpoch,
-      );
-    } catch (_) {}
   }
 
   bool _isWithin24Hours(_Slot slot) {
@@ -715,15 +626,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (s.groupSessionNo != targetSession) return false;
     if (s.isFull) return false;
     return true;
-  }
-
-  bool _isPeerGroup(_Slot s) {
-    final targetSession = _targetSessionNo;
-    return !_isBookingLockedForNewBooking(s) &&
-        (s.groupSessionNo == targetSession) &&
-        (s.bookedCount > 0) &&
-        !s.bookedByMe &&
-        !s.isFull;
   }
 
   Future<String> _getMyFullName() async {
@@ -839,18 +741,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     } catch (_) {}
   }
 
-  Future<void> _cancelLearnerLocalReminder(_Slot slot) async {
-    try {
-      await NotificationService.I.init();
-
-      await NotificationService.I.cancelSessionReminderSeries(
-        classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
-        sessionStart: slot.start,
-        minutesBeforeList: const [60, 20, 5],
-      );
-    } catch (_) {}
-  }
-
   Future<void> _runBusy(String label, Future<void> Function() action) async {
     _markBusyVisualStart();
     if (!mounted) return;
@@ -906,7 +796,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
     myUid = uid;
 
-    courseId = widget.courseId ?? await _inferLearnerCourseId();
+    if (widget.courseId != null && widget.courseId!.trim().isNotEmpty) {
+      courseId = widget.courseId!.trim();
+    } else {
+      final courses = await _loadLearnerBookingCourses();
+      if (courses.isEmpty) {
+        courseId = null;
+      } else if (courses.length == 1) {
+        courseId = courses.first.id;
+      } else {
+        courseId = await _showCourseChooser(courses);
+      }
+    }
     if (courseId == null || courseId!.isEmpty) {
       setState(() => loading = false);
       _toast('No courseId found for this learner.');
@@ -936,11 +837,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     setState(() => loading = false);
   }
 
-  Future<String?> _inferLearnerCourseId() async {
+  Future<List<_CourseChoice>> _loadLearnerBookingCourses() async {
+    final out = <_CourseChoice>[];
     try {
       final snap = await _db.child('users/$myUid/courses').get();
       final v = snap.value;
-      if (v is! Map) return null;
+      if (v is! Map) return out;
 
       final courses = v.map((k, vv) => MapEntry(k.toString(), vv));
 
@@ -968,12 +870,111 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             variantKey == 'flexible' || deliveryKey == 'flexible';
 
         if (id.isNotEmpty && isBookingCourse) {
-          return id;
+          final title = (m['title'] ?? m['courseTitle'] ?? m['name'] ?? id)
+              .toString()
+              .trim();
+          out.add(_CourseChoice(id: id, title: title.isEmpty ? id : title));
         }
       }
     } catch (_) {}
 
-    return null;
+    final seen = <String>{};
+    final unique = <_CourseChoice>[];
+    for (final c in out) {
+      if (seen.add(c.id)) unique.add(c);
+    }
+    return unique;
+  }
+
+  Future<String?> _showCourseChooser(List<_CourseChoice> courses) async {
+    if (!mounted) return null;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 24,
+                offset: Offset(0, 14),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Choose your course',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                  color: primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Select the course you want to book a class for.',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: courses.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final c = courses[i];
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.pop(context, c.id),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBF5),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: uiBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.menu_book_rounded,
+                              color: primaryBlue,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                c.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              color: actionOrange,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<String> _inferClassIdForCourse(String cid) async {
@@ -1503,14 +1504,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       setState(() {
         generatedSlots = out;
-
-        final teachersInList = <String>{};
-        for (final s in generatedSlots) {
-          teachersInList.add(s.teacherId);
-        }
-        if (teacherFilter != 'all' && !teachersInList.contains(teacherFilter)) {
-          teacherFilter = 'all';
-        }
       });
     } catch (e) {
       _toast('Failed to generate slots: $e');
@@ -1624,6 +1617,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       );
       if (sameExact) {
         _toast('You already booked this teacher and slot ✅');
+        return;
+      }
+
+      _MyBooking? sameSessionUpcoming;
+      for (final b in upcoming) {
+        if (b.sessionNo == targetSession) {
+          sameSessionUpcoming = b;
+          break;
+        }
+      }
+      if (sameSessionUpcoming != null) {
+        _toast(
+          'You already booked Session $targetSession with ${sameSessionUpcoming.teacherName} on ${sameSessionUpcoming.dayKey} at ${sameSessionUpcoming.time}. Please choose another session.',
+        );
         return;
       }
 
@@ -1990,147 +1997,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
-  Future<void> _markLateCancelCreditUsed({
-    required String cid,
-    required _Slot slot,
-  }) async {
-    final bookingKey = _bookingKey(cid, slot.dayKey, slot.time);
-    final slotKey = _slotSummaryKey(slot.dayKey, slot.time, slot.teacherId);
-    final sessionNo =
-        slot.groupSessionNo ?? myBookedSlots[slotKey] ?? _targetSessionNo;
-
-    final ref = _progressRef(cid).child('online_attendance/$bookingKey');
-
-    try {
-      await ref.runTransaction((Object? currentData) {
-        final node = (currentData is Map)
-            ? currentData.map((k, v) => MapEntry(k.toString(), v))
-            : <String, dynamic>{};
-
-        final alreadyPresent = node['present'] == true;
-        final alreadyCounted = node['countedCredit'] == true;
-        if (alreadyPresent || alreadyCounted) {
-          return Transaction.success(node);
-        }
-
-        final createdAt = node['createdAt'];
-
-        node['bookingKey'] = bookingKey;
-        node['courseId'] = cid;
-        node['dayKey'] = slot.dayKey;
-        node['time'] = slot.time;
-        node['sessionNo'] = sessionNo;
-        node['teacherId'] = slot.teacherId;
-        node['teacherName'] = slot.teacherName;
-        node['present'] = false;
-        node['countedCredit'] = true;
-        node['creditCountReason'] = 'late_cancel_24h';
-        node['updatedAt'] = ServerValue.timestamp;
-        node['createdAt'] = createdAt ?? ServerValue.timestamp;
-
-        return Transaction.success(node);
-      });
-
-      await AuditLogService.logSuccess(
-        actionKey: AuditActionKeys.learnerBookingLateCancelCredit,
-        domain: AuditDomain.booking,
-        summary: 'Learner late-cancel credit counted',
-        actor: AuditActor(uid: myUid, role: 'learner'),
-        target: AuditTarget(
-          type: 'booking',
-          id: bookingKey,
-          uid: slot.teacherId,
-          name: slot.teacherName,
-        ),
-        keywords: [cid, slot.dayKey, slot.time, '$sessionNo'],
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _cancelMyBooking(_Slot slot) async {
-    final cid = courseId;
-    if (cid == null) return;
-
-    final lateCancel = _isWithin24Hours(slot);
-
-    _setProgressLabel('Checking cancellation...');
-    setState(() => booking = true);
-    _markBusyVisualStart();
-
-    try {
-      final status = await _cancelBookingByKey(
-        cid,
-        slot.dayKey,
-        slot.time,
-        slot.teacherId,
-      );
-      if (status == _CancelBookingStatus.failed) {
-        _toast('Cancel failed. Please try again.');
-        return;
-      }
-
-      _setProgressLabel('Removing reminder...');
-      await _cancelLearnerLocalReminder(slot);
-
-      if (status == _CancelBookingStatus.cancelled && lateCancel) {
-        await _markLateCancelCreditUsed(cid: cid, slot: slot);
-      }
-
-      if (status == _CancelBookingStatus.notFound) {
-        _toast('This booking was already canceled. ✅');
-      } else {
-        _toast(
-          lateCancel
-              ? 'Booking canceled and counted as used credit ✅'
-              : 'Booking canceled ✅',
-        );
-      }
-
-      if (status == _CancelBookingStatus.cancelled ||
-          status == _CancelBookingStatus.notFound) {
-        await AuditLogService.logSuccess(
-          actionKey: AuditActionKeys.learnerBookingCancel,
-          domain: AuditDomain.booking,
-          summary: 'Learner cancelled booking ${slot.dayKey} ${slot.time}',
-          actor: AuditActor(uid: myUid, role: 'learner'),
-          target: AuditTarget(
-            type: 'teacher',
-            uid: slot.teacherId,
-            name: slot.teacherName,
-          ),
-          keywords: [cid, slot.dayKey, slot.time],
-          meta: {'lateCancel': lateCancel, 'status': status.name},
-        );
-      }
-
-      _setProgressLabel('Refreshing schedule...');
-      await _loadStudiedSessions(cid);
-      await _loadReservationsSummary(cid);
-      await _generateSlots(cid);
-      _invalidateBusyRangesCache();
-    } catch (e) {
-      await AuditLogService.logFailure(
-        actionKey: AuditActionKeys.learnerBookingCancel,
-        domain: AuditDomain.booking,
-        summary: 'Learner booking cancel failed',
-        actor: AuditActor(uid: myUid, role: 'learner'),
-        target: AuditTarget(
-          type: 'teacher',
-          uid: slot.teacherId,
-          name: slot.teacherName,
-        ),
-        keywords: [cid, slot.dayKey, slot.time],
-        errorMessage: e.toString(),
-      );
-      _toast('Cancel failed: $e');
-    } finally {
-      if (mounted) {
-        setState(() => booking = false);
-        _clearBusyVisualIfIdle();
-      }
-    }
-  }
-
   Future<void> _refreshSchedule() async {
     final cid = courseId;
     if (cid == null || loading || booking || refreshing) return;
@@ -2149,432 +2015,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _clearBusyVisualIfIdle();
       }
     }
-  }
-
-  // ================== Timetable UI helpers ==================
-
-  List<_Slot> _applyFilters(List<_Slot> slots) {
-    final out = <_Slot>[];
-
-    for (final s in slots) {
-      if (teacherFilter != 'all' && s.teacherId != teacherFilter) continue;
-
-      if (timeFilter == 'morning') {
-        if (s.start.hour >= 13) continue;
-      } else if (timeFilter == 'afternoon') {
-        if (s.start.hour < 13) continue;
-      }
-
-      if (onlyJoinable && !_isJoinable(s)) continue;
-      if (onlyPeerGroups && !_isPeerGroup(s)) continue;
-
-      out.add(s);
-    }
-
-    return out;
-  }
-
-  List<String> _uniqueTimes(List<_Slot> slots) {
-    final set = <String>{};
-    for (final s in slots) {
-      set.add(s.time);
-    }
-
-    final list = set.toList();
-    list.sort((a, b) {
-      final ap = a.split(':');
-      final bp = b.split(':');
-      final ah = int.tryParse(ap[0]) ?? 0;
-      final am = int.tryParse(ap[1]) ?? 0;
-      final bh = int.tryParse(bp[0]) ?? 0;
-      final bm = int.tryParse(bp[1]) ?? 0;
-      return (ah * 60 + am).compareTo(bh * 60 + bm);
-    });
-    return list;
-  }
-
-  List<DateTime> _nextDays(int count) {
-    final now = DateTime.now();
-    return List.generate(
-      count,
-      (i) => DateTime(now.year, now.month, now.day).add(Duration(days: i)),
-    );
-  }
-
-  // ================== Session details ==================
-
-  Future<void> _openSessionDetails(int sessionNo) async {
-    final info = curriculumSessions['$sessionNo'];
-    if (info is! Map) {
-      _toast('Session details not found (curriculum is optional).');
-      return;
-    }
-
-    final m = info.map((k, v) => MapEntry(k.toString(), v));
-
-    final rawTitle = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
-    final title = rawTitle.isEmpty
-        ? 'Session $sessionNo'
-        : 'Session $sessionNo — $rawTitle';
-    final objective = (m['objective'] ?? '').toString().trim();
-    final content = (m['content'] ?? '').toString().trim();
-    final homework = (m['homework'] ?? '').toString().trim();
-    final duration = _toInt(m['durationMinutes'], fallback: 0);
-
-    final cid = courseId;
-    if (cid == null || cid.trim().isEmpty) {
-      _toast('Course info is missing. Please reopen this screen.');
-      return;
-    }
-
-    String teacherName = '';
-    bool attendedSession = false;
-    int rating = 5;
-    int existingCreatedAt = 0;
-
-    try {
-      final attendanceSnap = await _progressRef(
-        cid,
-      ).child('online_attendance').get();
-      if (attendanceSnap.exists && attendanceSnap.value is Map) {
-        final attendanceMap = _asStringKeyMap(attendanceSnap.value);
-        for (final entry in attendanceMap.entries) {
-          final raw = entry.value;
-          if (raw is! Map) continue;
-          final rec = _asStringKeyMap(raw);
-          final recSessionNo = _toInt(rec['sessionNo'], fallback: 0);
-          if (recSessionNo != sessionNo) continue;
-
-          final recTeacherName =
-              (rec['teacherName'] ?? rec['teacherNameFromBooking'] ?? '')
-                  .toString()
-                  .trim();
-          if (teacherName.isEmpty && recTeacherName.isNotEmpty) {
-            teacherName = recTeacherName;
-          }
-
-          final present = _toBool(rec['present']);
-          if (present) {
-            attendedSession = true;
-            if (recTeacherName.isNotEmpty) teacherName = recTeacherName;
-          }
-        }
-      }
-
-      final reviewSnap = await _progressRef(
-        cid,
-      ).child('session_reviews/$sessionNo').get();
-      if (reviewSnap.exists && reviewSnap.value is Map) {
-        final review = _asStringKeyMap(reviewSnap.value);
-        final savedRating = _toInt(review['rating'], fallback: 0);
-        if (savedRating >= 1 && savedRating <= 5) rating = savedRating;
-        existingCreatedAt = _toInt(review['createdAt'], fallback: 0);
-
-        final savedTeacher = (review['teacherName'] ?? '').toString().trim();
-        if (teacherName.isEmpty && savedTeacher.isNotEmpty) {
-          teacherName = savedTeacher;
-        }
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-
-    bool submitting = false;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        final bottomPad = MediaQuery.of(context).padding.bottom;
-        return SafeArea(
-          child: StatefulBuilder(
-            builder: (ctx, setModalState) {
-              Future<void> submitSessionReview() async {
-                if (!attendedSession) {
-                  AppToast.show(
-                    context,
-                    'You can review this session after attending it.',
-                    type: AppToastType.error,
-                  );
-                  return;
-                }
-
-                if (rating < 1 || rating > 5) {
-                  AppToast.show(
-                    context,
-                    'Please choose a rating from 1 to 5 stars.',
-                    type: AppToastType.error,
-                  );
-                  return;
-                }
-
-                setModalState(() => submitting = true);
-                try {
-                  final payload = <String, dynamic>{
-                    'sessionNo': sessionNo,
-                    'rating': rating,
-                    'teacherName': teacherName,
-                    'updatedAt': ServerValue.timestamp,
-                  };
-                  if (existingCreatedAt > 0) {
-                    payload['createdAt'] = existingCreatedAt;
-                  } else {
-                    payload['createdAt'] = ServerValue.timestamp;
-                  }
-
-                  await _progressRef(
-                    cid,
-                  ).child('session_reviews/$sessionNo').set(payload);
-
-                  await AuditLogService.logSuccess(
-                    actionKey: AuditActionKeys.learnerSessionReviewSubmit,
-                    domain: AuditDomain.booking,
-                    summary:
-                        'Learner submitted session review for session $sessionNo',
-                    actor: AuditActor(uid: myUid, role: 'learner'),
-                    target: AuditTarget(
-                      type: 'course',
-                      id: cid,
-                      name: teacherName,
-                    ),
-                    keywords: [cid, '$sessionNo', '$rating', teacherName],
-                    context: {'courseId': cid, 'sessionNo': sessionNo},
-                  );
-                  existingCreatedAt = existingCreatedAt > 0
-                      ? existingCreatedAt
-                      : DateTime.now().millisecondsSinceEpoch;
-
-                  if (!mounted) return;
-                  AppToast.show(context, 'Session review submitted.');
-                } catch (e) {
-                  await AuditLogService.logFailure(
-                    actionKey: AuditActionKeys.learnerSessionReviewSubmit,
-                    domain: AuditDomain.booking,
-                    summary: 'Learner session review submit failed',
-                    actor: AuditActor(uid: myUid, role: 'learner'),
-                    target: AuditTarget(type: 'course', id: cid),
-                    keywords: [cid, '$sessionNo'],
-                    errorMessage: e.toString(),
-                  );
-                  if (!mounted) return;
-                  AppToast.show(
-                    context,
-                    toHumanError(e),
-                    type: AppToastType.error,
-                  );
-                } finally {
-                  if (mounted) {
-                    setModalState(() => submitting = false);
-                  }
-                }
-              }
-
-              return Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          color: primaryBlue,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _kv('Session', '$sessionNo / $_effectiveTotalSessions'),
-                      if (duration > 0) _kv('Duration', '$duration min'),
-                      _kv('Teacher', teacherName.isEmpty ? '-' : teacherName),
-                      const SizedBox(height: 10),
-                      if (objective.isNotEmpty) ...[
-                        const Text(
-                          'Objectives',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          objective,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      if (content.isNotEmpty) ...[
-                        const Text(
-                          'Content',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          content,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      if (homework.isNotEmpty) ...[
-                        const Text(
-                          'Homework',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          homework,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: uiBorder.withValues(alpha: 0.9),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Rate this session',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: primaryBlue,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 2,
-                              children: List.generate(5, (i) {
-                                final star = i + 1;
-                                return IconButton(
-                                  tooltip: '$star star${star == 1 ? '' : 's'}',
-                                  onPressed: attendedSession
-                                      ? () => setModalState(() => rating = star)
-                                      : null,
-                                  icon: Icon(
-                                    star <= rating
-                                        ? Icons.star_rounded
-                                        : Icons.star_border_rounded,
-                                    color: const Color(0xFFF59E0B),
-                                  ),
-                                );
-                              }),
-                            ),
-                            if (!attendedSession)
-                              Text(
-                                'You can review this session after attending it.',
-                                style: TextStyle(
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: actionOrange,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                onPressed: (!attendedSession || submitting)
-                                    ? null
-                                    : submitSessionReview,
-                                child: Text(
-                                  submitting
-                                      ? 'Submitting...'
-                                      : 'Submit review',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: actionOrange,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text(
-                            'Close',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _kv(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              k,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Colors.grey.shade700,
-              ),
-            ),
-          ),
-          Text(
-            v,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: primaryBlue,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   // ================== Help Sheet ==================
@@ -3088,658 +2528,166 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
-  // ================== Slot tap -> details sheet ==================
+  // ================== UI ==================
 
-  Future<void> _onSlotTap(_Slot slot) async {
-    if (!mounted) return;
+  int get _flowLessonNo => selectedLessonForFlow ?? _targetSessionNo;
 
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        final bottomPad = MediaQuery.of(context).padding.bottom;
-        final targetSession = _targetSessionNo;
-
-        final canCancel = slot.bookedByMe && slot.start.isAfter(DateTime.now());
-        final lateCancel = canCancel && _isWithin24Hours(slot);
-
-        final newBookingLocked = _isBookingLockedForNewBooking(slot);
-
-        final shownSessionNo = slot.groupSessionNo ?? targetSession;
-        final topic = _sessionTitleFor(shownSessionNo);
-
-        final joinable = _isJoinable(slot);
-        final peerGroup = _isPeerGroup(slot);
-        final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
-
-        String groupLine() {
-          if (slot.bookedCount <= 0) {
-            return 'No one booked yet';
-          }
-          final gs = slot.groupSessionNo;
-          if (gs == null) {
-            return '${slot.bookedCount} learners booked';
-          }
-          return '${slot.bookedCount} learners booked • Session $gs group';
-        }
-
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 16 + bottomPad),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${_friendlyDate(slot.start)} • ${slot.time}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                    color: primaryBlue,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _sheetInfoRow(
-                  icon: Icons.person_outline_rounded,
-                  title: 'Teacher',
-                  value: slot.teacherName,
-                  trailing: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () {
-                      Navigator.pop(context);
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        showDragHandle: true,
-                        backgroundColor: Colors.white,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
-                        ),
-                        builder: (_) => TeacherMediaSheet(
-                          teacherUid: slot.teacherId,
-                          teacherName: slot.teacherName,
-                        ),
-                      );
-                    },
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: actionOrange.withValues(alpha: 0.10),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: actionOrange.withValues(alpha: 0.25),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.info_outline_rounded,
-                        size: 18,
-                        color: actionOrange,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _sheetInfoRow(
-                  icon: Icons.menu_book_rounded,
-                  title: 'Session',
-                  value: topic.isEmpty
-                      ? '$shownSessionNo / $_effectiveTotalSessions'
-                      : '$shownSessionNo / $_effectiveTotalSessions • $topic',
-                ),
-                const SizedBox(height: 10),
-                _sheetInfoRow(
-                  icon: Icons.groups_rounded,
-                  title: 'Group',
-                  value: '${groupLine()} • Capacity ${slot.bookedCount}/$cap',
-                ),
-                const SizedBox(height: 14),
-                if (newBookingLocked && !slot.bookedByMe) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: lockedBg,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: lockedBorder),
-                    ),
-                    child: const Text(
-                      'Booking closed for this slot. Classes must be booked at least 24 hours in advance.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (peerGroup)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: peerBg,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: peerBorder),
-                    ),
-                    child: const Text(
-                      '👥 Your peers are already here — you can join this group.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                  ),
-                if (peerGroup) const SizedBox(height: 12),
-                if (slot.bookedByMe && slot.meetUrl.trim().isNotEmpty) ...[
-                  StreamBuilder<int>(
-                    stream: Stream.periodic(
-                      const Duration(seconds: 1),
-                      (x) => x,
-                    ),
-                    initialData: 0,
-                    builder: (context, _) {
-                      final now = DateTime.now();
-                      final openFrom = slot.start.subtract(
-                        const Duration(minutes: 10),
-                      );
-                      final dur = slot.durationMinutes <= 0
-                          ? 60
-                          : slot.durationMinutes;
-                      final openUntil = slot.start
-                          .add(Duration(minutes: dur))
-                          .add(const Duration(minutes: 15));
-
-                      final dynamicCanJoin =
-                          now.isAfter(openFrom) && now.isBefore(openUntil);
-                      final joinLabel = joinButtonLabelForWindow(
-                        openFrom: openFrom,
-                        openUntil: openUntil,
-                        hasMeetLink: true,
-                        now: now,
-                        actionLabel: 'Join Google Meet',
-                        closedLabel: 'Join window closed',
-                      );
-
-                      return FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: actionOrange,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          minimumSize: const Size(double.infinity, 48),
-                        ),
-                        onPressed: dynamicCanJoin
-                            ? () {
-                                Navigator.pop(context);
-                                unawaited(_notifyTeacherJoinTap(slot));
-                                _openExternalUrl(slot.meetUrl);
-                              }
-                            : null,
-                        child: Text(
-                          joinLabel,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (!slot.bookedByMe) ...[
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: joinable
-                          ? actionOrange
-                          : Colors.grey.shade400,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                    onPressed: (booking || refreshing || !joinable)
-                        ? null
-                        : () async {
-                            Navigator.pop(context);
-
-                            final msg =
-                                'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? targetSession}\nLearners: ${slot.bookedCount}/$cap';
-                            final ok = await _confirmWithLogo(
-                              title:
-                                  (slot.bookedCount > 0 &&
-                                      slot.groupSessionNo == targetSession)
-                                  ? 'Join group'
-                                  : 'Book this slot',
-                              message: msg,
-                              confirmLabel: 'Yes',
-                            );
-
-                            if (ok == true) {
-                              await _runBusy('Checking slot...', () async {
-                                await _bookSlot(slot);
-                              });
-                            }
-                          },
-                    child: Text(
-                      joinable
-                          ? ((slot.bookedCount > 0 &&
-                                    slot.groupSessionNo == targetSession)
-                                ? 'Join group'
-                                : 'Book this slot')
-                          : (newBookingLocked ? 'Closed' : 'Unavailable'),
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                ] else ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: bookedBg,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: bookedBorder),
-                    ),
-                    child: Text(
-                      'You are booked in this slot ✅ (${slot.bookedCount}/$cap learners)',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: !canCancel
-                          ? Colors.grey.shade400
-                          : Colors.red.shade600,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                    onPressed: (booking || refreshing || !canCancel)
-                        ? null
-                        : () async {
-                            Navigator.pop(context);
-
-                            final isLate = _isWithin24Hours(slot);
-                            final confirmLabel = isLate
-                                ? 'Yes, cancel and count credit'
-                                : 'Yes, Cancel';
-                            final message = isLate
-                                ? 'This cancellation is within 24 hours of the session.\n\nYou can cancel to free this slot for other learners.\n\nImportant: this session credit will still be counted as used.'
-                                : 'Are you sure you want to cancel this booking?';
-
-                            final ok = await _confirmWithLogo(
-                              title: isLate
-                                  ? 'Late cancellation (within 24h)'
-                                  : 'Cancel booking',
-                              message: message,
-                              confirmLabel: confirmLabel,
-                              confirmColor: Colors.red.shade600,
-                            );
-
-                            if (ok == true) {
-                              await _runBusy('Cancelling booking...', () async {
-                                await _cancelMyBooking(slot);
-                              });
-                            }
-                          },
-                    child: Text(
-                      !canCancel
-                          ? 'Cancel unavailable (class ended)'
-                          : (lateCancel
-                                ? 'Cancel (credit counted)'
-                                : 'Cancel booking'),
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  String _flowLessonTitle(int sessionNo) {
+    final t = _sessionTitleFor(sessionNo).trim();
+    return t.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo - $t';
   }
 
-  Widget _sheetInfoRow({
-    required IconData icon,
-    required String title,
-    required String value,
-    Widget? trailing,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFB),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: primaryBlue, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade700,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: primaryBlue,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (trailing != null) ...[const SizedBox(width: 10), trailing],
-        ],
-      ),
-    );
+  List<_Slot> _slotsForCurrentLesson() {
+    final selected = _flowLessonNo;
+    return generatedSlots.where((s) {
+      if (s.groupSessionNo != null && s.groupSessionNo != selected) {
+        return false;
+      }
+      return true;
+    }).toList();
   }
 
-  // ================== More teachers sheet ==================
-
-  Future<void> _openMoreTeachersSheet(
-    List<_Slot> allSlots,
-    List<_Slot> hiddenSlots,
-  ) async {
-    if (!mounted || hiddenSlots.isEmpty) return;
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        final bottomPad = MediaQuery.of(context).padding.bottom;
-        final first = allSlots.first;
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 16 + bottomPad),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${_friendlyDate(first.start)} • ${first.time}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                    color: primaryBlue,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'More teachers for this slot',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        for (int i = 0; i < hiddenSlots.length; i++) ...[
-                          _teacherMiniTile(hiddenSlots[i]),
-                          if (i != hiddenSlots.length - 1)
-                            const SizedBox(height: 8),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _openExpandedSchedule() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: appBg,
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            surfaceTintColor: Colors.white,
-            iconTheme: const IconThemeData(color: primaryBlue),
-            title: const Text(
-              'Full Schedule',
-              style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
-            ),
-          ),
-          body: learnerWebBodyFrame(
-            context: context,
-            maxWidth: 1500,
-            child: SafeArea(
-              child: ListView(
-                padding: const EdgeInsets.all(12),
-                children: [
-                  _buildTimetable(generatedSlots, expanded: true),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================== Filters UI ==================
-
-  Widget _buildFiltersInline() {
-    final Map<String, String> teacherIdToName = {};
-    for (final s in generatedSlots) {
-      teacherIdToName[s.teacherId] = s.teacherName;
+  List<DateTime> _availableDaysForLesson() {
+    final daysByKey = <String, DateTime>{};
+    for (final s in _slotsForCurrentLesson()) {
+      daysByKey[s.dayKey] = DateTime(s.start.year, s.start.month, s.start.day);
     }
-    final teacherIds = teacherIdToName.keys.toList()
-      ..sort(
-        (a, b) =>
-            (teacherIdToName[a] ?? '').compareTo(teacherIdToName[b] ?? ''),
-      );
+    final out = daysByKey.values.toList();
+    out.sort();
+    return out;
+  }
 
+  List<String> _availableTimesForDay() {
+    if (selectedDay == null) return const [];
+    final dk = _dateKey(selectedDay!);
+    final set = <String>{};
+    for (final s in _slotsForCurrentLesson()) {
+      if (s.dayKey != dk) continue;
+      set.add(s.time);
+    }
+    final out = set.toList();
+    out.sort();
+    return out;
+  }
+
+  List<_Slot> _teachersForDayAndTime() {
+    if (selectedDay == null || selectedTime == null) return const [];
+    final dk = _dateKey(selectedDay!);
+    final t = selectedTime!;
+    final out = _slotsForCurrentLesson().where((s) {
+      return s.dayKey == dk && s.time == t;
+    }).toList();
+    out.sort((a, b) => a.teacherName.compareTo(b.teacherName));
+    return out;
+  }
+
+  void _resetScheduleSelections() {
+    selectedDay = null;
+    selectedTime = null;
+    selectedTeacherId = null;
+  }
+
+  Widget _buildFlowShell(Widget child) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(maxWidth: 920),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
+        color: const Color(0xFFFCFAF7),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE9DFD1)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.tune_rounded, size: 16, color: primaryBlue),
-              const SizedBox(width: 6),
-              const Expanded(
-                child: Text(
-                  'Filters',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: primaryBlue,
-                  ),
-                ),
-              ),
-              if (teacherFilter != 'all' ||
-                  timeFilter != 'all' ||
-                  onlyJoinable ||
-                  onlyPeerGroups)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: actionOrange.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: actionOrange.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: const Text(
-                    'Active',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: actionOrange,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
-            ),
-            child: DropdownButton<String>(
-              value: teacherFilter,
-              isExpanded: true,
-              underline: const SizedBox.shrink(),
-              icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
-              items: [
-                const DropdownMenuItem(
-                  value: 'all',
-                  child: Text('All teachers'),
-                ),
-                ...teacherIds.map((id) {
-                  final name = teacherIdToName[id] ?? 'Teacher';
-                  return DropdownMenuItem(
-                    value: id,
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
-                }),
-              ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() => teacherFilter = v);
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _chip(
-                  'All day',
-                  timeFilter == 'all',
-                  () => setState(() => timeFilter = 'all'),
-                ),
-                const SizedBox(width: 8),
-                _chip(
-                  'Morning',
-                  timeFilter == 'morning',
-                  () => setState(() => timeFilter = 'morning'),
-                ),
-                const SizedBox(width: 8),
-                _chip(
-                  'Afternoon',
-                  timeFilter == 'afternoon',
-                  () => setState(() => timeFilter = 'afternoon'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _togglePillCompact(
-                label: 'Joinable',
-                value: onlyJoinable,
-                onChanged: (v) => setState(() => onlyJoinable = v),
-              ),
-              _togglePillCompact(
-                label: 'Peer groups',
-                value: onlyPeerGroups,
-                onChanged: (v) => setState(() => onlyPeerGroups = v),
-              ),
-            ],
-          ),
-        ],
-      ),
+      child: child,
     );
   }
 
-  Widget _togglePillCompact({
-    required String label,
-    required bool value,
-    required ValueChanged<bool> onChanged,
+  Widget _buildPremiumActionCard({
+    required String title,
+    required String subtitle,
+    required String cta,
+    required VoidCallback onTap,
+    bool primary = false,
+    String? badge,
   }) {
     return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: () => onChanged(!value),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: value ? actionOrange.withValues(alpha: 0.10) : Colors.white,
-          borderRadius: BorderRadius.circular(999),
+          gradient: primary
+              ? const LinearGradient(
+                  colors: [Color(0xFF0E7C86), Color(0xFF14616F)],
+                )
+              : null,
+          color: primary ? null : Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: value
-                ? actionOrange.withValues(alpha: 0.30)
-                : uiBorder.withValues(alpha: 0.9),
+            color: primary ? const Color(0xFF14616F) : uiBorder,
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              value
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              size: 16,
-              color: value ? actionOrange : primaryBlue,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 10,
+              offset: Offset(0, 5),
             ),
-            const SizedBox(width: 6),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primary ? Colors.white : primaryBlue,
+                      fontSize: 17,
+                    ),
+                  ),
+                ),
+                if (badge != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: primary
+                          ? Colors.white.withValues(alpha: 0.16)
+                          : actionOrange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badge,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primary ? Colors.white : actionOrange,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 7),
             Text(
-              label,
+              subtitle,
               style: TextStyle(
+                color: primary
+                    ? Colors.white.withValues(alpha: 0.93)
+                    : Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              cta,
+              style: TextStyle(
+                color: primary ? Colors.white : actionOrange,
                 fontWeight: FontWeight.w900,
-                color: value ? actionOrange : primaryBlue,
-                fontSize: 12,
               ),
             ),
           ],
@@ -3748,821 +2696,471 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
-  Widget _chip(String label, bool on, VoidCallback tap) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: tap,
-      child: Container(
-        width: 132,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: on ? actionOrange.withValues(alpha: 0.12) : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: on
-                ? actionOrange.withValues(alpha: 0.35)
-                : uiBorder.withValues(alpha: 0.9),
+  Widget _buildLessonChoiceStep() {
+    final nextTitle = _flowLessonTitle(currentSession);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'What would you like to study?',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            color: primaryBlue,
           ),
         ),
-        child: Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              maxLines: 1,
+        const SizedBox(height: 12),
+        _buildPremiumActionCard(
+          title: 'Book the next lesson',
+          subtitle: '$nextTitle\nContinue with your recommended next session.',
+          cta: 'Book next lesson',
+          badge: 'Recommended',
+          primary: true,
+          onTap: () {
+            setState(() {
+              studyMode = 'follow';
+              selectedLessonForFlow = currentSession;
+              selectedSessionNo = currentSession;
+              _resetScheduleSelections();
+              flowStep = _BookingFlowStep.schedule;
+            });
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildPremiumActionCard(
+          title: 'Pick your lesson',
+          subtitle: 'Choose a specific lesson from the syllabus.',
+          cta: 'Choose from syllabus',
+          onTap: () {
+            setState(() {
+              studyMode = 'custom';
+              flowStep = _BookingFlowStep.syllabus;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSyllabusStep() {
+    final total = _effectiveTotalSessions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: () =>
+                  setState(() => flowStep = _BookingFlowStep.lessonChoice),
+              icon: const Icon(Icons.arrow_back_rounded, color: primaryBlue),
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              'Choose a lesson',
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: on ? actionOrange : primaryBlue,
-                fontSize: 12,
+                color: primaryBlue,
+                fontSize: 21,
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '$courseTitle - $studiedSessionsConsumed of $total sessions studied',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Colors.grey.shade700,
           ),
         ),
-      ),
+        const SizedBox(height: 12),
+        ...List.generate(total, (i) {
+          final no = i + 1;
+          final title = _sessionTitleFor(no);
+          final status = no < currentSession
+              ? 'Studied'
+              : (no == currentSession ? 'Next lesson' : 'Available');
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: uiBorder),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Session $no${title.isEmpty ? '' : ' - $title'}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Status: $status',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: actionOrange),
+                  onPressed: () {
+                    setState(() {
+                      selectedLessonForFlow = no;
+                      selectedSessionNo = no;
+                      _resetScheduleSelections();
+                      flowStep = _BookingFlowStep.schedule;
+                    });
+                  },
+                  child: const Text('Select'),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
-  static const List<Map<String, String>> _modeLabels = [
-    {'follow': 'Next lesson', 'custom': 'Choose lesson'},
-    {'follow': 'Lecon suivante', 'custom': 'Choisir lecon'},
-    {'follow': 'الدرس التالي', 'custom': 'اختر الدرس'},
-  ];
+  Future<void> _onBookAnother() async {
+    final cid = courseId;
+    if (cid == null) return;
+    await _refreshSchedule();
+    if (!mounted) return;
+    setState(() {
+      selectedDay = null;
+      selectedTime = null;
+      selectedTeacherId = null;
+      selectedLessonForFlow = null;
+      flowStep = _BookingFlowStep.lessonChoice;
+    });
+  }
 
-  String get _followModeLabel => _modeLabels[_modeLabelIndex]['follow']!;
-  String get _customModeLabel => _modeLabels[_modeLabelIndex]['custom']!;
-
-  Future<void> _showModeHintDialog({required bool isCustom}) async {
-    final lang = _modeLabelIndex;
-
-    String title;
-    String body;
-    String action;
-
-    if (lang == 1) {
-      title = isCustom ? 'Choisir lecon' : 'Lecon suivante';
-      body = isCustom
-          ? 'Vous choisissez vous-meme la lecon a etudier maintenant. Utilisez ce mode pour reviser ou avancer.'
-          : 'Nous choisissons automatiquement votre prochaine lecon selon votre progression confirmee.';
-      action = 'Compris';
-    } else if (lang == 2) {
-      title = isCustom ? 'اختر الدرس' : 'الدرس التالي';
-      body = isCustom
-          ? 'في هذا الوضع تختار بنفسك الدرس الذي تريد دراسته الآن، للمراجعة أو التقدم.'
-          : 'في هذا الوضع نحدد لك الدرس التالي تلقائيا حسب تقدمك المؤكد.';
-      action = 'فهمت';
-    } else {
-      title = isCustom ? 'Choose lesson' : 'Next lesson';
-      body = isCustom
-          ? 'You choose the lesson to study now. Use this to review or jump ahead.'
-          : 'We automatically choose your next lesson based on your confirmed progress.';
-      action = 'Got it';
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(action),
+  Widget _buildScheduleStep() {
+    final days = _availableDaysForLesson();
+    final times = _availableTimesForDay();
+    final teachers = _teachersForDayAndTime();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: uiBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                courseTitle,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryBlue,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _flowLessonTitle(_flowLessonNo),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Session $_flowLessonNo of $_effectiveTotalSessions',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () =>
+                    setState(() => flowStep = _BookingFlowStep.lessonChoice),
+                child: const Text(
+                  'Change lesson',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: actionOrange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Choose a day',
+          style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 44,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: days.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final d = days[i];
+              final on =
+                  selectedDay != null && _dateKey(selectedDay!) == _dateKey(d);
+              final count = _slotsForCurrentLesson()
+                  .where((s) => s.dayKey == _dateKey(d))
+                  .length;
+              return InkWell(
+                onTap: () => setState(() {
+                  selectedDay = d;
+                  selectedTime = null;
+                  selectedTeacherId = null;
+                }),
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: on ? primaryBlue : Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: on ? primaryBlue : uiBorder),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${_friendlyDate(d)} - $count',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: on ? Colors.white : primaryBlue,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (selectedDay != null) ...[
+          const SizedBox(height: 14),
+          const Text(
+            'Choose a time',
+            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in times)
+                ChoiceChip(
+                  label: Text(t),
+                  selected: selectedTime == t,
+                  onSelected: (_) => setState(() {
+                    selectedTime = t;
+                    selectedTeacherId = null;
+                  }),
+                ),
+            ],
           ),
         ],
-      ),
+        if (selectedTime != null) ...[
+          const SizedBox(height: 14),
+          const Text(
+            'Choose a teacher',
+            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+          ),
+          const SizedBox(height: 8),
+          ...teachers.map((s) {
+            final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
+            final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: uiBorder),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.teacherName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$left seats available',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: actionOrange,
+                    ),
+                    onPressed: () => setState(() {
+                      selectedTeacherId = s.teacherId;
+                      flowStep = _BookingFlowStep.confirm;
+                    }),
+                    child: const Text('Book'),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ],
     );
   }
 
-  Future<void> _onFollowModeTap() async {
-    if (!_didShowFollowModeHint) {
-      await _showModeHintDialog(isCustom: false);
-      if (!mounted) return;
-      _didShowFollowModeHint = true;
+  Widget _buildConfirmStep() {
+    final teachers = _teachersForDayAndTime();
+    final chosen = teachers
+        .where((e) => e.teacherId == selectedTeacherId)
+        .toList();
+    final slot = chosen.isEmpty ? null : chosen.first;
+    if (slot == null || selectedDay == null || selectedTime == null) {
+      return const Text('Selection expired. Please choose again.');
     }
-
-    if (!mounted) return;
-    setState(() {
-      studyMode = 'follow';
-      selectedSessionNo = currentSession;
-      lessonsExpanded = false;
-    });
-  }
-
-  Future<void> _onCustomModeTap() async {
-    if (!_didShowCustomModeHint) {
-      await _showModeHintDialog(isCustom: true);
-      if (!mounted) return;
-      _didShowCustomModeHint = true;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      studyMode = 'custom';
-      selectedSessionNo = _targetSessionNo;
-      lessonsExpanded = true;
-    });
-  }
-
-  Widget _modeInfoButton({required bool isCustom}) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: () async {
-        await _showModeHintDialog(isCustom: isCustom);
-        if (!mounted) return;
-        setState(() {
-          if (isCustom) {
-            _didShowCustomModeHint = true;
-          } else {
-            _didShowFollowModeHint = true;
-          }
-        });
-      },
-      child: Container(
-        width: 26,
-        height: 26,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
-        ),
-        child: const Center(
-          child: Text(
-            '!',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              color: primaryBlue,
-              fontSize: 12,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Confirm your booking',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: primaryBlue,
+            fontSize: 22,
           ),
         ),
-      ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: uiBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Course: $courseTitle'),
+              Text('Lesson: ${_flowLessonTitle(_flowLessonNo)}'),
+              Text('Day: ${_friendlyDate(selectedDay!)}'),
+              Text('Time: $selectedTime'),
+              Text('Teacher: ${slot.teacherName}'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            OutlinedButton(
+              onPressed: () =>
+                  setState(() => flowStep = _BookingFlowStep.schedule),
+              child: const Text('Back'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: primaryBlue),
+              onPressed: () async {
+                await _bookSlot(slot);
+                if (!mounted) return;
+                if (myBookedSlots.containsKey(slot.key)) {
+                  setState(() => flowStep = _BookingFlowStep.success);
+                }
+              },
+              child: const Text('Confirm booking'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
-  // ================== Compact header ==================
-
-  Widget _buildCompactHeader() {
-    final targetSession = _targetSessionNo;
-    final sessionInfo = curriculumSessions['$targetSession'];
-    final sessionTitle = (sessionInfo is Map)
-        ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '')
-              .toString()
-              .trim()
-        : '';
-
-    final total = _effectiveTotalSessions;
-
+  Widget _buildSuccessStep() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: uiBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            courseTitle.isEmpty ? 'Course' : courseTitle,
-            style: const TextStyle(
+          const Text(
+            'Your class has been booked.',
+            style: TextStyle(
               fontWeight: FontWeight.w900,
-              fontSize: 16,
               color: primaryBlue,
+              fontSize: 22,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 12),
           Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 8,
             runSpacing: 8,
             children: [
-              Text(
-                'Session $targetSession / $total',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Colors.grey.shade800,
-                  height: 1.25,
-                ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: actionOrange),
+                onPressed: _onBookAnother,
+                child: const Text('Book another class'),
               ),
-              _smallStatPill('Studied', '$studiedSessionsConsumed'),
-              _smallStatPill('Left', '$_sessionsLeft'),
-              _smallStatPill('Next', '$currentSession'),
+              OutlinedButton(
+                onPressed: () => Navigator.maybePop(context),
+                child: const Text('Done'),
+              ),
             ],
           ),
-          if (sessionTitle.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              sessionTitle,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
-                height: 1.2,
-              ),
-            ),
-          ],
-          const SizedBox(height: 8),
-          _buildStudyModeRow(),
-          const SizedBox(height: 8),
-          _buildLessonToolsRow(),
-          if (studyMode == 'custom' && lessonsExpanded) ...[
-            const SizedBox(height: 8),
-            _buildLessonsPicker(),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildLessonToolsRow() {
-    return Row(
-      children: [
-        Expanded(child: _buildLessonsCollapseHeader()),
-        const SizedBox(width: 8),
-        _smallActionButton(
-          icon: Icons.menu_book_rounded,
-          label: 'Session details',
-          pulse: true,
-          fixedWidth: 144,
-          onTap: () => _openSessionDetails(_targetSessionNo),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLessonsCollapseHeader() {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () {
-        if (studyMode != 'custom') {
-          _toast('Tap "Choose lesson" first.');
-          return;
-        }
-        setState(() => lessonsExpanded = !lessonsExpanded);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFB),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.view_stream_rounded, size: 18, color: primaryBlue),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Lesson choices',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: primaryBlue,
-                ),
-              ),
-            ),
-            Icon(
-              studyMode == 'custom' && lessonsExpanded
-                  ? Icons.keyboard_arrow_up_rounded
-                  : Icons.keyboard_arrow_down_rounded,
-              color: Colors.grey.shade700,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _smallStatPill(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFB),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
-      ),
-      child: Text(
-        '$label: $value',
-        style: const TextStyle(
-          fontWeight: FontWeight.w900,
-          color: primaryBlue,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStudyModeRow() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _chip(
-              _followModeLabel,
-              studyMode == 'follow',
-              () => _onFollowModeTap(),
-            ),
-            const SizedBox(width: 6),
-            _modeInfoButton(isCustom: false),
-          ],
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _chip(
-              _customModeLabel,
-              studyMode == 'custom',
-              () => _onCustomModeTap(),
-            ),
-            const SizedBox(width: 6),
-            _modeInfoButton(isCustom: true),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLessonsPicker() {
-    final total = _effectiveTotalSessions;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFB),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Lessons',
-            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 118,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: total,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) {
-                final sessionNo = i + 1;
-                final isTarget = sessionNo == _targetSessionNo;
-                final done = sessionNo < currentSession;
-                final title = _sessionTitleFor(sessionNo);
-                final enabled = studyMode == 'custom';
-
-                return SizedBox(
-                  width: 130,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: enabled
-                        ? () => setState(() => selectedSessionNo = sessionNo)
-                        : null,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isTarget
-                            ? actionOrange.withValues(alpha: 0.12)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isTarget
-                              ? actionOrange.withValues(alpha: 0.4)
-                              : uiBorder.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Session $sessionNo',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: primaryBlue,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                              InkWell(
-                                borderRadius: BorderRadius.circular(999),
-                                onTap: () => _openSessionDetails(sessionNo),
-                                child: Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: uiBorder.withValues(alpha: 0.9),
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: Text(
-                                      '!',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: primaryBlue,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            done
-                                ? 'Done'
-                                : (sessionNo == currentSession
-                                      ? 'Next'
-                                      : 'Upcoming'),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: done
-                                  ? const Color(0xFF157A3D)
-                                  : actionOrange,
-                              fontSize: 11,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            title.isEmpty ? 'No title yet' : title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade700,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          if (studyMode != 'custom')
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'Tip: tap "Choose lesson" to pick a specific lesson.',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _smallActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool pulse = false,
-    double? fixedWidth,
-  }) {
-    final button = InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: actionOrange.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: actionOrange.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: actionOrange),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: actionOrange,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    final scaled = pulse
-        ? ScaleTransition(
-            scale: Tween<double>(begin: 1.0, end: 1.06).animate(
-              CurvedAnimation(
-                parent: _sessionPulseCtrl,
-                curve: Curves.easeInOut,
-              ),
-            ),
-            child: button,
-          )
-        : button;
-
-    if (fixedWidth == null) return scaled;
-    return SizedBox(
-      width: fixedWidth,
-      child: Center(child: scaled),
-    );
-  }
-
-  // ================== Timetable ==================
-
-  Widget _teacherMiniTile(_Slot s) {
-    final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
-    final targetSession = _targetSessionNo;
-
-    final bookedByMe = s.bookedByMe;
-    final isClosed = _isBookingLockedForNewBooking(s);
-    final peerGroup = _isPeerGroup(s);
-    final otherSession =
-        (s.groupSessionNo != null && s.groupSessionNo != targetSession) &&
-        !bookedByMe;
-    final fullButMySession =
-        !bookedByMe && s.groupSessionNo == targetSession && s.isFull;
-
-    final bg = bookedByMe
-        ? bookedBg
-        : isClosed
-        ? lockedBg
-        : peerGroup
-        ? peerBg
-        : otherSession || fullButMySession
-        ? otherSessionBg
-        : emptyBg;
-
-    final border = bookedByMe
-        ? bookedBorder
-        : isClosed
-        ? lockedBorder
-        : peerGroup
-        ? peerBorder
-        : otherSession || fullButMySession
-        ? otherSessionBorder
-        : emptyBorder;
-
-    final countText = '${s.bookedCount}/$cap';
-    final teacherLine = '${_shortTeacherName(s.teacherName)}  ·  $countText';
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => _onSlotTap(s),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: border),
-        ),
-        child: Text(
-          teacherLine,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Colors.grey.shade800,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTimetable(List<_Slot> rawSlots, {bool expanded = false}) {
-    final slots = _applyFilters(rawSlots);
-
-    final days = _nextDays(timetableDays);
-    final times = _uniqueTimes(slots);
-
-    final Map<String, List<_Slot>> index = {};
-    for (final s in slots) {
-      final cellKey = '${s.dayKey}|${s.time}';
-      index.putIfAbsent(cellKey, () => <_Slot>[]).add(s);
+  Widget _buildFlowContent() {
+    switch (flowStep) {
+      case _BookingFlowStep.lessonChoice:
+        return _buildLessonChoiceStep();
+      case _BookingFlowStep.syllabus:
+        return _buildSyllabusStep();
+      case _BookingFlowStep.schedule:
+        return _buildScheduleStep();
+      case _BookingFlowStep.confirm:
+        return _buildConfirmStep();
+      case _BookingFlowStep.success:
+        return _buildSuccessStep();
     }
-
-    for (final k in index.keys) {
-      index[k]!.sort((a, b) => a.teacherName.compareTo(b.teacherName));
-    }
-    const double fixedRowHeight = 158;
-
-    final double timeColumnWidth = expanded ? 66 : 58;
-    final double dayColumnWidth = expanded ? 202 : 154;
-
-    // Fixed heights so the sticky time column stays aligned with the grid rows.
-    const double headerHeight = 44;
-
-    if (times.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-        ),
-        child: const Text(
-          'No slots match your filters.',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // LEFT STICKY TIME COLUMN
-        SizedBox(
-          width: timeColumnWidth,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: headerHeight + 8),
-              ...times.map((t) {
-                const rowHeight = fixedRowHeight;
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Container(
-                    height: rowHeight,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: RotatedBox(
-                      quarterTurns: 3,
-                      child: Text(
-                        _verticalTimeLabel(t),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primaryBlue,
-                          fontSize: 12,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-
-        const SizedBox(width: 8),
-
-        // HORIZONTALLY SCROLLABLE DAYS GRID
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: days.map((d) {
-                    return Container(
-                      width: dayColumnWidth,
-                      height: headerHeight,
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 8,
-                      ),
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: uiBorder.withValues(alpha: 0.8),
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.white,
-                      ),
-                      child: Text(
-                        _friendlyDate(d),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primaryBlue,
-                          fontSize: 12,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 8),
-                ...times.map((t) {
-                  const rowHeight = fixedRowHeight;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: days.map((d) {
-                        final dk = _dateKey(d);
-                        final key = '$dk|$t';
-                        final list = index[key] ?? const <_Slot>[];
-
-                        final hasSlot = list.isNotEmpty;
-                        final visibleCount = list.length > 2 ? 2 : list.length;
-                        final hiddenCount = list.length - visibleCount;
-
-                        return Container(
-                          width: dayColumnWidth,
-                          height: rowHeight,
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: hasSlot ? Colors.white : Colors.transparent,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: hasSlot
-                                  ? uiBorder.withValues(alpha: 0.85)
-                                  : uiBorder.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: hasSlot
-                              ? Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    for (int i = 0; i < visibleCount; i++) ...[
-                                      _teacherMiniTile(list[i]),
-                                      if (i != visibleCount - 1)
-                                        const SizedBox(height: 8),
-                                    ],
-                                    if (hiddenCount > 0) ...[
-                                      const SizedBox(height: 6),
-                                      InkWell(
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                        onTap: () => _openMoreTeachersSheet(
-                                          list,
-                                          list.sublist(visibleCount),
-                                        ),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 7,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFF8FAFB),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            border: Border.all(
-                                              color: uiBorder.withValues(
-                                                alpha: 0.9,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '+$hiddenCount more',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 11,
-                                              color: Colors.grey.shade800,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                )
-                              : const SizedBox.shrink(),
-                        );
-                      }).toList(),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
   }
-
-  // ================== UI ==================
 
   @override
   Widget build(BuildContext context) {
     final cid = courseId;
     final busy = loading || booking || refreshing || progressLabel.isNotEmpty;
-    final desktopWorkspace = AppResponsive.isWebDesktop(
-      context,
-      minWidth: 1280,
-    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -4611,219 +3209,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     )
                   : (cid == null)
                   ? const Center(child: Text('No course selected.'))
-                  : (desktopWorkspace
-                        ? Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: 360,
-                                  child: ListView(
-                                    children: [
-                                      _buildCompactHeader(),
-                                      const SizedBox(height: 12),
-                                      _SectionCard(
-                                        title: 'Schedule filters',
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildFiltersInline(),
-                                            const SizedBox(height: 12),
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: OutlinedButton.icon(
-                                                onPressed:
-                                                    generatedSlots.isEmpty
-                                                    ? null
-                                                    : _openExpandedSchedule,
-                                                icon: const Icon(
-                                                  Icons.open_in_full_rounded,
-                                                ),
-                                                label: const Text(
-                                                  'Open full schedule',
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ListView(
-                                    children: [
-                                      _SectionCard(
-                                        title: 'Available timetable',
-                                        subtitle:
-                                            'Choose a slot from the wider desktop schedule.',
-                                        child: generatedSlots.isEmpty
-                                            ? const Text(
-                                                'No available slots found.\nAsk your teacher to set availability for this course.',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              )
-                                            : Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  _buildTimetable(
-                                                    generatedSlots,
-                                                  ),
-                                                  const SizedBox(height: 96),
-                                                ],
-                                              ),
-                                      ),
-                                      if (booking || refreshing)
-                                        const Padding(
-                                          padding: EdgeInsets.only(top: 14),
-                                          child: Center(
-                                            child: BrandedInlineLoader(
-                                              message: 'Updating...',
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView(
-                            padding: const EdgeInsets.all(12),
-                            children: [
-                              _buildCompactHeader(),
-                              const SizedBox(height: 12),
-                              _SectionCard(
-                                title: '',
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    InkWell(
-                                      borderRadius: BorderRadius.circular(999),
-                                      onTap: generatedSlots.isEmpty
-                                          ? null
-                                          : _openExpandedSchedule,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: uiBorder.withValues(
-                                              alpha: 0.9,
-                                            ),
-                                          ),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.open_in_full_rounded,
-                                              size: 16,
-                                              color: primaryBlue,
-                                            ),
-                                            SizedBox(width: 6),
-                                            Text(
-                                              'Expand',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: primaryBlue,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    InkWell(
-                                      borderRadius: BorderRadius.circular(999),
-                                      onTap: () => setState(
-                                        () =>
-                                            filtersExpanded = !filtersExpanded,
-                                      ),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: uiBorder.withValues(
-                                              alpha: 0.9,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.tune_rounded,
-                                              size: 16,
-                                              color: primaryBlue,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              filtersExpanded
-                                                  ? 'Hide filters'
-                                                  : 'Filters',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: primaryBlue,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                child: generatedSlots.isEmpty
-                                    ? const Text(
-                                        'No available slots found.\nAsk your teacher to set availability for this course.',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      )
-                                    : Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          if (filtersExpanded) ...[
-                                            _buildFiltersInline(),
-                                            const SizedBox(height: 12),
-                                          ],
-                                          _buildTimetable(generatedSlots),
-                                          const SizedBox(height: 96),
-                                        ],
-                                      ),
-                              ),
-                              if (booking || refreshing)
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 14),
-                                  child: Center(
-                                    child: BrandedInlineLoader(
-                                      message: 'Updating...',
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          )),
+                  : Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 98),
+                        child: _buildFlowShell(_buildFlowContent()),
+                      ),
+                    ),
             ),
             if (busy)
               Positioned.fill(
@@ -4942,6 +3333,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
 enum _CancelBookingStatus { cancelled, notFound, locked, failed }
 
+enum _BookingFlowStep { lessonChoice, syllabus, schedule, confirm, success }
+
+class _CourseChoice {
+  final String id;
+  final String title;
+
+  const _CourseChoice({required this.id, required this.title});
+}
+
 class _BookingGate {
   final bool enabled;
   final int totalSessions;
@@ -5046,82 +3446,4 @@ class _MyBooking {
     required this.teacherName,
     required this.sessionNo,
   });
-}
-
-// ================== Small UI helpers ==================
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    this.subtitle,
-    required this.child,
-    this.trailing,
-  });
-
-  final String title;
-  final String? subtitle;
-  final Widget child;
-  final Widget? trailing;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  @override
-  Widget build(BuildContext context) {
-    final hasTitle = title.trim().isNotEmpty;
-    final hasSubtitle = subtitle != null && subtitle!.trim().isNotEmpty;
-    final showHeader = hasTitle || hasSubtitle || trailing != null;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (showHeader) ...[
-            Row(
-              children: [
-                if (hasTitle || hasSubtitle)
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (hasTitle)
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
-                            ),
-                          ),
-                        if (hasSubtitle) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            subtitle!,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  )
-                else
-                  const Spacer(),
-                ?trailing,
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
-          child,
-        ],
-      ),
-    );
-  }
 }

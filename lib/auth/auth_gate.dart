@@ -63,7 +63,7 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         final user = authSnap.data;
-        if (user == null) {
+        if (user == null || user.isAnonymous) {
           final previousUid = _sessionUid;
           _sessionStarted = false;
           _sessionUid = null;

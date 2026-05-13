@@ -2,6 +2,10 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../shared/app_feedback.dart';
@@ -32,6 +36,9 @@ class _AdminJobApplicationsScreenState
   String _stageFilter = 'all';
   String _priorityFilter = 'all';
   bool _filtersExpanded = false;
+  bool _exporting = false;
+  List<_JobApplicationItem> _lastAllItems = const [];
+  List<_JobApplicationItem> _lastFilteredItems = const [];
 
   Future<T?> _showSettledRootDialog<T>({required WidgetBuilder builder}) async {
     await WidgetsBinding.instance.endOfFrame;
@@ -759,6 +766,253 @@ class _AdminJobApplicationsScreenState
     );
   }
 
+  String _cvKind(String url) {
+    final low = url.trim().toLowerCase();
+    if (low.isEmpty) return 'none';
+    if (low.contains('.pdf') || low.contains('application/pdf')) return 'pdf';
+    if (low.contains('.png') ||
+        low.contains('.jpg') ||
+        low.contains('.jpeg') ||
+        low.contains('.webp') ||
+        low.contains('image/')) {
+      return 'image';
+    }
+    return 'unknown';
+  }
+
+  String _latestNote(_JobApplicationItem item) {
+    for (final event in item.timeline) {
+      final note = (event.payload['note'] ?? '').toString().trim();
+      if (note.isNotEmpty) return note;
+    }
+    return '';
+  }
+
+  String _timelineNotesCompact(_JobApplicationItem item) {
+    final out = <String>[];
+    for (final event in item.timeline) {
+      final note = (event.payload['note'] ?? '').toString().trim();
+      if (note.isEmpty) continue;
+      out.add('${event.type.replaceAll('_', ' ')}: $note');
+      if (out.length >= 3) break;
+    }
+    return out.join(' | ');
+  }
+
+  Future<void> _showApplicationDetails(_JobApplicationItem item) async {
+    await _showSettledRootDialog<void>(
+      builder: (dialogContext) => _JobApplicationDetailsDialog(
+        item: item,
+        stageLabel: _stageLabel(item.stage),
+        stageColor: _stageColor(item.stage),
+        fmtDate: _fmtDate,
+        copy: _copy,
+        callPhone: _callPhone,
+        sendEmail: _sendEmail,
+        openCv: _openPdf,
+        latestNote: _latestNote(item),
+        timelineNotes: _timelineNotesCompact(item),
+        cvKind: _cvKind(item.cvPdfUrl),
+      ),
+    );
+  }
+
+  Future<String?> _pickExportScope() async {
+    return _showSettledRootDialog<String>(
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Export applications PDF'),
+        content: const Text('Choose what to export.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext, rootNavigator: true).pop();
+            },
+            child: const Text('Cancel'),
+          ),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.of(dialogContext, rootNavigator: true).pop('all');
+            },
+            child: const Text('All applications'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext, rootNavigator: true).pop('filtered');
+            },
+            child: const Text('Filtered (Recommended)'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportApplicationsPdf() async {
+    if (_exporting) return;
+    final scope = await _pickExportScope();
+    if (scope == null || !mounted) return;
+
+    final source = scope == 'all' ? _lastAllItems : _lastFilteredItems;
+    if (source.isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('No applications to export.')),
+      );
+      return;
+    }
+
+    setState(() => _exporting = true);
+    try {
+      final doc = pw.Document();
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final stamp =
+          '${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}';
+      final stageCounts = <String, int>{
+        'new': 0,
+        'called_reached': 0,
+        'called_no_answer': 0,
+        'callback_requested': 0,
+        'interview_scheduled': 0,
+        'interview_done': 0,
+        'hired': 0,
+        'rejected': 0,
+      };
+      for (final item in source) {
+        final key = _normStage(item.stage);
+        stageCounts[key] = (stageCounts[key] ?? 0) + 1;
+      }
+
+      doc.addPage(
+        pw.MultiPage(
+          pageTheme: pw.PageTheme(
+            margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 24),
+            theme: pw.ThemeData.withFont(
+              base: await PdfGoogleFonts.nunitoRegular(),
+              bold: await PdfGoogleFonts.nunitoBold(),
+            ),
+          ),
+          build: (context) => [
+            pw.Text(
+              'Job Applications Export',
+              style: pw.TextStyle(
+                fontSize: 20,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.blue900,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'Generated: $stamp',
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+            ),
+            pw.Text(
+              'Scope: ${scope == 'all' ? 'All applications' : 'Filtered applications'}',
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.blue50,
+                borderRadius: pw.BorderRadius.circular(6),
+                border: pw.Border.all(color: PdfColors.blue100),
+              ),
+              child: pw.Wrap(
+                spacing: 10,
+                runSpacing: 4,
+                children: [
+                  pw.Text(
+                    'Total: ${source.length}',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.Text('New: ${stageCounts['new'] ?? 0}'),
+                  pw.Text(
+                    'Called (Reached): ${stageCounts['called_reached'] ?? 0}',
+                  ),
+                  pw.Text(
+                    'Called (No Answer): ${stageCounts['called_no_answer'] ?? 0}',
+                  ),
+                  pw.Text(
+                    'Callback Requested: ${stageCounts['callback_requested'] ?? 0}',
+                  ),
+                  pw.Text(
+                    'Interview Scheduled: ${stageCounts['interview_scheduled'] ?? 0}',
+                  ),
+                  pw.Text(
+                    'Interview Done: ${stageCounts['interview_done'] ?? 0}',
+                  ),
+                  pw.Text('Hired: ${stageCounts['hired'] ?? 0}'),
+                  pw.Text('Rejected: ${stageCounts['rejected'] ?? 0}'),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            ...source.map((item) {
+              final latestNote = _latestNote(item);
+              final timelineNotes = _timelineNotesCompact(item);
+              return pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 8),
+                padding: const pw.EdgeInsets.all(8),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.blueGrey200),
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      item.fullName.isEmpty
+                          ? 'Unnamed Applicant'
+                          : item.fullName,
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    pw.SizedBox(height: 3),
+                    pw.Text('ID: ${item.id}'),
+                    pw.Text('Phone: ${item.phone.isEmpty ? '-' : item.phone}'),
+                    pw.Text('Email: ${item.email.isEmpty ? '-' : item.email}'),
+                    pw.Text(
+                      'Position: ${item.position.isEmpty ? '-' : item.position}',
+                    ),
+                    pw.Text('Stage: ${_stageLabel(item.stage)}'),
+                    pw.Text(
+                      'Status: ${item.status.isEmpty ? '-' : item.status}',
+                    ),
+                    pw.Text('Priority: ${item.priority}'),
+                    pw.Text('Submitted: ${_fmtDate(item.createdAt)}'),
+                    pw.Text(
+                      'Interview: ${item.interviewAt > 0 ? _fmtDate(item.interviewAt) : '-'}',
+                    ),
+                    pw.Text(
+                      'Latest note: ${latestNote.isEmpty ? '-' : latestNote}',
+                    ),
+                    pw.Text(
+                      'Timeline notes: ${timelineNotes.isEmpty ? '-' : timelineNotes}',
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      );
+
+      final bytes = await doc.save();
+      final fileName =
+          'job_applications_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}.pdf';
+      await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(context, SnackBar(content: Text(toHumanError(e))));
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+      }
+    }
+  }
+
   Future<void> _handleOverflowAction(
     String action,
     _JobApplicationItem item,
@@ -905,7 +1159,22 @@ class _AdminJobApplicationsScreenState
         backgroundColor: Colors.white,
         foregroundColor: _primaryBlue,
         elevation: 0,
-        actions: [const SizedBox.shrink()],
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton.icon(
+              onPressed: _exporting ? null : _exportApplicationsPdf,
+              icon: _exporting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.picture_as_pdf_rounded, size: 18),
+              label: Text(_exporting ? 'Exporting...' : 'Export PDF'),
+            ),
+          ),
+        ],
       ),
       body: adminWebBodyFrame(
         context: context,
@@ -1273,9 +1542,10 @@ class _AdminJobApplicationsScreenState
                     );
                   }
 
-                  final items = _filtered(
-                    _parseItems(snap.data?.snapshot.value),
-                  );
+                  final allItems = _parseItems(snap.data?.snapshot.value);
+                  final items = _filtered(allItems);
+                  _lastAllItems = allItems;
+                  _lastFilteredItems = items;
                   if (items.isEmpty) {
                     return const Center(
                       child: Text('No job applications found.'),
@@ -1297,6 +1567,7 @@ class _AdminJobApplicationsScreenState
                         borderRadius: BorderRadius.circular(16),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
+                          onTap: () => _showApplicationDetails(item),
                           onLongPress: () => _showCopyShortcuts(item),
                           child: Container(
                             decoration: BoxDecoration(
@@ -1847,4 +2118,251 @@ class _TimelineEvent {
   final String byUid;
   final String byName;
   final Map<String, dynamic> payload;
+}
+
+class _JobApplicationDetailsDialog extends StatelessWidget {
+  const _JobApplicationDetailsDialog({
+    required this.item,
+    required this.stageLabel,
+    required this.stageColor,
+    required this.fmtDate,
+    required this.copy,
+    required this.callPhone,
+    required this.sendEmail,
+    required this.openCv,
+    required this.latestNote,
+    required this.timelineNotes,
+    required this.cvKind,
+  });
+
+  final _JobApplicationItem item;
+  final String stageLabel;
+  final Color stageColor;
+  final String Function(int) fmtDate;
+  final Future<void> Function(String, String) copy;
+  final Future<void> Function(String) callPhone;
+  final Future<void> Function(String) sendEmail;
+  final Future<void> Function(String) openCv;
+  final String latestNote;
+  final String timelineNotes;
+  final String cvKind;
+
+  Widget _copyTile({
+    required String label,
+    required String value,
+    IconData? icon,
+  }) {
+    final clean = value.trim();
+    return ListTile(
+      dense: true,
+      enabled: clean.isNotEmpty,
+      leading: Icon(icon ?? Icons.copy_rounded),
+      title: Text(label),
+      subtitle: Text(clean.isEmpty ? '-' : clean),
+      trailing: clean.isEmpty ? null : const Icon(Icons.content_copy_rounded),
+      onTap: clean.isEmpty ? null : () => copy(clean, label),
+    );
+  }
+
+  Widget _buildCvPreview() {
+    final cvUrl = item.cvPdfUrl.trim();
+    if (cvUrl.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(10),
+        child: Text('No CV uploaded.'),
+      );
+    }
+
+    if (cvKind == 'pdf') {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          height: 300,
+          child: SfPdfViewer.network(
+            cvUrl,
+            canShowScrollHead: true,
+            canShowPaginationDialog: true,
+          ),
+        ),
+      );
+    }
+
+    if (cvKind == 'image' || cvKind == 'unknown') {
+      return SizedBox(
+        height: 300,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: InteractiveViewer(
+            maxScale: 5,
+            child: Image.network(
+              cvUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => Container(
+                color: Colors.black12,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.all(12),
+                child: const Text(
+                  'Could not preview this file inline. Use Open Externally.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const Padding(
+      padding: EdgeInsets.all(10),
+      child: Text('Preview not available for this file type.'),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(item.fullName.isEmpty ? 'Unnamed Applicant' : item.fullName),
+      content: SizedBox(
+        width: 760,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _copyTile(
+                label: 'Application ID',
+                value: item.id,
+                icon: Icons.badge_outlined,
+              ),
+              _copyTile(
+                label: 'Phone',
+                value: item.phone,
+                icon: Icons.call_rounded,
+              ),
+              _copyTile(
+                label: 'Email',
+                value: item.email,
+                icon: Icons.email_outlined,
+              ),
+              _copyTile(
+                label: 'Position',
+                value: item.position,
+                icon: Icons.work_outline_rounded,
+              ),
+              _copyTile(
+                label: 'Stage',
+                value: stageLabel,
+                icon: Icons.flag_rounded,
+              ),
+              _copyTile(
+                label: 'Status',
+                value: item.status,
+                icon: Icons.info_outline_rounded,
+              ),
+              _copyTile(
+                label: 'Priority',
+                value: item.priority,
+                icon: Icons.priority_high_rounded,
+              ),
+              _copyTile(
+                label: 'Latest Note',
+                value: latestNote,
+                icon: Icons.notes_rounded,
+              ),
+              _copyTile(
+                label: 'Timeline Notes',
+                value: timelineNotes,
+                icon: Icons.history_rounded,
+              ),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.calendar_today_rounded),
+                title: const Text('Submitted'),
+                subtitle: Text(fmtDate(item.createdAt)),
+              ),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.event_available_rounded),
+                title: const Text('Interview'),
+                subtitle: Text(
+                  item.interviewAt > 0 ? fmtDate(item.interviewAt) : '-',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: stageColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      stageLabel,
+                      style: TextStyle(
+                        color: stageColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'CV Preview',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              _buildCvPreview(),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: item.cvPdfUrl.trim().isEmpty
+                        ? null
+                        : () => copy(item.cvPdfUrl, 'CV URL'),
+                    icon: const Icon(Icons.content_copy_rounded),
+                    label: const Text('Copy CV URL'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: item.cvPdfUrl.trim().isEmpty
+                        ? null
+                        : () => openCv(item.cvPdfUrl),
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: const Text('Open Externally'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: item.phone.trim().isEmpty
+                        ? null
+                        : () => callPhone(item.phone),
+                    icon: const Icon(Icons.call_rounded),
+                    label: const Text('Call'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: item.email.trim().isEmpty
+                        ? null
+                        : () => sendEmail(item.email),
+                    icon: const Icon(Icons.email_rounded),
+                    label: const Text('Email'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context, rootNavigator: true).pop();
+          },
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }

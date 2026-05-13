@@ -289,18 +289,45 @@ class MediaHome extends StatelessWidget {
           children: [
             const SimpleTopBar(title: 'Media'),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.95),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Brand.uiBorder),
+                  color: Colors.white.withValues(alpha: 0.97),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Brand.uiBorder.withValues(alpha: 0.92),
+                  ),
                 ),
-                child: const TabBar(
+                child: TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  dividerColor: Colors.transparent,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  indicatorPadding: const EdgeInsets.all(4),
+                  splashBorderRadius: BorderRadius.circular(10),
+                  labelColor: Brand.primaryBlue,
+                  unselectedLabelColor: Brand.mainText.withValues(alpha: 0.62),
+                  labelStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  indicator: BoxDecoration(
+                    color: Brand.primaryBlue.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: Brand.primaryBlue.withValues(alpha: 0.24),
+                    ),
+                  ),
                   tabs: [
-                    Tab(text: 'Stories'),
-                    Tab(text: 'Games'),
-                    Tab(text: 'Gallery'),
+                    Tab(height: 34, text: 'Stories'),
+                    Tab(height: 34, text: 'Games'),
+                    Tab(height: 34, text: 'Gallery'),
                   ],
                 ),
               ),
