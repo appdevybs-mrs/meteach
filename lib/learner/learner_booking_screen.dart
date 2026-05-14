@@ -86,6 +86,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   DateTime? selectedDay;
   String? selectedTime;
   String? selectedTeacherId;
+  _SchedulePath schedulePath = _SchedulePath.byTeacher;
+  String? selectedTeacherFirstId;
   int? selectedLessonForFlow;
   String helpLang = 'en'; // en | ar | fr | tr | ur
   bool lessonChoiceArabic = false;
@@ -2594,10 +2596,44 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return out;
   }
 
+  List<_Slot> _teachersForCurrentLesson() {
+    final byTeacher = <String, _Slot>{};
+    for (final s in _slotsForCurrentLesson()) {
+      byTeacher[s.teacherId] = s;
+    }
+    final out = byTeacher.values.toList();
+    out.sort((a, b) => a.teacherName.compareTo(b.teacherName));
+    return out;
+  }
+
+  List<DateTime> _availableDaysForTeacher(String teacherId) {
+    final daysByKey = <String, DateTime>{};
+    for (final s in _slotsForCurrentLesson()) {
+      if (s.teacherId != teacherId) continue;
+      daysByKey[s.dayKey] = DateTime(s.start.year, s.start.month, s.start.day);
+    }
+    final out = daysByKey.values.toList();
+    out.sort();
+    return out;
+  }
+
+  List<String> _availableTimesForTeacherDay(String teacherId, DateTime day) {
+    final dk = _dateKey(day);
+    final set = <String>{};
+    for (final s in _slotsForCurrentLesson()) {
+      if (s.teacherId != teacherId || s.dayKey != dk) continue;
+      set.add(s.time);
+    }
+    final out = set.toList();
+    out.sort();
+    return out;
+  }
+
   void _resetScheduleSelections() {
     selectedDay = null;
     selectedTime = null;
     selectedTeacherId = null;
+    selectedTeacherFirstId = null;
   }
 
   Widget _buildFlowShell(Widget child) {
@@ -3091,74 +3127,353 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       selectedDay = null;
       selectedTime = null;
       selectedTeacherId = null;
+      selectedTeacherFirstId = null;
       selectedLessonForFlow = null;
+      schedulePath = _SchedulePath.byTeacher;
       flowStep = _BookingFlowStep.lessonChoice;
     });
   }
 
-  Widget _buildScheduleStep() {
-    final days = _availableDaysForLesson();
-    final times = _availableTimesForDay();
-    final teachers = _teachersForDayAndTime();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
+  Widget _buildSchedulePathPill({
+    required _SchedulePath path,
+    required IconData icon,
+    required String label,
+  }) {
+    final selected = schedulePath == path;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () {
+          if (schedulePath == path) return;
+          setState(() {
+            schedulePath = path;
+            _resetScheduleSelections();
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: uiBorder),
+            color: selected ? palette.primary : Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: selected ? palette.primary : uiBorder),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? Colors.white : palette.primary,
+              ),
+              const SizedBox(width: 8),
               Text(
-                courseTitle,
-                style: const TextStyle(
+                label,
+                style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: primaryBlue,
-                  fontSize: 18,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _flowLessonTitle(_flowLessonNo),
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                'Session $_flowLessonNo of $_effectiveTotalSessions',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: () =>
-                    setState(() => flowStep = _BookingFlowStep.lessonChoice),
-                child: const Text(
-                  'Change lesson',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: actionOrange,
-                  ),
+                  color: selected ? Colors.white : palette.primary,
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'Choose a day',
-          style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+      ),
+    );
+  }
+
+  Widget _buildStepLabel(int no, String text) {
+    return Row(
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: primaryBlue.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: primaryBlue.withValues(alpha: 0.35)),
+          ),
+          child: Center(
+            child: Text(
+              '$no',
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+                fontSize: 12,
+              ),
+            ),
+          ),
         ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: primaryBlue,
+            fontSize: 15,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimeChip(String t, bool selected, VoidCallback onTap) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? primaryBlue : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? primaryBlue : uiBorder),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x1A0E7C86),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ]
+              : const [],
+        ),
+        child: Text(
+          t,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: selected ? Colors.white : primaryBlue,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScheduleHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            courseTitle,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _flowLessonTitle(_flowLessonNo),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Colors.grey.shade800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Session $_flowLessonNo of $_effectiveTotalSessions',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () =>
+                setState(() => flowStep = _BookingFlowStep.lessonChoice),
+            child: const Text(
+              'Change lesson',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: actionOrange,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildByTeacherPath() {
+    final teachers = _teachersForCurrentLesson();
+    final days = selectedTeacherFirstId == null
+        ? const <DateTime>[]
+        : _availableDaysForTeacher(selectedTeacherFirstId!);
+    final times = (selectedTeacherFirstId == null || selectedDay == null)
+        ? const <String>[]
+        : _availableTimesForTeacherDay(selectedTeacherFirstId!, selectedDay!);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildStepLabel(1, 'Choose a teacher'),
+        const SizedBox(height: 8),
+        ...teachers.map((s) {
+          final selected = selectedTeacherFirstId == s.teacherId;
+          final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
+          final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
+          return InkWell(
+            onTap: () {
+              setState(() {
+                selectedTeacherFirstId = s.teacherId;
+                selectedTeacherId = s.teacherId;
+                selectedDay = null;
+                selectedTime = null;
+              });
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: selected
+                    ? primaryBlue.withValues(alpha: 0.08)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: selected ? primaryBlue : uiBorder),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.teacherName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$left seats available',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (selected)
+                    const Icon(Icons.check_circle_rounded, color: primaryBlue),
+                ],
+              ),
+            ),
+          );
+        }),
+        if (selectedTeacherFirstId != null) ...[
+          const SizedBox(height: 10),
+          _buildStepLabel(2, 'Choose a day'),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: days.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final d = days[i];
+                final on =
+                    selectedDay != null &&
+                    _dateKey(selectedDay!) == _dateKey(d);
+                final count = _availableTimesForTeacherDay(
+                  selectedTeacherFirstId!,
+                  d,
+                ).length;
+                return InkWell(
+                  onTap: () => setState(() {
+                    selectedDay = d;
+                    selectedTime = null;
+                  }),
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: on ? primaryBlue : Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: on ? primaryBlue : uiBorder),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${_friendlyDate(d)} - $count',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: on ? Colors.white : primaryBlue,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        if (selectedDay != null) ...[
+          const SizedBox(height: 10),
+          _buildStepLabel(3, 'Choose a time'),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in times)
+                _buildTimeChip(t, selectedTime == t, () {
+                  setState(() {
+                    selectedTime = t;
+                  });
+                }),
+            ],
+          ),
+        ],
+        if (selectedTime != null) ...[
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: actionOrange,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => setState(() {
+              flowStep = _BookingFlowStep.confirm;
+            }),
+            icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+            label: const Text('Continue to confirm'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildByDayPath() {
+    final days = _availableDaysForLesson();
+    final times = _availableTimesForDay();
+    final teachers = _teachersForDayAndTime();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildStepLabel(1, 'Choose a day'),
         const SizedBox(height: 6),
         SizedBox(
           height: 44,
@@ -3203,33 +3518,25 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ),
         if (selectedDay != null) ...[
           const SizedBox(height: 10),
-          const Text(
-            'Choose a time',
-            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-          ),
+          _buildStepLabel(2, 'Choose a time'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               for (final t in times)
-                ChoiceChip(
-                  label: Text(t),
-                  selected: selectedTime == t,
-                  onSelected: (_) => setState(() {
+                _buildTimeChip(t, selectedTime == t, () {
+                  setState(() {
                     selectedTime = t;
                     selectedTeacherId = null;
-                  }),
-                ),
+                  });
+                }),
             ],
           ),
         ],
         if (selectedTime != null) ...[
           const SizedBox(height: 10),
-          const Text(
-            'Choose a teacher',
-            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-          ),
+          _buildStepLabel(3, 'Choose a teacher'),
           const SizedBox(height: 6),
           ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
@@ -3274,13 +3581,61 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       selectedTeacherId = s.teacherId;
                       flowStep = _BookingFlowStep.confirm;
                     }),
-                    child: const Text('Book'),
+                    child: const Text('Select'),
                   ),
                 ],
               ),
             );
           }),
         ],
+      ],
+    );
+  }
+
+  Widget _buildScheduleStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildScheduleHeader(),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: uiBorder),
+          ),
+          child: Row(
+            children: [
+              _buildSchedulePathPill(
+                path: _SchedulePath.byTeacher,
+                icon: Icons.person_search_rounded,
+                label: 'By Teacher',
+              ),
+              const SizedBox(width: 6),
+              _buildSchedulePathPill(
+                path: _SchedulePath.byDay,
+                icon: Icons.calendar_month_rounded,
+                label: 'By Day',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child: schedulePath == _SchedulePath.byTeacher
+              ? KeyedSubtree(
+                  key: const ValueKey('by_teacher'),
+                  child: _buildByTeacherPath(),
+                )
+              : KeyedSubtree(
+                  key: const ValueKey('by_day'),
+                  child: _buildByDayPath(),
+                ),
+        ),
       ],
     );
   }
@@ -3599,6 +3954,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 enum _CancelBookingStatus { cancelled, notFound, locked, failed }
 
 enum _BookingFlowStep { lessonChoice, syllabus, schedule, confirm, success }
+
+enum _SchedulePath { byTeacher, byDay }
 
 class _CourseChoice {
   final String id;

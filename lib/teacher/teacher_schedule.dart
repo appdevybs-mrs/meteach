@@ -25,6 +25,8 @@ import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_class_progress_screen.dart';
 import 'teacher_classes.dart';
+import 'teacher_learner_gallery_screen.dart';
+import 'teacher_learner_profile_screen.dart';
 import 'teacher_schedule_data_service.dart';
 import 'take_attendance_screen.dart';
 
@@ -40,6 +42,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       'teacher_schedule_session_reminder_keys_v1';
   static const String _attendanceReminderKeysPref =
       'teacher_schedule_attendance_reminder_keys_v1';
+  static const String _notifDefaultsMigratedPref =
+      'teacher_schedule_notif_defaults_v1_applied';
   static const List<int> _sessionLeadPresetOptions = <int>[
     5,
     10,
@@ -78,6 +82,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   String _lastAppliedReminderPlanKey = '';
 
   final Map<String, _OccCacheEntry> _occCache = <String, _OccCacheEntry>{};
+  final Map<String, bool> _expandedLearnersBySession = <String, bool>{};
+  final Map<String, Map<String, String>> _learnerMiniCache =
+      <String, Map<String, String>>{};
 
   bool _viewerReady = false;
   bool _isAdminViewer = false;
@@ -135,12 +142,13 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     await NotificationService.I.requestPermissions();
 
     _prefs = await SharedPreferences.getInstance();
+    await _applyReminderDefaultsMigration();
     final viewer = await _loadViewerIdentity();
     if (!mounted) return;
 
     setState(() {
       _dailyEnabled = _prefs.getBool('reminders_daily_enabled') ?? false;
-      _sessionEnabled = _prefs.getBool('reminders_session_enabled') ?? false;
+      _sessionEnabled = _prefs.getBool('reminders_session_enabled') ?? true;
       _dailyReminderHour = _sanitizeHour(_prefs.getInt('reminders_daily_hour'));
       _dailyReminderMinute = _sanitizeMinute(
         _prefs.getInt('reminders_daily_minute'),
@@ -155,6 +163,27 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       _isAdminViewer = viewer.isAdmin;
       _viewerReady = true;
     });
+  }
+
+  Future<void> _applyReminderDefaultsMigration() async {
+    final migrated = _prefs.getBool(_notifDefaultsMigratedPref) ?? false;
+    if (!migrated) {
+      if (!_prefs.containsKey('reminders_session_enabled')) {
+        await _prefs.setBool('reminders_session_enabled', true);
+      }
+      if (!_prefs.containsKey('reminders_daily_enabled')) {
+        await _prefs.setBool('reminders_daily_enabled', false);
+      }
+      await _prefs.setBool(_notifDefaultsMigratedPref, true);
+      return;
+    }
+
+    if (!_prefs.containsKey('reminders_session_enabled')) {
+      await _prefs.setBool('reminders_session_enabled', true);
+    }
+    if (!_prefs.containsKey('reminders_daily_enabled')) {
+      await _prefs.setBool('reminders_daily_enabled', false);
+    }
   }
 
   Future<_ScheduleViewerIdentity> _loadViewerIdentity() async {
@@ -420,6 +449,250 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       }
     }
     return false;
+  }
+
+  String _safeStr(dynamic v) => (v ?? '').toString().trim();
+
+  String _sessionUiKey(_Occ o) {
+    return '${o.notificationClassId}@@${o.start.toIso8601String()}';
+  }
+
+  List<_SessionLearner> _inClassLearnersFromClass(
+    Map<String, dynamic> classData,
+  ) {
+    final learners =
+        classData['learners'] ??
+        classData['students'] ??
+        classData['enrolled_learners'] ??
+        classData['student_list'];
+
+    final out = <_SessionLearner>[];
+    if (learners is Map) {
+      final raw = Map<dynamic, dynamic>.from(learners);
+      for (final e in raw.entries) {
+        final uid = _safeStr(e.key);
+        final node = e.value;
+        String name = '';
+        if (node is Map) {
+          final m = Map<dynamic, dynamic>.from(node);
+          name = _safeStr(
+            m['name'] ??
+                m['full_name'] ??
+                m['learner_name'] ??
+                m['display_name'] ??
+                m['first_name'],
+          );
+        } else if (node is String) {
+          name = node.trim();
+        }
+        out.add(_SessionLearner(uid: uid, name: name));
+      }
+    } else if (learners is List) {
+      for (final item in learners) {
+        if (item == null) continue;
+        if (item is Map) {
+          final m = Map<dynamic, dynamic>.from(item);
+          out.add(
+            _SessionLearner(
+              uid: _safeStr(m['uid'] ?? m['learnerUid'] ?? m['studentUid']),
+              name: _safeStr(
+                m['name'] ??
+                    m['full_name'] ??
+                    m['learner_name'] ??
+                    m['display_name'] ??
+                    m['first_name'],
+              ),
+            ),
+          );
+        } else {
+          out.add(_SessionLearner(uid: _safeStr(item), name: ''));
+        }
+      }
+    }
+
+    final seen = <String>{};
+    return out.where((l) {
+      final key = '${l.uid}|${l.name.toLowerCase()}';
+      if (seen.contains(key)) return false;
+      seen.add(key);
+      return true;
+    }).toList();
+  }
+
+  Map<String, List<_SessionLearner>> _buildInClassLearnersByClassId(
+    List<Map<String, dynamic>> classes,
+  ) {
+    final out = <String, List<_SessionLearner>>{};
+    for (final c in classes) {
+      final classId = _safeStr(c['class_id'] ?? c['id']);
+      if (classId.isEmpty) continue;
+      out[classId] = _inClassLearnersFromClass(c);
+    }
+    return out;
+  }
+
+  Map<String, List<_SessionLearner>> _buildOnlineLearnersByBookingKey(
+    Object? bookingData,
+  ) {
+    final out = <String, List<_SessionLearner>>{};
+    if (bookingData is! Map) return out;
+    final byCourse = Map<dynamic, dynamic>.from(bookingData);
+    for (final courseEntry in byCourse.entries) {
+      final courseId = _safeStr(courseEntry.key);
+      if (courseId.isEmpty || courseEntry.value is! Map) continue;
+      final byDate = Map<dynamic, dynamic>.from(courseEntry.value as Map);
+      for (final dateEntry in byDate.entries) {
+        final dayKey = _safeStr(dateEntry.key);
+        if (dateEntry.value is! Map) continue;
+        final byTime = Map<dynamic, dynamic>.from(dateEntry.value as Map);
+        for (final timeEntry in byTime.entries) {
+          final hhmm = _safeStr(timeEntry.key);
+          if (timeEntry.value is! Map) continue;
+          final slotMap = Map<dynamic, dynamic>.from(timeEntry.value as Map);
+
+          void readSlot(
+            Map<dynamic, dynamic> rawSlot, {
+            String fallbackTeacher = '',
+          }) {
+            final teacherId = _safeStr(
+              rawSlot['teacherId'] ??
+                  rawSlot['teacherUid'] ??
+                  rawSlot['teacher_id'] ??
+                  fallbackTeacher,
+            );
+            if (!_isAdminViewer && teacherId != _viewerUid) return;
+
+            final learnersRaw = rawSlot['learners'];
+            if (learnersRaw is! Map || learnersRaw.isEmpty) return;
+            final lm = Map<dynamic, dynamic>.from(learnersRaw);
+            final learners = <_SessionLearner>[];
+            for (final e in lm.entries) {
+              final uid = _safeStr(e.key);
+              final v = e.value;
+              String name = '';
+              if (v is Map) {
+                final m = Map<dynamic, dynamic>.from(v);
+                name = _safeStr(
+                  m['name'] ??
+                      m['full_name'] ??
+                      m['learner_name'] ??
+                      m['display_name'] ??
+                      m['first_name'],
+                );
+              } else if (v is String) {
+                name = v.trim();
+              }
+              learners.add(_SessionLearner(uid: uid, name: name));
+            }
+            if (learners.isEmpty) return;
+            final bookingKey = '$courseId|$dayKey|$hhmm|$teacherId';
+            out[bookingKey] = learners;
+          }
+
+          final looksDirect =
+              slotMap.containsKey('learners') ||
+              slotMap.containsKey('teacherId') ||
+              slotMap.containsKey('teacherUid') ||
+              slotMap.containsKey('teacher_id');
+
+          if (looksDirect) {
+            readSlot(slotMap);
+          } else {
+            for (final teacherEntry in slotMap.entries) {
+              final nested = teacherEntry.value;
+              if (nested is! Map) continue;
+              readSlot(
+                Map<dynamic, dynamic>.from(nested),
+                fallbackTeacher: _safeStr(teacherEntry.key),
+              );
+            }
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  Future<Map<String, String>> _loadLearnerMini(String uid) async {
+    final k = uid.trim();
+    if (k.isEmpty) return const {'full': '', 'profilePhoto': ''};
+    if (_learnerMiniCache.containsKey(k)) return _learnerMiniCache[k]!;
+    try {
+      final snap = await _db.child('users').child(k).get();
+      if (snap.exists && snap.value is Map) {
+        final m = Map<String, dynamic>.from(snap.value as Map);
+        final out = {
+          'full': '${_safeStr(m['first_name'])} ${_safeStr(m['last_name'])}'
+              .trim(),
+          'profilePhoto': _safeStr(m['profile_photo_url']),
+        };
+        _learnerMiniCache[k] = out;
+        return out;
+      }
+    } catch (_) {}
+    const out = {'full': '', 'profilePhoto': ''};
+    _learnerMiniCache[k] = out;
+    return out;
+  }
+
+  Widget _learnerAvatar({required String profilePhotoUrl, double size = 30}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: p.soft, shape: BoxShape.circle),
+      clipBehavior: Clip.antiAlias,
+      child: profilePhotoUrl.trim().isNotEmpty
+          ? Image.network(
+              profilePhotoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.person_rounded,
+                size: size * 0.5,
+                color: p.primary,
+              ),
+            )
+          : Icon(Icons.person_rounded, size: size * 0.5, color: p.primary),
+    );
+  }
+
+  void _openLearnerProfile({
+    required String learnerUid,
+    required String learnerName,
+    bool openReportComposerOnLoad = false,
+    String initialCourseTitle = '',
+  }) {
+    if (learnerUid.trim().isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeacherLearnerProfileScreen(
+          learnerUid: learnerUid,
+          learnerName: learnerName,
+          openReportComposerOnLoad: openReportComposerOnLoad,
+          initialCourseTitle: initialCourseTitle,
+        ),
+      ),
+    );
+  }
+
+  void _openLearnerGallery({
+    required String learnerUid,
+    required String learnerName,
+    required String classId,
+    required String classTitle,
+  }) {
+    if (learnerUid.trim().isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeacherLearnerGalleryScreen(
+          learnerUid: learnerUid,
+          learnerName: learnerName,
+          classId: classId,
+          classTitle: classTitle,
+        ),
+      ),
+    );
   }
 
   void _queueApplyAllReminders({
@@ -710,6 +983,12 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                     bookingSnap.data?.snapshot.value,
                     rawClasses,
                   );
+                  final inClassLearnersByClassId =
+                      _buildInClassLearnersByClassId(visibleClasses);
+                  final onlineLearnersByBookingKey =
+                      _buildOnlineLearnersByBookingKey(
+                        bookingSnap.data?.snapshot.value,
+                      );
                   allOcc.addAll(onlineOcc);
                   allOcc.sort((a, b) => a.start.compareTo(b.start));
 
@@ -753,11 +1032,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                         recentAndUpcoming,
                         allOcc,
                         visibleClasses,
+                        inClassLearnersByClassId,
+                        onlineLearnersByBookingKey,
                       ),
                       _buildCalendarView(
                         allOcc,
                         recentAndUpcoming,
                         visibleClasses,
+                        inClassLearnersByClassId,
+                        onlineLearnersByBookingKey,
                       ),
                     ],
                   );
@@ -822,6 +1105,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     List<_Occ> displayList,
     List<_Occ> allOcc,
     List<Map<String, dynamic>> visibleClasses,
+    Map<String, List<_SessionLearner>> inClassLearnersByClassId,
+    Map<String, List<_SessionLearner>> onlineLearnersByBookingKey,
   ) {
     if (displayList.isEmpty) {
       return _EmptyState(
@@ -891,10 +1176,55 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               return _SessionCard(
                 palette: p,
                 o: o,
+                learners: o.isOnline
+                    ? (onlineLearnersByBookingKey[o.onlineBookingKey] ??
+                          const [])
+                    : (inClassLearnersByClassId[o.classId] ?? const []),
+                expanded: _expandedLearnersBySession[_sessionUiKey(o)] == true,
                 isConflict: isConflict,
                 enabled: o.isOnline
                     ? true
                     : _isClassEnabled(o.notificationClassId),
+                learnerAvatarBuilder: _learnerAvatar,
+                learnerMiniLoader: _loadLearnerMini,
+                onToggleLearners: () {
+                  final key = _sessionUiKey(o);
+                  setState(() {
+                    _expandedLearnersBySession[key] =
+                        !(_expandedLearnersBySession[key] ?? false);
+                  });
+                },
+                onLearnerProfile: (learner) {
+                  final fallbackName = learner.name.trim().isEmpty
+                      ? 'Learner'
+                      : learner.name;
+                  _openLearnerProfile(
+                    learnerUid: learner.uid,
+                    learnerName: fallbackName,
+                  );
+                },
+                onLearnerReport: (learner) {
+                  final fallbackName = learner.name.trim().isEmpty
+                      ? 'Learner'
+                      : learner.name;
+                  _openLearnerProfile(
+                    learnerUid: learner.uid,
+                    learnerName: fallbackName,
+                    openReportComposerOnLoad: true,
+                    initialCourseTitle: o.courseTitle,
+                  );
+                },
+                onLearnerGallery: (learner) {
+                  final fallbackName = learner.name.trim().isEmpty
+                      ? 'Learner'
+                      : learner.name;
+                  _openLearnerGallery(
+                    learnerUid: learner.uid,
+                    learnerName: fallbackName,
+                    classId: o.classId,
+                    classTitle: o.courseTitle,
+                  );
+                },
                 onToggle: () {
                   if (o.isOnline) return;
                   _toggleClassNotif(o.notificationClassId, displayList, allOcc);
@@ -956,6 +1286,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     List<_Occ> allOcc,
     List<_Occ> upcoming,
     List<Map<String, dynamic>> visibleClasses,
+    Map<String, List<_SessionLearner>> inClassLearnersByClassId,
+    Map<String, List<_SessionLearner>> onlineLearnersByBookingKey,
   ) {
     final Map<String, List<_Occ>> byDay = {};
     for (final o in allOcc) {
@@ -1184,10 +1516,61 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                     return _SessionCard(
                       palette: p,
                       o: events[i],
+                      learners: events[i].isOnline
+                          ? (onlineLearnersByBookingKey[events[i]
+                                    .onlineBookingKey] ??
+                                const [])
+                          : (inClassLearnersByClassId[events[i].classId] ??
+                                const []),
+                      expanded:
+                          _expandedLearnersBySession[_sessionUiKey(
+                            events[i],
+                          )] ==
+                          true,
                       isConflict: isConflict,
                       enabled: events[i].isOnline
                           ? true
                           : _isClassEnabled(events[i].notificationClassId),
+                      learnerAvatarBuilder: _learnerAvatar,
+                      learnerMiniLoader: _loadLearnerMini,
+                      onToggleLearners: () {
+                        final key = _sessionUiKey(events[i]);
+                        setState(() {
+                          _expandedLearnersBySession[key] =
+                              !(_expandedLearnersBySession[key] ?? false);
+                        });
+                      },
+                      onLearnerProfile: (learner) {
+                        final fallbackName = learner.name.trim().isEmpty
+                            ? 'Learner'
+                            : learner.name;
+                        _openLearnerProfile(
+                          learnerUid: learner.uid,
+                          learnerName: fallbackName,
+                        );
+                      },
+                      onLearnerReport: (learner) {
+                        final fallbackName = learner.name.trim().isEmpty
+                            ? 'Learner'
+                            : learner.name;
+                        _openLearnerProfile(
+                          learnerUid: learner.uid,
+                          learnerName: fallbackName,
+                          openReportComposerOnLoad: true,
+                          initialCourseTitle: events[i].courseTitle,
+                        );
+                      },
+                      onLearnerGallery: (learner) {
+                        final fallbackName = learner.name.trim().isEmpty
+                            ? 'Learner'
+                            : learner.name;
+                        _openLearnerGallery(
+                          learnerUid: learner.uid,
+                          learnerName: fallbackName,
+                          classId: events[i].classId,
+                          classTitle: events[i].courseTitle,
+                        );
+                      },
                       onToggle: () {
                         if (events[i].isOnline) return;
                         _toggleClassNotif(
@@ -1638,12 +2021,27 @@ class _Occ {
   }
 }
 
+class _SessionLearner {
+  const _SessionLearner({required this.uid, required this.name});
+
+  final String uid;
+  final String name;
+}
+
 class _SessionCard extends StatelessWidget {
   const _SessionCard({
     required this.palette,
     required this.o,
+    required this.learners,
+    required this.expanded,
     required this.enabled,
     required this.isConflict,
+    required this.learnerAvatarBuilder,
+    required this.learnerMiniLoader,
+    required this.onToggleLearners,
+    required this.onLearnerProfile,
+    required this.onLearnerReport,
+    required this.onLearnerGallery,
     required this.onToggle,
     required this.onAttendance,
     required this.onProgress,
@@ -1652,8 +2050,17 @@ class _SessionCard extends StatelessWidget {
 
   final AppPalette palette;
   final _Occ o;
+  final List<_SessionLearner> learners;
+  final bool expanded;
   final bool enabled;
   final bool isConflict;
+  final Widget Function({required String profilePhotoUrl, double size})
+  learnerAvatarBuilder;
+  final Future<Map<String, String>> Function(String uid) learnerMiniLoader;
+  final VoidCallback onToggleLearners;
+  final ValueChanged<_SessionLearner> onLearnerProfile;
+  final ValueChanged<_SessionLearner> onLearnerReport;
+  final ValueChanged<_SessionLearner> onLearnerGallery;
   final VoidCallback onToggle;
   final VoidCallback onAttendance;
   final VoidCallback onProgress;
@@ -1696,6 +2103,11 @@ class _SessionCard extends StatelessWidget {
     final Color timeColor = isPast
         ? palette.text.withValues(alpha: 0.45)
         : (isLive ? const Color(0xFF1B5E20) : palette.primary);
+    final hasToggle = learners.length > 1;
+    final showLearners = expanded || !hasToggle
+        ? learners
+        : learners.take(1).toList();
+    final more = expanded ? 0 : (learners.length - showLearners.length);
 
     return Opacity(
       opacity: isPast ? 0.78 : 1,
@@ -1829,6 +2241,202 @@ class _SessionCard extends StatelessWidget {
                           runSpacing: 8,
                           children: [if (isConflict) const _ConflictPill()],
                         ),
+                        if (learners.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                            decoration: BoxDecoration(
+                              color: palette.soft.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: palette.border.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'Learners (${learners.length})',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: palette.primary,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    if (hasToggle)
+                                      IconButton(
+                                        onPressed: onToggleLearners,
+                                        visualDensity: VisualDensity.compact,
+                                        tooltip: expanded
+                                            ? 'Collapse learners'
+                                            : 'Show all learners',
+                                        icon: AnimatedRotation(
+                                          turns: expanded ? 0.5 : 0,
+                                          duration: const Duration(
+                                            milliseconds: 180,
+                                          ),
+                                          child: Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            color: palette.primary,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutCubic,
+                                  alignment: Alignment.topCenter,
+                                  child: Column(
+                                    key: ValueKey<bool>(expanded),
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      ...showLearners.map((learner) {
+                                        return FutureBuilder<
+                                          Map<String, String>
+                                        >(
+                                          future: learnerMiniLoader(
+                                            learner.uid,
+                                          ),
+                                          builder: (context, snap) {
+                                            final full =
+                                                (snap.data?['full'] ?? '')
+                                                    .trim();
+                                            final displayName = full.isEmpty
+                                                ? (learner.name.trim().isEmpty
+                                                      ? 'Learner'
+                                                      : learner.name)
+                                                : full;
+                                            final profilePhotoUrl =
+                                                (snap.data?['profilePhoto'] ??
+                                                        '')
+                                                    .trim();
+
+                                            return Container(
+                                              margin: const EdgeInsets.only(
+                                                top: 6,
+                                              ),
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: palette.cardBg,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: palette.border
+                                                      .withValues(alpha: 0.82),
+                                                ),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      learnerAvatarBuilder(
+                                                        profilePhotoUrl:
+                                                            profilePhotoUrl,
+                                                        size: 28,
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: Text(
+                                                          displayName,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                            color: palette.text,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  if (!o.isOnline)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 8,
+                                                          ),
+                                                      child: Row(
+                                                        children: [
+                                                          Expanded(
+                                                            child: OutlinedButton(
+                                                              onPressed: () =>
+                                                                  onLearnerProfile(
+                                                                    learner,
+                                                                  ),
+                                                              child: const Text(
+                                                                'Profile',
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 6,
+                                                          ),
+                                                          Expanded(
+                                                            child: OutlinedButton(
+                                                              onPressed: () =>
+                                                                  onLearnerReport(
+                                                                    learner,
+                                                                  ),
+                                                              child: const Text(
+                                                                'Report',
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 6,
+                                                          ),
+                                                          Expanded(
+                                                            child: OutlinedButton(
+                                                              onPressed: () =>
+                                                                  onLearnerGallery(
+                                                                    learner,
+                                                                  ),
+                                                              child: const Text(
+                                                                'Gallery',
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      }),
+                                      if (more > 0)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 6,
+                                            left: 4,
+                                          ),
+                                          child: Text(
+                                            '... +$more more',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              color: palette.text.withValues(
+                                                alpha: 0.72,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         Divider(
                           height: 14,
                           color: palette.border.withValues(alpha: 0.9),

@@ -571,6 +571,24 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     return sorted.map((n) => 'S$n').join(', ');
   }
 
+  String _taughtSessionSummaryLabel() {
+    final numbers = <int>{};
+    for (final item in _taughtItems) {
+      final type = (item['type'] ?? 'syllabus').toString();
+      if (type != 'syllabus') continue;
+      final raw = item['sessionNumber'];
+      final sessionNo = (raw is num)
+          ? raw.toInt()
+          : (int.tryParse(raw?.toString() ?? '') ?? 0);
+      if (sessionNo > 0) numbers.add(sessionNo);
+    }
+
+    if (numbers.isEmpty) return 'Syllabus lessons: Not selected yet';
+    final sorted = numbers.toList()..sort();
+    if (sorted.length == 1) return 'Syllabus lesson: Session ${sorted.first}';
+    return 'Syllabus lessons: Sessions ${sorted.join(', ')}';
+  }
+
   Future<void> _openSyllabusLessonPickerToAdd() async {
     if (_syllabiSessions.isEmpty) {
       AppToast.fromSnackBar(
@@ -1152,32 +1170,26 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
-                TextButton(onPressed: _pickDate, child: const Text("Change")),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(
-                  Icons.confirmation_number,
-                  size: 20,
-                  color: primaryBlue,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Session Count: $_meetingNumber',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (!_isEdit)
-                  Text(
-                    'Auto',
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      fontWeight: FontWeight.w700,
+                FilledButton.icon(
+                  onPressed: _pickDate,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: actionOrange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    minimumSize: const Size(0, 38),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
+                  icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                  label: const Text(
+                    'Change Date',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1191,20 +1203,26 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Syllabus session(s): ${_taughtSessionNumbersLabel()}',
+                    _taughtSessionSummaryLabel(),
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            const Text(
-              "Lessons Taught (this meeting)",
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                color: primaryBlue,
-              ),
+            Row(
+              children: const [
+                Icon(Icons.school_rounded, size: 16, color: primaryBlue),
+                SizedBox(width: 8),
+                Text(
+                  'Taught This Meeting',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             if (_taughtItems.isEmpty)
@@ -1400,7 +1418,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _openSyllabusLessonPickerToAdd,
                     icon: const Icon(Icons.add),
-                    label: const Text('Add syllabus lesson'),
+                    label: const Text('Add Syllabus'),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1408,7 +1426,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _openCustomTaughtDialog,
                     icon: const Icon(Icons.edit),
-                    label: const Text('Add custom'),
+                    label: const Text('Add Custom'),
                   ),
                 ),
               ],
@@ -1599,11 +1617,34 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       body: teacherWebBodyFrame(
         context: context,
         maxWidth: 1280,
-        child: _busy
-            ? const Center(child: CircularProgressIndicator(color: primaryBlue))
-            : _error != null
-            ? _buildErrorState()
-            : _buildForm(),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.035,
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.7,
+                      child: Image.asset(
+                        'assets/images/ybs_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            _busy
+                ? const Center(
+                    child: CircularProgressIndicator(color: primaryBlue),
+                  )
+                : _error != null
+                ? _buildErrorState()
+                : _buildForm(),
+          ],
+        ),
       ),
     );
   }

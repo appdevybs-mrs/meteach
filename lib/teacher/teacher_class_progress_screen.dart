@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
@@ -28,6 +29,8 @@ class _TeacherClassProgressScreenState
   static const Color successGreen = Color(0xFF10B981);
   static const Color warningOrange = Color(0xFFF59E0B);
   static const Color dangerRed = Color(0xFFEF4444);
+  static const Color vividHomework = Color(0xFFF59E0B);
+  static const Color vividEdit = Color(0xFF2563EB);
 
   static const String classesNode = "classes";
   static const String syllabiNode = "syllabi";
@@ -471,18 +474,21 @@ class _TeacherClassProgressScreenState
                   : _error != null
                   ? _buildErrorState(p)
                   : ListView(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        16,
+                        16,
+                        MediaQuery.of(context).padding.bottom + 20,
+                      ),
                       children: [
                         _headerHeroCard(p),
                         const SizedBox(height: 12),
                         _viewModeCard(p),
                         const SizedBox(height: 12),
-                        if (_learners.isNotEmpty) ...[
+                        if (_learners.isNotEmpty && _learnerView) ...[
                           _learnerPickerCard(p),
                           const SizedBox(height: 12),
                         ],
-                        _progressOverviewCard(p),
-                        const SizedBox(height: 12),
                         _unitsProgressCard(p),
                       ],
                     ),
@@ -495,7 +501,6 @@ class _TeacherClassProgressScreenState
 
   Widget _headerHeroCard(AppPalette p) {
     final learnersCount = _learners.length;
-    final sessionsHeld = _attendance.length;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -514,64 +519,60 @@ class _TeacherClassProgressScreenState
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Icon(
-              Icons.timeline_rounded,
-              color: Colors.white,
-              size: 30,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _courseTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 20,
-                    height: 1.15,
-                  ),
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Class: ${widget.classId}${_courseCode.isEmpty ? '' : ' • Code: $_courseCode'}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.86),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+                child: const Icon(
+                  Icons.timeline_rounded,
+                  color: Colors.white,
+                  size: 30,
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _heroChip(
-                      label:
-                          'Syllabus ${_totalSyllabusSessions <= 0 ? '-' : _totalSyllabusSessions}',
+                    Text(
+                      _courseTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                        height: 1.15,
+                      ),
                     ),
-                    _heroChip(label: 'Held $sessionsHeld'),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Class: ${widget.classId}${_courseCode.isEmpty ? '' : ' • Code: $_courseCode'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.86),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     _heroChip(label: 'Learners $learnersCount'),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 14),
+          _progressOverviewCard(p, compactInHero: true),
         ],
       ),
     );
@@ -646,7 +647,7 @@ class _TeacherClassProgressScreenState
                 Expanded(
                   child: _toggleBtn(
                     p,
-                    label: 'Learner',
+                    label: 'Learner (${_learners.length})',
                     selected: _learnerView,
                     onTap: canUseLearnerView
                         ? () {
@@ -811,7 +812,7 @@ class _TeacherClassProgressScreenState
     );
   }
 
-  Widget _progressOverviewCard(AppPalette p) {
+  Widget _progressOverviewCard(AppPalette p, {bool compactInHero = false}) {
     final totalS = _totalSyllabusSessions;
 
     Set<String> coveredSet = _classCoveredSessionIds;
@@ -838,18 +839,24 @@ class _TeacherClassProgressScreenState
     final progressColor = _progressColor(pct);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        color: compactInHero ? Colors.white : p.cardBg,
+        borderRadius: BorderRadius.circular(compactInHero ? 18 : 22),
+        border: Border.all(
+          color: compactInHero
+              ? Colors.white
+              : p.border.withValues(alpha: 0.85),
+        ),
+        boxShadow: compactInHero
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1114,6 +1121,7 @@ class _TeacherClassProgressScreenState
     Set<String> coveredSet,
   ) {
     final title = (s['title'] ?? '').toString();
+    final unitTitle = (s['unitTitle'] ?? '').toString();
     final sessionId = (s['sessionId'] ?? '').toString();
     final skill = (s['skillType'] ?? '').toString();
     final objective = (s['objective'] ?? '').toString();
@@ -1126,159 +1134,196 @@ class _TeacherClassProgressScreenState
         ? _attendanceRecordForSession(sessionId)
         : null;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        color: p.cardBg,
+    return GestureDetector(
+      onLongPress: () => _copySessionCardDetails(
+        topic: title,
+        unitTitle: unitTitle,
+        skill: skill,
+        objective: objective,
+        content: content,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 6,
-            ),
-            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: p.border.withValues(alpha: 0.85)),
+          color: p.cardBg,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 6,
               ),
-              child: Icon(
-                passed ? Icons.check_circle_rounded : Icons.schedule_rounded,
-                color: statusColor,
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  passed ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                  color: statusColor,
+                ),
               ),
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title.isEmpty ? 'Session' : title,
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w900,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title.isEmpty ? 'Session' : title,
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (passed && attendanceRecord != null) ...[
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () =>
+                          _showTaughtSessionDetails(s, attendanceRecord),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: vividHomework.withValues(alpha: 0.16),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.assignment_rounded,
+                          color: vividHomework,
+                          size: 17,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () => _openEditAttendance(attendanceRecord),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: vividEdit.withValues(alpha: 0.16),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.edit_note_rounded,
+                          color: vividEdit,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              subtitle: Text(
+                [if (skill.isNotEmpty) skill, statusText].join(' • '),
+                style: TextStyle(
+                  color: p.text.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: p.primary.withValues(alpha: 0.04),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _detailLine(p, 'Status', statusText),
+                      if (objective.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Objective',
+                          style: TextStyle(
+                            color: p.text,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          objective,
+                          style: TextStyle(
+                            color: p.text,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                      if (content.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Content',
+                          style: TextStyle(
+                            color: p.text,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          content,
+                          style: TextStyle(
+                            color: p.text,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                if (passed && attendanceRecord != null) ...[
-                  const SizedBox(width: 6),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => _showTaughtSessionDetails(s, attendanceRecord),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: p.primary.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.info_outline_rounded,
-                        color: p.primary,
-                        size: 17,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => _openEditAttendance(attendanceRecord),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: p.primary.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.edit_note_rounded,
-                        color: p.primary,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
-            subtitle: Text(
-              [if (skill.isNotEmpty) skill, statusText].join(' • '),
-              style: TextStyle(
-                color: p.text.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w700,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                  color: p.primary.withValues(alpha: 0.04),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _detailLine(p, 'Status', statusText),
-                    if (sessionId.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      _detailLine(p, 'Session ID', sessionId),
-                    ],
-                    if (objective.trim().isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'Objective',
-                        style: TextStyle(
-                          color: p.text,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        objective,
-                        style: TextStyle(
-                          color: p.text,
-                          fontWeight: FontWeight.w700,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                    if (content.trim().isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'Content',
-                        style: TextStyle(
-                          color: p.text,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        content,
-                        style: TextStyle(
-                          color: p.text,
-                          fontWeight: FontWeight.w700,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _copySessionCardDetails({
+    required String topic,
+    required String unitTitle,
+    required String skill,
+    required String objective,
+    required String content,
+  }) async {
+    final level =
+        (widget.classData['level'] ??
+                widget.classData['course_level'] ??
+                widget.classData['levelName'] ??
+                _courseTitle)
+            .toString()
+            .trim();
+
+    final lines = <String>[
+      'Topic: ${topic.trim().isEmpty ? '-' : topic.trim()}',
+      'Unit Theme: ${unitTitle.trim().isEmpty ? '-' : unitTitle.trim()}',
+      'Skill: ${skill.trim().isEmpty ? '-' : skill.trim()}',
+      'Level: ${level.isEmpty ? '-' : level}',
+      'Objective: ${objective.trim().isEmpty ? '-' : objective.trim()}',
+      'Content: ${content.trim().isEmpty ? '-' : content.trim()}',
+    ];
+
+    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Unit details copied')));
   }
 
   Map<String, dynamic>? _attendanceRecordForSession(String sessionId) {
@@ -1351,6 +1396,17 @@ class _TeacherClassProgressScreenState
     final homeworkText = (homework['text'] ?? '').toString().trim();
     final homeworkDue = (homework['dueDate'] ?? '').toString().trim();
     final hasHomework = homeworkText.isNotEmpty || homeworkDue.isNotEmpty;
+    final unitTheme = (session['unitTitle'] ?? '').toString().trim();
+    final skill = (session['skillType'] ?? '').toString().trim();
+    final objective = (session['objective'] ?? '').toString().trim();
+    final content = (session['content'] ?? '').toString().trim();
+    final level =
+        (widget.classData['level'] ??
+                widget.classData['course_level'] ??
+                widget.classData['levelName'] ??
+                _courseTitle)
+            .toString()
+            .trim();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1411,6 +1467,54 @@ class _TeacherClassProgressScreenState
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                _detailLine(
+                  p,
+                  'Unit Theme',
+                  unitTheme.isEmpty ? '-' : unitTheme,
+                ),
+                const SizedBox(height: 6),
+                _detailLine(p, 'Skill', skill.isEmpty ? '-' : skill),
+                const SizedBox(height: 6),
+                _detailLine(p, 'Level', level.isEmpty ? '-' : level),
+                if (objective.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Objective',
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    objective,
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                if (content.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Content',
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    content,
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
                 if (hasHomework) ...[
                   const SizedBox(height: 12),
                   Text(
