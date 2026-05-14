@@ -93,6 +93,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   _SchedulePath schedulePath = _SchedulePath.byTeacher;
   String? selectedTeacherFirstId;
   int? selectedLessonForFlow;
+  bool confirmSessionExpanded = false;
+  int? _lastBookedSessionNo;
+  String? _lastBookedStudyMode;
+  int? _nextRecommendedSessionOverride;
   String helpLang = 'en'; // en | ar | fr | tr | ur
   bool lessonChoiceArabic = false;
   final Set<String> _expandedLessonChoiceCards = <String>{};
@@ -258,6 +262,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return currentSession.clamp(1, maxSessions).toInt();
   }
 
+  int get _recommendedSessionNo {
+    final maxSessions = _effectiveTotalSessions;
+    final raw = _nextRecommendedSessionOverride ?? currentSession;
+    return raw.clamp(1, maxSessions).toInt();
+  }
+
   DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
 
   DatabaseReference _progressRef(String cid) =>
@@ -316,6 +326,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _cancelNoObjectiveLabel() => lessonChoiceArabic
       ? 'لا يوجد وصف متاح لهذه الحصة.'
       : 'No objective available for this session.';
+
+  String _confirmDetailsLabel(bool expanded) => lessonChoiceArabic
+      ? (expanded ? 'إخفاء التفاصيل' : 'تفاصيل الحصة')
+      : (expanded ? 'Hide details' : 'Session details');
+
+  String _confirmObjectiveLabel() =>
+      lessonChoiceArabic ? 'هدف الحصة' : 'Session objective';
 
   Future<bool> _hasPossibleMissingAttendanceForSession({
     required String cid,
@@ -2191,6 +2208,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast('Joined ✅ Session $targetSession group ($newCount/$cap)');
       }
 
+      _lastBookedSessionNo = targetSession;
+      _lastBookedStudyMode = studyMode;
+
       await _sendBookingNotifications(slot);
       await _scheduleLearnerLocalReminder(slot);
 
@@ -2378,7 +2398,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       await _generateSlots(cid);
     } finally {
       if (mounted) {
-        setState(() => refreshing = false);
+        setState(() {
+          refreshing = false;
+          progressLabel = '';
+        });
         _clearBusyVisualIfIdle();
       }
     }
@@ -3455,6 +3478,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     selectedTime = null;
     selectedTeacherId = null;
     selectedTeacherFirstId = null;
+    confirmSessionExpanded = false;
   }
 
   Widget _buildFlowShell(Widget child) {
@@ -3662,9 +3686,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Widget _buildLessonChoiceStep() {
     final isAr = lessonChoiceArabic;
+    final recommendedNo = _recommendedSessionNo;
+    final recommendedTitle = _flowLessonTitle(recommendedNo);
     final followExpanded = _expandedLessonChoiceCards.contains('follow');
     final customExpanded = _expandedLessonChoiceCards.contains('custom');
-    final nextObjective = _sessionObjectiveFor(currentSession);
+    final nextObjective = _sessionObjectiveFor(recommendedNo);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3711,8 +3737,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               _buildPremiumActionCard(
                 title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
                 sessionLine: isAr
-                    ? 'الجلسة 1 · استماع/تحدث'
-                    : 'Session 1 · Listen/Speak',
+                    ? 'الجلسة $recommendedNo${recommendedTitle.isEmpty ? '' : ' · $recommendedTitle'}'
+                    : 'Session $recommendedNo${recommendedTitle.isEmpty ? '' : ' · $recommendedTitle'}',
                 description: isAr
                     ? 'تابع مع الجلسة التالية المقترحة لك.'
                     : 'Continue with your recommended next session.',
@@ -3740,8 +3766,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 onTap: () {
                   setState(() {
                     studyMode = 'follow';
-                    selectedLessonForFlow = currentSession;
-                    selectedSessionNo = currentSession;
+                    selectedLessonForFlow = recommendedNo;
+                    selectedSessionNo = recommendedNo;
                     _resetScheduleSelections();
                     flowStep = _BookingFlowStep.schedule;
                   });
@@ -3944,14 +3970,37 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (cid == null) return;
     await _refreshSchedule();
     if (!mounted) return;
+
+    final wasFollowMode = _lastBookedStudyMode == 'follow';
+    final wasCustomMode = _lastBookedStudyMode == 'custom';
+    final maxSessions = _effectiveTotalSessions;
+    final bookedNo = (_lastBookedSessionNo ?? _targetSessionNo).clamp(
+      1,
+      maxSessions,
+    );
+    final nextNo = (bookedNo + 1).clamp(1, maxSessions);
+
     setState(() {
       selectedDay = null;
       selectedTime = null;
       selectedTeacherId = null;
       selectedTeacherFirstId = null;
       selectedLessonForFlow = null;
+      confirmSessionExpanded = false;
       schedulePath = _SchedulePath.byTeacher;
-      flowStep = _BookingFlowStep.lessonChoice;
+
+      if (wasFollowMode) {
+        _nextRecommendedSessionOverride = nextNo;
+        selectedSessionNo = nextNo;
+        studyMode = 'follow';
+        flowStep = _BookingFlowStep.lessonChoice;
+      } else if (wasCustomMode) {
+        _nextRecommendedSessionOverride = null;
+        studyMode = 'custom';
+        flowStep = _BookingFlowStep.syllabus;
+      } else {
+        flowStep = _BookingFlowStep.lessonChoice;
+      }
     });
   }
 
@@ -4596,7 +4645,133 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               Text('Lesson: ${_flowLessonTitle(_flowLessonNo)}'),
               Text('Day: ${_friendlyDate(selectedDay!)}'),
               Text('Time: $selectedTime'),
-              Text('Teacher: ${slot.teacherName}'),
+              const SizedBox(height: 10),
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _openTeacherProfileSheet(slot),
+                child: Row(
+                  children: [
+                    ProfileAvatar(
+                      name: slot.teacherName,
+                      photoUrl: slot.teacherPhotoUrl,
+                      radius: 18,
+                      borderColor: uiBorder,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Teacher: ${slot.teacherName}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: primaryBlue,
+                        ),
+                      ),
+                    ),
+                    if (slot.hasIntroVideo)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: primaryBlue.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Video',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            color: primaryBlue,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () {
+                  setState(
+                    () => confirmSessionExpanded = !confirmSessionExpanded,
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        _confirmDetailsLabel(confirmSessionExpanded),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        confirmSessionExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: Colors.grey.shade700,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                child: confirmSessionExpanded
+                    ? Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: primaryBlue.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: uiBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_sessionTitleFor(_flowLessonNo).isNotEmpty) ...[
+                              Text(
+                                _sessionTitleFor(_flowLessonNo),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            Text(
+                              _confirmObjectiveLabel(),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.grey.shade800,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _sessionObjectiveFor(_flowLessonNo).isEmpty
+                                  ? _cancelNoObjectiveLabel()
+                                  : _sessionObjectiveFor(_flowLessonNo),
+                              style: TextStyle(
+                                color: Colors.grey.shade800,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ],
           ),
         ),
