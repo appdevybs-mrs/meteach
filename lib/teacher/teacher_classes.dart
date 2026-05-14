@@ -2515,12 +2515,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
 
     final now = DateTime.now();
-    final pastLimit = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(const Duration(days: 7));
-
     final List<_OnlineBooking> startingOrOngoing = [];
     final List<_OnlineBooking> upcoming = [];
     final List<_OnlineBooking> past = [];
@@ -2539,9 +2533,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         continue;
       }
 
-      if (dt.isAfter(pastLimit)) {
-        past.add(b);
-      }
+      past.add(b);
     }
 
     return Column(
@@ -2557,7 +2549,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 const SizedBox(width: 10),
                 Expanded(child: _emptyHint('Upcoming: ${upcoming.length}')),
                 const SizedBox(width: 10),
-                Expanded(child: _emptyHint('Past 7 days: ${past.length}')),
+                Expanded(child: _emptyHint('Past: ${past.length}')),
               ],
             ),
           ),
@@ -2589,7 +2581,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             children: [
               _onlineBookingsList(
                 items: past.reversed.toList(),
-                emptyText: 'No past sessions in the last 7 days.',
+                emptyText: 'No past sessions yet.',
+                groupByWeek: true,
               ),
               _onlineBookingsList(
                 items: startingOrOngoing,
@@ -2609,6 +2602,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   Widget _onlineBookingsList({
     required List<_OnlineBooking> items,
     required String emptyText,
+    bool groupByWeek = false,
   }) {
     if (items.isEmpty) {
       return ListView(
@@ -2617,9 +2611,56 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       );
     }
 
+    if (groupByWeek) {
+      final Map<DateTime, List<_OnlineBooking>> byWeek = {};
+      for (final booking in items) {
+        final dt = DateTime.fromMillisecondsSinceEpoch(booking.startAtMillis);
+        final weekStart = _weekStartMonday(dt);
+        byWeek.putIfAbsent(weekStart, () => []).add(booking);
+      }
+
+      final weekStarts = byWeek.keys.toList()..sort((a, b) => b.compareTo(a));
+
+      final children = <Widget>[];
+      for (final weekStart in weekStarts) {
+        children.add(_weekHeader(weekStart));
+        final weekItems = byWeek[weekStart] ?? const <_OnlineBooking>[];
+        for (final booking in weekItems) {
+          children.add(_bookingCard(booking));
+        }
+      }
+
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: children,
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: items.map(_bookingCard).toList(),
+    );
+  }
+
+  DateTime _weekStartMonday(DateTime dt) {
+    final d = DateTime(dt.year, dt.month, dt.day);
+    return d.subtract(Duration(days: d.weekday - DateTime.monday));
+  }
+
+  Widget _weekHeader(DateTime weekStart) {
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final fmt = DateFormat('yyyy-MM-dd');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 10),
+      child: Text(
+        'Week of ${fmt.format(weekStart)} - ${fmt.format(weekEnd)}',
+        style: TextStyle(
+          color: p.primary,
+          fontWeight: FontWeight.w900,
+          fontSize: 13,
+          letterSpacing: 0.2,
+        ),
+      ),
     );
   }
 
