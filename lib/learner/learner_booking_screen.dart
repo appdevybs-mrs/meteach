@@ -2206,7 +2206,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       _toast('Booking failed: $e');
     } finally {
       if (mounted) {
-        setState(() => booking = false);
+        setState(() {
+          booking = false;
+          progressLabel = '';
+        });
         _clearBusyVisualIfIdle();
       }
     }
@@ -2349,6 +2352,270 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _clearBusyVisualIfIdle();
       }
     }
+  }
+
+  Future<void> _cancelUpcomingBooking(String cid, _MyBooking b) async {
+    final start = _parseSlotStart(b.dayKey, b.time);
+    if (start == null) {
+      _toast('Invalid booking time.');
+      return;
+    }
+    final locked = !start.isAfter(
+      DateTime.now().add(const Duration(hours: 24)),
+    );
+    if (locked) {
+      _toast('This booking is within 24 hours and cannot be cancelled.');
+      return;
+    }
+
+    final ok = await _confirmWithLogo(
+      title: 'Cancel booking',
+      message:
+          'Cancel this class with ${b.teacherName} on ${_friendlyDate(start)} at ${b.time}?',
+      confirmLabel: 'Yes, Cancel',
+      confirmColor: actionOrange,
+    );
+    if (!mounted || ok != true) return;
+
+    await _runBusy('Cancelling booking...', () async {
+      final status = await _cancelBookingByKey(
+        cid,
+        b.dayKey,
+        b.time,
+        b.teacherId,
+      );
+      if (status == _CancelBookingStatus.cancelled) {
+        try {
+          await NotificationService.I.init();
+          await NotificationService.I.cancelSessionReminderSeries(
+            classId: '${cid}_${b.dayKey}_${b.time}',
+            sessionStart: start,
+            minutesBeforeList: const [60, 20, 5],
+          );
+        } catch (_) {}
+        _toast('Booking cancelled successfully.');
+        await _loadReservationsSummary(cid);
+        await _generateSlots(cid);
+        _invalidateBusyRangesCache();
+        return;
+      }
+      if (status == _CancelBookingStatus.locked) {
+        _toast('This booking is within 24 hours and cannot be cancelled.');
+        return;
+      }
+      if (status == _CancelBookingStatus.notFound) {
+        _toast('Booking not found or already cancelled.');
+        await _loadReservationsSummary(cid);
+        await _generateSlots(cid);
+        return;
+      }
+      _toast('Could not cancel booking. Please try again.');
+    });
+  }
+
+  Future<void> _openCancelBookingsSheet() async {
+    final cid = courseId;
+    if (cid == null || cid.trim().isEmpty) return;
+    final items = await _findMyUpcomingBookings(cid);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.86,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+                border: Border.all(color: uiBorder),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cancel_outlined, color: actionOrange),
+                        SizedBox(width: 8),
+                        Text(
+                          'Cancel Booked Classes',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: items.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No upcoming bookings to cancel.',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                            itemCount: items.length,
+                            itemBuilder: (_, i) {
+                              final b = items[i];
+                              final locked = !b.start.isAfter(
+                                DateTime.now().add(const Duration(hours: 24)),
+                              );
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: uiBorder),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${_friendlyDate(b.start)} - ${b.time}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: primaryBlue,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            b.teacherName,
+                                            style: TextStyle(
+                                              color: Colors.grey.shade800,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            'Session ${b.sessionNo > 0 ? b.sessionNo : '-'}',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade700,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (locked)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade200,
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Locked (<24h)',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      FilledButton(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: actionOrange,
+                                        ),
+                                        onPressed: () async {
+                                          Navigator.of(ctx).pop();
+                                          await _cancelUpcomingBooking(cid, b);
+                                        },
+                                        child: const Text('Cancel'),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCancelEntryCard() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: _openCancelBookingsSheet,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEFEA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFF2B8A8)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.cancel_schedule_send_rounded, color: actionOrange),
+            SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cancel a booking',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: actionOrange,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Open your upcoming classes and cancel if eligible',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF8A3D27),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: actionOrange,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ================== Help Sheet ==================
@@ -4237,7 +4504,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         alignment: Alignment.topCenter,
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
-                          child: _buildFlowShell(_buildFlowContent()),
+                          child: Column(
+                            children: [
+                              _buildCancelEntryCard(),
+                              const SizedBox(height: 10),
+                              _buildFlowShell(_buildFlowContent()),
+                            ],
+                          ),
                         ),
                       ),
               ),
@@ -4261,15 +4534,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const YbsBusyLogo(size: 44),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: 26,
-                              height: 26,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: palette.primary,
-                              ),
-                            ),
                             const SizedBox(height: 14),
                             Text(
                               progressLabel.isEmpty
