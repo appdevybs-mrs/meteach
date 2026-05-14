@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/notification_service.dart';
@@ -14,6 +15,7 @@ import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/payment_status.dart';
+import '../shared/profile_avatar.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -98,6 +100,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   DateTime? _busyRangesCacheAt;
   static const Duration _busyRangesCacheTtl = Duration(seconds: 25);
   DateTime? _busyVisualSince;
+  final Map<String, _TeacherMiniProfile> _teacherMiniCache = {};
+  final Map<String, _TeacherFullProfile> _teacherFullCache = {};
+  final Map<String, DateTime> _teacherFullCacheAt = {};
+  final Map<String, Future<_TeacherFullProfile>> _teacherFullInFlight = {};
+  static const Duration _teacherFullCacheTtl = Duration(minutes: 5);
 
   @override
   void initState() {
@@ -622,6 +629,261 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     } catch (_) {
       return '';
     }
+  }
+
+  Future<_TeacherMiniProfile> _loadTeacherMiniProfile(String teacherId) async {
+    final id = teacherId.trim();
+    if (id.isEmpty) {
+      return const _TeacherMiniProfile(
+        name: 'Teacher',
+        photoUrl: '',
+        hasIntroVideo: false,
+      );
+    }
+    final hit = _teacherMiniCache[id];
+    if (hit != null) return hit;
+    try {
+      final snap = await _db.child('users/$id').get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final full = '$first $last'.trim();
+        final name = full.isEmpty
+            ? ((m['email'] ?? 'Teacher').toString().trim())
+            : full;
+        final out = _TeacherMiniProfile(
+          name: name.isEmpty ? 'Teacher' : name,
+          photoUrl: ProfileAvatar.resolvePhotoFromMap(m),
+          hasIntroVideo: (m['intro_video_url'] ?? '')
+              .toString()
+              .trim()
+              .isNotEmpty,
+        );
+        _teacherMiniCache[id] = out;
+        return out;
+      }
+    } catch (_) {}
+    const fallback = _TeacherMiniProfile(
+      name: 'Teacher',
+      photoUrl: '',
+      hasIntroVideo: false,
+    );
+    _teacherMiniCache[id] = fallback;
+    return fallback;
+  }
+
+  Future<_TeacherFullProfile> _loadTeacherFullProfile(String teacherId) async {
+    final id = teacherId.trim();
+    if (id.isEmpty) return const _TeacherFullProfile();
+    final hit = _teacherFullCache[id];
+    final hitAt = _teacherFullCacheAt[id];
+    if (hit != null &&
+        hitAt != null &&
+        DateTime.now().difference(hitAt) <= _teacherFullCacheTtl) {
+      return hit;
+    }
+    final inFlight = _teacherFullInFlight[id];
+    if (inFlight != null) return inFlight;
+
+    final future = _loadTeacherFullProfileFresh(id);
+    _teacherFullInFlight[id] = future;
+    try {
+      return await future;
+    } finally {
+      _teacherFullInFlight.remove(id);
+    }
+  }
+
+  Future<_TeacherFullProfile> _loadTeacherFullProfileFresh(String id) async {
+    try {
+      final base = _db.child('users/$id');
+      final snaps = await Future.wait([
+        base.child('about_me').get(),
+        base.child('intro_video_url').get(),
+        base.child('social_links_visible_to_learners').get(),
+        base.child('social_links').get(),
+      ]);
+
+      final socialLinks = <String, String>{};
+      final rawSocial = snaps[3].value;
+      if (rawSocial is Map) {
+        rawSocial.forEach((k, v) {
+          final key = k.toString().trim().toLowerCase();
+          final val = (v ?? '').toString().trim();
+          if (key.isNotEmpty && val.isNotEmpty) socialLinks[key] = val;
+        });
+      }
+
+      final out = _TeacherFullProfile(
+        aboutMe: (snaps[0].value ?? '').toString().trim(),
+        introVideoUrl: (snaps[1].value ?? '').toString().trim(),
+        socialVisible: snaps[2].value != false,
+        socialLinks: socialLinks,
+      );
+      _teacherFullCache[id] = out;
+      _teacherFullCacheAt[id] = DateTime.now();
+      return out;
+    } catch (_) {}
+    const fallback = _TeacherFullProfile();
+    _teacherFullCache[id] = fallback;
+    _teacherFullCacheAt[id] = DateTime.now();
+    return fallback;
+  }
+
+  void _prefetchTeacherFullProfiles(List<_Slot> slots) {
+    if (slots.isEmpty) return;
+    final ids = <String>[];
+    for (final s in slots) {
+      final id = s.teacherId.trim();
+      if (id.isEmpty || ids.contains(id)) continue;
+      ids.add(id);
+      if (ids.length >= 8) break;
+    }
+    for (final id in ids) {
+      unawaited(_loadTeacherFullProfile(id));
+    }
+  }
+
+  Color _teacherTint(String teacherId) {
+    final hash = teacherId.codeUnits.fold<int>(
+      0,
+      (acc, c) => (acc * 31 + c) & 0x7fffffff,
+    );
+    final hue = (hash % 360).toDouble();
+    return HSLColor.fromAHSL(1, hue, 0.45, 0.93).toColor();
+  }
+
+  Future<void> _openTeacherProfileSheet(_Slot s) async {
+    final mini =
+        _teacherMiniCache[s.teacherId] ??
+        _TeacherMiniProfile(
+          name: s.teacherName,
+          photoUrl: s.teacherPhotoUrl,
+          hasIntroVideo: s.hasIntroVideo,
+        );
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return FutureBuilder<_TeacherFullProfile>(
+          future: _loadTeacherFullProfile(s.teacherId),
+          builder: (ctx, snap) {
+            final full = snap.data;
+            final loading = snap.connectionState != ConnectionState.done;
+            final links = (full?.socialVisible ?? false)
+                ? (full?.socialLinks ?? const <String, String>{})
+                : const <String, String>{};
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: uiBorder),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          ProfileAvatar(
+                            name: mini.name,
+                            photoUrl: mini.photoUrl,
+                            radius: 26,
+                            borderColor: uiBorder,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              mini.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: primaryBlue,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: LinearProgressIndicator(minHeight: 3),
+                        ),
+                      if (!loading && (full?.aboutMe ?? '').isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: primaryBlue.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            full!.aboutMe,
+                            style: TextStyle(
+                              color: Colors.grey.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (!loading &&
+                              (full?.introVideoUrl ?? '').isNotEmpty)
+                            OutlinedButton.icon(
+                              onPressed: () => _openExternalLink(
+                                full!.introVideoUrl,
+                                'intro video',
+                              ),
+                              icon: const Icon(
+                                Icons.play_circle_fill_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('Intro Video'),
+                            ),
+                          for (final e in links.entries)
+                            OutlinedButton(
+                              onPressed: () =>
+                                  _openExternalLink(e.value, e.key),
+                              child: Text(e.key),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openExternalLink(String raw, String label) async {
+    var url = raw.trim();
+    if (url.isEmpty) return;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://$url';
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) _toast('Could not open $label.');
   }
 
   bool _isWithin24Hours(_Slot slot) {
@@ -1368,12 +1630,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       );
       final teacherIds = root.keys.toList();
       final teacherMeetUrls = <String, String>{};
+      final teacherMini = <String, _TeacherMiniProfile>{};
       if (teacherIds.isNotEmpty) {
         final urls = await Future.wait(
           teacherIds.map(_loadTeacherProfileMeetUrl),
         );
+        final minis = await Future.wait(
+          teacherIds.map(_loadTeacherMiniProfile),
+        );
         for (int i = 0; i < teacherIds.length; i++) {
           teacherMeetUrls[teacherIds[i]] = urls[i];
+          teacherMini[teacherIds[i]] = minis[i];
         }
       }
       final busyByTeacherDay = await _loadTeacherBusyRangesForWindow();
@@ -1418,6 +1685,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 .trim();
 
         final meetUrl = teacherMeetUrls[teacherId] ?? '';
+        final mini =
+            teacherMini[teacherId] ??
+            const _TeacherMiniProfile(
+              name: 'Teacher',
+              photoUrl: '',
+              hasIntroVideo: false,
+            );
 
         int durationMin = _toInt(effective['durationMinutes'], fallback: 0);
         if (durationMin <= 0) {
@@ -1450,10 +1724,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           _TeacherAvail(
             teacherId: teacherId,
             teacherName: resolvedTeacherName.isEmpty
-                ? 'Teacher'
+                ? mini.name
                 : resolvedTeacherName,
             slotsByDay: slotsByDay,
             meetUrl: meetUrl,
+            teacherPhotoUrl: mini.photoUrl,
+            hasIntroVideo: mini.hasIntroVideo,
             durationMinutes: durationMin,
             maxLearnersPerSlot: maxLearners,
           ),
@@ -1503,6 +1779,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 teacherId: t.teacherId,
                 teacherName: t.teacherName,
                 meetUrl: t.meetUrl,
+                teacherPhotoUrl: t.teacherPhotoUrl,
+                hasIntroVideo: t.hasIntroVideo,
                 durationMinutes: t.durationMinutes,
                 maxLearnersPerSlot: t.maxLearnersPerSlot,
                 bookedByMe: bookedByMe,
@@ -1520,6 +1798,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       setState(() {
         generatedSlots = out;
       });
+      _prefetchTeacherFullProfiles(out);
     } catch (e) {
       _toast('Failed to generate slots: $e');
       if (!mounted) return;
@@ -3329,52 +3608,104 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           final selected = selectedTeacherFirstId == s.teacherId;
           final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
           final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
+          final tint = _teacherTint(s.teacherId);
           return InkWell(
-            onTap: () {
-              setState(() {
-                selectedTeacherFirstId = s.teacherId;
-                selectedTeacherId = s.teacherId;
-                selectedDay = null;
-                selectedTime = null;
-              });
-            },
             borderRadius: BorderRadius.circular(14),
             child: Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: selected
-                    ? primaryBlue.withValues(alpha: 0.08)
-                    : Colors.white,
+                color: selected ? tint.withValues(alpha: 0.42) : tint,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: selected ? primaryBlue : uiBorder),
+                border: Border.all(
+                  color: selected ? primaryBlue : tint.withValues(alpha: 0.9),
+                ),
               ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          s.teacherName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => _openTeacherProfileSheet(s),
+                      child: Row(
+                        children: [
+                          ProfileAvatar(
+                            name: s.teacherName,
+                            photoUrl: s.teacherPhotoUrl,
+                            radius: 19,
+                            borderColor: Colors.white.withValues(alpha: 0.9),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$left seats available',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey.shade700,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.teacherName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: primaryBlue,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    Text(
+                                      '$left seats available',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    if (s.hasIntroVideo) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Video',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: primaryBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                  if (selected)
-                    const Icon(Icons.check_circle_rounded, color: primaryBlue),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: actionOrange,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        selectedTeacherFirstId = s.teacherId;
+                        selectedTeacherId = s.teacherId;
+                        selectedDay = null;
+                        selectedTime = null;
+                      });
+                    },
+                    child: Text(selected ? 'Selected' : 'Select'),
+                  ),
                 ],
               ),
             ),
@@ -3541,36 +3872,83 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
             final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
+            final tint = _teacherTint(s.teacherId);
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tint,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: uiBorder),
+                border: Border.all(color: tint.withValues(alpha: 0.9)),
               ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          s.teacherName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => _openTeacherProfileSheet(s),
+                      child: Row(
+                        children: [
+                          ProfileAvatar(
+                            name: s.teacherName,
+                            photoUrl: s.teacherPhotoUrl,
+                            radius: 19,
+                            borderColor: Colors.white.withValues(alpha: 0.9),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$left seats available',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey.shade700,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.teacherName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: primaryBlue,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    Text(
+                                      '$left seats available',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    if (s.hasIntroVideo) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Video',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: primaryBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   FilledButton(
@@ -3983,6 +4361,8 @@ class _TeacherAvail {
   final String teacherName;
   final Map<String, List<String>> slotsByDay;
   final String meetUrl;
+  final String teacherPhotoUrl;
+  final bool hasIntroVideo;
   final int durationMinutes;
   final int maxLearnersPerSlot;
 
@@ -3991,6 +4371,8 @@ class _TeacherAvail {
     required this.teacherName,
     required this.slotsByDay,
     required this.meetUrl,
+    required this.teacherPhotoUrl,
+    required this.hasIntroVideo,
     required this.durationMinutes,
     required this.maxLearnersPerSlot,
   });
@@ -4016,6 +4398,8 @@ class _Slot {
   final String teacherId;
   final String teacherName;
   final String meetUrl;
+  final String teacherPhotoUrl;
+  final bool hasIntroVideo;
   final int durationMinutes;
   final int maxLearnersPerSlot;
   final bool bookedByMe;
@@ -4030,6 +4414,8 @@ class _Slot {
     required this.teacherId,
     required this.teacherName,
     required this.meetUrl,
+    required this.teacherPhotoUrl,
+    required this.hasIntroVideo,
     required this.durationMinutes,
     required this.maxLearnersPerSlot,
     this.bookedByMe = false,
@@ -4043,6 +4429,32 @@ class _Slot {
     final cap = maxLearnersPerSlot <= 0 ? 6 : maxLearnersPerSlot;
     return bookedCount >= cap;
   }
+}
+
+class _TeacherMiniProfile {
+  final String name;
+  final String photoUrl;
+  final bool hasIntroVideo;
+
+  const _TeacherMiniProfile({
+    required this.name,
+    required this.photoUrl,
+    required this.hasIntroVideo,
+  });
+}
+
+class _TeacherFullProfile {
+  final String aboutMe;
+  final String introVideoUrl;
+  final bool socialVisible;
+  final Map<String, String> socialLinks;
+
+  const _TeacherFullProfile({
+    this.aboutMe = '',
+    this.introVideoUrl = '',
+    this.socialVisible = true,
+    this.socialLinks = const <String, String>{},
+  });
 }
 
 class _BusyRange {

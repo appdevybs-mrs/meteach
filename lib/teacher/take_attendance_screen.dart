@@ -600,6 +600,51 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       return;
     }
 
+    final groupedByUnit = <Map<String, dynamic>>[];
+    final groupedIndex = <String, int>{};
+
+    for (final session in _syllabiSessions) {
+      final unitId = (session['unitId'] ?? '').toString();
+      final unitTitleRaw = (session['unitTitle'] ?? '').toString().trim();
+      final unitTitle = unitTitleRaw.isNotEmpty
+          ? unitTitleRaw
+          : 'Untitled Unit';
+      final unitOrder = (session['unitOrder'] is num)
+          ? (session['unitOrder'] as num).toInt()
+          : (int.tryParse('${session['unitOrder']}') ?? 0);
+      final unitKey = unitId.isNotEmpty
+          ? unitId
+          : '__unit_${groupedByUnit.length}';
+
+      final existing = groupedIndex[unitKey];
+      if (existing == null) {
+        groupedIndex[unitKey] = groupedByUnit.length;
+        groupedByUnit.add({
+          'key': unitKey,
+          'unitId': unitId,
+          'unitTitle': unitTitle,
+          'unitOrder': unitOrder,
+          'lessons': <Map<String, dynamic>>[session],
+        });
+      } else {
+        final lessons =
+            groupedByUnit[existing]['lessons'] as List<Map<String, dynamic>>;
+        lessons.add(session);
+      }
+    }
+
+    groupedByUnit.sort((a, b) {
+      final orderA = a['unitOrder'] as int;
+      final orderB = b['unitOrder'] as int;
+      final cmp = orderA.compareTo(orderB);
+      if (cmp != 0) return cmp;
+      final titleA = (a['unitTitle'] ?? '').toString();
+      final titleB = (b['unitTitle'] ?? '').toString();
+      return titleA.compareTo(titleB);
+    });
+
+    final expandedUnits = <String>{};
+
     final chosen = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -608,151 +653,236 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: uiBorder,
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: const [
-                    Icon(Icons.menu_book, color: primaryBlue),
-                    SizedBox(width: 10),
-                    Text(
-                      'Add Lesson Taught',
-                      style: TextStyle(
-                        color: primaryBlue,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: uiBorder,
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: const [
+                        Icon(Icons.menu_book, color: primaryBlue),
+                        SizedBox(width: 10),
+                        Text(
+                          'Add Lesson Taught',
+                          style: TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: groupedByUnit.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) {
+                          final unit = groupedByUnit[i];
+                          final unitKey = (unit['key'] ?? '').toString();
+                          final unitTitle = (unit['unitTitle'] ?? '')
+                              .toString();
+                          final lessons =
+                              unit['lessons'] as List<Map<String, dynamic>>;
+                          final lessonCount = lessons.length;
+                          final isExpanded = expandedUnits.contains(unitKey);
+
+                          return Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: uiBorder),
+                              color: Colors.white,
+                            ),
+                            child: Column(
+                              children: [
+                                InkWell(
+                                  onTap: () {
+                                    setModalState(() {
+                                      if (isExpanded) {
+                                        expandedUnits.remove(unitKey);
+                                      } else {
+                                        expandedUnits.add(unitKey);
+                                      }
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.folder_open,
+                                          color: primaryBlue,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            unitTitle,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: primaryBlue,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '$lessonCount lesson${lessonCount == 1 ? '' : 's'}',
+                                          style: const TextStyle(
+                                            color: secondaryText,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          isExpanded
+                                              ? Icons.keyboard_arrow_up
+                                              : Icons.keyboard_arrow_down,
+                                          color: secondaryText,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                if (isExpanded) ...[
+                                  const Divider(height: 1, color: uiBorder),
+                                  ListView.separated(
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    itemCount: lessons.length,
+                                    separatorBuilder: (_, _) =>
+                                        const Divider(height: 1),
+                                    itemBuilder: (_, li) {
+                                      final s = lessons[li];
+                                      final title = (s['title'] ?? '')
+                                          .toString();
+                                      final objective = (s['objective'] ?? '')
+                                          .toString()
+                                          .trim();
+                                      final skillType = (s['skillType'] ?? '')
+                                          .toString()
+                                          .trim();
+                                      final hasHomework = (s['homework'] ?? '')
+                                          .toString()
+                                          .trim()
+                                          .isNotEmpty;
+                                      final sn = (s['sessionNumber'] is num)
+                                          ? (s['sessionNumber'] as num).toInt()
+                                          : (int.tryParse(
+                                                  '${s['sessionNumber']}',
+                                                ) ??
+                                                0);
+
+                                      return InkWell(
+                                        onTap: () => Navigator.pop(ctx, s),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 16,
+                                                backgroundColor: appBg,
+                                                child: const Icon(
+                                                  Icons.school,
+                                                  size: 18,
+                                                  color: primaryBlue,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      sn > 0
+                                                          ? 'Session $sn • $title'
+                                                          : title,
+                                                      style: const TextStyle(
+                                                        color: primaryBlue,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        fontSize: 14,
+                                                      ),
+                                                    ),
+                                                    if (objective
+                                                        .isNotEmpty) ...[
+                                                      const SizedBox(height: 6),
+                                                      Text(
+                                                        objective,
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          color: mainText,
+                                                          fontSize: 12,
+                                                          height: 1.25,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    const SizedBox(height: 8),
+                                                    Wrap(
+                                                      spacing: 8,
+                                                      runSpacing: 8,
+                                                      children: [
+                                                        if (skillType
+                                                            .isNotEmpty)
+                                                          _chip(
+                                                            icon:
+                                                                Icons.category,
+                                                            text: skillType,
+                                                            tint: primaryBlue,
+                                                          ),
+                                                        if (hasHomework)
+                                                          _chip(
+                                                            icon: Icons
+                                                                .assignment_turned_in,
+                                                            text: 'Homework',
+                                                            tint: actionOrange,
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _syllabiSessions.length,
-                    separatorBuilder: (_, _) => const Divider(height: 12),
-                    itemBuilder: (_, i) {
-                      final s = _syllabiSessions[i];
-
-                      final unitTitle = (s['unitTitle'] ?? '').toString();
-                      final title = (s['title'] ?? '').toString();
-                      final objective = (s['objective'] ?? '')
-                          .toString()
-                          .trim();
-                      final skillType = (s['skillType'] ?? '')
-                          .toString()
-                          .trim();
-                      final hasHomework = (s['homework'] ?? '')
-                          .toString()
-                          .trim()
-                          .isNotEmpty;
-                      final sn = (s['sessionNumber'] is num)
-                          ? (s['sessionNumber'] as num).toInt()
-                          : (int.tryParse('${s['sessionNumber']}') ?? 0);
-
-                      return InkWell(
-                        onTap: () => Navigator.pop(ctx, s),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: uiBorder),
-                            color: Colors.white,
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              CircleAvatar(
-                                radius: 16,
-                                backgroundColor: appBg,
-                                child: const Icon(
-                                  Icons.school,
-                                  size: 18,
-                                  color: primaryBlue,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      unitTitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: secondaryText,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      sn > 0 ? "Session $sn • $title" : title,
-                                      style: const TextStyle(
-                                        color: primaryBlue,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    if (objective.isNotEmpty) ...[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        objective,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: mainText,
-                                          fontSize: 12,
-                                          height: 1.25,
-                                        ),
-                                      ),
-                                    ],
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        if (skillType.isNotEmpty)
-                                          _chip(
-                                            icon: Icons.category,
-                                            text: skillType,
-                                            tint: primaryBlue,
-                                          ),
-                                        if (hasHomework)
-                                          _chip(
-                                            icon: Icons.assignment_turned_in,
-                                            text: 'Homework',
-                                            tint: actionOrange,
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

@@ -83,6 +83,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   final Map<String, Future<List<_TeacherHandoffRow>>> _handoffCache = {};
   final Map<String, String> _sessionTitleCache = {};
   final Map<String, String> _courseTitleCache = {};
+  final Map<String, bool> _expandedBookingCards = {};
   final Map<String, bool> _expandedLearnersByBooking = {};
 
   late TabController _tab;
@@ -141,6 +142,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   static String _safeStr(dynamic v) => (v ?? '').toString().trim();
+
+  static String _initials(String fullName) {
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'L';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
 
   static String _two(int n) => n < 10 ? '0$n' : '$n';
 
@@ -244,6 +256,79 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return '-';
   }
 
+  _RatingUiTone _ratingTone(int rating) {
+    final r = rating.clamp(0, 5);
+    switch (r) {
+      case 5:
+        return const _RatingUiTone(
+          star: Color(0xFFF59E0B),
+          cardBg: Color(0xFFFFF8EB),
+          cardBorder: Color(0xFFF2C46E),
+          chipBg: Color(0xFFFDE7BF),
+          chipText: Color(0xFF92400E),
+        );
+      case 4:
+        return const _RatingUiTone(
+          star: Color(0xFFFBBF24),
+          cardBg: Color(0xFFFFFAEF),
+          cardBorder: Color(0xFFF8D27A),
+          chipBg: Color(0xFFFFEDC7),
+          chipText: Color(0xFF92400E),
+        );
+      case 3:
+        return const _RatingUiTone(
+          star: Color(0xFF38BDF8),
+          cardBg: Color(0xFFF0F9FF),
+          cardBorder: Color(0xFF94D6F8),
+          chipBg: Color(0xFFDDF2FF),
+          chipText: Color(0xFF075985),
+        );
+      case 2:
+        return const _RatingUiTone(
+          star: Color(0xFFFB923C),
+          cardBg: Color(0xFFFFF4EB),
+          cardBorder: Color(0xFFF9BE8A),
+          chipBg: Color(0xFFFFE3CC),
+          chipText: Color(0xFF9A3412),
+        );
+      case 1:
+        return const _RatingUiTone(
+          star: Color(0xFFEF4444),
+          cardBg: Color(0xFFFFEFF0),
+          cardBorder: Color(0xFFF3A8AD),
+          chipBg: Color(0xFFFFD5D8),
+          chipText: Color(0xFF991B1B),
+        );
+      default:
+        return _RatingUiTone(
+          star: p.text.withValues(alpha: 0.45),
+          cardBg: p.cardBg,
+          cardBorder: p.border.withValues(alpha: 0.84),
+          chipBg: p.soft.withValues(alpha: 0.26),
+          chipText: p.text.withValues(alpha: 0.72),
+        );
+    }
+  }
+
+  Widget _handoffMetaChip(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.26),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: p.border.withValues(alpha: 0.76)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: p.text.withValues(alpha: 0.82),
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
   Future<List<_TeacherHandoffRow>> _loadTeacherHandoffRows({
     required String learnerUid,
     required String courseId,
@@ -326,19 +411,28 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final h = MediaQuery.of(ctx).size.height;
+        final safeBottom = MediaQuery.of(ctx).viewPadding.bottom;
         final latestNote = rows.where((r) => r.teacherNoteExists).toList();
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: EdgeInsets.fromLTRB(12, 0, 12, 12 + safeBottom),
             child: Container(
               height: h * 0.74,
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               decoration: BoxDecoration(
-                color: p.cardBg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                color: const Color(0xFFFFFDF9),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: p.border.withValues(alpha: 0.78)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 28,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
               ),
               child: ListView(
+                padding: const EdgeInsets.only(bottom: 10),
                 children: [
                   Text(
                     '$name • ${courseTitle.trim().isEmpty ? courseId : courseTitle}',
@@ -348,7 +442,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       fontSize: 15,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   if (latestNote.isNotEmpty) ...[
                     Text(
                       'Latest note for next teacher',
@@ -357,26 +451,77 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                         color: p.primary,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: p.soft.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: p.border.withValues(alpha: 0.84),
-                        ),
-                      ),
-                      child: Text(
-                        'S${latestNote.first.sessionNo <= 0 ? '-' : latestNote.first.sessionNo} • ${latestNote.first.teacherRating > 0 ? '${latestNote.first.teacherRating}★' : 'No stars'}\n${latestNote.first.teacherComment.isEmpty ? 'No comment text.' : latestNote.first.teacherComment}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: p.text.withValues(alpha: 0.82),
-                          height: 1.35,
-                        ),
-                      ),
+                    const SizedBox(height: 8),
+                    Builder(
+                      builder: (_) {
+                        final note = latestNote.first;
+                        final tone = _ratingTone(note.teacherRating);
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: tone.cardBg,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: tone.cardBorder),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: tone.chipBg,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(color: tone.cardBorder),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'S${note.sessionNo <= 0 ? '-' : note.sessionNo}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: tone.chipText,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.star_rounded,
+                                      size: 16,
+                                      color: tone.star,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      note.teacherRating > 0
+                                          ? '${note.teacherRating}'
+                                          : '-',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: tone.chipText,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                note.teacherComment.isEmpty
+                                    ? 'No comment text.'
+                                    : note.teacherComment,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: p.text.withValues(alpha: 0.84),
+                                  height: 1.36,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                   ],
                   Text(
                     'Previous sessions (same course)',
@@ -385,7 +530,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       color: p.primary,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   if (rows.isEmpty)
                     Text(
                       'No previous online flexible sessions found.',
@@ -396,22 +541,86 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     )
                   else
                     ...rows.map((r) {
+                      final tone = _ratingTone(r.teacherRating);
                       return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(12),
+                          color: r.teacherNoteExists ? tone.cardBg : p.cardBg,
+                          borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: p.border.withValues(alpha: 0.84),
+                            color: r.teacherNoteExists
+                                ? tone.cardBorder
+                                : p.border.withValues(alpha: 0.84),
                           ),
                         ),
-                        child: Text(
-                          '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo} • ${r.present ? 'Present' : 'Absent'} • ${r.teacherName.isEmpty ? 'Teacher' : r.teacherName}${r.teacherNoteExists ? ' • ${r.teacherRating > 0 ? '${r.teacherRating}★' : 'No stars'}${r.teacherComment.isEmpty ? '' : ' • ${r.teacherComment}'}' : ''}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: p.text.withValues(alpha: 0.82),
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                _handoffMetaChip(_fmtWhenFromRow(r)),
+                                _handoffMetaChip(
+                                  'Session ${r.sessionNo <= 0 ? '-' : r.sessionNo}',
+                                ),
+                                _handoffMetaChip(
+                                  r.present ? 'Present' : 'Absent',
+                                ),
+                                _handoffMetaChip(
+                                  r.teacherName.isEmpty
+                                      ? 'Teacher'
+                                      : r.teacherName,
+                                ),
+                                if (r.teacherNoteExists)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: tone.chipBg,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: tone.cardBorder,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.star_rounded,
+                                          size: 14,
+                                          color: tone.star,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          r.teacherRating > 0
+                                              ? '${r.teacherRating}'
+                                              : '-',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: tone.chipText,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (r.teacherComment.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                r.teacherComment,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: p.text.withValues(alpha: 0.82),
+                                  height: 1.34,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       );
                     }),
@@ -925,31 +1134,40 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: p.cardBg,
+      backgroundColor: Colors.transparent,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) {
-        final bottomPad = MediaQuery.of(context).padding.bottom;
+      builder: (modalCtx) {
+        final bottomPad = MediaQuery.of(modalCtx).viewPadding.bottom;
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
             child: DefaultTabController(
               length: 2,
               child: SizedBox(
-                height: MediaQuery.of(context).size.height * 0.8,
+                height: MediaQuery.of(modalCtx).size.height * 0.84,
                 child: Column(
                   children: [
                     Container(
                       decoration: BoxDecoration(
-                        color: p.soft.withValues(alpha: 0.22),
-                        borderRadius: BorderRadius.circular(12),
+                        color: const Color(0xFFF7F8FA),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.75),
+                        ),
                       ),
                       child: TabBar(
                         labelColor: p.primary,
                         unselectedLabelColor: p.text.withValues(alpha: 0.65),
-                        indicatorColor: p.accent,
+                        indicator: BoxDecoration(
+                          color: p.cardBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: p.accent.withValues(alpha: 0.35),
+                          ),
+                        ),
                         tabs: const [
                           Tab(text: 'Course Details'),
                           Tab(text: 'Learners'),
@@ -966,10 +1184,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                               children: [
                                 Container(
                                   width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
+                                  padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: p.soft.withValues(alpha: 0.22),
-                                    borderRadius: BorderRadius.circular(16),
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFFFCF6),
+                                        Color(0xFFF9FBFF),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(18),
                                     border: Border.all(
                                       color: p.border.withValues(alpha: 0.85),
                                     ),
@@ -978,6 +1203,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
+                                      Container(
+                                        width: 52,
+                                        height: 5,
+                                        decoration: BoxDecoration(
+                                          color: p.accent.withValues(
+                                            alpha: 0.75,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
                                       Row(
                                         children: [
                                           Expanded(
@@ -1013,7 +1251,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 10),
                                       Text(
                                         'Course: $courseLabel',
                                         style: TextStyle(
@@ -1175,15 +1413,44 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                               onSelected: (_) => setLocal(
                                                 () => selectedLearnerUid = uid,
                                               ),
-                                              label: Text(
-                                                name.isEmpty ? 'Learner' : name,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color:
-                                                      selectedLearnerUid == uid
-                                                      ? p.primary
-                                                      : p.text,
-                                                ),
+                                              label: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  CircleAvatar(
+                                                    radius: 10,
+                                                    backgroundColor:
+                                                        selectedLearnerUid ==
+                                                            uid
+                                                        ? p.accent.withValues(
+                                                            alpha: 0.25,
+                                                          )
+                                                        : p.soft,
+                                                    child: Text(
+                                                      _initials(name),
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: p.primary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 7),
+                                                  Text(
+                                                    name.isEmpty
+                                                        ? 'Learner'
+                                                        : name,
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color:
+                                                          selectedLearnerUid ==
+                                                              uid
+                                                          ? p.primary
+                                                          : p.text,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             );
                                           },
@@ -1215,25 +1482,56 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                                 .trim();
                                             return ListView(
                                               children: [
-                                                Text(
-                                                  name,
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 16,
-                                                    color: p.primary,
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets.all(
+                                                    12,
                                                   ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  bio.isEmpty
-                                                      ? 'No profile bio yet.'
-                                                      : bio,
-                                                  style: TextStyle(
-                                                    color: p.text.withValues(
-                                                      alpha: 0.8,
+                                                  decoration: BoxDecoration(
+                                                    color: p.soft.withValues(
+                                                      alpha: 0.16,
                                                     ),
-                                                    fontWeight: FontWeight.w700,
-                                                    height: 1.35,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          14,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: p.border
+                                                          .withValues(
+                                                            alpha: 0.82,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        name,
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w900,
+                                                          fontSize: 16,
+                                                          color: p.primary,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      Text(
+                                                        bio.isEmpty
+                                                            ? 'No profile bio yet.'
+                                                            : bio,
+                                                        style: TextStyle(
+                                                          color: p.text
+                                                              .withValues(
+                                                                alpha: 0.8,
+                                                              ),
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          height: 1.4,
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                                 const SizedBox(height: 12),
@@ -1309,109 +1607,178 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                                           )
                                                         else ...[
                                                           if (latest.isNotEmpty)
-                                                            Container(
-                                                              margin:
-                                                                  const EdgeInsets.only(
-                                                                    bottom: 8,
-                                                                  ),
-                                                              padding:
-                                                                  const EdgeInsets.all(
-                                                                    10,
-                                                                  ),
-                                                              decoration: BoxDecoration(
-                                                                color: p.accent
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.08,
-                                                                    ),
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      12,
-                                                                    ),
-                                                                border: Border.all(
-                                                                  color: p
-                                                                      .accent
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.28,
+                                                            Builder(
+                                                              builder: (context) {
+                                                                final tone =
+                                                                    _ratingTone(
+                                                                      latest
+                                                                          .first
+                                                                          .teacherRating,
+                                                                    );
+                                                                return Container(
+                                                                  margin:
+                                                                      const EdgeInsets.only(
+                                                                        bottom:
+                                                                            10,
                                                                       ),
-                                                                ),
-                                                              ),
-                                                              child: Text(
-                                                                'Latest note: ${latest.first.teacherRating > 0 ? '${latest.first.teacherRating}★' : 'No stars'}${latest.first.teacherComment.isEmpty ? '' : ' • ${latest.first.teacherComment}'}',
-                                                                style: TextStyle(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w800,
-                                                                  color: p.text
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.82,
+                                                                  padding:
+                                                                      const EdgeInsets.all(
+                                                                        10,
                                                                       ),
-                                                                ),
-                                                              ),
+                                                                  decoration: BoxDecoration(
+                                                                    color: tone
+                                                                        .cardBg,
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          12,
+                                                                        ),
+                                                                    border: Border.all(
+                                                                      color: tone
+                                                                          .cardBorder,
+                                                                    ),
+                                                                  ),
+                                                                  child: Row(
+                                                                    children: [
+                                                                      Icon(
+                                                                        Icons
+                                                                            .star_rounded,
+                                                                        color: tone
+                                                                            .star,
+                                                                        size:
+                                                                            18,
+                                                                      ),
+                                                                      const SizedBox(
+                                                                        width:
+                                                                            6,
+                                                                      ),
+                                                                      Expanded(
+                                                                        child: Text(
+                                                                          'Latest note: ${latest.first.teacherRating > 0 ? '${latest.first.teacherRating}★' : 'No stars'}${latest.first.teacherComment.isEmpty ? '' : ' • ${latest.first.teacherComment}'}',
+                                                                          style: TextStyle(
+                                                                            fontWeight:
+                                                                                FontWeight.w800,
+                                                                            color: p.text.withValues(
+                                                                              alpha: 0.82,
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                );
+                                                              },
                                                             ),
                                                           ...rows.take(12).map((
                                                             r,
                                                           ) {
-                                                            return Container(
-                                                              margin:
-                                                                  const EdgeInsets.only(
-                                                                    bottom: 8,
-                                                                  ),
-                                                              padding:
-                                                                  const EdgeInsets.all(
-                                                                    10,
-                                                                  ),
-                                                              decoration: BoxDecoration(
-                                                                color: p.cardBg,
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      12,
-                                                                    ),
-                                                                border: Border.all(
-                                                                  color: p
-                                                                      .border
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.84,
+                                                            final tone =
+                                                                _ratingTone(
+                                                                  r.teacherRating,
+                                                                );
+                                                            return Row(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              children: [
+                                                                Container(
+                                                                  margin:
+                                                                      const EdgeInsets.only(
+                                                                        top: 9,
                                                                       ),
+                                                                  width: 10,
+                                                                  height: 10,
+                                                                  decoration: BoxDecoration(
+                                                                    color:
+                                                                        r.teacherNoteExists
+                                                                        ? tone.star
+                                                                        : p.border,
+                                                                    shape: BoxShape
+                                                                        .circle,
+                                                                  ),
                                                                 ),
-                                                              ),
-                                                              child: Column(
-                                                                crossAxisAlignment:
-                                                                    CrossAxisAlignment
-                                                                        .start,
-                                                                children: [
-                                                                  Text(
-                                                                    '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo}',
-                                                                    style: TextStyle(
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w900,
-                                                                      color: p
-                                                                          .primary,
-                                                                    ),
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    height: 4,
-                                                                  ),
-                                                                  Text(
-                                                                    '${r.present ? 'Present' : 'Absent'}${r.teacherName.isEmpty ? '' : ' • ${r.teacherName}'}${r.teacherNoteExists ? ' • ${r.teacherRating > 0 ? '${r.teacherRating}★' : 'No stars'}${r.teacherComment.isEmpty ? '' : ' • ${r.teacherComment}'}' : ''}',
-                                                                    style: TextStyle(
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w700,
-                                                                      color: p
-                                                                          .text
-                                                                          .withValues(
-                                                                            alpha:
-                                                                                0.82,
+                                                                const SizedBox(
+                                                                  width: 8,
+                                                                ),
+                                                                Expanded(
+                                                                  child: Container(
+                                                                    margin:
+                                                                        const EdgeInsets.only(
+                                                                          bottom:
+                                                                              10,
+                                                                        ),
+                                                                    padding:
+                                                                        const EdgeInsets.all(
+                                                                          10,
+                                                                        ),
+                                                                    decoration: BoxDecoration(
+                                                                      color:
+                                                                          r.teacherNoteExists
+                                                                          ? tone.cardBg
+                                                                          : p.cardBg,
+                                                                      borderRadius:
+                                                                          BorderRadius.circular(
+                                                                            12,
                                                                           ),
+                                                                      border: Border.all(
+                                                                        color:
+                                                                            r.teacherNoteExists
+                                                                            ? tone.cardBorder
+                                                                            : p.border.withValues(
+                                                                                alpha: 0.84,
+                                                                              ),
+                                                                      ),
+                                                                    ),
+                                                                    child: Column(
+                                                                      crossAxisAlignment:
+                                                                          CrossAxisAlignment
+                                                                              .start,
+                                                                      children: [
+                                                                        Text(
+                                                                          '${_fmtWhenFromRow(r)} • Session ${r.sessionNo <= 0 ? '-' : r.sessionNo}',
+                                                                          style: TextStyle(
+                                                                            fontWeight:
+                                                                                FontWeight.w900,
+                                                                            color:
+                                                                                p.primary,
+                                                                          ),
+                                                                        ),
+                                                                        const SizedBox(
+                                                                          height:
+                                                                              5,
+                                                                        ),
+                                                                        Text(
+                                                                          '${r.present ? 'Present' : 'Absent'}${r.teacherName.isEmpty ? '' : ' • ${r.teacherName}'}${r.teacherRating > 0 ? ' • ${r.teacherRating}★' : ''}',
+                                                                          style: TextStyle(
+                                                                            fontWeight:
+                                                                                FontWeight.w700,
+                                                                            color: p.text.withValues(
+                                                                              alpha: 0.82,
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                        if (r
+                                                                            .teacherComment
+                                                                            .isNotEmpty) ...[
+                                                                          const SizedBox(
+                                                                            height:
+                                                                                6,
+                                                                          ),
+                                                                          Text(
+                                                                            r.teacherComment,
+                                                                            style: TextStyle(
+                                                                              fontWeight: FontWeight.w700,
+                                                                              color: p.text.withValues(
+                                                                                alpha: 0.8,
+                                                                              ),
+                                                                              height: 1.35,
+                                                                            ),
+                                                                          ),
+                                                                        ],
+                                                                      ],
                                                                     ),
                                                                   ),
-                                                                ],
-                                                              ),
+                                                                ),
+                                                              ],
                                                             );
                                                           }),
                                                         ],
@@ -1479,8 +1846,16 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       ),
                     ),
                     const SizedBox(height: 10),
-                    SizedBox(
+                    Container(
                       width: double.infinity,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          top: BorderSide(
+                            color: p.border.withValues(alpha: 0.72),
+                          ),
+                        ),
+                      ),
+                      padding: const EdgeInsets.only(top: 10),
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: p.primary,
@@ -1509,9 +1884,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Widget _detailsChip(IconData icon, String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: p.soft.withValues(alpha: 0.2),
+        color: const Color(0xFFF7FAFF),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: p.border.withValues(alpha: 0.84)),
       ),
@@ -1540,9 +1915,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: p.soft.withValues(alpha: 0.16),
+        color: const Color(0xFFFCFDFE),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
@@ -1561,11 +1936,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            body.isEmpty ? '-' : body,
+            body.isEmpty ? 'No ${title.toLowerCase()} set yet.' : body,
             style: TextStyle(
               fontWeight: FontWeight.w700,
               color: p.text.withValues(alpha: 0.8),
-              height: 1.35,
+              height: 1.42,
             ),
           ),
         ],
@@ -1908,30 +2283,33 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       body: teacherWebBodyFrame(
         context: context,
         maxWidth: 1640,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.045,
-                  child: Center(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.76,
-                      child: Image.asset(
-                        'assets/images/ybs_logo.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        child: SafeArea(
+          top: false,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.045,
+                    child: Center(
+                      child: FractionallySizedBox(
+                        widthFactor: 0.76,
+                        child: Image.asset(
+                          'assets/images/ybs_logo.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            TabBarView(
-              controller: _tab,
-              children: [_buildInClassTab(), _buildOnlineTab()],
-            ),
-          ],
+              TabBarView(
+                controller: _tab,
+                children: [_buildInClassTab(), _buildOnlineTab()],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1942,6 +2320,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       context,
       minWidth: 1280,
     );
+    final safeBottom = MediaQuery.of(context).viewPadding.bottom;
 
     if (_busy) {
       return Center(child: CircularProgressIndicator(color: p.accent));
@@ -1965,7 +2344,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     if (!desktopWorkspace) {
       return ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + safeBottom + 10),
         children: [
           if (_myClasses.isEmpty)
             _emptyState('No classes found for you yet.')
@@ -1977,7 +2356,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     if (_myClasses.isEmpty) {
       return ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + safeBottom + 10),
         children: [_emptyState('No classes found for you yet.')],
       );
     }
@@ -2004,7 +2383,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         SizedBox(
           width: 380,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + safeBottom + 10),
             children: _myClasses.map((c) {
               final classId = _safeStr(c['id'] ?? c['class_id']);
               final title = _safeStr(c['course_title']).isEmpty
@@ -2023,7 +2402,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         Container(width: 1, color: p.border.withValues(alpha: 0.7)),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + safeBottom + 10),
             children: [_classCard(selectedClass)],
           ),
         ),
@@ -2604,9 +2983,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     required String emptyText,
     bool groupByWeek = false,
   }) {
+    final safeBottom = MediaQuery.of(context).viewPadding.bottom;
+    final bottomGap = 16.0 + safeBottom + 10;
     if (items.isEmpty) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: EdgeInsets.fromLTRB(16, 0, 16, bottomGap),
         children: [_emptyHint(emptyText)],
       );
     }
@@ -2631,13 +3012,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       }
 
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: EdgeInsets.fromLTRB(16, 0, 16, bottomGap),
         children: children,
       );
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomGap),
       children: items.map(_bookingCard).toList(),
     );
   }
@@ -2686,6 +3067,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
     final endAt = dt.add(Duration(minutes: b.durationMinutes));
     final classPassed = !DateTime.now().isBefore(endAt);
+    final expanded = _expandedBookingCards[b.bookingKey] == true;
     final when =
         '${dt.year}-${_two(dt.month)}-${_two(dt.day)}  ${_two(dt.hour)}:${_two(dt.minute)}';
 
@@ -2727,38 +3109,40 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w900,
-                fontSize: 15,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _expandedBookingCards[b.bookingKey] = !expanded;
+                    });
+                  },
+                  tooltip: expanded ? 'Collapse card' : 'Expand card',
+                  icon: AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: p.primary,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             _bookingInfoLine(Icons.event_rounded, 'When', when),
-            const SizedBox(height: 4),
-            _bookingInfoLine(Icons.person_rounded, 'Teacher', b.teacherName),
-            const SizedBox(height: 4),
-            _bookingInfoLine(
-              Icons.groups_rounded,
-              'Learners',
-              '${b.learnerUids.length}',
-            ),
-            const SizedBox(height: 4),
-            FutureBuilder<String>(
-              future: _loadSessionTitle(b.courseId, b.sessionNo),
-              builder: (context, snap) {
-                final title = (snap.data ?? '').trim();
-                final sNo = b.sessionNo <= 0 ? '-' : '${b.sessionNo}';
-                final label = title.isEmpty
-                    ? 'Session: $sNo'
-                    : 'Session: $sNo — $title';
-
-                return _bookingInfoLine(Icons.menu_book_rounded, '', label);
-              },
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -2800,7 +3184,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -2822,59 +3206,158 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: FutureBuilder<DataSnapshot>(
-                    future: _db
-                        .child('$onlineAttendanceNode/${b.bookingKey}')
-                        .get(),
-                    builder: (context, snap) {
-                      bool hasAttendance = false;
-                      bool mine = true;
-                      if (snap.hasData &&
-                          snap.data!.exists &&
-                          snap.data!.value is Map) {
-                        hasAttendance = true;
-                        final rec = Map<String, dynamic>.from(
-                          snap.data!.value as Map,
-                        );
-                        final owner = _safeStr(rec['teacherUid']);
-                        mine = owner.isEmpty || owner == _teacherUid;
-                      }
-
-                      final label = hasAttendance
-                          ? (mine ? 'Edit' : 'View')
-                          : 'Take';
-                      final icon = hasAttendance
-                          ? (mine
-                                ? Icons.edit_note_rounded
-                                : Icons.visibility_rounded)
-                          : Icons.fact_check_rounded;
-                      final canOpenTake = hasAttendance || classPassed;
-                      final actionBg = hasAttendance
-                          ? (mine
-                                ? const Color(0xFFD97706)
-                                : p.text.withValues(alpha: 0.55))
-                          : (classPassed
-                                ? p.accent
-                                : p.text.withValues(alpha: 0.35));
-
-                      return ElevatedButton.icon(
-                        icon: Icon(icon),
-                        label: Text(label),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: actionBg,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: expanded
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        _bookingInfoLine(
+                          Icons.person_rounded,
+                          'Teacher',
+                          b.teacherName,
                         ),
-                        onPressed: canOpenTake
-                            ? () {
-                                if (!mine && hasAttendance) {
+                        const SizedBox(height: 4),
+                        _bookingInfoLine(
+                          Icons.groups_rounded,
+                          'Learners',
+                          '${b.learnerUids.length}',
+                        ),
+                        const SizedBox(height: 4),
+                        FutureBuilder<String>(
+                          future: _loadSessionTitle(b.courseId, b.sessionNo),
+                          builder: (context, snap) {
+                            final title = (snap.data ?? '').trim();
+                            final sNo = b.sessionNo <= 0
+                                ? '-'
+                                : '${b.sessionNo}';
+                            final label = title.isEmpty
+                                ? 'Session: $sNo'
+                                : 'Session: $sNo — $title';
+
+                            return _bookingInfoLine(
+                              Icons.menu_book_rounded,
+                              '',
+                              label,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FutureBuilder<DataSnapshot>(
+                                future: _db
+                                    .child(
+                                      '$onlineAttendanceNode/${b.bookingKey}',
+                                    )
+                                    .get(),
+                                builder: (context, snap) {
+                                  bool hasAttendance = false;
+                                  bool mine = true;
+                                  if (snap.hasData &&
+                                      snap.data!.exists &&
+                                      snap.data!.value is Map) {
+                                    hasAttendance = true;
+                                    final rec = Map<String, dynamic>.from(
+                                      snap.data!.value as Map,
+                                    );
+                                    final owner = _safeStr(rec['teacherUid']);
+                                    mine =
+                                        owner.isEmpty || owner == _teacherUid;
+                                  }
+
+                                  final label = hasAttendance
+                                      ? (mine ? 'Edit' : 'View')
+                                      : 'Take';
+                                  final icon = hasAttendance
+                                      ? (mine
+                                            ? Icons.edit_note_rounded
+                                            : Icons.visibility_rounded)
+                                      : Icons.fact_check_rounded;
+                                  final canOpenTake =
+                                      hasAttendance || classPassed;
+                                  final actionBg = hasAttendance
+                                      ? (mine
+                                            ? const Color(0xFFD97706)
+                                            : p.text.withValues(alpha: 0.55))
+                                      : (classPassed
+                                            ? p.accent
+                                            : p.text.withValues(alpha: 0.35));
+
+                                  return ElevatedButton.icon(
+                                    icon: Icon(icon),
+                                    label: Text(label),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: actionBg,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    onPressed: canOpenTake
+                                        ? () {
+                                            if (!mine && hasAttendance) {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      _OnlineAttendanceHistoryScreen(
+                                                        booking: b,
+                                                        teacherUid: _teacherUid,
+                                                      ),
+                                                ),
+                                              );
+                                              return;
+                                            }
+
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    _OnlineTakeAttendanceScreen(
+                                                      booking: b,
+                                                      teacherUid: _teacherUid,
+                                                      teacherName:
+                                                          _teacherName.isEmpty
+                                                          ? 'Teacher'
+                                                          : _teacherName,
+                                                    ),
+                                              ),
+                                            );
+                                          }
+                                        : null,
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: Icon(
+                                  Icons.insights_rounded,
+                                  color: p.primary,
+                                ),
+                                label: Text(
+                                  'Progress',
+                                  style: TextStyle(color: p.primary),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: p.border),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                ),
+                                onPressed: () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -2885,82 +3368,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                           ),
                                     ),
                                   );
-                                  return;
-                                }
-
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => _OnlineTakeAttendanceScreen(
-                                      booking: b,
-                                      teacherUid: _teacherUid,
-                                      teacherName: _teacherName.isEmpty
-                                          ? 'Teacher'
-                                          : _teacherName,
-                                    ),
-                                  ),
-                                );
-                              }
-                            : null,
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: Icon(Icons.history_rounded, color: p.primary),
-                    label: Text("History", style: TextStyle(color: p.primary)),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: p.border),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => _OnlineAttendanceHistoryScreen(
-                            booking: b,
-                            teacherUid: _teacherUid,
-                          ),
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: Icon(Icons.bar_chart_rounded, color: p.primary),
-                    label: Text("Stats", style: TextStyle(color: p.primary)),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: p.border),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => OnlineAttendanceStatsScreen(
-                            courseId: b.courseId,
-                            courseTitle: b.courseTitle,
-                            teacherUid: _teacherUid,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+                        const SizedBox(height: 12),
+                        _learnersPreview(b),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
             ),
-            const SizedBox(height: 12),
-            _learnersPreview(b),
           ],
         ),
       ),
@@ -3084,10 +3502,33 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                     ),
                                   ),
                                 ),
-                                Icon(
-                                  Icons.sticky_note_2_outlined,
-                                  size: 16,
-                                  color: p.text.withValues(alpha: 0.55),
+                                Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFFC15A),
+                                        Color(0xFFF97316),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(9),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(
+                                          0xFFF97316,
+                                        ).withValues(alpha: 0.35),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.sticky_note_2_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ],
                             ),
@@ -3228,6 +3669,22 @@ class _TeacherHandoffRow {
     if (noteUpdatedAt > 0) return noteUpdatedAt;
     return 0;
   }
+}
+
+class _RatingUiTone {
+  final Color star;
+  final Color cardBg;
+  final Color cardBorder;
+  final Color chipBg;
+  final Color chipText;
+
+  const _RatingUiTone({
+    required this.star,
+    required this.cardBg,
+    required this.cardBorder,
+    required this.chipBg,
+    required this.chipText,
+  });
 }
 
 class _OnlineBooking {
@@ -5014,6 +5471,43 @@ class _OnlineAttendanceHistoryScreenState
     return out;
   }
 
+  Future<int> _loadCourseLessonCount(String courseId) async {
+    if (courseId.isEmpty) return 0;
+    try {
+      final snap = await _db.child('syllabi/$courseId/flexible').get();
+      if (!snap.exists || snap.value is! Map) return 0;
+      final root = Map<dynamic, dynamic>.from(snap.value as Map);
+
+      final units = root['units'];
+      if (units is List) {
+        var count = 0;
+        for (final u in units) {
+          if (u is! Map) continue;
+          final um = u.map((k, v) => MapEntry(k.toString(), v));
+          final sessions = um['sessions'];
+          if (sessions is List) {
+            count += sessions.whereType<Map>().length;
+          }
+        }
+        if (count > 0) return count;
+      }
+
+      final seen = <int>{};
+      for (final e in root.entries) {
+        if (e.value is! Map) continue;
+        final m = (e.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final keyNo = int.tryParse(e.key.toString()) ?? 0;
+        final sn = _toInt(m['sessionNo']);
+        final order = _toInt(m['order']);
+        final n = sn > 0 ? sn : (order > 0 ? order : keyNo);
+        if (n > 0) seen.add(n);
+      }
+      return seen.length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -5024,20 +5518,59 @@ class _OnlineAttendanceHistoryScreenState
         surfaceTintColor: p.cardBg,
         iconTheme: IconThemeData(color: p.primary),
         title: Text(
-          'Online Attendance History',
+          'Online Progress',
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
       ),
       body: teacherWebBodyFrame(
         context: context,
         maxWidth: 1240,
-        child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: _loadHistoryRows(),
+        child: FutureBuilder<List<dynamic>>(
+          future: Future.wait<dynamic>([
+            _loadHistoryRows(),
+            _loadCourseLessonCount(widget.booking.courseId),
+          ]),
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
               return Center(child: CircularProgressIndicator(color: p.accent));
             }
-            final rows = snap.data ?? const <Map<String, dynamic>>[];
+            final loaded = snap.data ?? const <dynamic>[];
+            final rows = loaded.isNotEmpty
+                ? List<Map<String, dynamic>>.from(loaded.first as List)
+                : const <Map<String, dynamic>>[];
+            final totalCourseLessons = loaded.length > 1
+                ? (loaded[1] as int)
+                : 0;
+
+            final uniqueSessionNos = <int>{};
+            var totalPresent = 0;
+            var totalAbsent = 0;
+            var learnersMarks = 0;
+            var lastSessionAt = 0;
+            for (final rec in rows) {
+              final startAt = _toInt(rec['startAt']);
+              if (startAt > lastSessionAt) lastSessionAt = startAt;
+              final resolved = _toInt(rec['resolvedSessionNo']);
+              if (resolved > 0) uniqueSessionNos.add(resolved);
+              final taught = rec['taughtItems'];
+              if (taught is List) {
+                for (final it in taught) {
+                  if (it is! Map) continue;
+                  final mm = it.map((k, v) => MapEntry(k.toString(), v));
+                  final sn = _toInt(mm['sessionNumber']);
+                  if (sn > 0) uniqueSessionNos.add(sn);
+                }
+              }
+              final presentCount = _toInt(rec['presentCount']);
+              final absentCount = _toInt(rec['absentCount']);
+              totalPresent += presentCount;
+              totalAbsent += absentCount;
+              learnersMarks += presentCount + absentCount;
+            }
+            final totalSessions = rows.length;
+            final avgLearnersPerSession = totalSessions <= 0
+                ? 0.0
+                : (learnersMarks / totalSessions);
 
             if (rows.isEmpty) {
               return Center(
@@ -5057,6 +5590,69 @@ class _OnlineAttendanceHistoryScreenState
             return ListView(
               padding: const EdgeInsets.all(14),
               children: [
+                _box(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Course: ${widget.booking.courseTitle.trim().isEmpty ? widget.booking.courseId : widget.booking.courseTitle}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _metricRow('Sessions with attendance', '$totalSessions'),
+                      const SizedBox(height: 8),
+                      _metricRow('Total Present marks', '$totalPresent'),
+                      const SizedBox(height: 8),
+                      _metricRow('Total Absent marks', '$totalAbsent'),
+                      const SizedBox(height: 8),
+                      _metricRow(
+                        'Unique lessons taught',
+                        '${uniqueSessionNos.length}${totalCourseLessons > 0 ? ' / $totalCourseLessons' : ''}',
+                      ),
+                      const SizedBox(height: 8),
+                      _metricRow(
+                        'Avg learners per session',
+                        avgLearnersPerSession.toStringAsFixed(1),
+                      ),
+                      const SizedBox(height: 8),
+                      _metricRow(
+                        'Last session',
+                        lastSessionAt > 0
+                            ? DateFormat('yyyy-MM-dd HH:mm').format(
+                                DateTime.fromMillisecondsSinceEpoch(
+                                  lastSessionAt,
+                                ),
+                              )
+                            : '-',
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Course progress',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 10,
+                          value: (totalCourseLessons <= 0)
+                              ? 0
+                              : (uniqueSessionNos.length / totalCourseLessons)
+                                    .clamp(0, 1),
+                          backgroundColor: p.soft,
+                          color: p.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
                 ...rows.asMap().entries.map((entry) {
                   final idx = entry.key;
                   final rec = entry.value;
@@ -5323,6 +5919,27 @@ class _OnlineAttendanceHistoryScreenState
         border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: child,
+    );
+  }
+
+  Widget _metricRow(String label, String value) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: p.text.withValues(alpha: 0.78),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          value,
+          style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
+        ),
+      ],
     );
   }
 }
