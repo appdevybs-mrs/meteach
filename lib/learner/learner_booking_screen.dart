@@ -776,6 +776,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             final links = (full?.socialVisible ?? false)
                 ? (full?.socialLinks ?? const <String, String>{})
                 : const <String, String>{};
+            final socialButtons = <MapEntry<String, String>>[];
+            for (final e in links.entries) {
+              final key = e.key.trim().toLowerCase();
+              String label = '';
+              if (key == 'facebook') label = 'Facebook';
+              if (key == 'linkedin') label = 'LinkedIn';
+              if (key == 'tiktok') label = 'TikTok';
+              if (key == 'extra_url') label = 'More';
+              if (label.isEmpty) continue;
+              socialButtons.add(MapEntry(label, e.value));
+            }
             return SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -853,12 +864,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                 Icons.play_circle_fill_rounded,
                                 size: 18,
                               ),
-                              label: const Text('Intro Video'),
+                              label: const Text('Watch'),
                             ),
-                          for (final e in links.entries)
+                          for (final e in socialButtons)
                             OutlinedButton(
-                              onPressed: () =>
-                                  _openExternalLink(e.value, e.key),
+                              onPressed: () => _openExternalLink(
+                                e.value,
+                                e.key.toLowerCase(),
+                              ),
                               child: Text(e.key),
                             ),
                         ],

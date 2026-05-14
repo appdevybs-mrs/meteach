@@ -2103,11 +2103,7 @@ class _SessionCard extends StatelessWidget {
     final Color timeColor = isPast
         ? palette.text.withValues(alpha: 0.45)
         : (isLive ? const Color(0xFF1B5E20) : palette.primary);
-    final hasToggle = learners.length > 1;
-    final showLearners = expanded || !hasToggle
-        ? learners
-        : learners.take(1).toList();
-    final more = expanded ? 0 : (learners.length - showLearners.length);
+    final hasToggle = learners.isNotEmpty;
 
     return Opacity(
       opacity: isPast ? 0.78 : 1,
@@ -2292,146 +2288,146 @@ class _SessionCard extends StatelessWidget {
                                   duration: const Duration(milliseconds: 220),
                                   curve: Curves.easeOutCubic,
                                   alignment: Alignment.topCenter,
-                                  child: Column(
-                                    key: ValueKey<bool>(expanded),
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      ...showLearners.map((learner) {
-                                        return FutureBuilder<
-                                          Map<String, String>
-                                        >(
-                                          future: learnerMiniLoader(
-                                            learner.uid,
-                                          ),
-                                          builder: (context, snap) {
-                                            final full =
-                                                (snap.data?['full'] ?? '')
-                                                    .trim();
-                                            final displayName = full.isEmpty
-                                                ? (learner.name.trim().isEmpty
-                                                      ? 'Learner'
-                                                      : learner.name)
-                                                : full;
-                                            final profilePhotoUrl =
-                                                (snap.data?['profilePhoto'] ??
-                                                        '')
-                                                    .trim();
-
-                                            return Container(
-                                              margin: const EdgeInsets.only(
-                                                top: 6,
-                                              ),
-                                              padding: const EdgeInsets.all(8),
-                                              decoration: BoxDecoration(
-                                                color: palette.cardBg,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: palette.border
-                                                      .withValues(alpha: 0.82),
+                                  child: expanded
+                                      ? Column(
+                                          key: const ValueKey<bool>(true),
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            ...learners.map((learner) {
+                                              return FutureBuilder<
+                                                Map<String, String>
+                                              >(
+                                                future: learnerMiniLoader(
+                                                  learner.uid,
                                                 ),
-                                              ),
-                                              child: Column(
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      learnerAvatarBuilder(
-                                                        profilePhotoUrl:
-                                                            profilePhotoUrl,
-                                                        size: 28,
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: Text(
-                                                          displayName,
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style: TextStyle(
-                                                            color: palette.text,
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                            fontSize: 12,
-                                                          ),
+                                                builder: (context, snap) {
+                                                  final full =
+                                                      (snap.data?['full'] ?? '')
+                                                          .trim();
+                                                  final displayName =
+                                                      full.isEmpty
+                                                      ? (learner.name
+                                                                .trim()
+                                                                .isEmpty
+                                                            ? 'Learner'
+                                                            : learner.name)
+                                                      : full;
+                                                  final profilePhotoUrl =
+                                                      (snap.data?['profilePhoto'] ??
+                                                              '')
+                                                          .trim();
+
+                                                  return Container(
+                                                    margin:
+                                                        const EdgeInsets.only(
+                                                          top: 6,
                                                         ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  if (!o.isOnline)
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            top: 8,
+                                                    padding:
+                                                        const EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color: palette.cardBg,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            10,
                                                           ),
-                                                      child: Row(
-                                                        children: [
-                                                          Expanded(
-                                                            child: OutlinedButton(
-                                                              onPressed: () =>
-                                                                  onLearnerProfile(
-                                                                    learner,
-                                                                  ),
-                                                              child: const Text(
-                                                                'Profile',
-                                                              ),
+                                                      border: Border.all(
+                                                        color: palette.border
+                                                            .withValues(
+                                                              alpha: 0.82,
                                                             ),
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 6,
-                                                          ),
-                                                          Expanded(
-                                                            child: OutlinedButton(
-                                                              onPressed: () =>
-                                                                  onLearnerReport(
-                                                                    learner,
-                                                                  ),
-                                                              child: const Text(
-                                                                'Report',
-                                                              ),
-                                                            ),
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 6,
-                                                          ),
-                                                          Expanded(
-                                                            child: OutlinedButton(
-                                                              onPressed: () =>
-                                                                  onLearnerGallery(
-                                                                    learner,
-                                                                  ),
-                                                              child: const Text(
-                                                                'Gallery',
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
                                                       ),
                                                     ),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        );
-                                      }),
-                                      if (more > 0)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 6,
-                                            left: 4,
-                                          ),
-                                          child: Text(
-                                            '... +$more more',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              color: palette.text.withValues(
-                                                alpha: 0.72,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
+                                                    child: Column(
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            learnerAvatarBuilder(
+                                                              profilePhotoUrl:
+                                                                  profilePhotoUrl,
+                                                              size: 28,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 8,
+                                                            ),
+                                                            Expanded(
+                                                              child: Text(
+                                                                displayName,
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style: TextStyle(
+                                                                  color: palette
+                                                                      .text,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w800,
+                                                                  fontSize: 12,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        if (!o.isOnline)
+                                                          Padding(
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  top: 8,
+                                                                ),
+                                                            child: Row(
+                                                              children: [
+                                                                Expanded(
+                                                                  child: OutlinedButton(
+                                                                    onPressed: () =>
+                                                                        onLearnerProfile(
+                                                                          learner,
+                                                                        ),
+                                                                    child: const Text(
+                                                                      'Profile',
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(
+                                                                  width: 6,
+                                                                ),
+                                                                Expanded(
+                                                                  child: OutlinedButton(
+                                                                    onPressed: () =>
+                                                                        onLearnerReport(
+                                                                          learner,
+                                                                        ),
+                                                                    child: const Text(
+                                                                      'Report',
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(
+                                                                  width: 6,
+                                                                ),
+                                                                Expanded(
+                                                                  child: OutlinedButton(
+                                                                    onPressed: () =>
+                                                                        onLearnerGallery(
+                                                                          learner,
+                                                                        ),
+                                                                    child: const Text(
+                                                                      'Gallery',
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              );
+                                            }),
+                                          ],
+                                        )
+                                      : const SizedBox.shrink(),
                                 ),
                               ],
                             ),
