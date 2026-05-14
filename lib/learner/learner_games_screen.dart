@@ -620,9 +620,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: cs.outline.withValues(alpha: 0.20)),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.16)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -633,49 +633,64 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
       ),
       child: Column(
         children: [
-          TextField(
-            controller: _searchController,
-            onChanged: (value) {
-              setState(() {
-                _searchQuery = value;
-              });
-            },
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'Search games...',
-              prefixIcon: const Icon(Icons.search_rounded, size: 20),
-              suffixIcon: _searchQuery.trim().isEmpty
-                  ? null
-                  : IconButton(
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {
-                          _searchQuery = '';
-                        });
-                      },
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                    ),
-              filled: true,
-              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.28),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 12,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(
-                  color: cs.outline.withValues(alpha: 0.15),
+          SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search games...',
+                hintStyle: TextStyle(
+                  color: cs.onSurface.withValues(alpha: 0.56),
+                  fontWeight: FontWeight.w600,
                 ),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(
-                  color: cs.outline.withValues(alpha: 0.15),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 19,
+                  color: _funOrangeDark,
                 ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: _funOrange, width: 1.4),
+                suffixIcon: _searchQuery.trim().isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: cs.onSurface.withValues(alpha: 0.72),
+                        ),
+                      ),
+                filled: true,
+                fillColor: const Color(0xFFFFF8F1),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: cs.outline.withValues(alpha: 0.12),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: cs.outline.withValues(alpha: 0.12),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _funOrange, width: 1.25),
+                ),
               ),
             ),
           ),

@@ -71,13 +71,25 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        toolbarHeight: 58,
+        backgroundColor: const Color(0xFFF8FBFF),
         elevation: 0,
-        surfaceTintColor: Colors.white,
+        surfaceTintColor: const Color(0xFFF8FBFF),
         iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text(
-          'My Gallery',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        titleSpacing: 12,
+        title: const Row(
+          children: [
+            Icon(
+              Icons.photo_library_rounded,
+              color: Color(0xFF5A6AE6),
+              size: 20,
+            ),
+            SizedBox(width: 8),
+            Text(
+              'My Gallery',
+              style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+            ),
+          ],
         ),
       ),
       body: learnerWebBodyFrame(

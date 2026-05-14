@@ -1053,6 +1053,13 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final topTags = _tagsFromStory(story).take(2).toList();
     final denseMeta =
         topTags.length >= 2 && level.isNotEmpty && genre.isNotEmpty;
+    final chips = <String>[
+      ...topTags,
+      if (level.isNotEmpty) level,
+      if (genre.isNotEmpty) genre,
+    ];
+    final visibleChips = chips.take(3).toList();
+    final hiddenCount = chips.length - visibleChips.length;
     final thumbnail = _normalizeMediaUrl((story['thumbnail'] ?? '').toString());
     final teacher = _teacherName(story);
     final dpr = MediaQuery.of(context).devicePixelRatio;
@@ -1223,23 +1230,32 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: denseMeta ? 5 : 6,
-                        runSpacing: denseMeta ? 5 : 6,
-                        children: [
-                          ...topTags.map(
-                            (tag) => _smallTag(
+                      SizedBox(
+                        height: denseMeta ? 24 : 26,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount:
+                              visibleChips.length + (hiddenCount > 0 ? 1 : 0),
+                          separatorBuilder: (_, _) => const SizedBox(width: 6),
+                          itemBuilder: (context, index) {
+                            if (hiddenCount > 0 &&
+                                index == visibleChips.length) {
+                              return _smallTag(
+                                p,
+                                '+$hiddenCount',
+                                compact: denseMeta,
+                              );
+                            }
+                            final chip = visibleChips[index];
+                            final isAccent = topTags.contains(chip);
+                            return _smallTag(
                               p,
-                              tag,
-                              isAccent: true,
+                              chip,
+                              isAccent: isAccent,
                               compact: denseMeta,
-                            ),
-                          ),
-                          if (level.isNotEmpty)
-                            _smallTag(p, level, compact: denseMeta),
-                          if (genre.isNotEmpty)
-                            _smallTag(p, genre, compact: denseMeta),
-                        ],
+                            );
+                          },
+                        ),
                       ),
                     ],
                   ),
@@ -1336,59 +1352,89 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: p.cardBg,
+        toolbarHeight: 52,
+        backgroundColor: p.cardBg.withValues(alpha: 0.96),
         surfaceTintColor: p.cardBg,
         elevation: 0,
+        titleSpacing: 12,
         title: _showSearch
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value.trim().toLowerCase();
-                  });
-                },
-                decoration: InputDecoration(
-                  hintText: 'Search stories...',
-                  isDense: true,
-                  border: InputBorder.none,
-                  hintStyle: TextStyle(
-                    color: p.text.withValues(alpha: 0.55),
-                    fontWeight: FontWeight.w600,
+            ? Container(
+                height: 40,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: p.appBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: p.border.withValues(alpha: 0.92)),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value.trim().toLowerCase();
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Search stories...',
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintStyle: TextStyle(
+                      color: p.text.withValues(alpha: 0.55),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
               )
-            : const SizedBox.shrink(),
+            : Text(
+                'Stories',
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+              ),
         actions: [
-          IconButton(
-            tooltip: _showSearch ? 'Close search' : 'Search',
-            onPressed: () {
-              setState(() {
-                if (_showSearch) {
-                  _showSearch = false;
-                  _searchController.clear();
-                  _searchQuery = '';
-                } else {
-                  _showSearch = true;
-                }
-              });
-            },
-            icon: Icon(
-              _showSearch ? Icons.close_rounded : Icons.search_rounded,
-              color: p.primary,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Filters',
-            onPressed: () {
-              setState(() {
-                _showFilters = !_showFilters;
-              });
-            },
-            icon: Icon(
-              _showFilters ? Icons.tune_rounded : Icons.filter_alt_outlined,
-              color: p.primary,
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: Row(
+              children: [
+                _StoriesTopIconButton(
+                  tooltip: _showSearch ? 'Close search' : 'Search',
+                  active: _showSearch,
+                  activeColor: p.accent,
+                  onPressed: () {
+                    setState(() {
+                      if (_showSearch) {
+                        _showSearch = false;
+                        _searchController.clear();
+                        _searchQuery = '';
+                      } else {
+                        _showSearch = true;
+                      }
+                    });
+                  },
+                  icon: _showSearch
+                      ? Icons.close_rounded
+                      : Icons.search_rounded,
+                  iconColor: p.primary,
+                ),
+                const SizedBox(width: 6),
+                _StoriesTopIconButton(
+                  tooltip: 'Filters',
+                  active: _showFilters,
+                  activeColor: const Color(0xFFF59E0B),
+                  onPressed: () {
+                    setState(() {
+                      _showFilters = !_showFilters;
+                    });
+                  },
+                  icon: _showFilters
+                      ? Icons.tune_rounded
+                      : Icons.filter_alt_outlined,
+                  iconColor: p.primary,
+                ),
+              ],
             ),
           ),
         ],
@@ -1581,6 +1627,46 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
               },
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _StoriesTopIconButton extends StatelessWidget {
+  const _StoriesTopIconButton({
+    required this.tooltip,
+    required this.active,
+    required this.activeColor,
+    required this.onPressed,
+    required this.icon,
+    required this.iconColor,
+  });
+
+  final String tooltip;
+  final bool active;
+  final Color activeColor;
+  final VoidCallback onPressed;
+  final IconData icon;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: active
+            ? activeColor.withValues(alpha: 0.18)
+            : Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: onPressed,
+          child: SizedBox(
+            width: 38,
+            height: 38,
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
         ),
       ),
     );

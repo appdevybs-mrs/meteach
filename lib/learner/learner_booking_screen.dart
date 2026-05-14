@@ -9,6 +9,8 @@ import '../services/notification_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../shared/app_feedback.dart';
+import '../shared/app_theme.dart';
+import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/payment_status.dart';
@@ -28,7 +30,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   // ===== Colors =====
   static const primaryBlue = Color(0xFF0E7C86);
   static const actionOrange = Color(0xFFBF5D39);
-  static const appBg = Color(0xFFF6F2E8);
   static const uiBorder = Color(0xFFD8CFC1);
 
   // Simplified status colors
@@ -42,6 +43,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   static const emptyBorder = Color(0xFFF9C59D);
   static const lockedBg = Color(0xFFF4F4F5);
   static const lockedBorder = Color(0xFFD7D7DB);
+
+  AppPalette get palette => appThemeController.palette;
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -97,6 +100,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _sessionPulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 980),
@@ -106,8 +110,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   @override
   void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
     _sessionPulseCtrl.dispose();
     super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   // ================== Helpers ==================
@@ -2591,45 +2601,68 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildFlowShell(Widget child) {
+    final width = MediaQuery.sizeOf(context).width;
+    final shellPadding = width >= 900 ? 24.0 : 20.0;
     return Container(
       constraints: const BoxConstraints(maxWidth: 920),
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(shellPadding),
       decoration: BoxDecoration(
-        color: const Color(0xFFFCFAF7),
+        color: palette.cardBg.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE9DFD1)),
+        border: Border.all(color: palette.border),
       ),
       child: child,
     );
   }
 
+  bool _preferDarkText(Color bg) {
+    return ThemeData.estimateBrightnessForColor(bg) == Brightness.light;
+  }
+
   Widget _buildPremiumActionCard({
     required String title,
-    required String subtitle,
+    required String description,
     required String cta,
     required String objective,
     required bool expanded,
     required VoidCallback onToggleExpand,
     required VoidCallback onTap,
     bool primary = false,
+    String? sessionLine,
+    double closedMinHeight = 140,
     String? badge,
   }) {
+    final width = MediaQuery.sizeOf(context).width;
+    final cardPadding = width >= 900 ? 24.0 : 20.0;
+    final cardRadius = 18.0;
+    final objectivePadding = width >= 900 ? 20.0 : 16.0;
+    final primaryHsl = HSLColor.fromColor(palette.primary);
+    final primaryShade = primaryHsl
+        .withLightness((primaryHsl.lightness - 0.08).clamp(0.16, 0.5))
+        .toColor();
+    final cardMain = primary ? palette.primary : palette.cardBg;
+    final primaryText = _preferDarkText(cardMain) ? palette.text : Colors.white;
+    final secondaryPrimaryText = _preferDarkText(cardMain)
+        ? palette.text.withValues(alpha: 0.82)
+        : Colors.white.withValues(alpha: 0.93);
+
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(cardRadius),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        constraints: BoxConstraints(minHeight: expanded ? 0 : closedMinHeight),
+        padding: EdgeInsets.all(cardPadding),
         decoration: BoxDecoration(
           gradient: primary
-              ? const LinearGradient(
-                  colors: [Color(0xFF0E7C86), Color(0xFF14616F)],
-                )
+              ? LinearGradient(colors: [palette.primary, primaryShade])
               : null,
-          color: primary ? null : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: primary ? null : palette.cardBg,
+          borderRadius: BorderRadius.circular(cardRadius),
           border: Border.all(
-            color: primary ? const Color(0xFF14616F) : uiBorder,
+            color: primary
+                ? primaryShade.withValues(alpha: 0.95)
+                : palette.border.withValues(alpha: 0.95),
           ),
           boxShadow: const [
             BoxShadow(
@@ -2649,8 +2682,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     title,
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: primary ? Colors.white : primaryBlue,
-                      fontSize: 17,
+                      color: primary ? primaryText : palette.primary,
+                      fontSize: 18,
                     ),
                   ),
                 ),
@@ -2662,15 +2695,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     ),
                     decoration: BoxDecoration(
                       color: primary
-                          ? Colors.white.withValues(alpha: 0.16)
-                          : actionOrange.withValues(alpha: 0.1),
+                          ? primaryText.withValues(alpha: 0.12)
+                          : palette.accent.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       badge,
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
-                        color: primary ? Colors.white : actionOrange,
+                        color: primary ? primaryText : palette.accent,
                         fontSize: 11,
                       ),
                     ),
@@ -2683,8 +2716,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: primary
-                          ? Colors.white.withValues(alpha: 0.16)
-                          : primaryBlue.withValues(alpha: 0.08),
+                          ? primaryText.withValues(alpha: 0.12)
+                          : palette.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: AnimatedRotation(
@@ -2692,56 +2725,67 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       duration: const Duration(milliseconds: 180),
                       child: Icon(
                         Icons.keyboard_arrow_down_rounded,
-                        color: primary ? Colors.white : primaryBlue,
+                        color: primary ? primaryText : palette.primary,
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 7),
+            if (sessionLine != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                sessionLine,
+                style: TextStyle(
+                  color: primary ? secondaryPrimaryText : palette.text,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
             Text(
-              subtitle,
+              description,
               style: TextStyle(
                 color: primary
-                    ? Colors.white.withValues(alpha: 0.93)
-                    : Colors.grey.shade700,
+                    ? secondaryPrimaryText
+                    : palette.text.withValues(alpha: 0.78),
                 fontWeight: FontWeight.w600,
                 height: 1.35,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
               cta,
               style: TextStyle(
-                color: primary ? Colors.white : actionOrange,
+                color: primary ? primaryText : palette.accent,
                 fontWeight: FontWeight.w900,
               ),
             ),
             AnimatedCrossFade(
               firstChild: const SizedBox.shrink(),
               secondChild: Padding(
-                padding: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.only(top: 14),
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(objectivePadding),
                   decoration: BoxDecoration(
                     color: primary
-                        ? Colors.white.withValues(alpha: 0.12)
-                        : const Color(0xFFF6F8FA),
-                    borderRadius: BorderRadius.circular(12),
+                        ? primaryText.withValues(alpha: 0.1)
+                        : palette.soft.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(
                       color: primary
-                          ? Colors.white.withValues(alpha: 0.2)
-                          : uiBorder,
+                          ? primaryText.withValues(alpha: 0.22)
+                          : palette.border,
                     ),
                   ),
                   child: Text(
                     objective,
                     style: TextStyle(
                       color: primary
-                          ? Colors.white.withValues(alpha: 0.95)
-                          : Colors.grey.shade800,
+                          ? primaryText
+                          : palette.text.withValues(alpha: 0.86),
                       fontWeight: FontWeight.w700,
                       height: 1.35,
                     ),
@@ -2761,7 +2805,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Widget _buildLessonChoiceStep() {
     final isAr = lessonChoiceArabic;
-    final nextTitle = _flowLessonTitle(currentSession);
     final followExpanded = _expandedLessonChoiceCards.contains('follow');
     final customExpanded = _expandedLessonChoiceCards.contains('custom');
     final nextObjective = _sessionObjectiveFor(currentSession);
@@ -2782,10 +2825,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       isAr
                           ? 'ماذا تريد أن تدرس؟'
                           : 'What would you like to study?',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
-                        color: primaryBlue,
+                        color: palette.primary,
                       ),
                     ),
                   ),
@@ -2798,8 +2841,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     icon: const Icon(Icons.translate_rounded, size: 18),
                     label: Text(isAr ? 'English' : 'العربية'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: primaryBlue,
-                      side: const BorderSide(color: uiBorder),
+                      foregroundColor: palette.primary,
+                      side: BorderSide(color: palette.border),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -2807,12 +2850,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _buildPremiumActionCard(
                 title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
-                subtitle: isAr
-                    ? '$nextTitle\nتابع مع الدرس المقترح التالي لك.'
-                    : '$nextTitle\nContinue with your recommended next session.',
+                sessionLine: isAr
+                    ? 'الجلسة 1 · استماع/تحدث'
+                    : 'Session 1 · Listen/Speak',
+                description: isAr
+                    ? 'تابع مع الجلسة التالية المقترحة لك.'
+                    : 'Continue with your recommended next session.',
                 cta: isAr ? 'احجز الدرس التالي' : 'Book next lesson',
                 objective: isAr
                     ? (nextObjective.isEmpty
@@ -2833,6 +2879,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   });
                 },
                 primary: true,
+                closedMinHeight: 160,
                 onTap: () {
                   setState(() {
                     studyMode = 'follow';
@@ -2843,10 +2890,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   });
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 22),
               _buildPremiumActionCard(
                 title: isAr ? 'اختر درسك' : 'Pick your lesson',
-                subtitle: isAr
+                description: isAr
                     ? 'اختر درساً محدداً من المنهج.'
                     : 'Choose a specific lesson from the syllabus.',
                 cta: isAr ? 'اختر من المنهج' : 'Choose from syllabus',
@@ -2869,6 +2916,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     flowStep = _BookingFlowStep.syllabus;
                   });
                 },
+                closedMinHeight: 140,
               ),
             ],
           ),
@@ -3365,21 +3413,21 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final busy = loading || booking || refreshing || progressLabel.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: palette.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: palette.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text(
+        surfaceTintColor: palette.cardBg,
+        iconTheme: IconThemeData(color: palette.primary),
+        title: Text(
           'Book Your Class',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+          style: TextStyle(color: palette.primary, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
             tooltip: 'How booking works',
             onPressed: _openHowBookingWorks,
-            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+            icon: Icon(Icons.help_outline_rounded, color: palette.primary),
           ),
           const SizedBox.shrink(),
           IconButton(
@@ -3391,110 +3439,114 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       await _refreshSchedule();
                     });
                   },
-            icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
+            icon: Icon(Icons.refresh_rounded, color: palette.primary),
           ),
           const SizedBox(width: 4),
         ],
       ),
-      body: learnerWebBodyFrame(
-        context: context,
-        maxWidth: 1500,
-        child: Stack(
-          children: [
-            IgnorePointer(
-              ignoring: busy,
-              child: loading
-                  ? const Center(
-                      child: BrandedInlineLoader(
-                        message: 'Loading booking schedule...',
+      body: WatermarkBackground(
+        child: learnerWebBodyFrame(
+          context: context,
+          maxWidth: 1500,
+          child: Stack(
+            children: [
+              IgnorePointer(
+                ignoring: busy,
+                child: loading
+                    ? const Center(
+                        child: BrandedInlineLoader(
+                          message: 'Loading booking schedule...',
+                        ),
+                      )
+                    : (cid == null)
+                    ? const Center(child: Text('No course selected.'))
+                    : Align(
+                        alignment: Alignment.topCenter,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
+                          child: _buildFlowShell(_buildFlowContent()),
+                        ),
                       ),
-                    )
-                  : (cid == null)
-                  ? const Center(child: Text('No course selected.'))
-                  : Align(
-                      alignment: Alignment.topCenter,
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
-                        child: _buildFlowShell(_buildFlowContent()),
-                      ),
-                    ),
-            ),
-            if (busy)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.16),
-                  child: Center(
-                    child: Container(
-                      width: 220,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 18,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: uiBorder),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const YbsBusyLogo(size: 44),
-                          const SizedBox(height: 10),
-                          const SizedBox(
-                            width: 26,
-                            height: 26,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.4,
-                              color: primaryBlue,
+              ),
+              if (busy)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    child: Center(
+                      child: Container(
+                        width: 220,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 18,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.cardBg,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: palette.border),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const YbsBusyLogo(size: 44),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: palette.primary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            progressLabel.isEmpty
-                                ? 'Please wait...'
-                                : progressLabel,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
+                            const SizedBox(height: 14),
+                            Text(
+                              progressLabel.isEmpty
+                                  ? 'Please wait...'
+                                  : progressLabel,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: palette.primary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          StreamBuilder<int>(
-                            stream: Stream.periodic(
-                              const Duration(seconds: 1),
-                              (x) => x,
+                            const SizedBox(height: 8),
+                            StreamBuilder<int>(
+                              stream: Stream.periodic(
+                                const Duration(seconds: 1),
+                                (x) => x,
+                              ),
+                              initialData: 0,
+                              builder: (context, _) {
+                                final since = _busyVisualSince;
+                                if (since == null) {
+                                  return const SizedBox.shrink();
+                                }
+                                final elapsed = DateTime.now().difference(
+                                  since,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 2500)) {
+                                  return const SizedBox.shrink();
+                                }
+                                final sec = elapsed.inSeconds;
+                                return Text(
+                                  'Still working... ${sec}s',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: palette.text.withValues(alpha: 0.72),
+                                    fontSize: 12,
+                                  ),
+                                );
+                              },
                             ),
-                            initialData: 0,
-                            builder: (context, _) {
-                              final since = _busyVisualSince;
-                              if (since == null) {
-                                return const SizedBox.shrink();
-                              }
-                              final elapsed = DateTime.now().difference(since);
-                              if (elapsed <
-                                  const Duration(milliseconds: 2500)) {
-                                return const SizedBox.shrink();
-                              }
-                              final sec = elapsed.inSeconds;
-                              return Text(
-                                'Still working... ${sec}s',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey.shade700,
-                                  fontSize: 12,
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
