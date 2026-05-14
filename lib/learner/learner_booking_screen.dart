@@ -94,9 +94,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String? selectedTeacherFirstId;
   int? selectedLessonForFlow;
   bool confirmSessionExpanded = false;
-  int? _lastBookedSessionNo;
   String? _lastBookedStudyMode;
-  int? _nextRecommendedSessionOverride;
+  int _computedRecommendedSessionNo = 1;
   String helpLang = 'en'; // en | ar | fr | tr | ur
   bool lessonChoiceArabic = false;
   final Set<String> _expandedLessonChoiceCards = <String>{};
@@ -264,8 +263,43 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   int get _recommendedSessionNo {
     final maxSessions = _effectiveTotalSessions;
-    final raw = _nextRecommendedSessionOverride ?? currentSession;
+    final raw = _computedRecommendedSessionNo;
     return raw.clamp(1, maxSessions).toInt();
+  }
+
+  Future<void> _recomputeRecommendedSessionNo(String cid) async {
+    final maxSessions = _effectiveTotalSessions;
+    var base = currentSession.clamp(1, maxSessions).toInt();
+
+    final upcoming = await _findMyUpcomingBookings(cid);
+    final bookedSessions = upcoming
+        .map((b) => b.sessionNo)
+        .where((n) => n > 0)
+        .toSet();
+
+    var highestBooked = 0;
+    for (final n in bookedSessions) {
+      if (n > highestBooked) highestBooked = n;
+    }
+
+    var candidate = highestBooked > 0 ? (highestBooked + 1) : base;
+    if (candidate < base) candidate = base;
+    if (candidate > maxSessions) candidate = maxSessions;
+
+    while (bookedSessions.contains(candidate) && candidate < maxSessions) {
+      candidate++;
+    }
+
+    if (candidate < base) candidate = base;
+    if (candidate > maxSessions) candidate = maxSessions;
+
+    if (!mounted) return;
+    setState(() {
+      _computedRecommendedSessionNo = candidate;
+      if (studyMode == 'follow') {
+        selectedSessionNo = candidate;
+      }
+    });
   }
 
   DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
@@ -1196,6 +1230,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     await _loadReservationsSummary(courseId!);
     await _generateSlots(courseId!);
+    await _recomputeRecommendedSessionNo(courseId!);
 
     if (!mounted) return;
     setState(() => loading = false);
@@ -2208,7 +2243,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast('Joined ✅ Session $targetSession group ($newCount/$cap)');
       }
 
-      _lastBookedSessionNo = targetSession;
       _lastBookedStudyMode = studyMode;
 
       await _sendBookingNotifications(slot);
@@ -2238,6 +2272,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
+      await _recomputeRecommendedSessionNo(cid);
       _invalidateBusyRangesCache();
     } catch (e) {
       await AuditLogService.logFailure(
@@ -2396,6 +2431,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       await _loadStudiedSessions(cid);
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
+      await _recomputeRecommendedSessionNo(cid);
     } finally {
       if (mounted) {
         setState(() {
@@ -2449,6 +2485,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast('Booking cancelled successfully.');
         await _loadReservationsSummary(cid);
         await _generateSlots(cid);
+        await _recomputeRecommendedSessionNo(cid);
         _invalidateBusyRangesCache();
         return;
       }
@@ -2460,6 +2497,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast('Booking not found or already cancelled.');
         await _loadReservationsSummary(cid);
         await _generateSlots(cid);
+        await _recomputeRecommendedSessionNo(cid);
         return;
       }
       _toast('Could not cancel booking. Please try again.');
@@ -3973,12 +4011,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     final wasFollowMode = _lastBookedStudyMode == 'follow';
     final wasCustomMode = _lastBookedStudyMode == 'custom';
-    final maxSessions = _effectiveTotalSessions;
-    final bookedNo = (_lastBookedSessionNo ?? _targetSessionNo).clamp(
-      1,
-      maxSessions,
-    );
-    final nextNo = (bookedNo + 1).clamp(1, maxSessions);
 
     setState(() {
       selectedDay = null;
@@ -3990,12 +4022,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       schedulePath = _SchedulePath.byTeacher;
 
       if (wasFollowMode) {
-        _nextRecommendedSessionOverride = nextNo;
-        selectedSessionNo = nextNo;
+        selectedSessionNo = _recommendedSessionNo;
         studyMode = 'follow';
         flowStep = _BookingFlowStep.lessonChoice;
       } else if (wasCustomMode) {
-        _nextRecommendedSessionOverride = null;
         studyMode = 'custom';
         flowStep = _BookingFlowStep.syllabus;
       } else {
