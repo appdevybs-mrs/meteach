@@ -2021,6 +2021,7 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
   ];
 
   final List<String> _menuOrder = <String>[];
+  bool _editMode = false;
 
   @override
   void initState() {
@@ -2098,13 +2099,30 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
     }
   }
 
-  void _onReorder(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex -= 1;
+  Future<void> _persistAndRefresh() async {
+    await _persistOrder();
+    if (mounted) setState(() {});
+  }
+
+  void _moveById(String id, int delta) {
+    final fromIndex = _menuOrder.indexOf(id);
+    if (fromIndex < 0) return;
+    final toIndex = fromIndex + delta;
+    if (toIndex < 0 || toIndex >= _menuOrder.length) return;
     setState(() {
-      final item = _menuOrder.removeAt(oldIndex);
-      _menuOrder.insert(newIndex, item);
+      final item = _menuOrder.removeAt(fromIndex);
+      _menuOrder.insert(toIndex, item);
     });
     unawaited(_persistOrder());
+  }
+
+  void _toggleEditMode() {
+    setState(() {
+      _editMode = !_editMode;
+    });
+    if (!_editMode) {
+      unawaited(_persistAndRefresh());
+    }
   }
 
   List<_TeacherMenuEntry> _entries() {
@@ -2233,25 +2251,48 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
         child: Column(
           children: [
             Expanded(
-              child: ReorderableListView.builder(
+              child: ListView(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
-                buildDefaultDragHandles: false,
-                itemCount: orderedEntries.length,
-                onReorder: _onReorder,
-                itemBuilder: (context, index) {
-                  final entry = orderedEntries[index];
-                  return _DrawerTile(
-                    key: ValueKey(entry.id),
+                children: [
+                  for (final entry in orderedEntries)
+                    _DrawerTile(
+                      key: ValueKey(entry.id),
+                      palette: widget.palette,
+                      icon: entry.icon,
+                      title: entry.title,
+                      subtitle: entry.subtitle,
+                      editMode: _editMode,
+                      canMoveUp: _menuOrder.indexOf(entry.id) > 0,
+                      canMoveDown:
+                          _menuOrder.indexOf(entry.id) < _menuOrder.length - 1,
+                      onTap: _editMode
+                          ? null
+                          : () {
+                              Navigator.of(context).pop();
+                              entry.onTap();
+                            },
+                      onMoveUp: _editMode
+                          ? () => _moveById(entry.id, -1)
+                          : null,
+                      onMoveDown: _editMode
+                          ? () => _moveById(entry.id, 1)
+                          : null,
+                    ),
+                  const SizedBox(height: 4),
+                  _DrawerTile(
+                    key: const ValueKey('reorder_menu_toggle'),
                     palette: widget.palette,
-                    icon: entry.icon,
-                    title: entry.title,
-                    subtitle: entry.subtitle,
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      entry.onTap();
-                    },
-                  );
-                },
+                    icon: _editMode
+                        ? TeacherIcons.themeSelected
+                        : TeacherIcons.menu,
+                    title: _editMode ? 'Done reordering' : 'Reorder menu',
+                    subtitle: _editMode
+                        ? 'Tap arrows to move items'
+                        : 'Show up/down buttons for each item',
+                    highlighted: true,
+                    onTap: _toggleEditMode,
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -2307,6 +2348,12 @@ class _DrawerTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.onTap,
+    this.editMode = false,
+    this.canMoveUp = false,
+    this.canMoveDown = false,
+    this.onMoveUp,
+    this.onMoveDown,
+    this.highlighted = false,
     this.subtitle = '',
   });
 
@@ -2314,14 +2361,22 @@ class _DrawerTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool editMode;
+  final bool canMoveUp;
+  final bool canMoveDown;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: Colors.white,
+        color: highlighted
+            ? palette.soft.withValues(alpha: 0.65)
+            : Colors.white,
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
@@ -2369,10 +2424,32 @@ class _DrawerTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(
-                  TeacherIcons.chevron,
-                  color: palette.text.withValues(alpha: 0.45),
-                ),
+                if (editMode) ...[
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: canMoveUp ? onMoveUp : null,
+                    icon: Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      color: canMoveUp
+                          ? palette.primary
+                          : palette.text.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: canMoveDown ? onMoveDown : null,
+                    icon: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: canMoveDown
+                          ? palette.primary
+                          : palette.text.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ] else
+                  Icon(
+                    TeacherIcons.chevron,
+                    color: palette.text.withValues(alpha: 0.45),
+                  ),
               ],
             ),
           ),

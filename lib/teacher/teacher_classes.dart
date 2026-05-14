@@ -1139,7 +1139,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: p.cardBg,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
@@ -1156,6 +1156,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 child: Column(
                   children: [
                     Container(
+                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF7F8FA),
                         borderRadius: BorderRadius.circular(14),
@@ -1166,12 +1167,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       child: TabBar(
                         labelColor: p.primary,
                         unselectedLabelColor: p.text.withValues(alpha: 0.65),
+                        labelPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                        ),
                         indicator: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: p.accent.withValues(alpha: 0.35),
                           ),
+                        ),
+                        indicatorPadding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 3,
                         ),
                         tabs: const [
                           Tab(text: 'Course Details'),
@@ -3199,6 +3207,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   if (b.meetUrl.trim().isNotEmpty)
                     TextButton.icon(
                       onPressed: () => _openExternalUrl(b.meetUrl),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       icon: Icon(Icons.video_call_rounded, color: p.accent),
                       label: Text(
                         'Meet',
@@ -3208,31 +3224,36 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                         ),
                       ),
                     ),
+                  TextButton.icon(
+                    onPressed: () => _openOnlineSessionDetailsSheet(
+                      b.courseId,
+                      b.sessionNo,
+                      b.courseTitle,
+                      b.learnerUids,
+                      b.startAtMillis,
+                      b.durationMinutes,
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: Icon(Icons.info_outline_rounded, color: p.accent),
+                    label: Text(
+                      'Details',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.accent,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _openOnlineSessionDetailsSheet(
-                  b.courseId,
-                  b.sessionNo,
-                  b.courseTitle,
-                  b.learnerUids,
-                  b.startAtMillis,
-                  b.durationMinutes,
-                ),
-                icon: Icon(Icons.info_outline_rounded, color: p.accent),
-                label: Text(
-                  'Details',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: p.accent,
-                  ),
-                ),
-              ),
-            ),
+            const SizedBox(height: 4),
             AnimatedSize(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
