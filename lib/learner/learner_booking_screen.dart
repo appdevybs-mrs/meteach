@@ -287,6 +287,36 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   String _bilingual(String en, String ar) => '$en\n$ar';
 
+  String _cancelCardTitle() =>
+      lessonChoiceArabic ? 'إلغاء حجز' : 'Cancel a booking';
+
+  String _cancelCardSubtitle() => lessonChoiceArabic
+      ? 'افتح حصصك القادمة وقم بالإلغاء إذا كان مسموحًا'
+      : 'Open your upcoming classes and cancel if eligible';
+
+  String _cancelSheetTitle() =>
+      lessonChoiceArabic ? 'إلغاء الحصص المحجوزة' : 'Cancel Booked Classes';
+
+  String _cancelSheetEmpty() => lessonChoiceArabic
+      ? 'لا توجد حجوزات قادمة للإلغاء.'
+      : 'No upcoming bookings to cancel.';
+
+  String _cancelLockedLabel() =>
+      lessonChoiceArabic ? 'مغلق (أقل من 24 ساعة)' : 'Locked (<24h)';
+
+  String _cancelActionLabel() => lessonChoiceArabic ? 'إلغاء' : 'Cancel';
+
+  String _cancelDetailsLabel(bool expanded) => lessonChoiceArabic
+      ? (expanded ? 'إخفاء التفاصيل' : 'تفاصيل الحصة')
+      : (expanded ? 'Hide details' : 'Session details');
+
+  String _cancelObjectiveLabel() =>
+      lessonChoiceArabic ? 'هدف الحصة' : 'Session objective';
+
+  String _cancelNoObjectiveLabel() => lessonChoiceArabic
+      ? 'لا يوجد وصف متاح لهذه الحصة.'
+      : 'No objective available for this session.';
+
   Future<bool> _hasPossibleMissingAttendanceForSession({
     required String cid,
     required int sessionNo,
@@ -2417,152 +2447,357 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final cid = courseId;
     if (cid == null || cid.trim().isEmpty) return;
     final items = await _findMyUpcomingBookings(cid);
+    final teacherIds = items
+        .map((e) => e.teacherId.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    if (teacherIds.isNotEmpty) {
+      await Future.wait(teacherIds.map(_loadTeacherMiniProfile));
+    }
     if (!mounted) return;
+    final expandedKeys = <String>{};
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return SafeArea(
-          child: FractionallySizedBox(
-            heightFactor: 0.86,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18),
-                ),
-                border: Border.all(color: uiBorder),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(999),
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return SafeArea(
+              child: FractionallySizedBox(
+                heightFactor: 0.86,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(18),
                     ),
+                    border: Border.all(color: uiBorder),
                   ),
-                  const SizedBox(height: 12),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.cancel_outlined, color: actionOrange),
-                        SizedBox(width: 8),
-                        Text(
-                          'Cancel Booked Classes',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
-                          ),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(999),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: items.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No upcoming bookings to cancel.',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.cancel_outlined,
+                              color: actionOrange,
                             ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                            itemCount: items.length,
-                            itemBuilder: (_, i) {
-                              final b = items[i];
-                              final locked = !b.start.isAfter(
-                                DateTime.now().add(const Duration(hours: 24)),
-                              );
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: uiBorder),
+                            const SizedBox(width: 8),
+                            Text(
+                              _cancelSheetTitle(),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: primaryBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: items.isEmpty
+                            ? Center(
+                                child: Text(
+                                  _cancelSheetEmpty(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            '${_friendlyDate(b.start)} - ${b.time}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: primaryBlue,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            b.teacherName,
-                                            style: TextStyle(
-                                              color: Colors.grey.shade800,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            'Session ${b.sessionNo > 0 ? b.sessionNo : '-'}',
-                                            style: TextStyle(
-                                              color: Colors.grey.shade700,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  4,
+                                  12,
+                                  12,
+                                ),
+                                itemCount: items.length,
+                                itemBuilder: (_, i) {
+                                  final b = items[i];
+                                  final rowKey =
+                                      '${b.dayKey}|${b.time}|${b.teacherId}';
+                                  final expanded = expandedKeys.contains(
+                                    rowKey,
+                                  );
+                                  final mini =
+                                      _teacherMiniCache[b.teacherId] ??
+                                      _TeacherMiniProfile(
+                                        name: b.teacherName,
+                                        photoUrl: '',
+                                        hasIntroVideo: false,
+                                      );
+                                  final sessionTitle = b.sessionNo > 0
+                                      ? _sessionTitleFor(b.sessionNo)
+                                      : '';
+                                  final sessionObjective = b.sessionNo > 0
+                                      ? _sessionObjectiveFor(b.sessionNo)
+                                      : '';
+                                  final locked = !b.start.isAfter(
+                                    DateTime.now().add(
+                                      const Duration(hours: 24),
                                     ),
-                                    if (locked)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 7,
+                                  );
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: uiBorder),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                '${_friendlyDate(b.start)} - ${b.time}',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  color: primaryBlue,
+                                                ),
+                                              ),
+                                            ),
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              onTap: () {
+                                                setSheetState(() {
+                                                  if (expanded) {
+                                                    expandedKeys.remove(rowKey);
+                                                  } else {
+                                                    expandedKeys.add(rowKey);
+                                                  }
+                                                });
+                                              },
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 4,
+                                                    ),
+                                                child: Row(
+                                                  children: [
+                                                    Text(
+                                                      _cancelDetailsLabel(
+                                                        expanded,
+                                                      ),
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade700,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 2),
+                                                    Icon(
+                                                      expanded
+                                                          ? Icons
+                                                                .keyboard_arrow_up_rounded
+                                                          : Icons
+                                                                .keyboard_arrow_down_rounded,
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade200,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            ProfileAvatar(
+                                              name: mini.name,
+                                              photoUrl: mini.photoUrl,
+                                              radius: 18,
+                                              borderColor: uiBorder,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    mini.name,
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade800,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'Session ${b.sessionNo > 0 ? b.sessionNo : '-'}',
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            if (locked)
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 7,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.shade200,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                ),
+                                                child: Text(
+                                                  _cancelLockedLabel(),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              )
+                                            else
+                                              FilledButton(
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: actionOrange,
+                                                ),
+                                                onPressed: () async {
+                                                  Navigator.of(ctx).pop();
+                                                  await _cancelUpcomingBooking(
+                                                    cid,
+                                                    b,
+                                                  );
+                                                },
+                                                child: Text(
+                                                  _cancelActionLabel(),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        AnimatedSize(
+                                          duration: const Duration(
+                                            milliseconds: 180,
                                           ),
+                                          curve: Curves.easeOut,
+                                          child: expanded
+                                              ? Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 10,
+                                                      ),
+                                                  child: Container(
+                                                    width: double.infinity,
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          10,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: primaryBlue
+                                                          .withValues(
+                                                            alpha: 0.05,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            10,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: uiBorder,
+                                                      ),
+                                                    ),
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        if (sessionTitle
+                                                            .isNotEmpty) ...[
+                                                          Text(
+                                                            sessionTitle,
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w900,
+                                                                  color:
+                                                                      primaryBlue,
+                                                                ),
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 6,
+                                                          ),
+                                                        ],
+                                                        Text(
+                                                          _cancelObjectiveLabel(),
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: Colors
+                                                                .grey
+                                                                .shade800,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 4,
+                                                        ),
+                                                        Text(
+                                                          sessionObjective
+                                                                  .isEmpty
+                                                              ? _cancelNoObjectiveLabel()
+                                                              : sessionObjective,
+                                                          style: TextStyle(
+                                                            color: Colors
+                                                                .grey
+                                                                .shade800,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(),
                                         ),
-                                        child: const Text(
-                                          'Locked (<24h)',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      )
-                                    else
-                                      FilledButton(
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: actionOrange,
-                                        ),
-                                        onPressed: () async {
-                                          Navigator.of(ctx).pop();
-                                          await _cancelUpcomingBooking(cid, b);
-                                        },
-                                        child: const Text('Cancel'),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -2580,25 +2815,25 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFFF2B8A8)),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.cancel_schedule_send_rounded, color: actionOrange),
-            SizedBox(width: 10),
+            const Icon(Icons.cancel_schedule_send_rounded, color: actionOrange),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Cancel a booking',
-                    style: TextStyle(
+                    _cancelCardTitle(),
+                    style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: actionOrange,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
-                    'Open your upcoming classes and cancel if eligible',
-                    style: TextStyle(
+                    _cancelCardSubtitle(),
+                    style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF8A3D27),
                       fontSize: 12,
@@ -2607,7 +2842,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 ],
               ),
             ),
-            Icon(
+            const Icon(
               Icons.arrow_forward_ios_rounded,
               size: 16,
               color: actionOrange,
