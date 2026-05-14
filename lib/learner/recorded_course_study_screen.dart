@@ -18,6 +18,7 @@ import '../services/certificate_service.dart';
 import '../services/course_feedback_service.dart';
 import '../services/storage_existence.dart';
 import '../shared/app_feedback.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_web_layout.dart';
@@ -638,14 +639,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
     if (!mounted) return;
 
-    await Navigator.push(
+    await OfflineActionGuard.runExclusive(
       context,
-      MaterialPageRoute(
-        builder: (_) => MaterialWebViewScreen.fromUrl(
-          title: session.title.isEmpty ? 'Session Reading' : session.title,
-          url: url,
-        ),
-      ),
+      'learner.recorded.read.${widget.courseKey}.${session.id}',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MaterialWebViewScreen.fromUrl(
+              title: session.title.isEmpty ? 'Session Reading' : session.title,
+              url: url,
+            ),
+          ),
+        );
+      },
     );
 
     if (!mounted) return;
@@ -904,18 +911,24 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     _debug('openVideo routePushStart sessionId=${session.id}');
     if (!mounted) return;
 
-    await Navigator.push(
+    await OfflineActionGuard.runExclusive(
       context,
-      MaterialPageRoute(
-        builder: (_) => RecordedVideoPlayerScreen(
-          uid: _uid,
-          courseKey: widget.courseKey,
-          courseId: _courseId,
-          sessionId: session.id,
-          sessionTitle: session.title,
-          videoUrl: videoUrl,
-        ),
-      ),
+      'learner.recorded.video.${widget.courseKey}.${session.id}',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RecordedVideoPlayerScreen(
+              uid: _uid,
+              courseKey: widget.courseKey,
+              courseId: _courseId,
+              sessionId: session.id,
+              sessionTitle: session.title,
+              videoUrl: videoUrl,
+            ),
+          ),
+        );
+      },
     );
     _debug(
       'openVideo routeReturned sessionId=${session.id} elapsedMs=${openTimer.elapsedMilliseconds}',

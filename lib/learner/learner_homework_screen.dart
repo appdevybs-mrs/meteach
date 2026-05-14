@@ -5,6 +5,7 @@ import 'learner_mail_thread_screen.dart';
 
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
@@ -240,16 +241,22 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
     if (!mounted) return;
 
-    await Navigator.push(
+    await OfflineActionGuard.runExclusive(
       context,
-      MaterialPageRoute(
-        builder: (_) => LearnerMailThreadScreen(
-          threadId: threadId,
-          peerUid: teacherUid,
-          peerName: teacherName.isEmpty ? 'Teacher' : teacherName,
-          subject: subject,
-        ),
-      ),
+      'learner.homework.open_mail.$sessionId',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LearnerMailThreadScreen(
+              threadId: threadId,
+              peerUid: teacherUid,
+              peerName: teacherName.isEmpty ? 'Teacher' : teacherName,
+              subject: subject,
+            ),
+          ),
+        );
+      },
     );
 
     // ✅ refresh list so submittedAt appears
@@ -1139,24 +1146,31 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                       '${_uid}_${teacherUid}_$sessionId';
                                   final subject =
                                       '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
-                                  await Navigator.push(
+                                  await OfflineActionGuard.runExclusive(
                                     context,
-                                    MaterialPageRoute(
-                                      builder: (_) => LearnerMailThreadScreen(
-                                        threadId: threadId,
-                                        peerUid: teacherUid,
-                                        peerName:
-                                            ((it['teacherName'] ?? '')
-                                                .toString()
-                                                .trim()
-                                                .isEmpty)
-                                            ? 'Teacher'
-                                            : (it['teacherName'] ?? '')
-                                                  .toString()
-                                                  .trim(),
-                                        subject: subject,
-                                      ),
-                                    ),
+                                    'learner.homework.open_mail.$sessionId',
+                                    () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              LearnerMailThreadScreen(
+                                                threadId: threadId,
+                                                peerUid: teacherUid,
+                                                peerName:
+                                                    ((it['teacherName'] ?? '')
+                                                        .toString()
+                                                        .trim()
+                                                        .isEmpty)
+                                                    ? 'Teacher'
+                                                    : (it['teacherName'] ?? '')
+                                                          .toString()
+                                                          .trim(),
+                                                subject: subject,
+                                              ),
+                                        ),
+                                      );
+                                    },
                                   );
                                   if (mounted) await _load();
                                 },

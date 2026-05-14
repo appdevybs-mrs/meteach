@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/watermark_background.dart';
@@ -155,23 +156,36 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      final variantKey = _variantKeyOf(match);
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => variantKey == 'recorded'
-              ? RecordedCourseStudyScreen(
-                  courseKey: targetKey,
-                  courseData: match,
-                )
-              : LearnerCourseDetailScreen(
-                  courseKey: targetKey,
-                  courseData: match,
-                ),
+      unawaited(
+        OfflineActionGuard.runExclusive(
+          context,
+          'learner.courses.open.$targetKey',
+          () => _openCourse(targetKey, match),
         ),
       );
     });
+  }
+
+  Future<void> _openCourse(
+    String courseKey,
+    Map<String, dynamic> course,
+  ) async {
+    final variantKey = _variantKeyOf(course);
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => variantKey == 'recorded'
+            ? RecordedCourseStudyScreen(
+                courseKey: courseKey,
+                courseData: course,
+              )
+            : LearnerCourseDetailScreen(
+                courseKey: courseKey,
+                courseData: course,
+              ),
+      ),
+    );
   }
 
   String _courseIdOf(Map<String, dynamic> course) {
@@ -1595,18 +1609,11 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => variantKey == 'recorded'
-                            ? RecordedCourseStudyScreen(
-                                courseKey: courseKey,
-                                courseData: course,
-                              )
-                            : LearnerCourseDetailScreen(
-                                courseKey: courseKey,
-                                courseData: course,
-                              ),
+                    unawaited(
+                      OfflineActionGuard.runExclusive(
+                        context,
+                        'learner.courses.open.$courseKey',
+                        () => _openCourse(courseKey, course),
                       ),
                     );
                   },

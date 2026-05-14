@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
@@ -1072,15 +1075,23 @@ class _TeacherHomeworkInboxScreenState
                     onPressed: () {
                       Navigator.pop(ctx);
                       if (v.row.threadId.isNotEmpty) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TeacherMailThreadScreen(
-                              threadId: v.row.threadId,
-                              peerUid: v.row.peerUid,
-                              peerName: v.row.peerName,
-                              subject: v.row.subject,
-                            ),
+                        unawaited(
+                          OfflineActionGuard.runExclusive(
+                            context,
+                            'teacher.homework_inbox.review.${v.row.threadId}',
+                            () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TeacherMailThreadScreen(
+                                    threadId: v.row.threadId,
+                                    peerUid: v.row.peerUid,
+                                    peerName: v.row.peerName,
+                                    subject: v.row.subject,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         );
                       }
@@ -1724,15 +1735,24 @@ class _TeacherHomeworkInboxScreenState
                                     return;
                                   }
                                   if (v.row.threadId.isNotEmpty) {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => TeacherMailThreadScreen(
-                                          threadId: v.row.threadId,
-                                          peerUid: v.row.peerUid,
-                                          peerName: v.row.peerName,
-                                          subject: v.row.subject,
-                                        ),
+                                    unawaited(
+                                      OfflineActionGuard.runExclusive(
+                                        context,
+                                        'teacher.homework_inbox.open.${v.row.threadId}',
+                                        () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  TeacherMailThreadScreen(
+                                                    threadId: v.row.threadId,
+                                                    peerUid: v.row.peerUid,
+                                                    peerName: v.row.peerName,
+                                                    subject: v.row.subject,
+                                                  ),
+                                            ),
+                                          );
+                                        },
                                       ),
                                     );
                                     return;

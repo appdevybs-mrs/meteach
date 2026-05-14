@@ -238,7 +238,7 @@ class _LearnerHomeState extends State<LearnerHome> {
 
   void _openLearnerWindow(String windowKey, VoidCallback onAllowed) {
     unawaited(
-      OfflineActionGuard.run(context, () {
+      OfflineActionGuard.runExclusive(context, 'learner.window.$windowKey', () {
         return WindowAccessService.instance.guardOpen(
           context: context,
           role: AppWindowRole.learner,
@@ -3886,7 +3886,13 @@ class _BookingTopCardState extends State<_BookingTopCard>
         InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
-            await _openBookingCoursePicker(context);
+            unawaited(
+              OfflineActionGuard.runExclusive(
+                context,
+                'learner.booking.open_picker',
+                () => _openBookingCoursePicker(context),
+              ),
+            );
           },
           child: Container(
             width: double.infinity,
@@ -5548,9 +5554,15 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
             onTap: () async {
-              await _openHomeworkCoursePicker(
-                context,
-                courseKeysWithUndone: courseKeysWithUndone,
+              unawaited(
+                OfflineActionGuard.runExclusive(
+                  context,
+                  'learner.homework.open_picker',
+                  () => _openHomeworkCoursePicker(
+                    context,
+                    courseKeysWithUndone: courseKeysWithUndone,
+                  ),
+                ),
               );
             },
             child: LayoutBuilder(

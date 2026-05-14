@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_web_layout.dart';
@@ -1368,15 +1369,21 @@ class _TeacherClassProgressScreenState
     final sessionId = (record['sessionId'] ?? record['id'] ?? '').toString();
     if (sessionId.isEmpty) return;
 
-    await Navigator.push(
+    await OfflineActionGuard.runExclusive(
       context,
-      MaterialPageRoute(
-        builder: (_) => TakeAttendanceScreen(
-          classData: widget.classData,
-          existingSessionId: sessionId,
-          existingRecord: record,
-        ),
-      ),
+      'teacher.class_progress.edit_attendance.$sessionId',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TakeAttendanceScreen(
+              classData: widget.classData,
+              existingSessionId: sessionId,
+              existingRecord: record,
+            ),
+          ),
+        );
+      },
     );
 
     if (!mounted) return;

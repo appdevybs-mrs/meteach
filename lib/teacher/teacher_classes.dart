@@ -25,6 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/payment_status.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/study_variant.dart';
@@ -121,6 +122,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   AppPalette get p => appThemeController.palette;
+
+  void _openExclusive(String key, VoidCallback action) {
+    unawaited(OfflineActionGuard.runExclusive(context, key, action));
+  }
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -1805,17 +1810,22 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                                       ),
                                                     ),
                                                     onPressed: () {
-                                                      Navigator.push(
-                                                        context,
-                                                        MaterialPageRoute(
-                                                          builder: (_) =>
-                                                              TeacherLearnerProfileScreen(
-                                                                learnerUid:
-                                                                    selectedLearnerUid,
-                                                                learnerName:
-                                                                    name,
-                                                              ),
-                                                        ),
+                                                      _openExclusive(
+                                                        'teacher.classes.learner_profile.$selectedLearnerUid',
+                                                        () {
+                                                          Navigator.push(
+                                                            context,
+                                                            MaterialPageRoute(
+                                                              builder: (_) =>
+                                                                  TeacherLearnerProfileScreen(
+                                                                    learnerUid:
+                                                                        selectedLearnerUid,
+                                                                    learnerName:
+                                                                        name,
+                                                                  ),
+                                                            ),
+                                                          );
+                                                        },
                                                       );
                                                     },
                                                     icon: const Icon(
@@ -2671,16 +2681,21 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                   onPressed: learnerUid.isEmpty
                                       ? null
                                       : () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  TeacherLearnerProfileScreen(
-                                                    learnerUid: learnerUid,
-                                                    learnerName:
-                                                        learnerDisplayName,
-                                                  ),
-                                            ),
+                                          _openExclusive(
+                                            'teacher.classes.learner_profile.$learnerUid',
+                                            () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      TeacherLearnerProfileScreen(
+                                                        learnerUid: learnerUid,
+                                                        learnerName:
+                                                            learnerDisplayName,
+                                                      ),
+                                                ),
+                                              );
+                                            },
                                           );
                                         },
                                 ),
@@ -2755,18 +2770,23 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                   onPressed: learnerUid.isEmpty
                                       ? null
                                       : () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  TeacherLearnerGalleryScreen(
-                                                    learnerUid: learnerUid,
-                                                    learnerName:
-                                                        learnerDisplayName,
-                                                    classId: classId,
-                                                    classTitle: classTitle,
-                                                  ),
-                                            ),
+                                          _openExclusive(
+                                            'teacher.classes.learner_gallery.$learnerUid.$classId',
+                                            () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      TeacherLearnerGalleryScreen(
+                                                        learnerUid: learnerUid,
+                                                        learnerName:
+                                                            learnerDisplayName,
+                                                        classId: classId,
+                                                        classTitle: classTitle,
+                                                      ),
+                                                ),
+                                              );
+                                            },
                                           );
                                         },
                                 ),
@@ -2796,12 +2816,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TakeAttendanceScreen(classData: c),
-                      ),
-                    );
+                    _openExclusive('teacher.classes.take.$classId', () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TakeAttendanceScreen(classData: c),
+                        ),
+                      );
+                    });
                   },
                 ),
               ),
@@ -2826,14 +2848,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   onPressed: classId.isEmpty
                       ? null
                       : () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TeacherClassProgressScreen(
-                                classId: classId,
-                                classData: c,
-                              ),
-                            ),
+                          _openExclusive(
+                            'teacher.classes.progress.$classId',
+                            () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TeacherClassProgressScreen(
+                                    classId: classId,
+                                    classData: c,
+                                  ),
+                                ),
+                              );
+                            },
                           );
                         },
                 ),
@@ -3304,32 +3331,45 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                     onPressed: canOpenTake
                                         ? () {
                                             if (!mine && hasAttendance) {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      _OnlineAttendanceHistoryScreen(
-                                                        booking: b,
-                                                        teacherUid: _teacherUid,
-                                                      ),
-                                                ),
+                                              _openExclusive(
+                                                'teacher.classes.online_history.${b.bookingKey}',
+                                                () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          _OnlineAttendanceHistoryScreen(
+                                                            booking: b,
+                                                            teacherUid:
+                                                                _teacherUid,
+                                                          ),
+                                                    ),
+                                                  );
+                                                },
                                               );
                                               return;
                                             }
 
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    _OnlineTakeAttendanceScreen(
-                                                      booking: b,
-                                                      teacherUid: _teacherUid,
-                                                      teacherName:
-                                                          _teacherName.isEmpty
-                                                          ? 'Teacher'
-                                                          : _teacherName,
-                                                    ),
-                                              ),
+                                            _openExclusive(
+                                              'teacher.classes.online_take.${b.bookingKey}',
+                                              () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        _OnlineTakeAttendanceScreen(
+                                                          booking: b,
+                                                          teacherUid:
+                                                              _teacherUid,
+                                                          teacherName:
+                                                              _teacherName
+                                                                  .isEmpty
+                                                              ? 'Teacher'
+                                                              : _teacherName,
+                                                        ),
+                                                  ),
+                                                );
+                                              },
                                             );
                                           }
                                         : null,
@@ -3358,15 +3398,20 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                   ),
                                 ),
                                 onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          _OnlineAttendanceHistoryScreen(
-                                            booking: b,
-                                            teacherUid: _teacherUid,
-                                          ),
-                                    ),
+                                  _openExclusive(
+                                    'teacher.classes.online_history.${b.bookingKey}',
+                                    () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              _OnlineAttendanceHistoryScreen(
+                                                booking: b,
+                                                teacherUid: _teacherUid,
+                                              ),
+                                        ),
+                                      );
+                                    },
                                   );
                                 },
                               ),

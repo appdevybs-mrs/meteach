@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter_windowmanager/flutter_windowmanager.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/notification_service.dart';
@@ -856,9 +858,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           if (!loading &&
                               (full?.introVideoUrl ?? '').isNotEmpty)
                             OutlinedButton.icon(
-                              onPressed: () => _openExternalLink(
-                                full!.introVideoUrl,
-                                'intro video',
+                              onPressed: () => _openSecureMiniVideo(
+                                url: full!.introVideoUrl,
+                                title: 'Teacher Intro',
                               ),
                               icon: const Icon(
                                 Icons.play_circle_fill_rounded,
@@ -897,6 +899,31 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (uri == null) return;
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) _toast('Could not open $label.');
+  }
+
+  Future<void> _openSecureMiniVideo({
+    required String url,
+    String title = 'Watch',
+  }) async {
+    final clean = url.trim();
+    if (clean.isEmpty) return;
+    if (!mounted) return;
+    try {
+      await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+    } catch (_) {}
+    if (!mounted) return;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _MiniSecureVideoSheet(title: title, url: clean),
+      );
+    } finally {
+      try {
+        await FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+      } catch (_) {}
+    }
   }
 
   bool _isWithin24Hours(_Slot slot) {
@@ -4493,4 +4520,143 @@ class _MyBooking {
     required this.teacherName,
     required this.sessionNo,
   });
+}
+
+class _MiniSecureVideoSheet extends StatefulWidget {
+  final String title;
+  final String url;
+
+  const _MiniSecureVideoSheet({required this.title, required this.url});
+
+  @override
+  State<_MiniSecureVideoSheet> createState() => _MiniSecureVideoSheetState();
+}
+
+class _MiniSecureVideoSheetState extends State<_MiniSecureVideoSheet> {
+  VideoPlayerController? _controller;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await c.initialize();
+      await c.setLooping(false);
+      await c.play();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      setState(() {
+        _controller = c;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _controller;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF2C2C2C)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
+                      : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              'Video could not be loaded.',
+                              style: TextStyle(
+                                color: Colors.grey.shade300,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        )
+                      : VideoPlayer(c!),
+                ),
+              ),
+              if (!_loading && _error == null && c != null)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          if (c.value.isPlaying) {
+                            c.pause();
+                          } else {
+                            c.play();
+                          }
+                        });
+                      },
+                      icon: Icon(
+                        c.value.isPlaying
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_fill_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -16,6 +16,7 @@ import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/icon_theme.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_stories_screen.dart';
@@ -56,7 +57,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final GlobalKey _menuButtonKey = GlobalKey();
   final GlobalKey _heroCardKey = GlobalKey();
   final GlobalKey _inboxCardKey = GlobalKey();
   final GlobalKey _homeworkCardKey = GlobalKey();
@@ -70,6 +70,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Future<_ClassesSummary>? _classesSummaryFuture;
   Future<int>? _upcomingOnlineCountFuture;
   Future<String>? _displayNameFuture;
+  Future<String>? _profilePhotoFuture;
   Future<List<_HomeUpcomingClass>>? _nextUpcomingClassesFuture;
   Timer? _attendanceReminderTimer;
   bool _attendanceReminderCheckInProgress = false;
@@ -99,6 +100,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       _displayNameFuture = _myDisplayName();
+      _profilePhotoFuture = _myProfilePhoto();
       _nextUpcomingClassesFuture = _loadNextUpcomingClassesForHome(uid);
       _startAttendanceReminderWatcher(uid);
     }
@@ -373,6 +375,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     setState(() {
       _displayNameFuture = _myDisplayName();
+      _profilePhotoFuture = _myProfilePhoto();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       _nextUpcomingClassesFuture = _loadNextUpcomingClassesForHome(uid);
@@ -411,45 +414,73 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<void> _openUpcomingTake(_HomeUpcomingClass occ) async {
-    if (occ.isOnline) {
-      _openTeacherWindow(
-        AppWindowKeys.teacherOnlineAvailability,
-        () => _pushScreen(
-          const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 2),
-        ),
-      );
-      return;
-    }
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.upcoming.take.${occ.classId}.${occ.start.millisecondsSinceEpoch}',
+        () async {
+          if (occ.isOnline) {
+            _openTeacherWindow(
+              AppWindowKeys.teacherOnlineAvailability,
+              () => _pushScreen(
+                const TeacherClassesScreen(
+                  initialMainTab: 1,
+                  initialOnlineTab: 2,
+                ),
+              ),
+            );
+            return;
+          }
 
-    final classData = await _classDataForUpcoming(occ.classId);
-    if (!mounted || classData == null) return;
+          final classData = await _classDataForUpcoming(occ.classId);
+          if (!mounted || classData == null) return;
 
-    _openTeacherWindow(
-      AppWindowKeys.teacherClasses,
-      () => _pushScreen(
-        TakeAttendanceScreen(classData: classData, initialDate: occ.start),
+          _openTeacherWindow(
+            AppWindowKeys.teacherClasses,
+            () => _pushScreen(
+              TakeAttendanceScreen(
+                classData: classData,
+                initialDate: occ.start,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
   Future<void> _openUpcomingProgress(_HomeUpcomingClass occ) async {
-    if (occ.isOnline) {
-      _openTeacherWindow(
-        AppWindowKeys.teacherOnlineAvailability,
-        () => _pushScreen(
-          const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 2),
-        ),
-      );
-      return;
-    }
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.upcoming.progress.${occ.classId}.${occ.start.millisecondsSinceEpoch}',
+        () async {
+          if (occ.isOnline) {
+            _openTeacherWindow(
+              AppWindowKeys.teacherOnlineAvailability,
+              () => _pushScreen(
+                const TeacherClassesScreen(
+                  initialMainTab: 1,
+                  initialOnlineTab: 2,
+                ),
+              ),
+            );
+            return;
+          }
 
-    final classData = await _classDataForUpcoming(occ.classId);
-    if (!mounted || classData == null) return;
+          final classData = await _classDataForUpcoming(occ.classId);
+          if (!mounted || classData == null) return;
 
-    _openTeacherWindow(
-      AppWindowKeys.teacherClasses,
-      () => _pushScreen(
-        TeacherClassProgressScreen(classId: occ.classId, classData: classData),
+          _openTeacherWindow(
+            AppWindowKeys.teacherClasses,
+            () => _pushScreen(
+              TeacherClassProgressScreen(
+                classId: occ.classId,
+                classData: classData,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -953,6 +984,35 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return emailPrefix.isNotEmpty ? emailPrefix : 'Teacher';
   }
 
+  Future<String> _myProfilePhoto() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return '';
+
+    try {
+      final userSnap = await _db.child('users/$uid').get();
+      final userValue = userSnap.value;
+      if (userValue is Map) {
+        final userMap = userValue.map((k, v) => MapEntry(k.toString(), v));
+        final fromUser = ProfileAvatar.resolvePhotoFromMap(userMap);
+        if (fromUser.isNotEmpty) return fromUser;
+      }
+
+      final websiteSnap = await _db
+          .child('website/teachers/$uid/profile')
+          .get();
+      final websiteValue = websiteSnap.value;
+      if (websiteValue is Map) {
+        final websiteMap = websiteValue.map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        final fromWebsite = ProfileAvatar.resolvePhotoFromMap(websiteMap);
+        if (fromWebsite.isNotEmpty) return fromWebsite;
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
   void _openThemeSheet() {
     final p = palette;
 
@@ -1033,12 +1093,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       );
     }
 
-    if (!requiresInternet) {
-      unawaited(openAction());
-      return;
-    }
-
-    unawaited(OfflineActionGuard.run(context, openAction));
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.window.$windowKey',
+        openAction,
+        requireOnline: requiresInternet,
+      ),
+    );
   }
 
   void _openProfileScreen() {
@@ -1211,6 +1273,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         drawer: webDesktop
             ? null
             : _TeacherDrawer(
+                teacherUid: FirebaseAuth.instance.currentUser?.uid ?? '',
                 palette: p,
                 onOpenProfile: _openProfileScreen,
                 onOpenSchedule: _openScheduleScreen,
@@ -1237,10 +1300,38 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           surfaceTintColor: Colors.white,
           leading: webDesktop
               ? null
-              : IconButton(
-                  key: _menuButtonKey,
-                  icon: Icon(TeacherIcons.menu, color: p.primary),
-                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+              : Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 8, bottom: 8),
+                  child: FutureBuilder<String>(
+                    future: _displayNameFuture,
+                    builder: (context, nameSnap) {
+                      final displayName = (nameSnap.data ?? 'Teacher').trim();
+                      return FutureBuilder<String>(
+                        future: _profilePhotoFuture,
+                        builder: (context, photoSnap) {
+                          final photoUrl = (photoSnap.data ?? '').trim();
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkResponse(
+                              radius: 24,
+                              onTap: () =>
+                                  _scaffoldKey.currentState?.openDrawer(),
+                              child: ProfileAvatar(
+                                name: displayName.isEmpty
+                                    ? 'Teacher'
+                                    : displayName,
+                                photoUrl: photoUrl,
+                                radius: 20,
+                                fallbackBg: p.primary,
+                                fallbackFg: Colors.white,
+                                borderColor: p.primary.withValues(alpha: 0.14),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
           title: FutureBuilder<String>(
             future: _displayNameFuture,
@@ -1862,8 +1953,9 @@ class _TeacherHomeWebAside extends StatelessWidget {
   }
 }
 
-class _TeacherDrawer extends StatelessWidget {
+class _TeacherDrawer extends StatefulWidget {
   const _TeacherDrawer({
+    required this.teacherUid,
     required this.palette,
     required this.onOpenProfile,
     required this.onOpenSchedule,
@@ -1884,6 +1976,7 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenStories,
   });
 
+  final String teacherUid;
   final _HomePalette palette;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenSchedule;
@@ -1904,206 +1997,261 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onLogout;
 
   @override
+  State<_TeacherDrawer> createState() => _TeacherDrawerState();
+}
+
+class _TeacherDrawerState extends State<_TeacherDrawer> {
+  static const List<String> _defaultOrder = <String>[
+    'profile',
+    'schedule',
+    'classes',
+    'gallery',
+    'games',
+    'stories',
+    'online_booking',
+    'online_circle',
+    'mail',
+    'reminders',
+    'wages',
+    'regulations',
+    'syllabi',
+    'shared',
+    'my_platform',
+    'theme',
+  ];
+
+  final List<String> _menuOrder = <String>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMenuOrder();
+  }
+
+  Future<void> _loadMenuOrder() async {
+    final uid = widget.teacherUid.trim();
+    if (uid.isEmpty) {
+      _menuOrder
+        ..clear()
+        ..addAll(_defaultOrder);
+      if (mounted) setState(() {});
+      return;
+    }
+
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('users/$uid/teacher_menu_order')
+          .get();
+      final loaded = _normalizeOrder(snap.value);
+      _menuOrder
+        ..clear()
+        ..addAll(loaded.isEmpty ? _defaultOrder : loaded);
+    } catch (_) {
+      _menuOrder
+        ..clear()
+        ..addAll(_defaultOrder);
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  List<String> _normalizeOrder(dynamic raw) {
+    final out = <String>[];
+    final seen = <String>{};
+
+    void add(dynamic value) {
+      final id = value.toString().trim();
+      if (id.isEmpty || !seen.add(id)) return;
+      out.add(id);
+    }
+
+    if (raw is List) {
+      for (final item in raw) {
+        add(item);
+      }
+    } else if (raw is Map) {
+      final entries = raw.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final entry in entries) {
+        add(entry.value);
+      }
+    }
+
+    return out.where(_defaultOrder.contains).toList();
+  }
+
+  Future<void> _persistOrder() async {
+    final uid = widget.teacherUid.trim();
+    if (uid.isEmpty) return;
+
+    try {
+      await FirebaseDatabase.instance.ref('users/$uid').update({
+        'teacher_menu_order': _menuOrder,
+        'updatedAt': ServerValue.timestamp,
+      });
+    } catch (e) {
+      debugPrint('Teacher menu order save failed: $e');
+    }
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    setState(() {
+      final item = _menuOrder.removeAt(oldIndex);
+      _menuOrder.insert(newIndex, item);
+    });
+    unawaited(_persistOrder());
+  }
+
+  List<_TeacherMenuEntry> _entries() {
+    return <_TeacherMenuEntry>[
+      _TeacherMenuEntry(
+        id: 'profile',
+        icon: TeacherIcons.profile,
+        title: 'Profile',
+        onTap: widget.onOpenProfile,
+      ),
+      _TeacherMenuEntry(
+        id: 'schedule',
+        icon: TeacherIcons.calendarSchedule,
+        title: 'Schedule',
+        onTap: widget.onOpenSchedule,
+      ),
+      _TeacherMenuEntry(
+        id: 'classes',
+        icon: TeacherIcons.classes,
+        title: 'My Classes',
+        onTap: widget.onOpenClasses,
+      ),
+      _TeacherMenuEntry(
+        id: 'gallery',
+        icon: TeacherIcons.gallery,
+        title: 'Gallery',
+        subtitle: 'My learners and teachers',
+        onTap: widget.onOpenGallery,
+      ),
+      _TeacherMenuEntry(
+        id: 'games',
+        icon: TeacherIcons.games,
+        title: 'Games',
+        onTap: widget.onOpenGames,
+      ),
+      _TeacherMenuEntry(
+        id: 'stories',
+        icon: TeacherIcons.stories,
+        title: 'Stories',
+        onTap: widget.onOpenStories,
+      ),
+      _TeacherMenuEntry(
+        id: 'online_booking',
+        icon: TeacherIcons.onlineBooking,
+        title: 'Online Availability',
+        onTap: widget.onOpenOnlineBooking,
+      ),
+      _TeacherMenuEntry(
+        id: 'online_circle',
+        icon: TeacherIcons.onlineCircle,
+        title: 'Online Circle',
+        onTap: widget.onOpenOnlineCircle,
+      ),
+      _TeacherMenuEntry(
+        id: 'mail',
+        icon: TeacherIcons.mail,
+        title: 'Mail',
+        onTap: widget.onOpenMail,
+      ),
+      _TeacherMenuEntry(
+        id: 'reminders',
+        icon: TeacherIcons.reminders,
+        title: 'Reminders',
+        onTap: widget.onOpenReminders,
+      ),
+      _TeacherMenuEntry(
+        id: 'wages',
+        icon: TeacherIcons.wages,
+        title: 'Wages',
+        onTap: widget.onOpenWages,
+      ),
+      _TeacherMenuEntry(
+        id: 'regulations',
+        icon: TeacherIcons.regulations,
+        title: 'Regulations',
+        onTap: widget.onOpenRegulations,
+      ),
+      _TeacherMenuEntry(
+        id: 'syllabi',
+        icon: TeacherIcons.syllabi,
+        title: 'Syllabi',
+        onTap: widget.onOpenSyllabi,
+      ),
+      _TeacherMenuEntry(
+        id: 'shared',
+        icon: TeacherIcons.shared,
+        title: 'Shared',
+        subtitle: 'Shared files between teachers',
+        onTap: widget.onOpenShared,
+      ),
+      _TeacherMenuEntry(
+        id: 'my_platform',
+        icon: TeacherIcons.myPlatform,
+        title: 'My Platform',
+        subtitle: 'Assigned course comments and reviews',
+        onTap: widget.onOpenMyPlatform,
+      ),
+      _TeacherMenuEntry(
+        id: 'theme',
+        icon: TeacherIcons.theme,
+        title: 'Theme Settings',
+        subtitle: 'Manly / girly looks',
+        onTap: widget.onOpenThemeSettings,
+      ),
+    ];
+  }
+
+  List<_TeacherMenuEntry> _orderedEntries() {
+    final entriesById = {for (final entry in _entries()) entry.id: entry};
+    final ordered = <_TeacherMenuEntry>[];
+    for (final id in _menuOrder.isEmpty ? _defaultOrder : _menuOrder) {
+      final entry = entriesById.remove(id);
+      if (entry != null) ordered.add(entry);
+    }
+    ordered.addAll(entriesById.values);
+    return ordered;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final orderedEntries = _orderedEntries();
+
     return Drawer(
-      backgroundColor: palette.appBg,
+      backgroundColor: widget.palette.appBg,
       child: SafeArea(
         child: Column(
           children: [
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.all(14),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: palette.primary,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Colors.white24,
-                    child: Icon(
-                      TeacherIcons.classes,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Teacher Menu',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Compact dashboard navigation',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-                children: [
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.profile,
-                    title: 'Profile',
+              child: ReorderableListView.builder(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                buildDefaultDragHandles: false,
+                itemCount: orderedEntries.length,
+                onReorder: _onReorder,
+                itemBuilder: (context, index) {
+                  final entry = orderedEntries[index];
+                  return _DrawerTile(
+                    key: ValueKey(entry.id),
+                    palette: widget.palette,
+                    icon: entry.icon,
+                    title: entry.title,
+                    subtitle: entry.subtitle,
                     onTap: () {
                       Navigator.of(context).pop();
-                      onOpenProfile();
+                      entry.onTap();
                     },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.calendarSchedule,
-                    title: 'Schedule',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenSchedule();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.classes,
-                    title: 'My Classes',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenClasses();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.gallery,
-                    title: 'Gallery',
-                    subtitle: 'My learners and teachers',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenGallery();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.games,
-                    title: 'Games',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenGames();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.stories,
-                    title: 'Stories',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenStories();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.onlineBooking,
-                    title: 'Online Availability',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenOnlineBooking();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.onlineCircle,
-                    title: 'Online Circle',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenOnlineCircle();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.mail,
-                    title: 'Mail',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenMail();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.reminders,
-                    title: 'Reminders',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenReminders();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.wages,
-                    title: 'Wages',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenWages();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.regulations,
-                    title: 'Regulations',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenRegulations();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.syllabi,
-                    title: 'Syllabi',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenSyllabi();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.shared,
-                    title: 'Shared',
-                    subtitle: 'Shared files between teachers',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenShared();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.myPlatform,
-                    title: 'My Platform',
-                    subtitle: 'Assigned course comments and reviews',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenMyPlatform();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: TeacherIcons.theme,
-                    title: 'Theme Settings',
-                    subtitle: 'Manly / girly looks',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenThemeSettings();
-                    },
-                  ),
-                ],
+                  );
+                },
               ),
             ),
             Padding(
@@ -2111,9 +2259,9 @@ class _TeacherDrawer extends StatelessWidget {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: onLogout,
+                  onPressed: widget.onLogout,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: palette.accent,
+                    backgroundColor: widget.palette.accent,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -2136,8 +2284,25 @@ class _TeacherDrawer extends StatelessWidget {
   }
 }
 
+class _TeacherMenuEntry {
+  const _TeacherMenuEntry({
+    required this.id,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.subtitle = '',
+  });
+
+  final String id;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+}
+
 class _DrawerTile extends StatelessWidget {
   const _DrawerTile({
+    super.key,
     required this.palette,
     required this.icon,
     required this.title,

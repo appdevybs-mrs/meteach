@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import 'take_attendance_screen.dart';
 import '../shared/app_feedback.dart';
@@ -874,15 +875,23 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   void _editSession(Map<String, dynamic> session) async {
-    await Navigator.push(
+    final sessionId = (session['sessionId'] ?? session['id']).toString();
+
+    await OfflineActionGuard.runExclusive(
       context,
-      MaterialPageRoute(
-        builder: (_) => TakeAttendanceScreen(
-          classData: widget.classData,
-          existingSessionId: (session['sessionId'] ?? session['id']).toString(),
-          existingRecord: session,
-        ),
-      ),
+      'teacher.attendance_history.edit.$sessionId',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TakeAttendanceScreen(
+              classData: widget.classData,
+              existingSessionId: sessionId,
+              existingRecord: session,
+            ),
+          ),
+        );
+      },
     );
 
     _loadHistory();

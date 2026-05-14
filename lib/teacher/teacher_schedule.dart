@@ -21,6 +21,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../services/notification_service.dart';
 import '../services/teacher_schedule_widget_service.dart';
 import '../shared/app_theme.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 import 'teacher_class_progress_screen.dart';
@@ -82,7 +83,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   String _lastAppliedReminderPlanKey = '';
 
   final Map<String, _OccCacheEntry> _occCache = <String, _OccCacheEntry>{};
-  final Map<String, bool> _expandedLearnersBySession = <String, bool>{};
   final Map<String, Map<String, String>> _learnerMiniCache =
       <String, Map<String, String>>{};
 
@@ -453,10 +453,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   String _safeStr(dynamic v) => (v ?? '').toString().trim();
 
-  String _sessionUiKey(_Occ o) {
-    return '${o.notificationClassId}@@${o.start.toIso8601String()}';
-  }
-
   List<_SessionLearner> _inClassLearnersFromClass(
     Map<String, dynamic> classData,
   ) {
@@ -662,15 +658,24 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     String initialCourseTitle = '',
   }) {
     if (learnerUid.trim().isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TeacherLearnerProfileScreen(
-          learnerUid: learnerUid,
-          learnerName: learnerName,
-          openReportComposerOnLoad: openReportComposerOnLoad,
-          initialCourseTitle: initialCourseTitle,
-        ),
+
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.schedule.profile.$learnerUid',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TeacherLearnerProfileScreen(
+                learnerUid: learnerUid,
+                learnerName: learnerName,
+                openReportComposerOnLoad: openReportComposerOnLoad,
+                initialCourseTitle: initialCourseTitle,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -682,15 +687,24 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     required String classTitle,
   }) {
     if (learnerUid.trim().isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TeacherLearnerGalleryScreen(
-          learnerUid: learnerUid,
-          learnerName: learnerName,
-          classId: classId,
-          classTitle: classTitle,
-        ),
+
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.schedule.gallery.$learnerUid.$classId',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TeacherLearnerGalleryScreen(
+                learnerUid: learnerUid,
+                learnerName: learnerName,
+                classId: classId,
+                classTitle: classTitle,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1174,26 +1188,21 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             ...dayClasses.map((o) {
               final isConflict = _hasConflict(o, dayClasses);
               return _SessionCard(
+                key: ValueKey<String>(
+                  '${o.notificationClassId}@@${o.start.toIso8601String()}',
+                ),
                 palette: p,
                 o: o,
                 learners: o.isOnline
                     ? (onlineLearnersByBookingKey[o.onlineBookingKey] ??
                           const [])
                     : (inClassLearnersByClassId[o.classId] ?? const []),
-                expanded: _expandedLearnersBySession[_sessionUiKey(o)] == true,
                 isConflict: isConflict,
                 enabled: o.isOnline
                     ? true
                     : _isClassEnabled(o.notificationClassId),
                 learnerAvatarBuilder: _learnerAvatar,
                 learnerMiniLoader: _loadLearnerMini,
-                onToggleLearners: () {
-                  final key = _sessionUiKey(o);
-                  setState(() {
-                    _expandedLearnersBySession[key] =
-                        !(_expandedLearnersBySession[key] ?? false);
-                  });
-                },
                 onLearnerProfile: (learner) {
                   final fallbackName = learner.name.trim().isEmpty
                       ? 'Learner'
@@ -1514,6 +1523,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                   itemBuilder: (context, i) {
                     final isConflict = _hasConflict(events[i], events);
                     return _SessionCard(
+                      key: ValueKey<String>(
+                        '${events[i].notificationClassId}@@${events[i].start.toIso8601String()}',
+                      ),
                       palette: p,
                       o: events[i],
                       learners: events[i].isOnline
@@ -1522,24 +1534,12 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                                 const [])
                           : (inClassLearnersByClassId[events[i].classId] ??
                                 const []),
-                      expanded:
-                          _expandedLearnersBySession[_sessionUiKey(
-                            events[i],
-                          )] ==
-                          true,
                       isConflict: isConflict,
                       enabled: events[i].isOnline
                           ? true
                           : _isClassEnabled(events[i].notificationClassId),
                       learnerAvatarBuilder: _learnerAvatar,
                       learnerMiniLoader: _loadLearnerMini,
-                      onToggleLearners: () {
-                        final key = _sessionUiKey(events[i]);
-                        setState(() {
-                          _expandedLearnersBySession[key] =
-                              !(_expandedLearnersBySession[key] ?? false);
-                        });
-                      },
                       onLearnerProfile: (learner) {
                         final fallbackName = learner.name.trim().isEmpty
                             ? 'Learner'
@@ -1593,42 +1593,72 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   void _openOnlineUpcomingTab() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            const TeacherClassesScreen(initialMainTab: 1, initialOnlineTab: 2),
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.schedule.online_upcoming',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const TeacherClassesScreen(
+                initialMainTab: 1,
+                initialOnlineTab: 2,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
   void _openAttendance(_Occ o, List<Map<String, dynamic>> visibleClasses) {
+    final classId = o.classId;
     final classMap = visibleClasses.firstWhere(
       (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
     );
     if (classMap.isEmpty) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TakeAttendanceScreen(classData: classMap),
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.schedule.attendance.$classId',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TakeAttendanceScreen(classData: classMap),
+            ),
+          );
+        },
       ),
     );
   }
 
   void _openProgress(_Occ o, List<Map<String, dynamic>> visibleClasses) {
+    final classId = o.classId;
     final classMap = visibleClasses.firstWhere(
       (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
     );
     if (classMap.isEmpty) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            TeacherClassProgressScreen(classId: o.classId, classData: classMap),
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'teacher.schedule.progress.$classId',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TeacherClassProgressScreen(
+                classId: o.classId,
+                classData: classMap,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2028,17 +2058,16 @@ class _SessionLearner {
   final String name;
 }
 
-class _SessionCard extends StatelessWidget {
+class _SessionCard extends StatefulWidget {
   const _SessionCard({
+    super.key,
     required this.palette,
     required this.o,
     required this.learners,
-    required this.expanded,
     required this.enabled,
     required this.isConflict,
     required this.learnerAvatarBuilder,
     required this.learnerMiniLoader,
-    required this.onToggleLearners,
     required this.onLearnerProfile,
     required this.onLearnerReport,
     required this.onLearnerGallery,
@@ -2051,13 +2080,11 @@ class _SessionCard extends StatelessWidget {
   final AppPalette palette;
   final _Occ o;
   final List<_SessionLearner> learners;
-  final bool expanded;
   final bool enabled;
   final bool isConflict;
   final Widget Function({required String profilePhotoUrl, double size})
   learnerAvatarBuilder;
   final Future<Map<String, String>> Function(String uid) learnerMiniLoader;
-  final VoidCallback onToggleLearners;
   final ValueChanged<_SessionLearner> onLearnerProfile;
   final ValueChanged<_SessionLearner> onLearnerReport;
   final ValueChanged<_SessionLearner> onLearnerGallery;
@@ -2067,7 +2094,19 @@ class _SessionCard extends StatelessWidget {
   final VoidCallback onOpenOnline;
 
   @override
+  State<_SessionCard> createState() => _SessionCardState();
+}
+
+class _SessionCardState extends State<_SessionCard> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final o = widget.o;
+    final learners = widget.learners;
+    final palette = widget.palette;
+    final enabled = widget.enabled;
+    final isConflict = widget.isConflict;
     final now = DateTime.now();
     final bool isLive = now.isAfter(o.start) && now.isBefore(o.end);
     final bool isPast = now.isAfter(o.end);
@@ -2207,7 +2246,7 @@ class _SessionCard extends StatelessWidget {
                                       : palette.text.withValues(alpha: 0.45),
                                   size: 20,
                                 ),
-                                onPressed: onToggle,
+                                onPressed: widget.onToggle,
                               ),
                           ],
                         ),
@@ -2266,13 +2305,17 @@ class _SessionCard extends StatelessWidget {
                                     ),
                                     if (hasToggle)
                                       IconButton(
-                                        onPressed: onToggleLearners,
+                                        onPressed: () {
+                                          setState(
+                                            () => _expanded = !_expanded,
+                                          );
+                                        },
                                         visualDensity: VisualDensity.compact,
-                                        tooltip: expanded
+                                        tooltip: _expanded
                                             ? 'Collapse learners'
                                             : 'Show all learners',
                                         icon: AnimatedRotation(
-                                          turns: expanded ? 0.5 : 0,
+                                          turns: _expanded ? 0.5 : 0,
                                           duration: const Duration(
                                             milliseconds: 180,
                                           ),
@@ -2288,7 +2331,7 @@ class _SessionCard extends StatelessWidget {
                                   duration: const Duration(milliseconds: 220),
                                   curve: Curves.easeOutCubic,
                                   alignment: Alignment.topCenter,
-                                  child: expanded
+                                  child: _expanded
                                       ? Column(
                                           key: const ValueKey<bool>(true),
                                           crossAxisAlignment:
@@ -2298,9 +2341,10 @@ class _SessionCard extends StatelessWidget {
                                               return FutureBuilder<
                                                 Map<String, String>
                                               >(
-                                                future: learnerMiniLoader(
-                                                  learner.uid,
-                                                ),
+                                                future: widget
+                                                    .learnerMiniLoader(
+                                                      learner.uid,
+                                                    ),
                                                 builder: (context, snap) {
                                                   final full =
                                                       (snap.data?['full'] ?? '')
@@ -2342,7 +2386,7 @@ class _SessionCard extends StatelessWidget {
                                                       children: [
                                                         Row(
                                                           children: [
-                                                            learnerAvatarBuilder(
+                                                            widget.learnerAvatarBuilder(
                                                               profilePhotoUrl:
                                                                   profilePhotoUrl,
                                                               size: 28,
@@ -2380,7 +2424,7 @@ class _SessionCard extends StatelessWidget {
                                                                 Expanded(
                                                                   child: OutlinedButton(
                                                                     onPressed: () =>
-                                                                        onLearnerProfile(
+                                                                        widget.onLearnerProfile(
                                                                           learner,
                                                                         ),
                                                                     child: const Text(
@@ -2394,7 +2438,7 @@ class _SessionCard extends StatelessWidget {
                                                                 Expanded(
                                                                   child: OutlinedButton(
                                                                     onPressed: () =>
-                                                                        onLearnerReport(
+                                                                        widget.onLearnerReport(
                                                                           learner,
                                                                         ),
                                                                     child: const Text(
@@ -2408,7 +2452,7 @@ class _SessionCard extends StatelessWidget {
                                                                 Expanded(
                                                                   child: OutlinedButton(
                                                                     onPressed: () =>
-                                                                        onLearnerGallery(
+                                                                        widget.onLearnerGallery(
                                                                           learner,
                                                                         ),
                                                                     child: const Text(
@@ -2456,7 +2500,9 @@ class _SessionCard extends StatelessWidget {
                                     : (isPast
                                           ? palette.text.withValues(alpha: 0.55)
                                           : palette.primary),
-                                onTap: o.isOnline ? onOpenOnline : onAttendance,
+                                onTap: o.isOnline
+                                    ? widget.onOpenOnline
+                                    : widget.onAttendance,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -2469,7 +2515,9 @@ class _SessionCard extends StatelessWidget {
                                 color: o.isOnline
                                     ? const Color(0xFFD32F2F)
                                     : palette.text.withValues(alpha: 0.72),
-                                onTap: o.isOnline ? onOpenOnline : onProgress,
+                                onTap: o.isOnline
+                                    ? widget.onOpenOnline
+                                    : widget.onProgress,
                               ),
                             ),
                           ],

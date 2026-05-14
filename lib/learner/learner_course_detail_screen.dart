@@ -27,11 +27,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter_windowmanager/flutter_windowmanager.dart';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import 'learner_homework_screen.dart';
 import 'learner_mail_thread_screen.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/ui_constants.dart';
@@ -718,6 +721,31 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     }
   }
 
+  Future<void> _openSecureMiniVideo({
+    required String url,
+    String title = 'Watch',
+  }) async {
+    final clean = url.trim();
+    if (clean.isEmpty) return;
+    if (!mounted) return;
+    try {
+      await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+    } catch (_) {}
+    if (!mounted) return;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _MiniSecureVideoSheet(title: title, url: clean),
+      );
+    } finally {
+      try {
+        await FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+      } catch (_) {}
+    }
+  }
+
   Future<String> _myDisplayName() async {
     final authUser = FirebaseAuth.instance.currentUser;
     final fromAuth = (authUser?.displayName ?? '').trim();
@@ -1078,12 +1106,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                               children: actions
                                   .map<Widget>(
                                     (a) => OutlinedButton.icon(
-                                      onPressed: () => _openTeacherLink(
-                                        a.url,
-                                        label: a.label,
-                                      ),
+                                      onPressed: () {
+                                        if (a.key == 'intro') {
+                                          _openSecureMiniVideo(
+                                            url: a.url,
+                                            title: 'Teacher Intro',
+                                          );
+                                          return;
+                                        }
+                                        _openTeacherLink(a.url, label: a.label);
+                                      },
                                       icon: Icon(a.icon, size: 18),
-                                      label: Text(a.label),
+                                      label: Text(
+                                        a.key == 'intro' ? 'Watch' : a.label,
+                                      ),
                                     ),
                                   )
                                   .toList(),
@@ -2437,13 +2473,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             tooltip: 'Homework',
             icon: const Icon(Icons.assignment_rounded, color: UiK.actionOrange),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LearnerHomeworkScreen(
-                    courseKey: widget.courseKey,
-                    courseTitle: _courseTitle,
-                  ),
+              unawaited(
+                OfflineActionGuard.runExclusive(
+                  context,
+                  'learner.course_detail.homework.${widget.courseKey}',
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LearnerHomeworkScreen(
+                          courseKey: widget.courseKey,
+                          courseTitle: _courseTitle,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             },
@@ -3830,14 +3874,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     if (!mounted) return;
 
     try {
-      await Navigator.push(
+      await OfflineActionGuard.runExclusive(
         context,
-        MaterialPageRoute(
-          builder: (_) => MaterialWebViewScreen.fromUrl(
-            title: title.isEmpty ? 'Lesson Material' : title,
-            url: url,
-          ),
-        ),
+        'learner.course_detail.material.${widget.courseKey}.${session.hashCode}',
+        () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MaterialWebViewScreen.fromUrl(
+                title: title.isEmpty ? 'Lesson Material' : title,
+                url: url,
+              ),
+            ),
+          );
+        },
       );
     } catch (_) {
       _showMissingMaterialMessage();
@@ -3856,12 +3906,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
     if (!mounted) return;
     try {
-      await Navigator.push(
+      await OfflineActionGuard.runExclusive(
         context,
-        MaterialPageRoute(
-          builder: (_) =>
-              SharedPdfReaderScreen(title: 'Course Book', pdfUrl: url),
-        ),
+        'learner.course_detail.book.${widget.courseKey}',
+        () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  SharedPdfReaderScreen(title: 'Course Book', pdfUrl: url),
+            ),
+          );
+        },
       );
     } catch (_) {
       if (!mounted) return;
@@ -4561,6 +4617,145 @@ class _TeacherSocialAction {
       label: label,
       icon: icon,
       url: url ?? this.url,
+    );
+  }
+}
+
+class _MiniSecureVideoSheet extends StatefulWidget {
+  final String title;
+  final String url;
+
+  const _MiniSecureVideoSheet({required this.title, required this.url});
+
+  @override
+  State<_MiniSecureVideoSheet> createState() => _MiniSecureVideoSheetState();
+}
+
+class _MiniSecureVideoSheetState extends State<_MiniSecureVideoSheet> {
+  VideoPlayerController? _controller;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await c.initialize();
+      await c.setLooping(false);
+      await c.play();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      setState(() {
+        _controller = c;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _controller;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF2C2C2C)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
+                      : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              'Video could not be loaded.',
+                              style: TextStyle(
+                                color: Colors.grey.shade300,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        )
+                      : VideoPlayer(c!),
+                ),
+              ),
+              if (!_loading && _error == null && c != null)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          if (c.value.isPlaying) {
+                            c.pause();
+                          } else {
+                            c.play();
+                          }
+                        });
+                      },
+                      icon: Icon(
+                        c.value.isPlaying
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_fill_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
