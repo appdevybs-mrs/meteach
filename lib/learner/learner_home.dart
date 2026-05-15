@@ -4808,6 +4808,12 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
     if (v is Map) {
       final raw = Map<dynamic, dynamic>.from(v);
+      final coursesCatalogSnap = await db.child('courses').get();
+      final coursesCatalog = (coursesCatalogSnap.value is Map)
+          ? (coursesCatalogSnap.value as Map).map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            )
+          : <String, dynamic>{};
 
       for (final e in raw.entries) {
         final key = e.key.toString();
@@ -4849,18 +4855,11 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
           learnerCourse: m,
           syllabus: syllabus,
         );
-        final thumb = _pickText(m, [
-          'thumbnailUrl',
-          'thumbnail',
-          'image',
-          'imageUrl',
-        ]);
-        final syllabusThumb = _pickText(syllabus, [
-          'thumbnailUrl',
-          'thumbnail',
-          'image',
-          'imageUrl',
-        ]);
+        final catalogNode = coursesCatalog[courseId];
+        final catalogMap = (catalogNode is Map)
+            ? catalogNode.map((k, vv) => MapEntry(k.toString(), vv))
+            : <String, dynamic>{};
+        final thumb = (catalogMap['thumbnail'] ?? '').toString().trim();
         final finalTitle = _pickText(syllabus, ['title']).isEmpty
             ? title
             : _pickText(syllabus, ['title']);
@@ -4873,7 +4872,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
             assignedAt: assignedAt,
             totalSessions: total,
             consumedSessions: consumed,
-            thumbnailUrl: thumb.isNotEmpty ? thumb : syllabusThumb,
+            thumbnailUrl: thumb,
           ),
         );
       }
@@ -4987,7 +4986,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                           ),
                           const SizedBox(height: 14),
                           SizedBox(
-                            height: 320,
+                            height: 276,
                             child: PageView.builder(
                               controller: pageController,
                               itemCount: courses.length,
@@ -5010,6 +5009,27 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                     : left <= 3
                                     ? const Color(0xFFE09F1F)
                                     : const Color(0xFF2E7D32);
+                                Future<void> onCourseTap() async {
+                                  if (hasCreditInfo && left <= 0) {
+                                    await _showBookingRefillDialog(
+                                      context,
+                                      p: p,
+                                      course: c,
+                                      school: schoolContact,
+                                    );
+                                    return;
+                                  }
+
+                                  Navigator.of(dialogCtx).pop();
+                                  if (!context.mounted) return;
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => LearnerBookingScreen(
+                                        courseId: c.courseId,
+                                      ),
+                                    ),
+                                  );
+                                }
 
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(
@@ -5017,27 +5037,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                   ),
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(20),
-                                    onTap: () async {
-                                      if (hasCreditInfo && left <= 0) {
-                                        await _showBookingRefillDialog(
-                                          context,
-                                          p: p,
-                                          course: c,
-                                          school: schoolContact,
-                                        );
-                                        return;
-                                      }
-
-                                      Navigator.of(dialogCtx).pop();
-                                      if (!context.mounted) return;
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) => LearnerBookingScreen(
-                                            courseId: c.courseId,
-                                          ),
-                                        ),
-                                      );
-                                    },
+                                    onTap: onCourseTap,
                                     child: Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
@@ -5073,7 +5073,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                             children: [
                                               Container(
                                                 width: double.infinity,
-                                                height: 112,
+                                                height: 138,
                                                 decoration: BoxDecoration(
                                                   color: p.appBg,
                                                   borderRadius:
@@ -5102,13 +5102,13 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                                                   1200,
                                                                 ),
                                                         cacheHeight:
-                                                            (112 *
+                                                            (138 *
                                                                     MediaQuery.of(
                                                                       context,
                                                                     ).devicePixelRatio)
                                                                 .round()
                                                                 .clamp(
-                                                                  112,
+                                                                  138,
                                                                   600,
                                                                 ),
                                                         errorBuilder:
@@ -5176,42 +5176,40 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            c.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: p.primary,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            c.code.isEmpty
-                                                ? 'Code: -'
-                                                : 'Code: ${c.code}',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              color: p.text.withValues(
-                                                alpha: 0.65,
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  c.title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                    color: p.primary,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
                                               ),
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            _formatAssignedDate(c.assignedAt),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              color: p.text.withValues(
-                                                alpha: 0.66,
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                _formatAssignedDate(
+                                                  c.assignedAt,
+                                                ).replaceFirst('Assigned ', ''),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: p.text.withValues(
+                                                    alpha: 0.66,
+                                                  ),
+                                                  fontSize: 12,
+                                                ),
                                               ),
-                                              fontSize: 12,
-                                            ),
+                                            ],
                                           ),
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 6),
                                           ClipRRect(
                                             borderRadius: BorderRadius.circular(
                                               8,
@@ -5227,14 +5225,14 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                                   ),
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 4),
                                           Row(
                                             children: [
                                               Expanded(
                                                 child: Text(
                                                   hasCreditInfo
-                                                      ? 'Used ${c.consumedSessions} / Total ${c.totalSessions} • Left $left'
-                                                      : 'Credits are being prepared for this course',
+                                                      ? 'Left $left / ${c.totalSessions}'
+                                                      : 'Credits pending',
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -5248,14 +5246,35 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              Text(
-                                                left <= 0 && hasCreditInfo
-                                                    ? 'Tap for refill info'
-                                                    : 'Tap to book',
-                                                style: TextStyle(
-                                                  color: p.primary,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w900,
+                                              FilledButton(
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: p.primary,
+                                                  foregroundColor: Colors.white,
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8,
+                                                      ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                  ),
+                                                ),
+                                                onPressed: () {
+                                                  onCourseTap();
+                                                },
+                                                child: Text(
+                                                  left <= 0 && hasCreditInfo
+                                                      ? 'Refill info'
+                                                      : 'Tap to book',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
                                                 ),
                                               ),
                                             ],
@@ -5893,7 +5912,10 @@ class _LearnerMailHomeCard extends StatelessWidget {
       stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
       builder: (context, snap) {
         final v = snap.data?.snapshot.value;
-        final unread = NotificationCounterService.mailUnread(v);
+        final unread = NotificationCounterService.mailUnread(
+          v,
+          excludeHomework: true,
+        );
 
         final subtitle = unread == 0 ? 'No unread ✅' : '$unread unread';
 

@@ -26,12 +26,15 @@ enum _InboxTabRole { learners, teachers, admin }
 
 enum _MailViewMode { latestFirst, byLearner }
 
+enum _ThreadTypeView { individual, group }
+
 class _TeacherMailScreenState extends State<TeacherMailScreen> {
   final _db = FirebaseDatabase.instance;
   final _searchC = TextEditingController();
   Timer? _searchDebounce;
   String _q = '';
   _MailViewMode _viewMode = _MailViewMode.latestFirst;
+  _ThreadTypeView _threadTypeView = _ThreadTypeView.individual;
   bool _searchMode = false;
   String? _desktopSelectedThreadId;
 
@@ -1155,6 +1158,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     final roleRows = allRows
         .where((r) => _matchesTab(tabRole, r))
         .where((r) => !r.isHomework)
+        .where(
+          (r) =>
+              _threadTypeView == _ThreadTypeView.group ? r.isGroup : !r.isGroup,
+        )
         .toList();
     final filtered = _applyFilter(roleRows);
 
@@ -1163,7 +1170,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         icon: Icons.search_off_rounded,
         title: _q.isEmpty ? 'Nothing here yet' : 'No results found',
         subtitle: _q.isEmpty
-            ? 'This tab is empty for now.'
+            ? (_threadTypeView == _ThreadTypeView.group
+                  ? 'No group conversations in this tab yet.'
+                  : 'No individual conversations in this tab yet.')
             : 'Try a different search term or switch tabs.',
       );
     }
@@ -1344,6 +1353,28 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                             onSelected: (_) {
                               setState(
                                 () => _viewMode = _MailViewMode.byLearner,
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Individual'),
+                            selected:
+                                _threadTypeView == _ThreadTypeView.individual,
+                            onSelected: (_) {
+                              setState(
+                                () => _threadTypeView =
+                                    _ThreadTypeView.individual,
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Group'),
+                            selected: _threadTypeView == _ThreadTypeView.group,
+                            onSelected: (_) {
+                              setState(
+                                () => _threadTypeView = _ThreadTypeView.group,
                               );
                             },
                           ),

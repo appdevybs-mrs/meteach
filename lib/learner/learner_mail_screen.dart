@@ -19,7 +19,8 @@ class LearnerMailScreen extends StatefulWidget {
   State<LearnerMailScreen> createState() => _LearnerMailScreenState();
 }
 
-class _LearnerMailScreenState extends State<LearnerMailScreen> {
+class _LearnerMailScreenState extends State<LearnerMailScreen>
+    with SingleTickerProviderStateMixin {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final Map<String, String> _photoCache = {};
   final Map<String, Future<void>> _userFetchPending = {};
@@ -31,8 +32,24 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   Color get _hwAccent => const Color(0xFF0E8B76);
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
-  _MailListFilter _filter = _MailListFilter.all;
+  late final TabController _tabController;
   String? _desktopSelectedThreadId;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!mounted || _tabController.indexIsChanging) return;
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
@@ -592,8 +609,23 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: _navy.withValues(alpha: 0.14)),
+          preferredSize: const Size.fromHeight(52),
+          child: Column(
+            children: [
+              TabBar(
+                controller: _tabController,
+                labelColor: _navy,
+                unselectedLabelColor: _navy.withValues(alpha: 0.58),
+                indicatorColor: _orange,
+                indicatorWeight: 3,
+                tabs: const [
+                  Tab(text: 'Individual'),
+                  Tab(text: 'Group'),
+                ],
+              ),
+              Container(height: 1, color: _navy.withValues(alpha: 0.14)),
+            ],
+          ),
         ),
       ),
       floatingActionButton: desktopWorkspace || uid.isEmpty
@@ -618,26 +650,19 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                   stream: ref.onValue,
                   builder: (context, snap) {
                     final rows = _parse(snap.data?.snapshot.value);
-                    final shown = rows.where((r) {
-                      final isHw = _isHomeworkRow(r);
-                      switch (_filter) {
-                        case _MailListFilter.homework:
-                          return isHw;
-                        case _MailListFilter.other:
-                          return !isHw;
-                        case _MailListFilter.all:
-                          return true;
-                      }
-                    }).toList();
+                    final nonHomeworkRows = rows
+                        .where((r) => !_isHomeworkRow(r))
+                        .toList();
+                    final showingGroups = _tabController.index == 1;
+                    final shown = nonHomeworkRows
+                        .where((r) => showingGroups ? r.isGroup : !r.isGroup)
+                        .toList();
 
-                    shown.sort((a, b) {
-                      final ah = _isHomeworkRow(a);
-                      final bh = _isHomeworkRow(b);
-                      if (ah != bh) return ah ? -1 : 1;
-                      return b.updatedAtMs.compareTo(a.updatedAtMs);
-                    });
+                    shown.sort(
+                      (a, b) => b.updatedAtMs.compareTo(a.updatedAtMs),
+                    );
 
-                    if (rows.isEmpty) {
+                    if (nonHomeworkRows.isEmpty) {
                       return Center(
                         child: Text(
                           'No mail yet.',
@@ -655,46 +680,13 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
                     final inboxBody = Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ChoiceChip(
-                                label: const Text('All'),
-                                selected: _filter == _MailListFilter.all,
-                                onSelected: (_) {
-                                  setState(() => _filter = _MailListFilter.all);
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                label: const Text('Homework'),
-                                selected: _filter == _MailListFilter.homework,
-                                onSelected: (_) {
-                                  setState(
-                                    () => _filter = _MailListFilter.homework,
-                                  );
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                label: const Text('Other'),
-                                selected: _filter == _MailListFilter.other,
-                                onSelected: (_) {
-                                  setState(
-                                    () => _filter = _MailListFilter.other,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
                         Expanded(
                           child: shown.isEmpty
                               ? Center(
                                   child: Text(
-                                    'No messages in this filter.',
+                                    showingGroups
+                                        ? 'No group conversations yet.'
+                                        : 'No individual conversations yet.',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w800,
                                       color: _navyDark,
@@ -1148,8 +1140,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     );
   }
 }
-
-enum _MailListFilter { all, homework, other }
 
 enum _LearnerComposeMode { single, classGroup }
 

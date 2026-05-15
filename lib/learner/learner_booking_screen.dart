@@ -46,6 +46,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   static const otherSessionBorder = Color(0xFFCED4DA);
   static const switchSessionBg = Color(0xFFEAF6FF);
   static const switchSessionBorder = Color(0xFF9FD4F5);
+  static const exactMatchBg = Color(0xFFE7F8ED);
+  static const exactMatchBorder = Color(0xFF1F8A49);
   static const emptyBg = Color(0xFFFFF1E3);
   static const emptyBorder = Color(0xFFF9C59D);
   static const lockedBg = Color(0xFFF4F4F5);
@@ -117,6 +119,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   final Map<String, DateTime> _teacherFullCacheAt = {};
   final Map<String, Future<_TeacherFullProfile>> _teacherFullInFlight = {};
   static const Duration _teacherFullCacheTtl = Duration(minutes: 5);
+  final ScrollController _pageScrollCtrl = ScrollController();
+  final GlobalKey _byTeacherSelectionKey = GlobalKey();
+  String? _appliedRecommendationKey;
+  bool _teachersCollapsed = false;
+  bool _teachersCollapseTouched = false;
 
   @override
   void initState() {
@@ -133,7 +140,39 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
     _sessionPulseCtrl.dispose();
+    _pageScrollCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _applyRecommendedSlot(_Slot s) async {
+    setState(() {
+      _appliedRecommendationKey = s.key;
+      schedulePath = _SchedulePath.byTeacher;
+      _teachersCollapsed = true;
+      selectedTeacherFirstId = s.teacherId;
+      selectedTeacherId = s.teacherId;
+      selectedDay = DateTime(s.start.year, s.start.month, s.start.day);
+      selectedTime = s.time;
+    });
+  }
+
+  bool _goBackOneStepInFlow() {
+    switch (flowStep) {
+      case _BookingFlowStep.success:
+        setState(() => flowStep = _BookingFlowStep.confirm);
+        return true;
+      case _BookingFlowStep.confirm:
+        setState(() => flowStep = _BookingFlowStep.schedule);
+        return true;
+      case _BookingFlowStep.schedule:
+        setState(() => flowStep = _BookingFlowStep.syllabus);
+        return true;
+      case _BookingFlowStep.syllabus:
+        setState(() => flowStep = _BookingFlowStep.lessonChoice);
+        return true;
+      case _BookingFlowStep.lessonChoice:
+        return false;
+    }
   }
 
   void _onThemeChanged() {
@@ -1143,6 +1182,350 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       return '$t • Booked $level$session';
     }
     return t;
+  }
+
+  _ChipMatchKind _chipMatchKindForSlot(_Slot slot, {int? targetSession}) {
+    final occ = globalSlotOccupancy[slot.key];
+    if (occ == null || occ.learnerCount <= 0) return _ChipMatchKind.none;
+    if (occ.courseId != (courseId ?? '').trim()) return _ChipMatchKind.none;
+    final effective = targetSession ?? _flowLessonNo;
+    if (occ.sessionNo != null && occ.sessionNo == effective) {
+      return _ChipMatchKind.exact;
+    }
+    if (occ.sessionNo != null && occ.sessionNo != effective) {
+      return _ChipMatchKind.matchDifferentSession;
+    }
+    return _ChipMatchKind.none;
+  }
+
+  String _timeChipDetailsLabel(_Slot slot, {int? targetSession}) {
+    final occ = globalSlotOccupancy[slot.key];
+    if (occ == null || occ.learnerCount <= 0) return slot.time;
+    final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
+    final level = _levelLabelForCourseId(occ.courseId);
+    final sNo = occ.sessionNo ?? targetSession ?? _flowLessonNo;
+    final sTitle = _sessionTitleFor(sNo).trim();
+    final sLabel = sTitle.isEmpty ? 'Session $sNo' : 'Session $sNo: $sTitle';
+    return '${slot.time} ${occ.learnerCount}/$cap L$level $sLabel';
+  }
+
+  void _showSessionMiniDetails(_Slot slot, {int? sessionNo}) {
+    final no = (sessionNo ?? _effectiveGroupSessionNo(slot) ?? _flowLessonNo)
+        .clamp(1, _effectiveTotalSessions);
+    final title = _sessionTitleFor(no).trim();
+    final objective = _sessionObjectiveFor(no).trim();
+    final occ = globalSlotOccupancy[slot.key];
+    final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
+    final booked = occ?.learnerCount ?? _effectiveBookedCount(slot);
+    final left = (cap - booked) < 0 ? 0 : (cap - booked);
+    final level = _levelLabelForCourseId(occ?.courseId ?? slot.courseId);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDDE4EA),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            Text(
+              _detailsTitle(helpLang),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${slot.time} • ${_friendlyDate(slot.start)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_labelLevel(helpLang)} $level • ${_labelSeats(helpLang)} $booked/$cap ($left ${_labelLeft(helpLang)})',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3FAFF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFC2E6FA)),
+              ),
+              child: Text(
+                title.isEmpty ? 'Session $no' : 'Session $no — $title',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryBlue,
+                ),
+              ),
+            ),
+            if (objective.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                objective,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade800,
+                  height: 1.3,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _detailsTitle(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'تفاصيل الجلسة';
+      case 'fr':
+        return 'Détails de session';
+      case 'tr':
+        return 'Oturum detayları';
+      case 'ur':
+        return 'سیشن کی تفصیلات';
+      default:
+        return 'Session details';
+    }
+  }
+
+  String _labelLevel(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'المستوى';
+      default:
+        return 'Level';
+    }
+  }
+
+  String _labelSeats(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'المقاعد';
+      default:
+        return 'Seats';
+    }
+  }
+
+  String _labelLeft(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'متبقي';
+      default:
+        return 'left';
+    }
+  }
+
+  String _recommendedTitle(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'مقترح لك';
+      default:
+        return 'Recommended for you';
+    }
+  }
+
+  String _bookingScreenTitle() {
+    final title = courseTitle.trim();
+    if (title.isEmpty) return 'Book Your Class';
+    final m = RegExp(
+      r'\b(A0|A1|A2|B1|B2|C1|C2)\b',
+      caseSensitive: false,
+    ).firstMatch(title);
+    if (m != null) {
+      return 'Book for ${m.group(1)!.toUpperCase()} $title';
+    }
+    return 'Book for $title';
+  }
+
+  List<_Slot> _recommendedMatchSlots() {
+    final targetSession = _flowLessonNo;
+    final out = _slotsForCurrentLesson().where((s) {
+      if (_isBookedByMe(s) || _isSlotFull(s)) return false;
+      final kind = _chipMatchKindForSlot(s, targetSession: targetSession);
+      return kind == _ChipMatchKind.exact ||
+          kind == _ChipMatchKind.matchDifferentSession;
+    }).toList();
+    out.sort((a, b) {
+      final ka = _chipMatchKindForSlot(a, targetSession: targetSession);
+      final kb = _chipMatchKindForSlot(b, targetSession: targetSession);
+      if (ka != kb) {
+        if (ka == _ChipMatchKind.exact) return -1;
+        if (kb == _ChipMatchKind.exact) return 1;
+      }
+      final sa = (_effectiveGroupSessionNo(a) ?? targetSession);
+      final sb = (_effectiveGroupSessionNo(b) ?? targetSession);
+      final bySession = (sa - targetSession).abs().compareTo(
+        (sb - targetSession).abs(),
+      );
+      if (bySession != 0) return bySession;
+      return a.start.compareTo(b.start);
+    });
+    return out.take(3).toList();
+  }
+
+  Widget _collapsedTeachersCard(List<_Slot> teachers) {
+    final unique = <String, _Slot>{};
+    for (final t in teachers) {
+      unique.putIfAbsent(t.teacherId, () => t);
+    }
+    final people = unique.values.toList();
+    final selected = selectedTeacherFirstId == null
+        ? <_Slot>[]
+        : people.where((t) => t.teacherId == selectedTeacherFirstId).toList();
+    final selectedName = selected.isEmpty ? null : selected.first.teacherName;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        setState(() {
+          _teachersCollapseTouched = true;
+          _teachersCollapsed = false;
+        });
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5FAFE),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFCBE6F8)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.groups_2_rounded,
+                  color: primaryBlue,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Teachers (${people.length})',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.expand_more_rounded, color: primaryBlue),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, c) {
+                final perRow = (c.maxWidth / 34).floor().clamp(1, 12);
+                final visibleCount = perRow * 2;
+                final visible = people.take(visibleCount).toList();
+                final remaining = people.length - visible.length;
+                return Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    ...visible.map(
+                      (t) => ProfileAvatar(
+                        name: t.teacherName,
+                        photoUrl: t.teacherPhotoUrl,
+                        radius: 14,
+                        borderColor: Colors.white,
+                      ),
+                    ),
+                    if (remaining > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFFCFE0EE)),
+                        ),
+                        child: Text(
+                          '+$remaining',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: primaryBlue,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+            if (selectedName != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Selected: $selectedName',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _teacherCollapseToggle(bool collapsed) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () {
+        setState(() {
+          _teachersCollapseTouched = true;
+          _teachersCollapsed = !_teachersCollapsed;
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              collapsed ? 'Expand teachers' : 'Collapse teachers',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: primaryBlue,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              collapsed ? Icons.expand_more_rounded : Icons.expand_less_rounded,
+              color: primaryBlue,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   int _hhmmToMinutes(String hhmm) {
@@ -4740,6 +5123,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     VoidCallback onTap, {
     _SlotStatus status = _SlotStatus.availableBook,
     String? label,
+    bool pulse = false,
+    VoidCallback? onDetailsTap,
   }) {
     Color bg = emptyBg;
     Color border = emptyBorder;
@@ -4750,8 +5135,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         border = bookedBorder;
         break;
       case _SlotStatus.joinSameSession:
-        bg = peerBg;
-        border = peerBorder;
+        bg = exactMatchBg;
+        border = exactMatchBorder;
         break;
       case _SlotStatus.joinWithSessionChange:
         bg = switchSessionBg;
@@ -4771,35 +5156,75 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         break;
     }
 
+    final child = AnimatedContainer(
+      duration: const Duration(milliseconds: 170),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: selected ? primaryBlue : bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: selected ? primaryBlue : border),
+        boxShadow: selected
+            ? const [
+                BoxShadow(
+                  color: Color(0x1A0E7C86),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ]
+            : pulse
+            ? [
+                BoxShadow(
+                  color: border.withValues(
+                    alpha: 0.18 + (_sessionPulseCtrl.value * 0.2),
+                  ),
+                  blurRadius: 10 + (_sessionPulseCtrl.value * 6),
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : const [],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              label ?? t,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: selected ? Colors.white : fg,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (onDetailsTap != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onDetailsTap,
+              behavior: HitTestBehavior.opaque,
+              child: Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: selected ? Colors.white : fg,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 170),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? primaryBlue : bg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? primaryBlue : border),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x1A0E7C86),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ]
-              : const [],
-        ),
-        child: Text(
-          label ?? t,
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: selected ? Colors.white : fg,
-          ),
-        ),
-      ),
+      child: pulse
+          ? AnimatedBuilder(
+              animation: _sessionPulseCtrl,
+              builder: (_, __) => Transform.scale(
+                scale: 1 + (_sessionPulseCtrl.value * 0.02),
+                child: child,
+              ),
+            )
+          : child,
     );
   }
 
@@ -4903,6 +5328,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Widget _buildByTeacherPath() {
     final teachers = _teachersForCurrentLesson();
+    final hasRecommendations = _recommendedMatchSlots().isNotEmpty;
+    final shouldCollapseTeachers =
+        hasRecommendations && (_teachersCollapsed || !_teachersCollapseTouched);
     final days = selectedTeacherFirstId == null
         ? const <DateTime>[]
         : _availableDaysForTeacher(selectedTeacherFirstId!);
@@ -4913,131 +5341,145 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(1, 'Choose a teacher'),
+        Row(
+          children: [
+            Expanded(child: _buildStepLabel(1, 'Choose a teacher')),
+            if (hasRecommendations)
+              _teacherCollapseToggle(shouldCollapseTeachers),
+          ],
+        ),
         const SizedBox(height: 8),
-        ...teachers.map((s) {
-          final selected = selectedTeacherFirstId == s.teacherId;
-          final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
-          final booked = _effectiveBookedCount(s);
-          final left = (cap - booked) < 0 ? 0 : (cap - booked);
-          final status = _slotStatus(s, sessionNo: _flowLessonNo);
-          final canSelect =
-              status != _SlotStatus.unavailable &&
-              status != _SlotStatus.closed &&
-              status != _SlotStatus.booked;
-          final tint = _teacherTint(s.teacherId);
-          return InkWell(
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: selected ? tint.withValues(alpha: 0.42) : tint,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: selected ? primaryBlue : tint.withValues(alpha: 0.9),
+        if (shouldCollapseTeachers)
+          _collapsedTeachersCard(teachers)
+        else
+          ...teachers.map((s) {
+            final selected = selectedTeacherFirstId == s.teacherId;
+            final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
+            final booked = _effectiveBookedCount(s);
+            final left = (cap - booked) < 0 ? 0 : (cap - booked);
+            final status = _slotStatus(s, sessionNo: _flowLessonNo);
+            final canSelect =
+                status != _SlotStatus.unavailable &&
+                status != _SlotStatus.closed &&
+                status != _SlotStatus.booked;
+            final tint = _teacherTint(s.teacherId);
+            return InkWell(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: selected ? tint.withValues(alpha: 0.42) : tint,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? primaryBlue : tint.withValues(alpha: 0.9),
+                  ),
                 ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => _openTeacherProfileSheet(s),
-                      child: Row(
-                        children: [
-                          ProfileAvatar(
-                            name: s.teacherName,
-                            photoUrl: s.teacherPhotoUrl,
-                            radius: 19,
-                            borderColor: Colors.white.withValues(alpha: 0.9),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.teacherName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: primaryBlue,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      status ==
-                                              _SlotStatus.joinWithSessionChange
-                                          ? '$left seats • Session ${_effectiveGroupSessionNo(s) ?? '-'}'
-                                          : '$left seats available',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                    if (s.hasIntroVideo)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.8,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Video',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                            color: primaryBlue,
-                                          ),
-                                        ),
-                                      ),
-                                    _slotStateBadge(status),
-                                  ],
-                                ),
-                              ],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => _openTeacherProfileSheet(s),
+                        child: Row(
+                          children: [
+                            ProfileAvatar(
+                              name: s.teacherName,
+                              photoUrl: s.teacherPhotoUrl,
+                              radius: 19,
+                              borderColor: Colors.white.withValues(alpha: 0.9),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.teacherName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryBlue,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        status ==
+                                                _SlotStatus
+                                                    .joinWithSessionChange
+                                            ? '$left seats • Session ${_effectiveGroupSessionNo(s) ?? '-'}'
+                                            : '$left seats available',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                      if (s.hasIntroVideo)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.8,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Video',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                              color: primaryBlue,
+                                            ),
+                                          ),
+                                        ),
+                                      _slotStateBadge(status),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: actionOrange,
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: actionOrange,
+                      ),
+                      onPressed: canSelect
+                          ? () {
+                              setState(() {
+                                selectedTeacherFirstId = s.teacherId;
+                                selectedTeacherId = s.teacherId;
+                                selectedDay = null;
+                                selectedTime = null;
+                              });
+                            }
+                          : null,
+                      child: Text(
+                        selected
+                            ? 'Selected'
+                            : (canSelect ? 'Select' : 'Locked'),
+                      ),
                     ),
-                    onPressed: canSelect
-                        ? () {
-                            setState(() {
-                              selectedTeacherFirstId = s.teacherId;
-                              selectedTeacherId = s.teacherId;
-                              selectedDay = null;
-                              selectedTime = null;
-                            });
-                          }
-                        : null,
-                    child: Text(
-                      selected ? 'Selected' : (canSelect ? 'Select' : 'Locked'),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
         if (selectedTeacherFirstId != null) ...[
+          SizedBox(key: _byTeacherSelectionKey),
           const SizedBox(height: 10),
           _buildStepLabel(2, 'Choose a day'),
           const SizedBox(height: 6),
@@ -5130,12 +5572,44 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           s.dayKey == _dateKey(selectedDay!) &&
                           s.time == t,
                     );
-                    return _timeChipLabel(
-                      t,
-                      _slotStatus(slot, sessionNo: _flowLessonNo),
-                      slot: slot,
+                    final kind = _chipMatchKindForSlot(
+                      slot,
+                      targetSession: _flowLessonNo,
+                    );
+                    if (kind == _ChipMatchKind.none) {
+                      return _timeChipLabel(
+                        t,
+                        _slotStatus(slot, sessionNo: _flowLessonNo),
+                        slot: slot,
+                      );
+                    }
+                    return _timeChipDetailsLabel(
+                      slot,
+                      targetSession: _flowLessonNo,
                     );
                   }(),
+                  pulse: () {
+                    final slot = _slotsForCurrentLesson().firstWhere(
+                      (s) =>
+                          s.teacherId == selectedTeacherFirstId &&
+                          s.dayKey == _dateKey(selectedDay!) &&
+                          s.time == t,
+                    );
+                    return _chipMatchKindForSlot(
+                          slot,
+                          targetSession: _flowLessonNo,
+                        ) !=
+                        _ChipMatchKind.none;
+                  }(),
+                  onDetailsTap: () {
+                    final slot = _slotsForCurrentLesson().firstWhere(
+                      (s) =>
+                          s.teacherId == selectedTeacherFirstId &&
+                          s.dayKey == _dateKey(selectedDay!) &&
+                          s.time == t,
+                    );
+                    _showSessionMiniDetails(slot);
+                  },
                 ),
             ],
           ),
@@ -5378,12 +5852,58 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           _SlotStatus.joinWithSessionChange.index,
                       orElse: () => candidates.first,
                     );
-                    return _timeChipLabel(
-                      t,
-                      _slotStatus(preferred, sessionNo: _flowLessonNo),
-                      slot: preferred,
+                    final kind = _chipMatchKindForSlot(
+                      preferred,
+                      targetSession: _flowLessonNo,
+                    );
+                    if (kind == _ChipMatchKind.none) {
+                      return _timeChipLabel(
+                        t,
+                        _slotStatus(preferred, sessionNo: _flowLessonNo),
+                        slot: preferred,
+                      );
+                    }
+                    return _timeChipDetailsLabel(
+                      preferred,
+                      targetSession: _flowLessonNo,
                     );
                   }(),
+                  pulse: () {
+                    final candidates = _slotsForCurrentLesson()
+                        .where(
+                          (s) =>
+                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
+                        )
+                        .toList();
+                    if (candidates.isEmpty) return false;
+                    final preferred = candidates.firstWhere(
+                      (s) =>
+                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
+                          _SlotStatus.joinWithSessionChange.index,
+                      orElse: () => candidates.first,
+                    );
+                    return _chipMatchKindForSlot(
+                          preferred,
+                          targetSession: _flowLessonNo,
+                        ) !=
+                        _ChipMatchKind.none;
+                  }(),
+                  onDetailsTap: () {
+                    final candidates = _slotsForCurrentLesson()
+                        .where(
+                          (s) =>
+                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
+                        )
+                        .toList();
+                    if (candidates.isEmpty) return;
+                    final preferred = candidates.firstWhere(
+                      (s) =>
+                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
+                          _SlotStatus.joinWithSessionChange.index,
+                      orElse: () => candidates.first,
+                    );
+                    _showSessionMiniDetails(preferred);
+                  },
                 ),
             ],
           ),
@@ -5508,10 +6028,154 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildScheduleStep() {
+    final recommended = _recommendedMatchSlots();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildScheduleHeader(),
+        if (recommended.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2FAFF),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFBEE6FA)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _recommendedTitle(helpLang),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...recommended.map((s) {
+                  final kind = _chipMatchKindForSlot(
+                    s,
+                    targetSession: _flowLessonNo,
+                  );
+                  final isApplied = _appliedRecommendationKey == s.key;
+                  final pulseScale = kind == _ChipMatchKind.exact
+                      ? 1 + (_sessionPulseCtrl.value * 0.024)
+                      : 1 + (_sessionPulseCtrl.value * 0.016);
+                  final actionLabel =
+                      kind == _ChipMatchKind.matchDifferentSession
+                      ? 'Join group'
+                      : 'Confirm book';
+                  return AnimatedBuilder(
+                    animation: _sessionPulseCtrl,
+                    builder: (_, child) =>
+                        Transform.scale(scale: pulseScale, child: child),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _applyRecommendedSlot(s),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: kind == _ChipMatchKind.exact
+                                ? const [Color(0xFFD5F1E0), Color(0xFFBEE8CF)]
+                                : const [Color(0xFFD9EFFF), Color(0xFFBFE2FF)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: kind == _ChipMatchKind.exact
+                                ? exactMatchBorder
+                                : switchSessionBorder,
+                            width: isApplied ? 2.4 : 1.8,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color:
+                                  (kind == _ChipMatchKind.exact
+                                          ? exactMatchBorder
+                                          : switchSessionBorder)
+                                      .withValues(alpha: 0.22),
+                              blurRadius: isApplied ? 14 : 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.teacherName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryBlue,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _timeChipDetailsLabel(s),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: primaryBlue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: kind == _ChipMatchKind.exact
+                                    ? const Color(0xFF1F8A49)
+                                    : primaryBlue,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(0, 34),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _appliedRecommendationKey = s.key;
+                                  schedulePath = _SchedulePath.byTeacher;
+                                  _teachersCollapsed = true;
+                                  selectedTeacherFirstId = s.teacherId;
+                                  selectedTeacherId = s.teacherId;
+                                  selectedDay = DateTime(
+                                    s.start.year,
+                                    s.start.month,
+                                    s.start.day,
+                                  );
+                                  selectedTime = s.time;
+                                  confirmSessionNo =
+                                      kind ==
+                                          _ChipMatchKind.matchDifferentSession
+                                      ? (_effectiveGroupSessionNo(s) ??
+                                            _flowLessonNo)
+                                      : _flowLessonNo;
+                                  flowStep = _BookingFlowStep.confirm;
+                                });
+                              },
+                              child: Text(actionLabel),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(6),
@@ -5828,138 +6492,162 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final cid = courseId;
     final busy = loading || booking || refreshing || progressLabel.isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: palette.appBg,
-      appBar: AppBar(
-        backgroundColor: palette.cardBg,
-        elevation: 0,
-        surfaceTintColor: palette.cardBg,
-        iconTheme: IconThemeData(color: palette.primary),
-        title: Text(
-          'Book Your Class',
-          style: TextStyle(color: palette.primary, fontWeight: FontWeight.w900),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (_, __) {
+        final handled = _goBackOneStepInFlow();
+        if (!handled) {
+          Navigator.maybePop(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: palette.appBg,
+        appBar: AppBar(
+          backgroundColor: palette.cardBg,
+          elevation: 0,
+          surfaceTintColor: palette.cardBg,
+          iconTheme: IconThemeData(color: palette.primary),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: palette.primary),
+            onPressed: () {
+              final handled = _goBackOneStepInFlow();
+              if (!handled) {
+                Navigator.maybePop(context);
+              }
+            },
+          ),
+          title: Text(
+            _bookingScreenTitle(),
+            style: TextStyle(
+              color: palette.primary,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'How booking works',
+              onPressed: _openHowBookingWorks,
+              icon: Icon(Icons.help_outline_rounded, color: palette.primary),
+            ),
+            const SizedBox.shrink(),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: (loading || booking || refreshing || cid == null)
+                  ? null
+                  : () async {
+                      await _runBusy('Refreshing schedule...', () async {
+                        await _refreshSchedule();
+                      });
+                    },
+              icon: Icon(Icons.refresh_rounded, color: palette.primary),
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'How booking works',
-            onPressed: _openHowBookingWorks,
-            icon: Icon(Icons.help_outline_rounded, color: palette.primary),
-          ),
-          const SizedBox.shrink(),
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: (loading || booking || refreshing || cid == null)
-                ? null
-                : () async {
-                    await _runBusy('Refreshing schedule...', () async {
-                      await _refreshSchedule();
-                    });
-                  },
-            icon: Icon(Icons.refresh_rounded, color: palette.primary),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: WatermarkBackground(
-        child: learnerWebBodyFrame(
-          context: context,
-          maxWidth: 1500,
-          child: Stack(
-            children: [
-              IgnorePointer(
-                ignoring: busy,
-                child: loading
-                    ? const Center(
-                        child: BrandedInlineLoader(
-                          message: 'Loading booking schedule...',
+        body: WatermarkBackground(
+          child: learnerWebBodyFrame(
+            context: context,
+            maxWidth: 1500,
+            child: Stack(
+              children: [
+                IgnorePointer(
+                  ignoring: busy,
+                  child: loading
+                      ? const Center(
+                          child: BrandedInlineLoader(
+                            message: 'Loading booking schedule...',
+                          ),
+                        )
+                      : (cid == null)
+                      ? const Center(child: Text('No course selected.'))
+                      : Align(
+                          alignment: Alignment.topCenter,
+                          child: SingleChildScrollView(
+                            controller: _pageScrollCtrl,
+                            padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
+                            child: Column(
+                              children: [
+                                if (flowStep != _BookingFlowStep.confirm)
+                                  _buildCancelEntryCard(),
+                                const SizedBox(height: 10),
+                                _buildFlowShell(_buildFlowContent()),
+                              ],
+                            ),
+                          ),
                         ),
-                      )
-                    : (cid == null)
-                    ? const Center(child: Text('No course selected.'))
-                    : Align(
-                        alignment: Alignment.topCenter,
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
+                ),
+                if (busy)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.16),
+                      child: Center(
+                        child: Container(
+                          width: 220,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.cardBg,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: palette.border),
+                          ),
                           child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (flowStep != _BookingFlowStep.confirm)
-                                _buildCancelEntryCard(),
-                              const SizedBox(height: 10),
-                              _buildFlowShell(_buildFlowContent()),
+                              const YbsBusyLogo(size: 44),
+                              const SizedBox(height: 14),
+                              Text(
+                                progressLabel.isEmpty
+                                    ? 'Please wait...'
+                                    : progressLabel,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: palette.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              StreamBuilder<int>(
+                                stream: Stream.periodic(
+                                  const Duration(seconds: 1),
+                                  (x) => x,
+                                ),
+                                initialData: 0,
+                                builder: (context, _) {
+                                  final since = _busyVisualSince;
+                                  if (since == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final elapsed = DateTime.now().difference(
+                                    since,
+                                  );
+                                  if (elapsed <
+                                      const Duration(milliseconds: 2500)) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final sec = elapsed.inSeconds;
+                                  return Text(
+                                    'Still working... ${sec}s',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: palette.text.withValues(
+                                        alpha: 0.72,
+                                      ),
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ),
                       ),
-              ),
-              if (busy)
-                Positioned.fill(
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.16),
-                    child: Center(
-                      child: Container(
-                        width: 220,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 18,
-                        ),
-                        decoration: BoxDecoration(
-                          color: palette.cardBg,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: palette.border),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const YbsBusyLogo(size: 44),
-                            const SizedBox(height: 14),
-                            Text(
-                              progressLabel.isEmpty
-                                  ? 'Please wait...'
-                                  : progressLabel,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: palette.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            StreamBuilder<int>(
-                              stream: Stream.periodic(
-                                const Duration(seconds: 1),
-                                (x) => x,
-                              ),
-                              initialData: 0,
-                              builder: (context, _) {
-                                final since = _busyVisualSince;
-                                if (since == null) {
-                                  return const SizedBox.shrink();
-                                }
-                                final elapsed = DateTime.now().difference(
-                                  since,
-                                );
-                                if (elapsed <
-                                    const Duration(milliseconds: 2500)) {
-                                  return const SizedBox.shrink();
-                                }
-                                final sec = elapsed.inSeconds;
-                                return Text(
-                                  'Still working... ${sec}s',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: palette.text.withValues(alpha: 0.72),
-                                    fontSize: 12,
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -6015,6 +6703,8 @@ enum _CancelBookingStatus { cancelled, notFound, locked, failed }
 enum _BookingFlowStep { lessonChoice, syllabus, schedule, confirm, success }
 
 enum _SchedulePath { byTeacher, byDay }
+
+enum _ChipMatchKind { none, matchDifferentSession, exact }
 
 class _CourseChoice {
   final String id;
