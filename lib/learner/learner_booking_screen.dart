@@ -88,6 +88,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   // Slot group summary: "yyyy-mm-dd|HH:MM|teacherId" -> summary
   Map<String, _SlotSummary> slotSummary = {};
   Map<String, _GlobalSlotOccupancy> globalSlotOccupancy = {};
+  Map<String, String> courseTitleById = {};
 
   // UI state
   _BookingFlowStep flowStep = _BookingFlowStep.lessonChoice;
@@ -1096,6 +1097,29 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return 'You can’t join this slot.';
   }
 
+  String _levelLabelForCourseId(String cid) {
+    final title = (courseTitleById[cid] ?? cid).trim();
+    final m = RegExp(
+      r'\b(A1|A2|B1|B2|C1|C2)\b',
+      caseSensitive: false,
+    ).firstMatch(title);
+    if (m != null) return m.group(1)!.toUpperCase();
+    final short = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (short.length <= 12) return short;
+    return short.substring(0, 12);
+  }
+
+  String _timeChipLabel(String t, _SlotStatus status, {_Slot? slot}) {
+    if (status != _SlotStatus.unavailable || slot == null) return t;
+    final occ = globalSlotOccupancy[slot.key];
+    if (occ == null || occ.courseId == (courseId ?? '').trim()) return t;
+    final level = _levelLabelForCourseId(occ.courseId);
+    final session = occ.sessionNo != null && occ.sessionNo! > 0
+        ? ' S${occ.sessionNo}'
+        : '';
+    return '$t • Booked $level$session';
+  }
+
   bool _isJoinable(_Slot s) {
     final status = _slotStatus(s);
     return status == _SlotStatus.availableBook ||
@@ -1661,8 +1685,25 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final Map<String, int> mine = {};
     final Map<String, _SlotSummary> summary = {};
     final Map<String, _GlobalSlotOccupancy> global = {};
+    final Map<String, String> courseTitles = {};
 
     try {
+      final coursesSnap = await _db.child('courses').get();
+      if (coursesSnap.value is Map) {
+        final coursesMap = (coursesSnap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
+        for (final entry in coursesMap.entries) {
+          final raw = entry.value;
+          if (raw is! Map) continue;
+          final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
+          final title = (m['title'] ?? m['name'] ?? entry.key)
+              .toString()
+              .trim();
+          courseTitles[entry.key] = title.isEmpty ? entry.key : title;
+        }
+      }
+
       final allReservationsSnap = await _db.child('booking_reservations').get();
       if (allReservationsSnap.value is Map) {
         final allCourses = (allReservationsSnap.value as Map).map(
@@ -1794,6 +1835,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       myBookedSlots = mine;
       slotSummary = summary;
       globalSlotOccupancy = global;
+      courseTitleById = courseTitles;
       upcomingBookingsCount = mine.length;
     });
   }
@@ -4457,6 +4499,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     bool selected,
     VoidCallback onTap, {
     _SlotStatus status = _SlotStatus.availableBook,
+    String? label,
   }) {
     Color bg = emptyBg;
     Color border = emptyBorder;
@@ -4510,7 +4553,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               : const [],
         ),
         child: Text(
-          t,
+          label ?? t,
           style: TextStyle(
             fontWeight: FontWeight.w900,
             color: selected ? Colors.white : fg,
@@ -4831,15 +4874,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       selectedTime = t;
                     });
                   },
-                  status: _slotStatus(
-                    _slotsForCurrentLesson().firstWhere(
+                  status: () {
+                    final slot = _slotsForCurrentLesson().firstWhere(
                       (s) =>
                           s.teacherId == selectedTeacherFirstId &&
                           s.dayKey == _dateKey(selectedDay!) &&
                           s.time == t,
-                    ),
-                    sessionNo: _flowLessonNo,
-                  ),
+                    );
+                    return _slotStatus(slot, sessionNo: _flowLessonNo);
+                  }(),
+                  label: () {
+                    final slot = _slotsForCurrentLesson().firstWhere(
+                      (s) =>
+                          s.teacherId == selectedTeacherFirstId &&
+                          s.dayKey == _dateKey(selectedDay!) &&
+                          s.time == t,
+                    );
+                    return _timeChipLabel(
+                      t,
+                      _slotStatus(slot, sessionNo: _flowLessonNo),
+                      slot: slot,
+                    );
+                  }(),
                 ),
             ],
           ),
@@ -4969,6 +5025,26 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     return candidates.isEmpty
                         ? _SlotStatus.availableBook
                         : best;
+                  }(),
+                  label: () {
+                    final candidates = _slotsForCurrentLesson()
+                        .where(
+                          (s) =>
+                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
+                        )
+                        .toList();
+                    if (candidates.isEmpty) return t;
+                    final preferred = candidates.firstWhere(
+                      (s) =>
+                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
+                          _SlotStatus.joinWithSessionChange.index,
+                      orElse: () => candidates.first,
+                    );
+                    return _timeChipLabel(
+                      t,
+                      _slotStatus(preferred, sessionNo: _flowLessonNo),
+                      slot: preferred,
+                    );
                   }(),
                 ),
             ],
