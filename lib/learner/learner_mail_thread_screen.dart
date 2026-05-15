@@ -2348,7 +2348,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: _navy.withValues(alpha: 0.35),
+        color: const Color(0xFF9AA6B8),
         borderRadius: BorderRadius.circular(18),
       ),
       child: const Icon(Icons.mic_off_rounded, color: Colors.white),
@@ -2365,7 +2365,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: _navy,
+          color: const Color(0xFF7C3AED),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Icon(
@@ -2690,23 +2690,25 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                         children: [
                           IconButton(
                             tooltip: 'Camera',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFEC740A),
+                              foregroundColor: Colors.white,
+                            ),
                             onPressed: _disableAttachActions
                                 ? null
                                 : _takePhotoAndAttach,
-                            icon: Icon(
-                              Icons.photo_camera_rounded,
-                              color: _navy.withValues(alpha: 0.9),
-                            ),
+                            icon: const Icon(Icons.photo_camera_rounded),
                           ),
                           IconButton(
                             tooltip: 'Attach',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFF1F4E79),
+                              foregroundColor: Colors.white,
+                            ),
                             onPressed: _disableAttachActions
                                 ? null
                                 : _pickAndUploadAttachment,
-                            icon: Icon(
-                              Icons.attach_file,
-                              color: _navy.withValues(alpha: 0.9),
-                            ),
+                            icon: const Icon(Icons.attach_file),
                           ),
                           Expanded(
                             child: TextField(

@@ -1073,6 +1073,29 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return _SlotStatus.joinWithSessionChange;
   }
 
+  bool _isCrossLevelBlocked(_Slot s) {
+    final occ = globalSlotOccupancy[s.key];
+    if (occ == null || occ.learnerCount <= 0) return false;
+    return occ.courseId != (courseId ?? '').trim();
+  }
+
+  String _blockedSlotToast(_Slot s) {
+    if (_isCrossLevelBlocked(s)) {
+      return 'This time is already booked by another level.';
+    }
+    final status = _slotStatus(s, sessionNo: _flowLessonNo);
+    if (status == _SlotStatus.closed) {
+      return 'Booking closes 24 hours before class.';
+    }
+    if (_isSlotFull(s)) {
+      return 'This slot is full.';
+    }
+    if (status == _SlotStatus.booked) {
+      return 'You already booked this slot.';
+    }
+    return 'You can’t join this slot.';
+  }
+
   bool _isJoinable(_Slot s) {
     final status = _slotStatus(s);
     return status == _SlotStatus.availableBook ||
@@ -2106,10 +2129,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (booking || refreshing) return;
     final cid = courseId;
     if (cid == null) return;
+    void stopChecking() {
+      if (!mounted) return;
+      setState(() => progressLabel = '');
+      _clearBusyVisualIfIdle();
+    }
+
     _setProgressLabel('Checking slot...');
 
     if (_isBookingLockedForNewBooking(slot)) {
       _toast('Booking closes 24 hours before class.');
+      stopChecking();
       return;
     }
 
@@ -2124,6 +2154,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         'This teacher has an in-class session at this time. Please pick another slot.',
       );
       await _generateSlots(cid);
+      stopChecking();
       return;
     }
 
@@ -2139,7 +2170,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       final decision = await _askSessionCheckBeforeBooking(targetSession);
       if (!mounted) return;
 
-      if (decision == null) return;
+      if (decision == null) {
+        stopChecking();
+        return;
+      }
 
       if (decision == false) {
         final maxSessions = _effectiveTotalSessions;
@@ -2152,23 +2186,27 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         });
 
         _toast('Choose the session you want, then tap Book again.');
+        stopChecking();
         return;
       }
     }
 
     if (_effectiveTotalSessions <= 0) {
       _toast('Booking enabled, but total lessons not set.');
+      stopChecking();
       return;
     }
 
     if (targetSession > _effectiveTotalSessions) {
       _toast('You already finished this course.');
+      stopChecking();
       return;
     }
 
     if (!_isJoinable(slot)) {
       if (_isBookingLockedForNewBooking(slot)) {
         _toast('Booking closes 24 hours before class.');
+        stopChecking();
         return;
       }
       final blockedSession = _effectiveGroupSessionNo(slot);
@@ -2176,13 +2214,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast(
           'This class time is for Session $blockedSession. Please choose a time for Session $targetSession.',
         );
+        stopChecking();
         return;
       }
       if (_isSlotFull(slot)) {
         _toast('This slot is full.');
+        stopChecking();
         return;
       }
       _toast('You can’t join this slot.');
+      stopChecking();
       return;
     }
 
@@ -4641,7 +4682,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 3),
-                                Row(
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Text(
                                       status ==
@@ -4653,8 +4697,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                         color: Colors.grey.shade700,
                                       ),
                                     ),
-                                    if (s.hasIntroVideo) ...[
-                                      const SizedBox(width: 8),
+                                    if (s.hasIntroVideo)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 6,
@@ -4677,8 +4720,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                           ),
                                         ),
                                       ),
-                                    ],
-                                    const SizedBox(width: 8),
                                     _slotStateBadge(status),
                                   ],
                                 ),
@@ -4773,6 +4814,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   t,
                   selectedTime == t,
                   () {
+                    final slot = _slotsForCurrentLesson().firstWhere(
+                      (s) =>
+                          s.teacherId == selectedTeacherFirstId &&
+                          s.dayKey == _dateKey(selectedDay!) &&
+                          s.time == t,
+                    );
+                    final status = _slotStatus(slot, sessionNo: _flowLessonNo);
+                    if (status == _SlotStatus.unavailable ||
+                        status == _SlotStatus.closed ||
+                        status == _SlotStatus.booked) {
+                      _toast(_blockedSlotToast(slot));
+                      return;
+                    }
                     setState(() {
                       selectedTime = t;
                     });
@@ -4876,6 +4930,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   t,
                   selectedTime == t,
                   () {
+                    final candidates = _slotsForCurrentLesson()
+                        .where(
+                          (s) =>
+                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
+                        )
+                        .toList();
+                    final preferred = candidates.firstWhere(
+                      (s) =>
+                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
+                          _SlotStatus.joinWithSessionChange.index,
+                      orElse: () => candidates.first,
+                    );
+                    final preferredStatus = _slotStatus(
+                      preferred,
+                      sessionNo: _flowLessonNo,
+                    );
+                    if (preferredStatus == _SlotStatus.unavailable ||
+                        preferredStatus == _SlotStatus.closed ||
+                        preferredStatus == _SlotStatus.booked) {
+                      _toast(_blockedSlotToast(preferred));
+                      return;
+                    }
                     setState(() {
                       selectedTime = t;
                       selectedTeacherId = null;
@@ -4947,7 +5023,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 3),
-                                Row(
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Text(
                                       status ==
@@ -4959,8 +5038,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                         color: Colors.grey.shade700,
                                       ),
                                     ),
-                                    if (s.hasIntroVideo) ...[
-                                      const SizedBox(width: 8),
+                                    if (s.hasIntroVideo)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 6,
@@ -4983,8 +5061,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                           ),
                                         ),
                                       ),
-                                    ],
-                                    const SizedBox(width: 8),
                                     _slotStateBadge(status),
                                   ],
                                 ),
