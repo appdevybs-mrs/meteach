@@ -93,6 +93,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   _SchedulePath schedulePath = _SchedulePath.byTeacher;
   String? selectedTeacherFirstId;
   int? selectedLessonForFlow;
+  int? confirmSessionNo;
   bool confirmSessionExpanded = false;
   String? _lastBookedStudyMode;
   int _computedRecommendedSessionNo = 1;
@@ -255,10 +256,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   int get _targetSessionNo {
     final maxSessions = _effectiveTotalSessions;
+    final explicit = selectedLessonForFlow;
+    if (explicit != null) return explicit.clamp(1, maxSessions).toInt();
+
     if (studyMode == 'custom') {
       return selectedSessionNo.clamp(1, maxSessions).toInt();
     }
-    return currentSession.clamp(1, maxSessions).toInt();
+
+    return _recommendedSessionNo.clamp(1, maxSessions).toInt();
   }
 
   int get _recommendedSessionNo {
@@ -1930,7 +1935,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   // ================== Booking ==================
 
-  Future<void> _bookSlot(_Slot slot) async {
+  Future<void> _bookSlot(_Slot slot, {required int sessionNo}) async {
     if (booking || refreshing) return;
     final cid = courseId;
     if (cid == null) return;
@@ -1955,7 +1960,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       return;
     }
 
-    final targetSession = _targetSessionNo;
+    final targetSession = sessionNo;
 
     final shouldWarn = await _hasPossibleMissingAttendanceForSession(
       cid: cid,
@@ -2016,8 +2021,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     try {
       final upcoming = await _findMyUpcomingBookings(cid);
-      final existing = upcoming.isEmpty ? null : upcoming.first;
+      _MyBooking? existingSameTime;
+      for (final b in upcoming) {
+        if (b.dayKey == slot.dayKey && b.time == slot.time) {
+          existingSameTime = b;
+          break;
+        }
+      }
       final isCustomMode = studyMode == 'custom';
+      final totalUpcoming = upcoming.length;
       final sameTimeDifferentTeacher = upcoming.any(
         (b) =>
             b.dayKey == slot.dayKey &&
@@ -2050,6 +2062,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         return;
       }
 
+      if (totalUpcoming >= 3) {
+        _toast(
+          _bilingual(
+            'You already booked 3 sessions. Please cancel one first.',
+            'لقد حجزت 3 جلسات بالفعل. يرجى إلغاء واحدة أولاً.',
+          ),
+        );
+        return;
+      }
+
       if (isCustomMode) {
         if (sameTimeDifferentTeacher) {
           _toast(
@@ -2061,7 +2083,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           return;
         }
 
-        final count = upcoming.length;
+        final count = totalUpcoming;
         if (count >= 3) {
           _toast(
             _bilingual(
@@ -2085,31 +2107,27 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         }
       }
 
-      if (existing != null &&
-          existing.dayKey == slot.dayKey &&
-          existing.time == slot.time &&
-          existing.teacherId == slot.teacherId) {
+      if (existingSameTime != null &&
+          existingSameTime.teacherId == slot.teacherId) {
         _toast('You already booked this teacher and slot ✅');
         return;
       }
 
-      if (!isCustomMode && existing != null) {
-        final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
-        final msg = sameTimeDifferentTeacher
-            ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
-            : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? targetSession} (${slot.bookedCount}/$cap).';
+      if (!isCustomMode &&
+          sameTimeDifferentTeacher &&
+          existingSameTime != null) {
+        final msg =
+            'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existingSameTime.teacherName} — ${_friendlyDate(existingSameTime.start)} ${existingSameTime.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.';
         _setProgressLabel('Preparing confirmation...');
         final ok = await _confirmWithLogo(
-          title: sameTimeDifferentTeacher ? 'Change teacher' : 'Change booking',
+          title: 'Change teacher',
           message: msg,
-          confirmLabel: sameTimeDifferentTeacher
-              ? 'Yes, Change Teacher'
-              : 'Yes, Change',
+          confirmLabel: 'Yes, Change Teacher',
         );
         if (!mounted) return;
         if (ok != true) return;
 
-        final locked = !existing.start.isAfter(
+        final locked = !existingSameTime.start.isAfter(
           DateTime.now().add(const Duration(hours: 24)),
         );
         if (locked) {
@@ -2123,9 +2141,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
         final cancelStatus = await _cancelBookingByKey(
           cid,
-          existing.dayKey,
-          existing.time,
-          existing.teacherId,
+          existingSameTime.dayKey,
+          existingSameTime.time,
+          existingSameTime.teacherId,
         );
         if (cancelStatus == _CancelBookingStatus.locked) {
           _toast(
@@ -2138,12 +2156,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           return;
         }
 
-        final oldSlotStart = _parseSlotStart(existing.dayKey, existing.time);
+        final oldSlotStart = _parseSlotStart(
+          existingSameTime.dayKey,
+          existingSameTime.time,
+        );
         if (oldSlotStart != null) {
           try {
             await NotificationService.I.init();
             await NotificationService.I.cancelSessionReminderSeries(
-              classId: '${cid}_${existing.dayKey}_${existing.time}',
+              classId:
+                  '${cid}_${existingSameTime.dayKey}_${existingSameTime.time}',
               sessionStart: oldSlotStart,
               minutesBeforeList: const [60, 20, 5],
             );
@@ -3516,6 +3538,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     selectedTime = null;
     selectedTeacherId = null;
     selectedTeacherFirstId = null;
+    confirmSessionNo = null;
     confirmSessionExpanded = false;
   }
 
@@ -3725,7 +3748,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   Widget _buildLessonChoiceStep() {
     final isAr = lessonChoiceArabic;
     final recommendedNo = _recommendedSessionNo;
-    final recommendedTitle = _flowLessonTitle(recommendedNo);
+    final recommendedTitle = _sessionTitleFor(recommendedNo);
     final followExpanded = _expandedLessonChoiceCards.contains('follow');
     final customExpanded = _expandedLessonChoiceCards.contains('custom');
     final nextObjective = _sessionObjectiveFor(recommendedNo);
@@ -4407,6 +4430,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               ),
             ),
             onPressed: () => setState(() {
+              confirmSessionNo = _flowLessonNo;
               flowStep = _BookingFlowStep.confirm;
             }),
             icon: const Icon(Icons.arrow_forward_rounded, size: 18),
@@ -4578,6 +4602,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     ),
                     onPressed: () => setState(() {
                       selectedTeacherId = s.teacherId;
+                      confirmSessionNo = _flowLessonNo;
                       flowStep = _BookingFlowStep.confirm;
                     }),
                     child: const Text('Select'),
@@ -4640,12 +4665,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildConfirmStep() {
+    final sessionNo = confirmSessionNo ?? _flowLessonNo;
     final teachers = _teachersForDayAndTime();
     final chosen = teachers
         .where((e) => e.teacherId == selectedTeacherId)
         .toList();
     final slot = chosen.isEmpty ? null : chosen.first;
-    if (slot == null || selectedDay == null || selectedTime == null) {
+    if (slot == null ||
+        selectedDay == null ||
+        selectedTime == null ||
+        sessionNo <= 0) {
       return const Text('Selection expired. Please choose again.');
     }
     return Column(
@@ -4672,7 +4701,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Course: $courseTitle'),
-              Text('Lesson: ${_flowLessonTitle(_flowLessonNo)}'),
+              Text('Lesson: ${_flowLessonTitle(sessionNo)}'),
               Text('Day: ${_friendlyDate(selectedDay!)}'),
               Text('Time: $selectedTime'),
               const SizedBox(height: 10),
@@ -4769,9 +4798,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (_sessionTitleFor(_flowLessonNo).isNotEmpty) ...[
+                            if (_sessionTitleFor(sessionNo).isNotEmpty) ...[
                               Text(
-                                _sessionTitleFor(_flowLessonNo),
+                                _sessionTitleFor(sessionNo),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                   color: primaryBlue,
@@ -4789,9 +4818,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _sessionObjectiveFor(_flowLessonNo).isEmpty
+                              _sessionObjectiveFor(sessionNo).isEmpty
                                   ? _cancelNoObjectiveLabel()
-                                  : _sessionObjectiveFor(_flowLessonNo),
+                                  : _sessionObjectiveFor(sessionNo),
                               style: TextStyle(
                                 color: Colors.grey.shade800,
                                 fontWeight: FontWeight.w600,
@@ -4817,7 +4846,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: primaryBlue),
               onPressed: () async {
-                await _bookSlot(slot);
+                await _bookSlot(slot, sessionNo: sessionNo);
                 if (!mounted) return;
                 if (myBookedSlots.containsKey(slot.key)) {
                   setState(() => flowStep = _BookingFlowStep.success);
@@ -4946,7 +4975,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
                           child: Column(
                             children: [
-                              _buildCancelEntryCard(),
+                              if (flowStep != _BookingFlowStep.confirm)
+                                _buildCancelEntryCard(),
                               const SizedBox(height: 10),
                               _buildFlowShell(_buildFlowContent()),
                             ],
