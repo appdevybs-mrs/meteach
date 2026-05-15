@@ -614,7 +614,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   }
 }
 
-enum _PayFlag { ok, yellow, red, black, noCourse }
+enum _PayFlag { ok, yellow, red, black, exempt, noCourse }
 
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
@@ -974,6 +974,8 @@ class _LearnersListState extends State<_LearnersList>
             return 3;
           case _PayFlag.yellow:
             return 2;
+          case _PayFlag.exempt:
+            return 1;
           case _PayFlag.ok:
           case _PayFlag.noCourse:
             return 0;
@@ -1465,7 +1467,7 @@ class _LearnersListState extends State<_LearnersList>
   }
 
   _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
-    if (courseIsFreeBilling(courseMap)) return _PayFlag.black;
+    if (courseIsFreeBilling(courseMap)) return _PayFlag.exempt;
 
     final variantKey = _normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
@@ -1711,6 +1713,16 @@ class _LearnersListState extends State<_LearnersList>
                           avatarFg = Colors.white;
                           rowBorderColor = Colors.blue.withValues(alpha: 0.45);
                           rowBgColor = Colors.blue.withValues(alpha: 0.03);
+                          break;
+                        case _PayFlag.exempt:
+                          avatarBg = const Color(0xFF157A3D);
+                          avatarFg = Colors.white;
+                          rowBorderColor = const Color(
+                            0xFF157A3D,
+                          ).withValues(alpha: 0.50);
+                          rowBgColor = const Color(
+                            0xFF157A3D,
+                          ).withValues(alpha: 0.06);
                           break;
                         case _PayFlag.black:
                           avatarBg = Colors.black;

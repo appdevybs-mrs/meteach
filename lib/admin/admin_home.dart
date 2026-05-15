@@ -2422,7 +2422,7 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
 
 // ===================== PAY FLAG =====================
 
-enum _PayFlag { ok, yellow, red, black, noCourse }
+enum _PayFlag { ok, yellow, red, black, exempt, noCourse }
 
 class _PayLegend {
   static const String noCourseLabel = 'No course';
@@ -2508,6 +2508,9 @@ class _PaymentAttentionSummary {
         switch (worst) {
           case _PayFlag.black:
             black++;
+            break;
+          case _PayFlag.exempt:
+            ok++;
             break;
           case _PayFlag.red:
             red++;
@@ -2612,6 +2615,9 @@ class _PaymentAttentionDetails {
           case _PayFlag.black:
             overdue.add(displayName);
             break;
+          case _PayFlag.exempt:
+            ok.add(displayName);
+            break;
           case _PayFlag.red:
             dueNow.add(displayName);
             break;
@@ -2695,6 +2701,8 @@ class _PaymentAttentionLogic {
         return 3;
       case _PayFlag.yellow:
         return 2;
+      case _PayFlag.exempt:
+        return 1;
       case _PayFlag.ok:
         return 1;
       case _PayFlag.noCourse:
@@ -2746,7 +2754,7 @@ class _PaymentAttentionLogic {
   }
 
   static _PayFlag variantPaymentFlag(Map<String, dynamic> courseMap) {
-    if (courseIsFreeBilling(courseMap)) return _PayFlag.black;
+    if (courseIsFreeBilling(courseMap)) return _PayFlag.exempt;
 
     final variantKey = normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
@@ -3243,6 +3251,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
         return 3;
       case _PayFlag.yellow:
         return 2;
+      case _PayFlag.exempt:
+        return 1;
       case _PayFlag.ok:
       case _PayFlag.noCourse:
         return 0;
@@ -3268,7 +3278,7 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
   static _PayFlag _learnerStyleVariantPaymentFlag(
     Map<String, dynamic> courseMap,
   ) {
-    if (courseIsFreeBilling(courseMap)) return _PayFlag.black;
+    if (courseIsFreeBilling(courseMap)) return _PayFlag.exempt;
 
     final variantKey = _normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
@@ -3443,6 +3453,9 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
           switch (best) {
             case _PayFlag.black:
               overdue.add(displayName);
+              break;
+            case _PayFlag.exempt:
+              ok.add(displayName);
               break;
             case _PayFlag.red:
               dueNow.add(displayName);
