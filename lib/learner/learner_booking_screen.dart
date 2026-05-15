@@ -97,6 +97,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   bool confirmSessionExpanded = false;
   String? _lastBookedStudyMode;
   int _computedRecommendedSessionNo = 1;
+  int upcomingBookingsCount = 0;
   String helpLang = 'en'; // en | ar | fr | tr | ur
   bool lessonChoiceArabic = false;
   final Set<String> _expandedLessonChoiceCards = <String>{};
@@ -372,6 +373,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   String _confirmObjectiveLabel() =>
       lessonChoiceArabic ? 'هدف الحصة' : 'Session objective';
+
+  String _bookingLimitNote() => lessonChoiceArabic
+      ? 'لقد حجزت 3 جلسات بالفعل. ألغِ واحدة للمتابعة.'
+      : 'You already booked 3 sessions. Cancel one to continue.';
 
   Future<bool> _hasPossibleMissingAttendanceForSession({
     required String cid,
@@ -1646,6 +1651,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     setState(() {
       myBookedSlots = mine;
       slotSummary = summary;
+      upcomingBookingsCount = mine.length;
     });
   }
 
@@ -2005,7 +2011,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         return;
       }
       if (slot.groupSessionNo != null && slot.groupSessionNo != targetSession) {
-        _toast('This slot is already a Session ${slot.groupSessionNo} group.');
+        _toast(
+          'This class time is for Session ${slot.groupSessionNo}. Please choose a time for Session $targetSession.',
+        );
         return;
       }
       if (slot.isFull) {
@@ -2044,7 +2052,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             b.teacherId == slot.teacherId,
       );
       if (sameExact) {
-        _toast('You already booked this teacher and slot ✅');
+        _toast('You already booked this exact class time with this teacher.');
         return;
       }
 
@@ -2057,7 +2065,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       }
       if (sameSessionUpcoming != null) {
         _toast(
-          'You already booked Session $targetSession with ${sameSessionUpcoming.teacherName} on ${sameSessionUpcoming.dayKey} at ${sameSessionUpcoming.time}. Please choose another session.',
+          'You already have Session $targetSession booked with ${sameSessionUpcoming.teacherName} on ${sameSessionUpcoming.dayKey} at ${sameSessionUpcoming.time}. Please choose another session.',
         );
         return;
       }
@@ -2109,7 +2117,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       if (existingSameTime != null &&
           existingSameTime.teacherId == slot.teacherId) {
-        _toast('You already booked this teacher and slot ✅');
+        _toast('You already booked this exact class time with this teacher.');
         return;
       }
 
@@ -2252,17 +2260,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       if (!tx.committed) {
         _toast(
-          'Could not join. The slot may be full or became a different session group.',
+          'Booking could not be completed. The class may be full or assigned to another session.',
         );
         return;
       }
 
-      final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
-      final newCount = (existingCount + 1);
       if (existingCount == 0) {
-        _toast('Booked ✅ Started Session $targetSession group');
+        _toast('Session $targetSession booked successfully.');
       } else {
-        _toast('Joined ✅ Session $targetSession group ($newCount/$cap)');
+        _toast('You joined Session $targetSession successfully.');
       }
 
       _lastBookedStudyMode = studyMode;
@@ -2732,12 +2738,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                                   ),
                                                   const SizedBox(height: 2),
                                                   Text(
-                                                    'Session ${b.sessionNo > 0 ? b.sessionNo : '-'}',
-                                                    style: TextStyle(
-                                                      color:
-                                                          Colors.grey.shade700,
+                                                    b.sessionNo > 0
+                                                        ? _sessionLabel(
+                                                            b.sessionNo,
+                                                          )
+                                                        : 'Session -',
+                                                    style: const TextStyle(
+                                                      color: primaryBlue,
                                                       fontWeight:
-                                                          FontWeight.w700,
+                                                          FontWeight.w900,
                                                       fontSize: 12,
                                                     ),
                                                   ),
@@ -3451,9 +3460,45 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   int get _flowLessonNo => selectedLessonForFlow ?? _targetSessionNo;
 
-  String _flowLessonTitle(int sessionNo) {
-    final t = _sessionTitleFor(sessionNo).trim();
-    return t.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo - $t';
+  String _sessionLabel(int sessionNo, {String? title}) {
+    final t = (title ?? _sessionTitleFor(sessionNo)).trim();
+    return t.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo • $t';
+  }
+
+  Widget _buildSessionLinePill({
+    required String label,
+    bool onPrimary = false,
+    bool compact = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 7 : 9,
+      ),
+      decoration: BoxDecoration(
+        color: onPrimary
+            ? Colors.white.withValues(alpha: 0.14)
+            : primaryBlue.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: onPrimary
+              ? Colors.white.withValues(alpha: 0.28)
+              : primaryBlue.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Text(
+        label,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          height: 1.2,
+          color: onPrimary ? Colors.white : primaryBlue,
+          fontSize: compact ? 13 : 14,
+        ),
+      ),
+    );
   }
 
   List<_Slot> _slotsForCurrentLesson() {
@@ -3572,6 +3617,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     required VoidCallback onTap,
     bool primary = false,
     String? sessionLine,
+    bool enabled = true,
     double closedMinHeight = 140,
     String? badge,
   }) {
@@ -3589,157 +3635,155 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ? palette.text.withValues(alpha: 0.82)
         : Colors.white.withValues(alpha: 0.93);
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(cardRadius),
-      child: Container(
-        constraints: BoxConstraints(minHeight: expanded ? 0 : closedMinHeight),
-        padding: EdgeInsets.all(cardPadding),
-        decoration: BoxDecoration(
-          gradient: primary
-              ? LinearGradient(colors: [palette.primary, primaryShade])
-              : null,
-          color: primary ? null : palette.cardBg,
-          borderRadius: BorderRadius.circular(cardRadius),
-          border: Border.all(
-            color: primary
-                ? primaryShade.withValues(alpha: 0.95)
-                : palette.border.withValues(alpha: 0.95),
+    return Opacity(
+      opacity: enabled ? 1 : 0.56,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(cardRadius),
+        child: Container(
+          constraints: BoxConstraints(
+            minHeight: expanded ? 0 : closedMinHeight,
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 10,
-              offset: Offset(0, 5),
+          padding: EdgeInsets.all(cardPadding),
+          decoration: BoxDecoration(
+            gradient: primary
+                ? LinearGradient(colors: [palette.primary, primaryShade])
+                : null,
+            color: primary ? null : palette.cardBg,
+            borderRadius: BorderRadius.circular(cardRadius),
+            border: Border.all(
+              color: primary
+                  ? primaryShade.withValues(alpha: 0.95)
+                  : palette.border.withValues(alpha: 0.95),
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: primary ? primaryText : palette.primary,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-                if (badge != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: primary
-                          ? primaryText.withValues(alpha: 0.12)
-                          : palette.accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      badge,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primary ? primaryText : palette.accent,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                InkWell(
-                  onTap: onToggleExpand,
-                  borderRadius: BorderRadius.circular(999),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: primary
-                          ? primaryText.withValues(alpha: 0.12)
-                          : palette.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: AnimatedRotation(
-                      turns: expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: primary ? primaryText : palette.primary,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (sessionLine != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                sessionLine,
-                style: TextStyle(
-                  color: primary ? secondaryPrimaryText : palette.text,
-                  fontWeight: FontWeight.w700,
-                  height: 1.3,
-                ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x12000000),
+                blurRadius: 10,
+                offset: Offset(0, 5),
               ),
             ],
-            const SizedBox(height: 10),
-            Text(
-              description,
-              style: TextStyle(
-                color: primary
-                    ? secondaryPrimaryText
-                    : palette.text.withValues(alpha: 0.78),
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              cta,
-              style: TextStyle(
-                color: primary ? primaryText : palette.accent,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            AnimatedCrossFade(
-              firstChild: const SizedBox.shrink(),
-              secondChild: Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(objectivePadding),
-                  decoration: BoxDecoration(
-                    color: primary
-                        ? primaryText.withValues(alpha: 0.1)
-                        : palette.soft.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: primary
-                          ? primaryText.withValues(alpha: 0.22)
-                          : palette.border,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primary ? primaryText : palette.primary,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
-                  child: Text(
-                    objective,
-                    style: TextStyle(
+                  if (badge != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: primary
+                            ? primaryText.withValues(alpha: 0.12)
+                            : palette.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        badge,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primary ? primaryText : palette.accent,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: onToggleExpand,
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: primary
+                            ? primaryText.withValues(alpha: 0.12)
+                            : palette.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: AnimatedRotation(
+                        turns: expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: primary ? primaryText : palette.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (sessionLine != null) ...[
+                const SizedBox(height: 10),
+                _buildSessionLinePill(label: sessionLine, onPrimary: primary),
+              ],
+              const SizedBox(height: 10),
+              Text(
+                description,
+                style: TextStyle(
+                  color: primary
+                      ? secondaryPrimaryText
+                      : palette.text.withValues(alpha: 0.78),
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                cta,
+                style: TextStyle(
+                  color: primary ? primaryText : palette.accent,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              AnimatedCrossFade(
+                firstChild: const SizedBox.shrink(),
+                secondChild: Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(objectivePadding),
+                    decoration: BoxDecoration(
                       color: primary
-                          ? primaryText
-                          : palette.text.withValues(alpha: 0.86),
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
+                          ? primaryText.withValues(alpha: 0.1)
+                          : palette.soft.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: primary
+                            ? primaryText.withValues(alpha: 0.22)
+                            : palette.border,
+                      ),
+                    ),
+                    child: Text(
+                      objective,
+                      style: TextStyle(
+                        color: primary
+                            ? primaryText
+                            : palette.text.withValues(alpha: 0.86),
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
                     ),
                   ),
                 ),
+                crossFadeState: expanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 180),
               ),
-              crossFadeState: expanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 180),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3747,6 +3791,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Widget _buildLessonChoiceStep() {
     final isAr = lessonChoiceArabic;
+    final limitReached = upcomingBookingsCount >= 3;
     final recommendedNo = _recommendedSessionNo;
     final recommendedTitle = _sessionTitleFor(recommendedNo);
     final followExpanded = _expandedLessonChoiceCards.contains('follow');
@@ -3798,8 +3843,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               _buildPremiumActionCard(
                 title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
                 sessionLine: isAr
-                    ? 'الجلسة $recommendedNo${recommendedTitle.isEmpty ? '' : ' · $recommendedTitle'}'
-                    : 'Session $recommendedNo${recommendedTitle.isEmpty ? '' : ' · $recommendedTitle'}',
+                    ? 'الجلسة $recommendedNo${recommendedTitle.isEmpty ? '' : ' • $recommendedTitle'}'
+                    : _sessionLabel(recommendedNo, title: recommendedTitle),
                 description: isAr
                     ? 'تابع مع الجلسة التالية المقترحة لك.'
                     : 'Continue with your recommended next session.',
@@ -3823,6 +3868,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   });
                 },
                 primary: true,
+                enabled: !limitReached,
                 closedMinHeight: 160,
                 onTap: () {
                   setState(() {
@@ -3845,6 +3891,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     ? 'الهدف: استعرض أهداف كل درس في المنهج واختر الدرس الذي يناسب احتياجك الآن.'
                     : 'Objective: Browse lesson objectives in the syllabus and pick the lesson that matches your current learning need.',
                 expanded: customExpanded,
+                enabled: !limitReached,
                 onToggleExpand: () {
                   setState(() {
                     if (customExpanded) {
@@ -3862,6 +3909,25 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 },
                 closedMinHeight: 140,
               ),
+              if (limitReached) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFEFEA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF2B8A8)),
+                  ),
+                  child: Text(
+                    _bookingLimitNote(),
+                    style: const TextStyle(
+                      color: Color(0xFF8A3D27),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -3932,12 +3998,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Session $no${title.isEmpty ? '' : ' - $title'}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
-                            ),
+                          _buildSessionLinePill(
+                            label: _sessionLabel(no, title: title),
+                            compact: true,
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -4201,13 +4264,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            _flowLessonTitle(_flowLessonNo),
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Colors.grey.shade800,
-            ),
-          ),
+          _buildSessionLinePill(label: _sessionLabel(_flowLessonNo)),
           const SizedBox(height: 3),
           Text(
             'Session $_flowLessonNo of $_effectiveTotalSessions',
@@ -4666,6 +4723,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Widget _buildConfirmStep() {
     final sessionNo = confirmSessionNo ?? _flowLessonNo;
+    final limitReached = upcomingBookingsCount >= 3;
     final teachers = _teachersForDayAndTime();
     final chosen = teachers
         .where((e) => e.teacherId == selectedTeacherId)
@@ -4701,7 +4759,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Course: $courseTitle'),
-              Text('Lesson: ${_flowLessonTitle(sessionNo)}'),
+              _buildSessionLinePill(
+                label: _sessionLabel(sessionNo),
+                compact: true,
+              ),
               Text('Day: ${_friendlyDate(selectedDay!)}'),
               Text('Time: $selectedTime'),
               const SizedBox(height: 10),
@@ -4845,17 +4906,29 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             const SizedBox(width: 8),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: primaryBlue),
-              onPressed: () async {
-                await _bookSlot(slot, sessionNo: sessionNo);
-                if (!mounted) return;
-                if (myBookedSlots.containsKey(slot.key)) {
-                  setState(() => flowStep = _BookingFlowStep.success);
-                }
-              },
+              onPressed: limitReached
+                  ? null
+                  : () async {
+                      await _bookSlot(slot, sessionNo: sessionNo);
+                      if (!mounted) return;
+                      if (myBookedSlots.containsKey(slot.key)) {
+                        setState(() => flowStep = _BookingFlowStep.success);
+                      }
+                    },
               child: const Text('Confirm booking'),
             ),
           ],
         ),
+        if (limitReached) ...[
+          const SizedBox(height: 10),
+          Text(
+            _bookingLimitNote(),
+            style: const TextStyle(
+              color: Color(0xFF8A3D27),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ],
     );
   }

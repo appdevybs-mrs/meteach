@@ -3327,8 +3327,6 @@ class _BookingTopCardState extends State<_BookingTopCard>
       return out;
     }
 
-    const daysAhead = 14;
-
     for (final c in courses) {
       final variantKey = (c['variantKey'] ?? '').toString();
       final cid = (c['courseId'] ?? '').toString().trim();
@@ -3440,19 +3438,23 @@ class _BookingTopCardState extends State<_BookingTopCard>
         continue;
       }
 
-      for (int i = 0; i < daysAhead; i++) {
-        final day = DateTime(
-          now.year,
-          now.month,
-          now.day,
-        ).add(Duration(days: i));
-        final dk = _dateKey(day);
+      final snap = await _db.child('booking_reservations/$cid').get();
+      final v = snap.value;
+      if (v is! Map) continue;
 
-        final snap = await _db.child('booking_reservations/$cid/$dk').get();
-        final v = snap.value;
-        if (v is! Map) continue;
+      final dayEntries = Map<dynamic, dynamic>.from(v).entries.toList()
+        ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
 
-        final m = Map<dynamic, dynamic>.from(v);
+      for (final dayEntry in dayEntries) {
+        final dk = dayEntry.key.toString();
+        final day = _parseYmd(dk);
+        if (day == null) continue;
+        if (day.isBefore(DateTime(now.year, now.month, now.day))) continue;
+
+        final dayNode = dayEntry.value;
+        if (dayNode is! Map) continue;
+
+        final m = Map<dynamic, dynamic>.from(dayNode);
 
         for (final e in m.entries) {
           final hhmm = e.key.toString();
