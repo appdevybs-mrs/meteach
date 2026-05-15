@@ -285,227 +285,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     );
   }
 
-  Future<void> _openManageGroupMembers() async {
-    final tSnap = await _threadRef.get();
-    if (!tSnap.exists || tSnap.value is! Map) {
-      _snack('Thread not found.');
-      return;
-    }
-    final t = (tSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-    if (t['isGroup'] != true) {
-      _snack('This is not a group thread.');
-      return;
-    }
-
-    final groupName = (t['groupName'] ?? widget.subject).toString();
-    final creatorUid = (t['createdByUid'] ?? '').toString().trim();
-    final participants = await InternalMailService.loadThreadParticipants(
-      widget.threadId,
-    );
-    final usersSnap = await _db.ref('users').get();
-    final usersRaw = usersSnap.value;
-    final users = <Map<String, String>>[];
-    String resolveDisplayName(Map<dynamic, dynamic> m, String uid) {
-      return resolveDisplayNameFromUserMap(m, uid);
-    }
-
-    if (usersRaw is Map) {
-      usersRaw.forEach((uid, vv) {
-        if (uid == null || vv is! Map) return;
-        final id = uid.toString().trim();
-        if (id.isEmpty || id == _meUid) return;
-        final m = vv.map((k, v) => MapEntry(k.toString(), v));
-        final name = resolveDisplayName(m, id);
-        users.add({'uid': id, 'name': name});
-      });
-    }
-
-    final selected = <String>{};
-    var working = false;
-    var addQuery = '';
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                16 + MediaQuery.of(ctx).viewInsets.bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Manage members • $groupName',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: participants.map((uid) {
-                      final isCreator =
-                          creatorUid.isNotEmpty && creatorUid == uid;
-                      final u = users.firstWhere(
-                        (e) => e['uid'] == uid,
-                        orElse: () => {'uid': uid, 'name': uid},
-                      );
-                      return InputChip(
-                        avatar: isCreator
-                            ? const Icon(Icons.shield_rounded, size: 16)
-                            : null,
-                        label: Text(
-                          isCreator
-                              ? '${u['name'] ?? uid} (Creator)'
-                              : (u['name'] ?? uid),
-                        ),
-                        onDeleted: working
-                            ? null
-                            : () async {
-                                if (isCreator) {
-                                  _snack('Group creator cannot be removed.');
-                                  return;
-                                }
-                                final shouldRemove =
-                                    await showDialog<bool>(
-                                      context: ctx,
-                                      builder: (dialogCtx) => AlertDialog(
-                                        title: const Text('Remove member?'),
-                                        content: Text(
-                                          'Remove ${u['name'] ?? uid} from this group?',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(dialogCtx, false),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          FilledButton(
-                                            onPressed: () =>
-                                                Navigator.pop(dialogCtx, true),
-                                            child: const Text('Remove'),
-                                          ),
-                                        ],
-                                      ),
-                                    ) ??
-                                    false;
-                                if (!shouldRemove) return;
-                                setLocal(() => working = true);
-                                try {
-                                  await InternalMailService.removeGroupMember(
-                                    threadId: widget.threadId,
-                                    memberUid: uid,
-                                  );
-                                  if (!mounted || !ctx.mounted) return;
-                                  Navigator.pop(ctx);
-                                  _snack('Member removed.');
-                                } catch (e) {
-                                  _snack('Failed to remove member: $e');
-                                } finally {
-                                  if (mounted) setLocal(() => working = false);
-                                }
-                              },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Add members',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    onChanged: (v) =>
-                        setLocal(() => addQuery = v.trim().toLowerCase()),
-                    decoration: const InputDecoration(
-                      hintText: 'Search by member name',
-                      prefixIcon: Icon(Icons.search_rounded, size: 20),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: users
-                          .where((u) {
-                            if (participants.contains(u['uid'])) return false;
-                            if (addQuery.isEmpty) return true;
-                            final name = (u['name'] ?? '')
-                                .toString()
-                                .toLowerCase();
-                            final uid = (u['uid'] ?? '')
-                                .toString()
-                                .toLowerCase();
-                            return name.contains(addQuery) ||
-                                uid.contains(addQuery);
-                          })
-                          .map((u) {
-                            final uid = u['uid'] ?? '';
-                            return CheckboxListTile(
-                              value: selected.contains(uid),
-                              title: Text(u['name'] ?? uid),
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              onChanged: working
-                                  ? null
-                                  : (v) => setLocal(() {
-                                      if (v == true) {
-                                        selected.add(uid);
-                                      } else {
-                                        selected.remove(uid);
-                                      }
-                                    }),
-                            );
-                          })
-                          .toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: working || selected.isEmpty
-                          ? null
-                          : () async {
-                              setLocal(() => working = true);
-                              try {
-                                await InternalMailService.addGroupMembers(
-                                  threadId: widget.threadId,
-                                  memberUids: selected,
-                                );
-                                if (!mounted || !ctx.mounted) return;
-                                Navigator.pop(ctx);
-                                _snack('Members added.');
-                              } catch (e) {
-                                _snack('Failed to add members: $e');
-                              } finally {
-                                if (mounted) setLocal(() => working = false);
-                              }
-                            },
-                      child: Text(
-                        working ? 'Saving...' : 'Add selected members',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   Future<String> _fetchDisplayName(String uid) async {
     final snap = await _db.ref('users/$uid').get();
     if (!snap.exists || snap.value is! Map) return '';
@@ -3019,10 +2798,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     );
   }
 
-  Widget _buildMessageMeta(_MailMsg m, {required bool mine}) {
+  Widget _buildMessageMeta(
+    _MailMsg m, {
+    required bool mine,
+    required bool showSeenStatusLine,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    final sender = _displayNameForUid(m.fromUid);
-    final accent = senderAccentColor(m.fromUid);
     final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
     final receiptLabel = mine ? _receiptLabel(m) : '';
 
@@ -3045,113 +2826,52 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       ],
     );
 
+    const seenBlue = Color(0xFF34B7F1);
     return Padding(
-      padding: EdgeInsets.only(top: 2, left: mine ? 0 : 2, right: mine ? 2 : 0),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(
+        crossAxisAlignment: mine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
-          if (!mine) menu,
-          Flexible(
-            child: Text(
-              sender,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                color: mine ? scheme.onSurface : accent,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _fmtTime(m.createdAtMs),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
-            ),
+              if (mine) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  receiptLevel == 2
+                      ? Icons.done_all_rounded
+                      : (receiptLevel == 1
+                            ? Icons.done_all_rounded
+                            : Icons.done_rounded),
+                  size: 15,
+                  color: receiptLevel == 2 ? seenBlue : scheme.onSurfaceVariant,
+                ),
+              ],
+              const SizedBox(width: 2),
+              menu,
+            ],
           ),
-          const SizedBox(width: 6),
-          Text(
-            _fmtTime(m.createdAtMs),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              fontStyle: FontStyle.italic,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: 6),
-          _buildReadByAvatars(m, mine: mine),
-          if (receiptLevel > 0) ...[
-            const SizedBox(width: 6),
-            Icon(
-              receiptLevel == 2 ? Icons.done_all_rounded : Icons.done_rounded,
-              size: 15,
-              color: receiptLevel == 2
-                  ? scheme.primary
-                  : scheme.onSurfaceVariant,
-            ),
-          ],
-          if (receiptLabel.isNotEmpty) ...[
-            const SizedBox(width: 4),
-            Flexible(
+          if (mine && showSeenStatusLine && receiptLabel.startsWith('Seen '))
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
               child: Text(
                 receiptLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
-                  color: receiptLevel == 2
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
+                  color: seenBlue,
                 ),
               ),
-            ),
-          ],
-          if (mine) menu,
-        ],
-      ),
-    );
-  }
-
-  String _initialForUid(String uid) {
-    final cleanUid = uid.trim();
-    if (cleanUid.isEmpty) return '?';
-    if (cleanUid == widget.peerUid.trim()) {
-      final p = _peerNameShown.trim();
-      if (p.isNotEmpty) return p[0].toUpperCase();
-    }
-    if (cleanUid == _meUid.trim()) {
-      final me = _meDisplayName.trim();
-      if (me.isNotEmpty) return me[0].toUpperCase();
-    }
-    return cleanUid[0].toUpperCase();
-  }
-
-  Widget _buildReadByAvatars(_MailMsg m, {required bool mine}) {
-    if (!mine) return const SizedBox.shrink();
-    final readers = m.readBy.keys.where((uid) => uid.trim() != _meUid).toList();
-    if (readers.isEmpty) return const SizedBox.shrink();
-    final visible = readers.take(3).toList();
-    return SizedBox(
-      height: 16,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final uid in visible)
-            Transform.translate(
-              offset: const Offset(-2, 0),
-              child: CircleAvatar(
-                radius: 7,
-                backgroundColor: Colors.teal.shade200,
-                child: Text(
-                  _initialForUid(uid),
-                  style: const TextStyle(
-                    fontSize: 8,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-            ),
-          if (readers.length > 3)
-            Text(
-              '+${readers.length - 3}',
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
             ),
         ],
       ),
@@ -3182,6 +2902,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     final diff = (prev.createdAtMs - current.createdAtMs).abs();
     return diff <= const Duration(minutes: 10).inMilliseconds;
+  }
+
+  bool _isLatestSeenOutgoing(List<_MailMsg> msgs, int index) {
+    final m = msgs[index];
+    if (m.fromUid != _meUid) return false;
+    if (_messageReceiptLevel(m) != 2) return false;
+    for (var i = 0; i < index; i++) {
+      final newer = msgs[i];
+      if (newer.fromUid == _meUid && _messageReceiptLevel(newer) == 2) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> _reviewHomeworkFromThread() async {
@@ -4499,12 +4232,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               vertical: 9,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF4F0FF),
+                              color: const Color(0xFFEAF2FB),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: const Color(
-                                  0xFF5B33D6,
-                                ).withValues(alpha: 0.2),
+                                  0xFF1F4E79,
+                                ).withValues(alpha: 0.22),
                               ),
                             ),
                             child: Row(
@@ -4512,7 +4245,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                 Icon(
                                   Icons.menu_book_rounded,
                                   size: 18,
-                                  color: const Color(0xFF5B33D6),
+                                  color: const Color(0xFF1F4E79),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
@@ -4522,7 +4255,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w900,
-                                      color: const Color(0xFF233B64),
+                                      color: const Color(0xFF1A3958),
                                     ),
                                   ),
                                 ),
@@ -4580,6 +4313,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                           (nextDateLabel != thisDateLabel);
 
                       final grouped = _isSameSenderNearby(msgs, i);
+                      final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
 
                       return Column(
                         children: [
@@ -4599,7 +4333,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (!mine) ...[
+                                    if (!mine && !grouped) ...[
                                       _buildSenderAvatar(
                                         uid: m.fromUid,
                                         mine: false,
@@ -4646,17 +4380,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                           child: _buildMessageMeta(
                                             m,
                                             mine: mine,
+                                            showSeenStatusLine:
+                                                showSeenStatusLine,
                                           ),
                                         ),
                                       ],
                                     ),
-                                    if (mine) ...[
-                                      const SizedBox(width: 6),
-                                      _buildSenderAvatar(
-                                        uid: m.fromUid,
-                                        mine: true,
-                                      ),
-                                    ],
                                   ],
                                 ),
                               ),
@@ -4774,7 +4503,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                             _attachments.isNotEmpty)
                           FilledButton(
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF7C3AED),
+                              backgroundColor: const Color(0xFF1F4E79),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 14,

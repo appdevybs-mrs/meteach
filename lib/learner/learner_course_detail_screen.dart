@@ -27,7 +27,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter_windowmanager/flutter_windowmanager.dart';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -48,6 +47,7 @@ import '../shared/material_webview_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import '../services/course_feedback_service.dart';
 import '../services/learner_join_signal_service.dart';
+import '../services/secure_window_service.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2 ...
@@ -729,7 +729,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     if (clean.isEmpty) return;
     if (!mounted) return;
     try {
-      await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+      await SecureWindowService.setSecureEnabled(true);
     } catch (_) {}
     if (!mounted) return;
     try {
@@ -741,7 +741,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       );
     } finally {
       try {
-        await FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+        await SecureWindowService.setSecureEnabled(false);
       } catch (_) {}
     }
   }

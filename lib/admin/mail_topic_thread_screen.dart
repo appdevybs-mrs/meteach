@@ -142,8 +142,6 @@ class MailTopicThreadScreen extends StatefulWidget {
 }
 
 class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
-  static const Color _personNameColor = Color(0xFFE65100);
-
   static const int _messageWindowSize = 300;
   static final String _uploadOrigin = BackendApi.mediaBaseUrl;
 
@@ -717,39 +715,64 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     return '';
   }
 
-  String _initialForUid(String uid) {
-    final cleanUid = uid.trim();
-    if (cleanUid.isEmpty) return '?';
-    if (cleanUid == _meUid) return 'A';
-    final peer = _displayNameForUid(cleanUid);
-    if (peer.isNotEmpty) return peer[0].toUpperCase();
-    return cleanUid[0].toUpperCase();
+  static String _dayKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _dateLabel(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final thatDay = DateTime(d.year, d.month, d.day);
+    final diffDays = thatDay.difference(today).inDays;
+    if (diffDays == 0) return 'Today';
+    if (diffDays == -1) return 'Yesterday';
+    return _dayKey(d);
   }
 
-  Widget _buildReadByAvatars(_MailMsg m, {required bool mine}) {
-    if (!mine) return const SizedBox.shrink();
-    final readers = m.readBy.keys.where((uid) => uid.trim() != _meUid).toList();
-    if (readers.isEmpty) return const SizedBox.shrink();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: readers.take(3).map((uid) {
-        return Padding(
-          padding: const EdgeInsets.only(right: 2),
-          child: CircleAvatar(
-            radius: 7,
-            backgroundColor: Colors.teal.shade200,
-            child: Text(
-              _initialForUid(uid),
-              style: const TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.w800,
-                color: Colors.black87,
-              ),
+  Widget _dateSeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: Colors.black.withValues(alpha: 0.72),
             ),
           ),
-        );
-      }).toList(),
+        ),
+      ),
     );
+  }
+
+  bool _isSameSenderNearby(List<_MailMsg> msgs, int index) {
+    if (index == 0) return false;
+    final current = msgs[index];
+    final prev = msgs[index - 1];
+    if (current.fromUid != prev.fromUid) return false;
+    final diff = (current.createdAtMs - prev.createdAtMs).abs();
+    return diff <= const Duration(minutes: 10).inMilliseconds;
+  }
+
+  bool _isLatestSeenOutgoing(List<_MailMsg> msgs, int index) {
+    final m = msgs[index];
+    if (m.fromUid != _meUid) return false;
+    if (_messageReceiptLevel(m) != 2) return false;
+    for (var i = index + 1; i < msgs.length; i++) {
+      final newer = msgs[i];
+      if (newer.fromUid == _meUid && _messageReceiptLevel(newer) == 2) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Widget _buildSenderAvatar({required String uid, required bool mine}) {
@@ -1473,6 +1496,45 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         child: SelectionArea(
           child: Column(
             children: [
+              if (_subject.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF2FB),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFF1F4E79).withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.menu_book_rounded,
+                          size: 18,
+                          color: Color(0xFF1F4E79),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _subject,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF1A3958),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Expanded(
                 child: StreamBuilder<DatabaseEvent>(
                   stream: _msgStream,
@@ -1498,207 +1560,198 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                         final scheme = Theme.of(context).colorScheme;
                         final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
                         final receiptLabel = mine ? _receiptLabel(m) : '';
+                        final grouped = _isSameSenderNearby(msgs, i);
+                        final showSeenStatusLine = _isLatestSeenOutgoing(
+                          msgs,
+                          i,
+                        );
+                        final thisDateLabel = _dateLabel(m.createdAtMs);
+                        final prevDateLabel = i > 0
+                            ? _dateLabel(msgs[i - 1].createdAtMs)
+                            : null;
+                        final showDate =
+                            i == 0 || prevDateLabel != thisDateLabel;
+                        const seenBlue = Color(0xFF34B7F1);
 
-                        return GestureDetector(
-                          onLongPress: () => _toggleMessageSelection(m),
-                          onTap: _selectionMode
-                              ? () => _toggleMessageSelection(m)
-                              : null,
-                          child: Align(
-                            alignment: mine
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (!mine) ...[
-                                  _buildSenderAvatar(
-                                    uid: m.fromUid,
-                                    mine: false,
-                                  ),
-                                  const SizedBox(width: 6),
-                                ],
-                                Column(
-                                  crossAxisAlignment: mine
-                                      ? CrossAxisAlignment.end
-                                      : CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        maxWidth: _messageMaxWidth(),
-                                      ),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                          border:
-                                              _selectedMessageIds.contains(m.id)
-                                              ? Border.all(
-                                                  color: Colors.orange,
-                                                  width: 1.5,
-                                                )
-                                              : null,
+                        return Column(
+                          children: [
+                            if (showDate) _dateSeparator(thisDateLabel),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom: grouped ? 4 : 10,
+                              ),
+                              child: GestureDetector(
+                                onLongPress: () => _toggleMessageSelection(m),
+                                onTap: _selectionMode
+                                    ? () => _toggleMessageSelection(m)
+                                    : null,
+                                child: Align(
+                                  alignment: mine
+                                      ? Alignment.centerRight
+                                      : Alignment.centerLeft,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (!mine && !grouped) ...[
+                                        _buildSenderAvatar(
+                                          uid: m.fromUid,
+                                          mine: false,
                                         ),
-                                        child: Container(
-                                          padding: const EdgeInsets.fromLTRB(
-                                            12,
-                                            10,
-                                            12,
-                                            10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: mine
-                                                ? const Color(0xFFE3F2FD)
-                                                : senderAccentColor(
-                                                    m.fromUid,
-                                                  ).withValues(alpha: 0.10),
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.08,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              if (m.body.trim().isNotEmpty) ...[
-                                                const SizedBox(height: 6),
-                                                SelectableText(m.body),
-                                              ],
-                                              if (m.attachments.isNotEmpty) ...[
-                                                const SizedBox(height: 8),
-                                                ...m.attachments.map(
-                                                  (a) => _buildAttachmentWidget(
-                                                    a: a,
-                                                    mine: mine,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        maxWidth: _messageMaxWidth(),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
+                                        const SizedBox(width: 6),
+                                      ],
+                                      Column(
+                                        crossAxisAlignment: mine
+                                            ? CrossAxisAlignment.end
+                                            : CrossAxisAlignment.start,
                                         children: [
-                                          if (!mine && !_selectionMode)
-                                            PopupMenuButton<String>(
-                                              tooltip: 'Message actions',
-                                              onSelected: (v) async {
-                                                if (v == 'delete_for_me') {
-                                                  await _deleteMessageForMe(m);
-                                                }
-                                              },
-                                              itemBuilder: (_) => const [
-                                                PopupMenuItem(
-                                                  value: 'delete_for_me',
-                                                  child: Text(
-                                                    'Delete (for me)',
+                                          ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              maxWidth: _messageMaxWidth(),
+                                            ),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                                border:
+                                                    _selectedMessageIds
+                                                        .contains(m.id)
+                                                    ? Border.all(
+                                                        color: Colors.orange,
+                                                        width: 1.5,
+                                                      )
+                                                    : null,
+                                              ),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      12,
+                                                      10,
+                                                      12,
+                                                      10,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: mine
+                                                      ? const Color(0xFF1F4E79)
+                                                      : Colors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                  border: Border.all(
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.08,
+                                                        ),
                                                   ),
                                                 ),
-                                              ],
-                                            ),
-                                          Flexible(
-                                            child: Text(
-                                              _displayNameForUid(m.fromUid),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                                color: mine
-                                                    ? _personNameColor
-                                                    : senderAccentColor(
-                                                        m.fromUid,
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    if (m.body
+                                                        .trim()
+                                                        .isNotEmpty)
+                                                      SelectableText(
+                                                        m.body,
+                                                        style: TextStyle(
+                                                          color: mine
+                                                              ? Colors.white
+                                                              : Colors.black87,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          height: 1.28,
+                                                        ),
                                                       ),
-                                                fontSize: 12,
+                                                    if (m
+                                                        .attachments
+                                                        .isNotEmpty) ...[
+                                                      if (m.body
+                                                          .trim()
+                                                          .isNotEmpty)
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                      ...m.attachments.map(
+                                                        (a) =>
+                                                            _buildAttachmentWidget(
+                                                              a: a,
+                                                              mine: mine,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            _fmt(m.createdAtMs),
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontStyle: FontStyle.italic,
-                                              color: scheme.onSurfaceVariant,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          _buildReadByAvatars(m, mine: mine),
-                                          if (receiptLevel > 0) ...[
-                                            const SizedBox(width: 6),
-                                            Icon(
-                                              receiptLevel == 2
-                                                  ? Icons.done_all_rounded
-                                                  : Icons.done_rounded,
-                                              size: 15,
-                                              color: receiptLevel == 2
-                                                  ? scheme.primary
-                                                  : scheme.onSurfaceVariant,
-                                            ),
-                                          ],
-                                          if (receiptLabel.isNotEmpty) ...[
-                                            const SizedBox(width: 4),
-                                            Flexible(
-                                              child: Text(
-                                                receiptLabel,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                          const SizedBox(height: 2),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                _fmtTime(m.createdAtMs),
                                                 style: TextStyle(
-                                                  fontSize: 10.5,
+                                                  fontSize: 11,
                                                   fontWeight: FontWeight.w700,
+                                                  color:
+                                                      scheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                              if (mine) ...[
+                                                const SizedBox(width: 4),
+                                                Icon(
+                                                  receiptLevel == 2
+                                                      ? Icons.done_all_rounded
+                                                      : (receiptLevel == 1
+                                                            ? Icons
+                                                                  .done_all_rounded
+                                                            : Icons
+                                                                  .done_rounded),
+                                                  size: 15,
                                                   color: receiptLevel == 2
-                                                      ? scheme.primary
+                                                      ? seenBlue
                                                       : scheme.onSurfaceVariant,
                                                 ),
-                                              ),
-                                            ),
-                                          ],
-                                          if (mine && !_selectionMode)
-                                            PopupMenuButton<String>(
-                                              tooltip: 'Message actions',
-                                              onSelected: (v) async {
-                                                if (v == 'delete_for_me') {
-                                                  await _deleteMessageForMe(m);
-                                                }
-                                              },
-                                              itemBuilder: (_) => const [
-                                                PopupMenuItem(
-                                                  value: 'delete_for_me',
-                                                  child: Text(
-                                                    'Delete (for me)',
-                                                  ),
-                                                ),
                                               ],
+                                              PopupMenuButton<String>(
+                                                tooltip: 'Message actions',
+                                                onSelected: (v) async {
+                                                  if (v == 'delete_for_me') {
+                                                    await _deleteMessageForMe(
+                                                      m,
+                                                    );
+                                                  }
+                                                },
+                                                itemBuilder: (_) => const [
+                                                  PopupMenuItem(
+                                                    value: 'delete_for_me',
+                                                    child: Text(
+                                                      'Delete (for me)',
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                          if (mine &&
+                                              showSeenStatusLine &&
+                                              receiptLabel.startsWith('Seen '))
+                                            Text(
+                                              receiptLabel,
+                                              style: const TextStyle(
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: seenBlue,
+                                              ),
                                             ),
                                         ],
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                if (mine) ...[
-                                  const SizedBox(width: 6),
-                                  _buildSenderAvatar(
-                                    uid: m.fromUid,
-                                    mine: true,
+                                    ],
                                   ),
-                                ],
-                              ],
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         );
                       },
                     );
@@ -1788,6 +1841,12 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  static String _fmtTime(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(d.hour)}:${two(d.minute)}';
   }
 
   static String _fmtReceiptAt(int ms) {

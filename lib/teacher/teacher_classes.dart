@@ -3816,6 +3816,9 @@ class _OnlineTakeAttendanceScreenState
   final Map<String, bool> presentMap = {};
   final Map<String, int> teacherRatingMap = {};
   final Map<String, TextEditingController> _commentControllers = {};
+  final Map<String, TextEditingController> _homeworkControllers = {};
+  final Map<String, String> _savedHomeworkBodyByUid = {};
+  final Map<String, String> _savedHomeworkThreadIdByUid = {};
 
   final Map<String, Map<String, String>> _localLearnerMiniCache = {};
 
@@ -3827,6 +3830,7 @@ class _OnlineTakeAttendanceScreenState
       presentMap[uid] = true;
       teacherRatingMap[uid] = 0;
       _commentController(uid);
+      _homeworkController(uid);
     }
     _loadExistingBookingAttendance();
   }
@@ -3835,6 +3839,9 @@ class _OnlineTakeAttendanceScreenState
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
     for (final c in _commentControllers.values) {
+      c.dispose();
+    }
+    for (final c in _homeworkControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -3924,6 +3931,269 @@ class _OnlineTakeAttendanceScreenState
     return _commentControllers.putIfAbsent(uid, TextEditingController.new);
   }
 
+  TextEditingController _homeworkController(String uid) {
+    return _homeworkControllers.putIfAbsent(uid, TextEditingController.new);
+  }
+
+  String _homeworkSignature() {
+    final name = widget.teacherName.trim();
+    return name.isEmpty ? 'Teacher' : name;
+  }
+
+  String _homeworkSubject({required String sessionTitle}) {
+    final sessionNo = widget.booking.sessionNo;
+    final safeSessionTitle = sessionTitle.trim();
+    final safeCourseTitle = widget.booking.courseTitle.trim();
+    if (sessionNo > 0) {
+      if (safeSessionTitle.isNotEmpty) {
+        return 'Session $sessionNo • $safeSessionTitle';
+      }
+      if (safeCourseTitle.isNotEmpty) {
+        return 'Session $sessionNo • $safeCourseTitle';
+      }
+      return 'Session $sessionNo';
+    }
+    return safeCourseTitle.isEmpty ? 'Homework' : 'Homework • $safeCourseTitle';
+  }
+
+  String _composeHomeworkBody(String homeworkPlain) {
+    final clean = homeworkPlain.trim();
+    if (clean.isEmpty) return '';
+    return '$clean\n\n— ${_homeworkSignature()}';
+  }
+
+  String _extractHomeworkPlainFromBody(String body) {
+    final clean = body.trim();
+    if (clean.isEmpty) return '';
+    const marker = '\n\n— ';
+    final idx = clean.lastIndexOf(marker);
+    if (idx <= 0) return clean;
+    return clean.substring(0, idx).trim();
+  }
+
+  Future<String?> _findHomeworkThreadIdForLearnerCourse(
+    String learnerUid,
+  ) async {
+    final teacherUid = widget.teacherUid.trim();
+    final uid = learnerUid.trim();
+    final courseId = widget.booking.courseId.trim();
+    if (teacherUid.isEmpty || uid.isEmpty || courseId.isEmpty) return null;
+    try {
+      final idxSnap = await _db.child('mail_index/$teacherUid').get();
+      if (!idxSnap.exists || idxSnap.value is! Map) return null;
+      final idx = Map<dynamic, dynamic>.from(idxSnap.value as Map);
+      String? bestThreadId;
+      int bestUpdatedAt = 0;
+
+      for (final e in idx.entries) {
+        final threadId = e.key.toString().trim();
+        if (threadId.isEmpty || e.value is! Map) continue;
+        final row = Map<dynamic, dynamic>.from(e.value as Map);
+        if (_safeStr(row['peerUid']) != uid) continue;
+        if (row['deletedAt'] != null) continue;
+
+        final threadSnap = await _db.child('mail_threads/$threadId').get();
+        if (!threadSnap.exists || threadSnap.value is! Map) continue;
+        final thread = Map<dynamic, dynamic>.from(threadSnap.value as Map);
+        if (_safeStr(thread['type']).toLowerCase() != 'homework') continue;
+        if (_safeStr(thread['homeworkCourseId']) != courseId) continue;
+        if (_safeStr(thread['homeworkLearnerUid']) != uid) continue;
+
+        final updatedAt = _toInt(row['updatedAt']);
+        if (bestThreadId == null || updatedAt >= bestUpdatedAt) {
+          bestThreadId = threadId;
+          bestUpdatedAt = updatedAt;
+        }
+      }
+      return bestThreadId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> _createHomeworkThread({
+    required String learnerUid,
+    required String learnerName,
+    required String subject,
+  }) async {
+    final teacherUid = widget.teacherUid.trim();
+    final uid = learnerUid.trim();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final threadId = _db.child('mail_threads').push().key;
+    if (threadId == null || threadId.trim().isEmpty) {
+      throw Exception('Failed to create homework thread.');
+    }
+
+    final teacherName = _homeworkSignature();
+    final courseId = widget.booking.courseId.trim();
+    final courseTitle = widget.booking.courseTitle.trim();
+
+    final updates = <String, dynamic>{
+      'mail_threads/$threadId/subject': subject,
+      'mail_threads/$threadId/type': 'homework',
+      'mail_threads/$threadId/createdAt': now,
+      'mail_threads/$threadId/updatedAt': now,
+      'mail_threads/$threadId/lastMessage': '',
+      'mail_threads/$threadId/participants/$teacherUid': true,
+      'mail_threads/$threadId/participants/$uid': true,
+      'mail_threads/$threadId/homeworkCourseId': courseId,
+      'mail_threads/$threadId/homeworkCourseTitle': courseTitle,
+      'mail_threads/$threadId/homeworkOwnerTeacherUid': teacherUid,
+      'mail_threads/$threadId/homeworkLearnerUid': uid,
+
+      'mail_index/$teacherUid/$threadId/subject': subject,
+      'mail_index/$teacherUid/$threadId/type': 'homework',
+      'mail_index/$teacherUid/$threadId/updatedAt': now,
+      'mail_index/$teacherUid/$threadId/lastMessage': '',
+      'mail_index/$teacherUid/$threadId/unreadCount': 0,
+      'mail_index/$teacherUid/$threadId/peerUid': uid,
+      'mail_index/$teacherUid/$threadId/peerName': learnerName,
+      'mail_index/$teacherUid/$threadId/peerRole': 'learner',
+      'mail_index/$teacherUid/$threadId/deletedAt': null,
+
+      'mail_index/$uid/$threadId/subject': subject,
+      'mail_index/$uid/$threadId/type': 'homework',
+      'mail_index/$uid/$threadId/updatedAt': now,
+      'mail_index/$uid/$threadId/lastMessage': '',
+      'mail_index/$uid/$threadId/unreadCount': 0,
+      'mail_index/$uid/$threadId/peerUid': teacherUid,
+      'mail_index/$uid/$threadId/peerName': teacherName,
+      'mail_index/$uid/$threadId/peerRole': 'teacher',
+      'mail_index/$uid/$threadId/deletedAt': null,
+
+      'mail_state/$teacherUid/$threadId/lastReadAt': now,
+      'mail_state/$teacherUid/$threadId/lastDeliveredAt': now,
+      'mail_state/$uid/$threadId/lastDeliveredAt': now,
+    };
+    await _db.update(updates);
+    return threadId;
+  }
+
+  Future<String> _resolveHomeworkThreadId({
+    required String learnerUid,
+    required String learnerName,
+    required String fallbackThreadId,
+    required String subject,
+  }) async {
+    final existing = fallbackThreadId.trim();
+    if (existing.isNotEmpty) {
+      final snap = await _db.child('mail_threads/$existing').get();
+      if (snap.exists && snap.value is Map) {
+        return existing;
+      }
+    }
+    final found = await _findHomeworkThreadIdForLearnerCourse(learnerUid);
+    if (found != null && found.trim().isNotEmpty) return found.trim();
+    return _createHomeworkThread(
+      learnerUid: learnerUid,
+      learnerName: learnerName,
+      subject: subject,
+    );
+  }
+
+  Future<String> _loadLatestHomeworkPlainFromThread(String threadId) async {
+    final tid = threadId.trim();
+    if (tid.isEmpty) return '';
+    try {
+      final snap = await _db
+          .child('mail_messages/$tid')
+          .orderByChild('createdAt')
+          .limitToLast(60)
+          .get();
+      if (!snap.exists || snap.value is! Map) return '';
+      final rows = <Map<String, dynamic>>[];
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      for (final e in raw.entries) {
+        if (e.value is! Map) continue;
+        rows.add(Map<String, dynamic>.from(e.value as Map));
+      }
+      rows.sort(
+        (a, b) => _toInt(b['createdAt']).compareTo(_toInt(a['createdAt'])),
+      );
+      for (final row in rows) {
+        final type = _safeStr(row['type']).toLowerCase();
+        final body = _safeStr(row['body']);
+        if (body.isEmpty) continue;
+        if (type == 'homework') return _extractHomeworkPlainFromBody(body);
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<void> _sendHomeworkMessage({
+    required String threadId,
+    required String learnerUid,
+    required String learnerName,
+    required String subject,
+    required String homeworkPlain,
+  }) async {
+    final tid = threadId.trim();
+    final teacherUid = widget.teacherUid.trim();
+    final uid = learnerUid.trim();
+    if (tid.isEmpty || teacherUid.isEmpty || uid.isEmpty) {
+      throw Exception('Invalid homework mail payload.');
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final body = _composeHomeworkBody(homeworkPlain);
+    final preview = body.length > 80 ? body.substring(0, 80) : body;
+    final msgRef = _db.child('mail_messages/$tid').push();
+    final msgKey = msgRef.key;
+    if (msgKey == null || msgKey.trim().isEmpty) {
+      throw Exception('Failed to create homework message.');
+    }
+
+    final updates = <String, dynamic>{
+      'mail_messages/$tid/$msgKey': {
+        'fromUid': teacherUid,
+        'body': body,
+        'toUids': {uid: true},
+        'ccUids': <String, bool>{},
+        'bccUids': <String, bool>{},
+        'attachments': <Map<String, String>>[],
+        'createdAt': now,
+        'deletedFor': <String, bool>{},
+        'reactions': <String, dynamic>{},
+        'type': 'homework',
+      },
+
+      'mail_threads/$tid/subject': subject,
+      'mail_threads/$tid/type': 'homework',
+      'mail_threads/$tid/updatedAt': now,
+      'mail_threads/$tid/lastMessage': preview,
+      'mail_threads/$tid/participants/$teacherUid': true,
+      'mail_threads/$tid/participants/$uid': true,
+
+      'mail_index/$teacherUid/$tid/subject': subject,
+      'mail_index/$teacherUid/$tid/type': 'homework',
+      'mail_index/$teacherUid/$tid/updatedAt': now,
+      'mail_index/$teacherUid/$tid/lastMessage': preview,
+      'mail_index/$teacherUid/$tid/unreadCount': 0,
+      'mail_index/$teacherUid/$tid/peerUid': uid,
+      'mail_index/$teacherUid/$tid/peerName': learnerName,
+      'mail_index/$teacherUid/$tid/peerRole': 'learner',
+      'mail_index/$teacherUid/$tid/deletedAt': null,
+
+      'mail_index/$uid/$tid/subject': subject,
+      'mail_index/$uid/$tid/type': 'homework',
+      'mail_index/$uid/$tid/updatedAt': now,
+      'mail_index/$uid/$tid/lastMessage': preview,
+      'mail_index/$uid/$tid/unreadCount': ServerValue.increment(1),
+      'mail_index/$uid/$tid/peerUid': teacherUid,
+      'mail_index/$uid/$tid/peerName': _homeworkSignature(),
+      'mail_index/$uid/$tid/peerRole': 'teacher',
+      'mail_index/$uid/$tid/deletedAt': null,
+
+      'mail_state/$teacherUid/$tid/lastReadAt': now,
+      'mail_state/$teacherUid/$tid/lastDeliveredAt': now,
+      'mail_state/$uid/$tid/lastDeliveredAt': now,
+    };
+
+    await _db.update(updates);
+  }
+
   int _normalizedRating(dynamic v) {
     final x = _toInt(v);
     if (x < 0) return 0;
@@ -3951,15 +4221,30 @@ class _OnlineTakeAttendanceScreenState
             bool present = false;
             int teacherRating = 0;
             String teacherComment = '';
+            String homeworkBody = '';
+            String homeworkThreadId = '';
             if (raw is Map) {
               final mm = raw.map((k, vv) => MapEntry(k.toString(), vv));
               present = mm['present'] == true;
               teacherRating = _normalizedRating(mm['teacherRating']);
               teacherComment = _safeStr(mm['teacherComment']);
+              homeworkBody = _safeStr(mm['homeworkLastBody']);
+              homeworkThreadId = _safeStr(mm['homeworkThreadId']);
             }
             presentMap[uid] = present;
             teacherRatingMap[uid] = teacherRating;
             _commentController(uid).text = teacherComment;
+            _savedHomeworkBodyByUid[uid] = homeworkBody;
+            _savedHomeworkThreadIdByUid[uid] = homeworkThreadId;
+            if (homeworkBody.isNotEmpty) {
+              _homeworkController(uid).text = homeworkBody;
+            } else if (homeworkThreadId.isNotEmpty) {
+              final plain = await _loadLatestHomeworkPlainFromThread(
+                homeworkThreadId,
+              );
+              _homeworkController(uid).text = plain;
+              _savedHomeworkBodyByUid[uid] = plain;
+            }
           }
         }
       }
@@ -4009,6 +4294,7 @@ class _OnlineTakeAttendanceScreenState
         : <Map<String, dynamic>>[];
 
     try {
+      final homeworkSubject = _homeworkSubject(sessionTitle: sessionTitle);
       final currentSnap = await _teacherAttendanceRef().get();
       if (currentSnap.exists && currentSnap.value is Map) {
         final m = Map<String, dynamic>.from(currentSnap.value as Map);
@@ -4025,6 +4311,11 @@ class _OnlineTakeAttendanceScreenState
         final rating = _normalizedRating(teacherRatingMap[uid]);
         final comment = _commentController(uid).text.trim();
         final hasTeacherNote = rating > 0 || comment.isNotEmpty;
+        final homework = _homeworkController(uid).text.trim();
+        final oldHomework = (_savedHomeworkBodyByUid[uid] ?? '').trim();
+        final homeworkThreadId = (_savedHomeworkThreadIdByUid[uid] ?? '')
+            .trim();
+        final hasHomework = homework.isNotEmpty;
         learners[uid] = {
           'present': presentMap[uid] == true,
           'teacherRating': rating,
@@ -4032,6 +4323,12 @@ class _OnlineTakeAttendanceScreenState
           'teacherCommentUpdatedAt': hasTeacherNote ? ServerValue.timestamp : 0,
           'teacherCommentByUid': hasTeacherNote ? widget.teacherUid : '',
           'teacherCommentByName': hasTeacherNote ? widget.teacherName : '',
+          'homeworkThreadId': homeworkThreadId,
+          'homeworkSubject': hasHomework ? homeworkSubject : '',
+          'homeworkLastBody': hasHomework ? homework : oldHomework,
+          'homeworkUpdatedAt': hasHomework ? ServerValue.timestamp : 0,
+          'homeworkByUid': hasHomework ? widget.teacherUid : '',
+          'homeworkByName': hasHomework ? _homeworkSignature() : '',
         };
       }
 
@@ -4055,10 +4352,14 @@ class _OnlineTakeAttendanceScreenState
 
       await _teacherAttendanceRef().set(payload);
 
+      final List<String> homeworkSendFailures = [];
       for (final uid in widget.booking.learnerUids) {
         final isPresent = presentMap[uid] == true;
         final rating = _normalizedRating(teacherRatingMap[uid]);
         final comment = _commentController(uid).text.trim();
+        final homework = _homeworkController(uid).text.trim();
+        final oldHomework = (_savedHomeworkBodyByUid[uid] ?? '').trim();
+        var homeworkThreadId = (_savedHomeworkThreadIdByUid[uid] ?? '').trim();
         final hasTeacherNote = rating > 0 || comment.isNotEmpty;
         final learnerRef = _learnerAttendanceRef(uid);
         final learnerSnap = await learnerRef.get();
@@ -4070,6 +4371,40 @@ class _OnlineTakeAttendanceScreenState
             onlineAttendanceRecordConsumesCredit(existing) ||
             isPresent ||
             widget.booking.sessionNo > 0;
+
+        final needsHomeworkSend =
+            homework.isNotEmpty && homework.trim() != oldHomework;
+
+        if (needsHomeworkSend) {
+          try {
+            final mini = await _loadLearnerMini(uid);
+            final learnerName = _safeStr(mini['full']).isEmpty
+                ? 'Learner'
+                : _safeStr(mini['full']);
+            homeworkThreadId = await _resolveHomeworkThreadId(
+              learnerUid: uid,
+              learnerName: learnerName,
+              fallbackThreadId: homeworkThreadId,
+              subject: homeworkSubject,
+            );
+            await _sendHomeworkMessage(
+              threadId: homeworkThreadId,
+              learnerUid: uid,
+              learnerName: learnerName,
+              subject: homeworkSubject,
+              homeworkPlain: homework,
+            );
+            _savedHomeworkBodyByUid[uid] = homework;
+            _savedHomeworkThreadIdByUid[uid] = homeworkThreadId;
+          } catch (_) {
+            homeworkSendFailures.add(uid);
+          }
+        }
+
+        final effectiveHomeworkBody =
+            (_savedHomeworkBodyByUid[uid] ?? '').trim().isNotEmpty
+            ? (_savedHomeworkBodyByUid[uid] ?? '').trim()
+            : homework;
 
         await learnerRef.set({
           ...existing,
@@ -4087,6 +4422,20 @@ class _OnlineTakeAttendanceScreenState
           'teacherCommentUpdatedAt': hasTeacherNote ? ServerValue.timestamp : 0,
           'teacherCommentByUid': hasTeacherNote ? widget.teacherUid : '',
           'teacherCommentByName': hasTeacherNote ? widget.teacherName : '',
+          'homeworkThreadId': homeworkThreadId,
+          'homeworkSubject': effectiveHomeworkBody.isNotEmpty
+              ? homeworkSubject
+              : '',
+          'homeworkLastBody': effectiveHomeworkBody,
+          'homeworkUpdatedAt': effectiveHomeworkBody.isNotEmpty
+              ? ServerValue.timestamp
+              : 0,
+          'homeworkByUid': effectiveHomeworkBody.isNotEmpty
+              ? widget.teacherUid
+              : '',
+          'homeworkByName': effectiveHomeworkBody.isNotEmpty
+              ? _homeworkSignature()
+              : '',
           'taughtItems': taughtItems,
           'countedCredit': countedCredit,
           'creditCountReason':
@@ -4127,7 +4476,45 @@ class _OnlineTakeAttendanceScreenState
         }
       }
 
-      _toast('Online attendance saved ✅');
+      final teacherLearnersRaw = payload['learners'];
+      if (teacherLearnersRaw is Map) {
+        final teacherLearners = teacherLearnersRaw.map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        final updates = <String, dynamic>{};
+        for (final uid in widget.booking.learnerUids) {
+          final raw = teacherLearners[uid];
+          if (raw is! Map) continue;
+          final body = (_savedHomeworkBodyByUid[uid] ?? '').trim();
+          final tid = (_savedHomeworkThreadIdByUid[uid] ?? '').trim();
+          if (body.isEmpty && tid.isEmpty) continue;
+          updates['learners/$uid/homeworkThreadId'] = tid;
+          updates['learners/$uid/homeworkSubject'] = body.isNotEmpty
+              ? homeworkSubject
+              : '';
+          updates['learners/$uid/homeworkLastBody'] = body;
+          updates['learners/$uid/homeworkUpdatedAt'] = body.isNotEmpty
+              ? ServerValue.timestamp
+              : 0;
+          updates['learners/$uid/homeworkByUid'] = body.isNotEmpty
+              ? widget.teacherUid
+              : '';
+          updates['learners/$uid/homeworkByName'] = body.isNotEmpty
+              ? _homeworkSignature()
+              : '';
+        }
+        if (updates.isNotEmpty) {
+          await _teacherAttendanceRef().update(updates);
+        }
+      }
+
+      if (homeworkSendFailures.isEmpty) {
+        _toast('Online attendance saved ✅');
+      } else {
+        _toast(
+          'Attendance saved, but homework mail failed for ${homeworkSendFailures.length} learner(s).',
+        );
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       _toast('Save failed: $e');
@@ -4298,6 +4685,7 @@ class _OnlineTakeAttendanceScreenState
                       final v = presentMap[uid] == true;
                       final rating = _normalizedRating(teacherRatingMap[uid]);
                       final commentC = _commentController(uid);
+                      final homeworkC = _homeworkController(uid);
                       final readOnly = !canEditCurrent || loadingExisting;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -4402,6 +4790,39 @@ class _OnlineTakeAttendanceScreenState
                               decoration: InputDecoration(
                                 hintText:
                                     'Comment for next teacher (same course)',
+                                filled: true,
+                                fillColor: p.cardBg,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: p.border),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: p.border),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 10,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Homework',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: p.primary,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: homeworkC,
+                              enabled: !readOnly,
+                              minLines: 2,
+                              maxLines: 4,
+                              decoration: InputDecoration(
+                                hintText: 'Homework to send to learner by mail',
                                 filled: true,
                                 fillColor: p.cardBg,
                                 border: OutlineInputBorder(

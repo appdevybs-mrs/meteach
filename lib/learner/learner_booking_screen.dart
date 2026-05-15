@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter_windowmanager/flutter_windowmanager.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
@@ -12,6 +11,7 @@ import '../services/notification_service.dart';
 import '../services/learner_notification_settings_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
+import '../services/secure_window_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
@@ -44,6 +44,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   static const bookedBorder = Color(0xFFB9E2C5);
   static const otherSessionBg = Color(0xFFF1F3F5);
   static const otherSessionBorder = Color(0xFFCED4DA);
+  static const switchSessionBg = Color(0xFFFFF4E8);
+  static const switchSessionBorder = Color(0xFFF7B779);
   static const emptyBg = Color(0xFFFFF1E3);
   static const emptyBorder = Color(0xFFF9C59D);
   static const lockedBg = Color(0xFFF4F4F5);
@@ -85,6 +87,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   // Slot group summary: "yyyy-mm-dd|HH:MM|teacherId" -> summary
   Map<String, _SlotSummary> slotSummary = {};
+  Map<String, _GlobalSlotOccupancy> globalSlotOccupancy = {};
 
   // UI state
   _BookingFlowStep flowStep = _BookingFlowStep.lessonChoice;
@@ -1001,7 +1004,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (clean.isEmpty) return;
     if (!mounted) return;
     try {
-      await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+      await SecureWindowService.setSecureEnabled(true);
     } catch (_) {}
     if (!mounted) return;
     try {
@@ -1013,7 +1016,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       );
     } finally {
       try {
-        await FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+        await SecureWindowService.setSecureEnabled(false);
       } catch (_) {}
     }
   }
@@ -1023,18 +1026,59 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   bool _isBookingLockedForNewBooking(_Slot slot) {
-    if (slot.bookedByMe) return false;
+    if (_isBookedByMe(slot)) return false;
     return _isWithin24Hours(slot);
   }
 
+  int _effectiveBookedCount(_Slot s) {
+    final global = globalSlotOccupancy[s.key];
+    if (global != null) return global.learnerCount;
+    return s.bookedCount;
+  }
+
+  int? _effectiveGroupSessionNo(_Slot s) {
+    final global = globalSlotOccupancy[s.key];
+    if (global != null) return global.sessionNo;
+    return s.groupSessionNo;
+  }
+
+  bool _isBookedByMe(_Slot s) {
+    final global = globalSlotOccupancy[s.key];
+    if (global != null) return global.bookedByMe;
+    return s.bookedByMe;
+  }
+
+  bool _isSlotFull(_Slot s) {
+    final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
+    return _effectiveBookedCount(s) >= cap;
+  }
+
+  _SlotStatus _slotStatus(_Slot s, {int? sessionNo}) {
+    if (_isBookingLockedForNewBooking(s)) return _SlotStatus.closed;
+    if (_isBookedByMe(s)) return _SlotStatus.booked;
+
+    final currentCourse = (courseId ?? '').trim();
+    final targetSession = (sessionNo ?? _targetSessionNo).clamp(
+      1,
+      _effectiveTotalSessions,
+    );
+    final occ = globalSlotOccupancy[s.key];
+    if (occ == null || occ.learnerCount <= 0) return _SlotStatus.availableBook;
+    if (_isSlotFull(s)) return _SlotStatus.unavailable;
+    if (occ.courseId != currentCourse) return _SlotStatus.unavailable;
+    if (occ.sessionNo == null || occ.sessionNo! <= 0) {
+      return _SlotStatus.joinSameSession;
+    }
+    if (occ.sessionNo == targetSession) return _SlotStatus.joinSameSession;
+    return _SlotStatus.joinWithSessionChange;
+  }
+
   bool _isJoinable(_Slot s) {
-    final targetSession = _targetSessionNo;
-    if (_isBookingLockedForNewBooking(s)) return false;
-    if (s.bookedByMe) return true;
-    if (s.groupSessionNo == null) return true;
-    if (s.groupSessionNo != targetSession) return false;
-    if (s.isFull) return false;
-    return true;
+    final status = _slotStatus(s);
+    return status == _SlotStatus.availableBook ||
+        status == _SlotStatus.joinSameSession ||
+        status == _SlotStatus.joinWithSessionChange ||
+        status == _SlotStatus.booked;
   }
 
   Future<String> _getMyFullName() async {
@@ -1056,21 +1100,22 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
-  Future<void> _sendBookingNotifications(_Slot slot) async {
+  Future<void> _sendBookingNotifications(_Slot slot, {int? sessionNo}) async {
     try {
       final learnerName = await _getMyFullName();
 
-      final sessionNo = slot.groupSessionNo ?? _targetSessionNo;
+      final effectiveSessionNo =
+          sessionNo ?? _effectiveGroupSessionNo(slot) ?? _targetSessionNo;
       final safeCourseTitle = courseTitle.trim().isEmpty
           ? 'Course'
           : courseTitle.trim();
 
       final adminTitle = 'New learner booking';
       final adminBody =
-          '$learnerName booked Session $sessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time} with ${slot.teacherName}.';
+          '$learnerName booked Session $effectiveSessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time} with ${slot.teacherName}.';
 
       final adminEventId =
-          'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo';
+          'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$effectiveSessionNo';
       final adminUids = await PushDispatchService.loadAdminUids();
       await PushDispatchService.dispatchAdminTopic(
         intent: PushIntent.booking,
@@ -1092,16 +1137,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           'learnerName': learnerName,
           'dayKey': slot.dayKey,
           'time': slot.time,
-          'sessionNo': sessionNo.toString(),
+          'sessionNo': effectiveSessionNo.toString(),
         },
       );
 
       final teacherTitle = 'New class booking';
       final teacherBody =
-          '$learnerName booked Session $sessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time}.';
+          '$learnerName booked Session $effectiveSessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time}.';
 
       final teacherEventId =
-          'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$sessionNo';
+          'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$effectiveSessionNo';
 
       await PushDispatchService.dispatchToUser(
         intent: PushIntent.booking,
@@ -1123,7 +1168,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           'learnerName': learnerName,
           'dayKey': slot.dayKey,
           'time': slot.time,
-          'sessionNo': sessionNo.toString(),
+          'sessionNo': effectiveSessionNo.toString(),
         },
       );
     } catch (_) {}
@@ -1138,7 +1183,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       await NotificationService.I.init();
       await NotificationService.I.requestPermissions();
 
-      final sessionNo = slot.groupSessionNo ?? _targetSessionNo;
+      final sessionNo = _effectiveGroupSessionNo(slot) ?? _targetSessionNo;
       final safeCourseTitle = courseTitle.trim().isEmpty
           ? 'Course'
           : courseTitle.trim();
@@ -1592,8 +1637,68 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final now = DateTime.now();
     final Map<String, int> mine = {};
     final Map<String, _SlotSummary> summary = {};
+    final Map<String, _GlobalSlotOccupancy> global = {};
 
     try {
+      final allReservationsSnap = await _db.child('booking_reservations').get();
+      if (allReservationsSnap.value is Map) {
+        final allCourses = (allReservationsSnap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
+
+        for (final courseEntry in allCourses.entries) {
+          final globalCourseId = courseEntry.key.toString();
+          final courseNode = courseEntry.value;
+          if (courseNode is! Map) continue;
+          final daysNode = courseNode.map(
+            (k, vv) => MapEntry(k.toString(), vv),
+          );
+
+          for (final dayEntry in daysNode.entries) {
+            final dk = dayEntry.key.toString();
+            final dayNode = dayEntry.value;
+            if (dayNode is! Map) continue;
+            final timesNode = dayNode.map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            );
+
+            for (final timeEntry in timesNode.entries) {
+              final hhmm = timeEntry.key.toString();
+              final timeNode = timeEntry.value;
+              if (timeNode is! Map) continue;
+              final teachersAtTime = timeNode.map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              );
+
+              for (final teacherEntry in teachersAtTime.entries) {
+                final teacherId = teacherEntry.key.toString().trim();
+                final slotNode = teacherEntry.value;
+                if (teacherId.isEmpty || slotNode is! Map) continue;
+
+                final sm = slotNode.map((k, vv) => MapEntry(k.toString(), vv));
+                final learnersRaw = sm['learners'];
+                if (learnersRaw is! Map) continue;
+                final learners = learnersRaw.map(
+                  (k, vv) => MapEntry(k.toString(), vv),
+                );
+                final count = learners.length;
+                if (count <= 0) continue;
+
+                final rawSessionNo = _toInt(sm['sessionNo'], fallback: 0);
+                final groupSessionNo = rawSessionNo > 0 ? rawSessionNo : null;
+                final key = _slotSummaryKey(dk, hhmm, teacherId);
+                global[key] = _GlobalSlotOccupancy(
+                  courseId: globalCourseId,
+                  sessionNo: groupSessionNo,
+                  learnerCount: count,
+                  bookedByMe: learners.containsKey(myUid),
+                );
+              }
+            }
+          }
+        }
+      }
+
       final dayKeys = <String>[];
       for (int i = 0; i < daysAhead; i++) {
         final day = DateTime(
@@ -1665,6 +1770,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     setState(() {
       myBookedSlots = mine;
       slotSummary = summary;
+      globalSlotOccupancy = global;
       upcomingBookingsCount = mine.length;
     });
   }
@@ -1758,6 +1864,47 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       return a.teacherId.compareTo(b.teacherId);
     });
     return out;
+  }
+
+  Future<_GlobalSlotOccupancy?> _loadLiveGlobalOccupancyForSlot(
+    _Slot slot,
+  ) async {
+    try {
+      final snap = await _db.child('booking_reservations').get();
+      if (snap.value is! Map) return null;
+
+      final root = (snap.value as Map).map(
+        (k, vv) => MapEntry(k.toString(), vv),
+      );
+      for (final courseEntry in root.entries) {
+        final occupiedCourseId = courseEntry.key.toString();
+        final courseNode = courseEntry.value;
+        if (courseNode is! Map) continue;
+        final dayNode = courseNode[slot.dayKey];
+        if (dayNode is! Map) continue;
+        final timeNode = dayNode[slot.time];
+        if (timeNode is! Map) continue;
+        final teacherNode = timeNode[slot.teacherId];
+        if (teacherNode is! Map) continue;
+
+        final sm = teacherNode.map((k, vv) => MapEntry(k.toString(), vv));
+        final learnersRaw = sm['learners'];
+        if (learnersRaw is! Map) continue;
+        final learners = learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
+        final count = learners.length;
+        if (count <= 0) continue;
+        final rawSessionNo = _toInt(sm['sessionNo'], fallback: 0);
+
+        return _GlobalSlotOccupancy(
+          courseId: occupiedCourseId,
+          sessionNo: rawSessionNo > 0 ? rawSessionNo : null,
+          learnerCount: count,
+          bookedByMe: learners.containsKey(myUid),
+        );
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   // ================== Availability -> Upcoming Slots ==================
@@ -1980,7 +2127,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       return;
     }
 
-    final targetSession = sessionNo;
+    var targetSession = sessionNo;
 
     final shouldWarn = await _hasPossibleMissingAttendanceForSession(
       cid: cid,
@@ -2024,13 +2171,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast('Booking closes 24 hours before class.');
         return;
       }
-      if (slot.groupSessionNo != null && slot.groupSessionNo != targetSession) {
+      final blockedSession = _effectiveGroupSessionNo(slot);
+      if (blockedSession != null && blockedSession != targetSession) {
         _toast(
-          'This class time is for Session ${slot.groupSessionNo}. Please choose a time for Session $targetSession.',
+          'This class time is for Session $blockedSession. Please choose a time for Session $targetSession.',
         );
         return;
       }
-      if (slot.isFull) {
+      if (_isSlotFull(slot)) {
         _toast('This slot is full.');
         return;
       }
@@ -2042,6 +2190,39 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     _markBusyVisualStart();
 
     try {
+      final liveOccupancy = await _loadLiveGlobalOccupancyForSlot(slot);
+      if (liveOccupancy != null &&
+          liveOccupancy.courseId != cid &&
+          !liveOccupancy.bookedByMe) {
+        _toast(
+          'This teacher is already booked at this time for another level.',
+        );
+        return;
+      }
+
+      if (liveOccupancy != null &&
+          liveOccupancy.courseId == cid &&
+          liveOccupancy.sessionNo != null &&
+          liveOccupancy.sessionNo != targetSession &&
+          !liveOccupancy.bookedByMe) {
+        final groupSession = liveOccupancy.sessionNo!;
+        _setProgressLabel('Preparing confirmation...');
+        final ok = await _confirmWithLogo(
+          title: 'Join with session change',
+          message:
+              'This slot already has a Session $groupSession group. You selected Session $targetSession.\n\nDo you want to join this group and switch your selected session to Session $groupSession?',
+          confirmLabel: 'Join & Switch Session',
+        );
+        if (!mounted) return;
+        if (ok != true) return;
+        setState(() {
+          studyMode = 'custom';
+          selectedSessionNo = groupSession;
+          confirmSessionNo = groupSession;
+        });
+        targetSession = groupSession;
+      }
+
       final upcoming = await _findMyUpcomingBookings(cid);
       _MyBooking? existingSameTime;
       for (final b in upcoming) {
@@ -2287,7 +2468,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       _lastBookedStudyMode = studyMode;
 
-      await _sendBookingNotifications(slot);
+      await _sendBookingNotifications(slot, sessionNo: targetSession);
       await _scheduleLearnerLocalReminder(slot);
 
       await AuditLogService.logSuccess(
@@ -3051,6 +3232,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         ),
                         const SizedBox(height: 8),
                         _stateExplain(
+                          bg: switchSessionBg,
+                          border: switchSessionBorder,
+                          label: _helpStateSwitchSession(helpLang),
+                        ),
+                        const SizedBox(height: 8),
+                        _stateExplain(
                           bg: bookedBg,
                           border: bookedBorder,
                           label: _helpStateBooked(helpLang),
@@ -3451,7 +3638,22 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       case 'ur':
         return 'دستیاب نہیں: یہ کسی اور سیشن کا ہے یا بھر چکا ہے۔';
       default:
-        return 'Unavailable: another session or already full.';
+        return 'Unavailable: another level, full, or closed.';
+    }
+  }
+
+  String _helpStateSwitchSession(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'انضم مع تغيير الجلسة: نفس المستوى لكن جلسة مختلفة.';
+      case 'fr':
+        return 'Rejoindre en changeant la session : même niveau, session différente.';
+      case 'tr':
+        return 'Oturumu değiştirerek katıl: aynı seviye, farklı oturum.';
+      case 'ur':
+        return 'سیشن تبدیل کر کے شامل ہوں: ایک ہی لیول لیکن مختلف سیشن۔';
+      default:
+        return 'Join with session change: same level, different session.';
     }
   }
 
@@ -3515,15 +3717,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
-  List<_Slot> _slotsForCurrentLesson() {
-    final selected = _flowLessonNo;
-    return generatedSlots.where((s) {
-      if (s.groupSessionNo != null && s.groupSessionNo != selected) {
-        return false;
-      }
-      return true;
-    }).toList();
-  }
+  List<_Slot> _slotsForCurrentLesson() => List<_Slot>.from(generatedSlots);
 
   List<DateTime> _availableDaysForLesson() {
     final daysByKey = <String, DateTime>{};
@@ -4217,7 +4411,42 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
-  Widget _buildTimeChip(String t, bool selected, VoidCallback onTap) {
+  Widget _buildTimeChip(
+    String t,
+    bool selected,
+    VoidCallback onTap, {
+    _SlotStatus status = _SlotStatus.availableBook,
+  }) {
+    Color bg = emptyBg;
+    Color border = emptyBorder;
+    Color fg = primaryBlue;
+    switch (status) {
+      case _SlotStatus.booked:
+        bg = bookedBg;
+        border = bookedBorder;
+        break;
+      case _SlotStatus.joinSameSession:
+        bg = peerBg;
+        border = peerBorder;
+        break;
+      case _SlotStatus.joinWithSessionChange:
+        bg = switchSessionBg;
+        border = switchSessionBorder;
+        break;
+      case _SlotStatus.unavailable:
+        bg = otherSessionBg;
+        border = otherSessionBorder;
+        fg = Colors.grey.shade700;
+        break;
+      case _SlotStatus.closed:
+        bg = lockedBg;
+        border = lockedBorder;
+        fg = Colors.grey.shade700;
+        break;
+      case _SlotStatus.availableBook:
+        break;
+    }
+
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
@@ -4226,9 +4455,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? primaryBlue : Colors.white,
+          color: selected ? primaryBlue : bg,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? primaryBlue : uiBorder),
+          border: Border.all(color: selected ? primaryBlue : border),
           boxShadow: selected
               ? const [
                   BoxShadow(
@@ -4243,8 +4472,51 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           t,
           style: TextStyle(
             fontWeight: FontWeight.w900,
-            color: selected ? Colors.white : primaryBlue,
+            color: selected ? Colors.white : fg,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _slotStateBadge(_SlotStatus status) {
+    final label = switch (status) {
+      _SlotStatus.joinSameSession => 'Join',
+      _SlotStatus.joinWithSessionChange => 'Join + switch',
+      _SlotStatus.booked => 'Booked',
+      _SlotStatus.unavailable => 'Unavailable',
+      _SlotStatus.closed => 'Closed',
+      _SlotStatus.availableBook => 'Book',
+    };
+    final bg = switch (status) {
+      _SlotStatus.joinSameSession => peerBg,
+      _SlotStatus.joinWithSessionChange => switchSessionBg,
+      _SlotStatus.booked => bookedBg,
+      _SlotStatus.unavailable => otherSessionBg,
+      _SlotStatus.closed => lockedBg,
+      _SlotStatus.availableBook => emptyBg,
+    };
+    final border = switch (status) {
+      _SlotStatus.joinSameSession => peerBorder,
+      _SlotStatus.joinWithSessionChange => switchSessionBorder,
+      _SlotStatus.booked => bookedBorder,
+      _SlotStatus.unavailable => otherSessionBorder,
+      _SlotStatus.closed => lockedBorder,
+      _SlotStatus.availableBook => emptyBorder,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 11,
+          color: primaryBlue,
         ),
       ),
     );
@@ -4322,7 +4594,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ...teachers.map((s) {
           final selected = selectedTeacherFirstId == s.teacherId;
           final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
-          final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
+          final booked = _effectiveBookedCount(s);
+          final left = (cap - booked) < 0 ? 0 : (cap - booked);
+          final status = _slotStatus(s, sessionNo: _flowLessonNo);
+          final canSelect =
+              status != _SlotStatus.unavailable &&
+              status != _SlotStatus.closed &&
+              status != _SlotStatus.booked;
           final tint = _teacherTint(s.teacherId);
           return InkWell(
             borderRadius: BorderRadius.circular(14),
@@ -4366,7 +4644,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                 Row(
                                   children: [
                                     Text(
-                                      '$left seats available',
+                                      status ==
+                                              _SlotStatus.joinWithSessionChange
+                                          ? '$left seats • Session ${_effectiveGroupSessionNo(s) ?? '-'}'
+                                          : '$left seats available',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: Colors.grey.shade700,
@@ -4397,6 +4678,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                         ),
                                       ),
                                     ],
+                                    const SizedBox(width: 8),
+                                    _slotStateBadge(status),
                                   ],
                                 ),
                               ],
@@ -4411,15 +4694,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     style: FilledButton.styleFrom(
                       backgroundColor: actionOrange,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        selectedTeacherFirstId = s.teacherId;
-                        selectedTeacherId = s.teacherId;
-                        selectedDay = null;
-                        selectedTime = null;
-                      });
-                    },
-                    child: Text(selected ? 'Selected' : 'Select'),
+                    onPressed: canSelect
+                        ? () {
+                            setState(() {
+                              selectedTeacherFirstId = s.teacherId;
+                              selectedTeacherId = s.teacherId;
+                              selectedDay = null;
+                              selectedTime = null;
+                            });
+                          }
+                        : null,
+                    child: Text(
+                      selected ? 'Selected' : (canSelect ? 'Select' : 'Locked'),
+                    ),
                   ),
                 ],
               ),
@@ -4482,11 +4769,24 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             runSpacing: 8,
             children: [
               for (final t in times)
-                _buildTimeChip(t, selectedTime == t, () {
-                  setState(() {
-                    selectedTime = t;
-                  });
-                }),
+                _buildTimeChip(
+                  t,
+                  selectedTime == t,
+                  () {
+                    setState(() {
+                      selectedTime = t;
+                    });
+                  },
+                  status: _slotStatus(
+                    _slotsForCurrentLesson().firstWhere(
+                      (s) =>
+                          s.teacherId == selectedTeacherFirstId &&
+                          s.dayKey == _dateKey(selectedDay!) &&
+                          s.time == t,
+                    ),
+                    sessionNo: _flowLessonNo,
+                  ),
+                ),
             ],
           ),
         ],
@@ -4572,12 +4872,29 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             runSpacing: 8,
             children: [
               for (final t in times)
-                _buildTimeChip(t, selectedTime == t, () {
-                  setState(() {
-                    selectedTime = t;
-                    selectedTeacherId = null;
-                  });
-                }),
+                _buildTimeChip(
+                  t,
+                  selectedTime == t,
+                  () {
+                    setState(() {
+                      selectedTime = t;
+                      selectedTeacherId = null;
+                    });
+                  },
+                  status: () {
+                    final candidates = _slotsForCurrentLesson().where(
+                      (s) => s.dayKey == _dateKey(selectedDay!) && s.time == t,
+                    );
+                    _SlotStatus best = _SlotStatus.closed;
+                    for (final c in candidates) {
+                      final st = _slotStatus(c, sessionNo: _flowLessonNo);
+                      if (st.index < best.index) best = st;
+                    }
+                    return candidates.isEmpty
+                        ? _SlotStatus.availableBook
+                        : best;
+                  }(),
+                ),
             ],
           ),
         ],
@@ -4587,7 +4904,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           const SizedBox(height: 6),
           ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
-            final left = (cap - s.bookedCount) < 0 ? 0 : (cap - s.bookedCount);
+            final booked = _effectiveBookedCount(s);
+            final left = (cap - booked) < 0 ? 0 : (cap - booked);
+            final status = _slotStatus(s, sessionNo: _flowLessonNo);
+            final canSelect =
+                status != _SlotStatus.unavailable &&
+                status != _SlotStatus.closed &&
+                status != _SlotStatus.booked;
             final tint = _teacherTint(s.teacherId);
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
@@ -4627,7 +4950,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                 Row(
                                   children: [
                                     Text(
-                                      '$left seats available',
+                                      status ==
+                                              _SlotStatus.joinWithSessionChange
+                                          ? '$left seats • Session ${_effectiveGroupSessionNo(s) ?? '-'}'
+                                          : '$left seats available',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: Colors.grey.shade700,
@@ -4658,6 +4984,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                         ),
                                       ),
                                     ],
+                                    const SizedBox(width: 8),
+                                    _slotStateBadge(status),
                                   ],
                                 ),
                               ],
@@ -4671,12 +4999,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     style: FilledButton.styleFrom(
                       backgroundColor: actionOrange,
                     ),
-                    onPressed: () => setState(() {
-                      selectedTeacherId = s.teacherId;
-                      confirmSessionNo = _flowLessonNo;
-                      flowStep = _BookingFlowStep.confirm;
-                    }),
-                    child: const Text('Select'),
+                    onPressed: canSelect
+                        ? () => setState(() {
+                            selectedTeacherId = s.teacherId;
+                            confirmSessionNo = _flowLessonNo;
+                            flowStep = _BookingFlowStep.confirm;
+                          })
+                        : null,
+                    child: Text(canSelect ? 'Select' : 'Locked'),
                   ),
                 ],
               ),
@@ -5290,6 +5620,29 @@ class _Slot {
     final cap = maxLearnersPerSlot <= 0 ? 6 : maxLearnersPerSlot;
     return bookedCount >= cap;
   }
+}
+
+enum _SlotStatus {
+  availableBook,
+  joinSameSession,
+  joinWithSessionChange,
+  booked,
+  unavailable,
+  closed,
+}
+
+class _GlobalSlotOccupancy {
+  final String courseId;
+  final int? sessionNo;
+  final int learnerCount;
+  final bool bookedByMe;
+
+  const _GlobalSlotOccupancy({
+    required this.courseId,
+    required this.sessionNo,
+    required this.learnerCount,
+    required this.bookedByMe,
+  });
 }
 
 class _TeacherMiniProfile {

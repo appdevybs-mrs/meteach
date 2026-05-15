@@ -2,6 +2,7 @@ package com.yourbridgeschool.dreamenglish
 
 import android.content.Context
 import android.content.Intent
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -9,6 +10,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     companion object {
         const val CHANNEL = "dream_english/widget_bridge"
+        const val SECURE_CHANNEL = "dream_english/secure_window"
         const val WIDGET_PREFS = "teacher_schedule_widget"
         const val KEY_WIDGET_PAYLOAD = "teacher_schedule_widget_payload"
         const val KEY_PENDING_LAUNCH_ACTION = "pending_launch_action"
@@ -43,6 +45,27 @@ class MainActivity : FlutterActivity() {
 
                     "clearPendingLaunchAction" -> {
                         prefs.edit().remove(KEY_PENDING_LAUNCH_ACTION).apply()
+                        result.success(null)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SECURE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enableSecureWindow" -> {
+                        runOnUiThread {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(null)
+                    }
+
+                    "disableSecureWindow" -> {
+                        runOnUiThread {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
                         result.success(null)
                     }
 
