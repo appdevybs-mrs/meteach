@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
+import 'learner_notification_settings_service.dart';
 import 'push_client.dart';
 import 'push_error_logger.dart';
 
@@ -138,6 +139,21 @@ class PushDispatchService {
     return out;
   }
 
+  static Future<bool> _canDeliverToUid(PushIntent intent, String uid) async {
+    final safeUid = uid.trim();
+    if (safeUid.isEmpty) return false;
+
+    if (intent != PushIntent.mail &&
+        intent != PushIntent.reminder &&
+        intent != PushIntent.flashMessage) {
+      return true;
+    }
+
+    final settings = await LearnerNotificationSettingsService.load(safeUid);
+    if (!settings.masterEnabled) return false;
+    return settings.appEnabled;
+  }
+
   static Future<PushDispatchResult> dispatchToUser({
     required PushIntent intent,
     required String targetUid,
@@ -161,6 +177,16 @@ class PushDispatchService {
 
     final type = _canonicalType(intent);
     final effectiveRoute = (route ?? _defaultRoute(intent)).trim();
+    final shouldDeliver = await _canDeliverToUid(intent, safeUid);
+    if (!shouldDeliver) {
+      return PushDispatchResult(
+        sent: false,
+        eventId: _eventIdFrom(type, eventParts),
+        hadAnyToken: false,
+        usedTopicFallback: false,
+        deliveredTokenCount: 0,
+      );
+    }
     final payload = <String, dynamic>{
       'type': type,
       if (effectiveRoute.isNotEmpty) 'route': effectiveRoute,

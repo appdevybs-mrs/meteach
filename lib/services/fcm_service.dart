@@ -23,6 +23,7 @@ import '../learner/learner_mail_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../shared/app_globals.dart';
+import 'learner_notification_settings_service.dart';
 import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail.dart';
@@ -332,6 +333,15 @@ class FCMService {
     final type = _canonicalType(data['type']);
     if (type.isNotEmpty) {
       data['type'] = type;
+    }
+
+    final activeUid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+    if (activeUid.isNotEmpty) {
+      final settings = await LearnerNotificationSettingsService.load(activeUid);
+      if (!settings.masterEnabled) return;
+      if (!settings.appEnabled && (type == 'mail' || type == 'reminder')) {
+        return;
+      }
     }
 
     final title =

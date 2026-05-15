@@ -131,6 +131,16 @@ class NotificationService {
     return granted ?? true;
   }
 
+  Future<bool> areNotificationsEnabled() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return true;
+    final enabled = await android.areNotificationsEnabled();
+    return enabled ?? true;
+  }
+
   Future<bool> canScheduleExactAlarms() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -466,8 +476,14 @@ class NotificationService {
     final sorted = unique.toList()..sort((a, b) => b.compareTo(a));
 
     for (final mins in sorted) {
-      final scheduledAt = sessionStart.subtract(Duration(minutes: mins));
-      if (!scheduledAt.isAfter(now)) continue;
+      var scheduledAt = sessionStart.subtract(Duration(minutes: mins));
+      if (scheduledAt.isBefore(now)) {
+        if (sessionStart.isAfter(now)) {
+          scheduledAt = now.add(const Duration(seconds: 2));
+        } else {
+          continue;
+        }
+      }
 
       final enhancedBody = _enhanceSessionBody(
         originalBody: body,

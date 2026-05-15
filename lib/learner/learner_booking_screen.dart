@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/notification_service.dart';
+import '../services/learner_notification_settings_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../shared/app_feedback.dart';
@@ -1130,6 +1131,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Future<void> _scheduleLearnerLocalReminder(_Slot slot) async {
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final settings = await LearnerNotificationSettingsService.load(uid);
+      if (!settings.masterEnabled || !settings.classEnabled) return;
+
       await NotificationService.I.init();
       await NotificationService.I.requestPermissions();
 
@@ -1144,9 +1149,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         body:
             'Session $sessionNo for $safeCourseTitle with ${slot.teacherName}',
         sessionStart: slot.start,
-        minutesBeforeList: const [60, 20, 5],
+        minutesBeforeList: [settings.classLeadMinutes],
       );
     } catch (_) {}
+  }
+
+  List<int> _allClassReminderLeadMinutes() {
+    return <int>{
+      60,
+      20,
+      5,
+      ...LearnerNotificationSettingsService.leadOptions,
+    }.toList();
   }
 
   Future<void> _runBusy(String label, Future<void> Function() action) async {
@@ -2175,7 +2189,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               classId:
                   '${cid}_${existingSameTime.dayKey}_${existingSameTime.time}',
               sessionStart: oldSlotStart,
-              minutesBeforeList: const [60, 20, 5],
+              minutesBeforeList: _allClassReminderLeadMinutes(),
             );
           } catch (_) {}
         }
@@ -2507,7 +2521,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           await NotificationService.I.cancelSessionReminderSeries(
             classId: '${cid}_${b.dayKey}_${b.time}',
             sessionStart: start,
-            minutesBeforeList: const [60, 20, 5],
+            minutesBeforeList: _allClassReminderLeadMinutes(),
           );
         } catch (_) {}
         _toast('Booking cancelled successfully.');

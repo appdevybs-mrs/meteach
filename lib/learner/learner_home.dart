@@ -23,6 +23,7 @@ import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
+import 'learner_settings_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/offline_notice_banner.dart';
@@ -34,6 +35,7 @@ import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
 import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
+import '../services/learner_notification_settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/learner_join_signal_service.dart';
 import '../services/story_preload_service.dart';
@@ -59,11 +61,13 @@ class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey _drawerProfileKey = GlobalKey();
   final GlobalKey _drawerMailKey = GlobalKey();
   final GlobalKey _drawerRegulationsKey = GlobalKey();
-  final GlobalKey _drawerThemeKey = GlobalKey();
+  final GlobalKey _drawerSettingsKey = GlobalKey();
   final GlobalKey _drawerLogoutKey = GlobalKey();
   final GlobalKey _dashboardHomeworkCardKey = GlobalKey();
   final GlobalKey _dashboardBookingCardKey = GlobalKey();
   final GlobalKey _dashboardCoursesListKey = GlobalKey();
+  final GlobalKey<_BookingTopCardState> _bookingTopCardKey =
+      GlobalKey<_BookingTopCardState>();
 
   bool _paymentDueToastChecked = false;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -81,6 +85,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       if (!mounted) return;
       FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
       unawaited(_showPaymentDueToastOnLoginIfNeeded());
+      unawaited(_seedNotificationSettingsRecord());
       unawaited(StoryPreloadService.preloadFromHome(context));
     });
   }
@@ -94,6 +99,14 @@ class _LearnerHomeState extends State<LearnerHome> {
   void _onThemeChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _seedNotificationSettingsRecord() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+
+    final settings = await LearnerNotificationSettingsService.load(uid);
+    await LearnerNotificationSettingsService.save(uid, settings);
   }
 
   _HomePalette get palette => _toHomePalette(appThemeController.palette);
@@ -403,59 +416,24 @@ class _LearnerHomeState extends State<LearnerHome> {
     return '';
   }
 
-  void _openThemeSheet() {
-    final p = palette;
-
-    Future<void> pickTheme(AppThemeMode mode) async {
-      await appThemeController.setTheme(mode);
-      if (!mounted) return;
-      setState(() {});
-      Navigator.of(context).pop();
-    }
-
-    final allModes = AppThemeMode.values;
-
+  void _openSettingsSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: p.appBg,
-      showDragHandle: true,
+      useRootNavigator: true,
       isScrollControlled: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(ctx).size.height * 0.80,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: allModes.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (_, i) {
-                  final mode = allModes[i];
-                  final preview = appThemeController.paletteForMode(mode);
-
-                  return _ThemeChoiceTile(
-                    palette: p,
-                    title: appThemeController.themeTitle(mode),
-                    subtitle: appThemeController.themeSubtitle(mode),
-                    selected: appThemeController.mode == mode,
-                    preview1: preview.primary,
-                    preview2: preview.accent,
-                    onTap: () => pickTheme(mode),
-                  );
-                },
-              ),
-            ),
-          ),
+      backgroundColor: palette.appBg,
+      showDragHandle: true,
+      builder: (_) {
+        return LearnerSettingsSheet(
+          onChanged: () async {
+            if (!mounted) return;
+            setState(() {});
+            await _bookingTopCardKey.currentState
+                ?._syncLearnerClassReminderSeries();
+          },
         );
       },
     );
-  }
-
-  void _openThemeSettings() {
-    _openLearnerWindow(AppWindowKeys.learnerThemeSettings, _openThemeSheet);
   }
 
   @override
@@ -493,7 +471,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                 profileTileKey: _drawerProfileKey,
                 mailTileKey: _drawerMailKey,
                 regulationsTileKey: _drawerRegulationsKey,
-                themeTileKey: _drawerThemeKey,
+                themeTileKey: _drawerSettingsKey,
                 logoutButtonKey: _drawerLogoutKey,
                 onOpenProfile: _openProfileScreen,
                 onOpenMail: _openMailScreen,
@@ -503,7 +481,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                 onOpenGames: _openGamesScreen,
                 onOpenStudyCoach: _openStudyCoachScreen,
                 onOpenRegulations: _openRegulationsScreen,
-                onOpenThemeSettings: _openThemeSettings,
+                onOpenThemeSettings: _openSettingsSheet,
                 onLogout: () => _logout(context),
               ),
 
@@ -558,7 +536,7 @@ class _LearnerHomeState extends State<LearnerHome> {
               IconButton(
                 tooltip: 'Theme',
                 icon: Icon(Icons.palette_outlined, color: p.primary),
-                onPressed: _openThemeSettings,
+                onPressed: _openSettingsSheet,
               ),
             IconButton(
               tooltip: 'Logout',
@@ -602,6 +580,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                             homeworkCardKey: _dashboardHomeworkCardKey,
                             bookingCardKey: _dashboardBookingCardKey,
                             coursesListKey: _dashboardCoursesListKey,
+                            bookingTopCardKey: _bookingTopCardKey,
                           ),
                         ),
                       ),
@@ -632,11 +611,13 @@ class _LearnerDashboardLite extends StatefulWidget {
     required this.homeworkCardKey,
     required this.bookingCardKey,
     required this.coursesListKey,
+    required this.bookingTopCardKey,
   });
 
   final GlobalKey homeworkCardKey;
   final GlobalKey bookingCardKey;
   final GlobalKey coursesListKey;
+  final GlobalKey<_BookingTopCardState> bookingTopCardKey;
 
   @override
   State<_LearnerDashboardLite> createState() => _LearnerDashboardLiteState();
@@ -2144,7 +2125,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                       const SizedBox(height: 10),
                       KeyedSubtree(
                         key: widget.bookingCardKey,
-                        child: const _BookingTopCard(),
+                        child: _BookingTopCard(key: widget.bookingTopCardKey),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -2920,7 +2901,7 @@ class _RingProgressPainter extends CustomPainter {
 }
 
 class _BookingTopCard extends StatefulWidget {
-  const _BookingTopCard();
+  const _BookingTopCard({super.key});
 
   @override
   State<_BookingTopCard> createState() => _BookingTopCardState();
@@ -2931,7 +2912,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   static const String _sessionReminderKeysPref =
       'learner_session_reminder_keys_v1';
-  static const List<int> _sessionReminderLeadMinutes = [60, 20, 5];
+  static const List<int> _legacySessionReminderLeadMinutes = [60, 20, 5];
 
   Future<List<_NextBooking>>? _nextBookingFuture;
   final Map<String, Future<_MeetInfo?>> _meetInfoFutureByKey = {};
@@ -3032,11 +3013,38 @@ class _BookingTopCardState extends State<_BookingTopCard>
     try {
       final prefs = _prefs ?? await SharedPreferences.getInstance();
       _prefs = prefs;
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final settings = await LearnerNotificationSettingsService.load(uid);
+
+      if (!settings.masterEnabled || !settings.classEnabled) {
+        final prevKeys =
+            prefs.getStringList(_sessionReminderKeysPref) ?? const [];
+        for (final key in prevKeys) {
+          final parsed = _parseReminderSessionKey(key);
+          if (parsed == null) continue;
+          await NotificationService.I.cancelSessionReminderSeries(
+            classId: parsed.classId,
+            sessionStart: parsed.start,
+            minutesBeforeList: [
+              ..._legacySessionReminderLeadMinutes,
+              ...LearnerNotificationSettingsService.leadOptions,
+            ],
+          );
+        }
+        await NotificationService.I.cancelAll();
+        await prefs.setStringList(_sessionReminderKeysPref, const []);
+        return;
+      }
 
       final now = DateTime.now();
+      final leadMinutes = settings.classLeadMinutes > 0
+          ? settings.classLeadMinutes
+          : 10;
       final bookings = await _findMyUpcomingBookingsAcrossCourses();
       final candidates = bookings
-          .where((b) => b.start.isAfter(now.add(const Duration(minutes: 5))))
+          .where(
+            (b) => b.start.isAfter(now.add(Duration(minutes: leadMinutes))),
+          )
           .toList();
 
       final prevKeys =
@@ -3046,13 +3054,15 @@ class _BookingTopCardState extends State<_BookingTopCard>
       };
 
       for (final key in prevKeys) {
-        if (nextKeys.contains(key)) continue;
         final parsed = _parseReminderSessionKey(key);
         if (parsed == null) continue;
         await NotificationService.I.cancelSessionReminderSeries(
           classId: parsed.classId,
           sessionStart: parsed.start,
-          minutesBeforeList: _sessionReminderLeadMinutes,
+          minutesBeforeList: [
+            ..._legacySessionReminderLeadMinutes,
+            ...LearnerNotificationSettingsService.leadOptions,
+          ],
         );
       }
 
@@ -3062,7 +3072,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
           title: 'Upcoming class',
           body: 'Your class with ${b.teacherName} is coming up.',
           sessionStart: b.start,
-          minutesBeforeList: _sessionReminderLeadMinutes,
+          minutesBeforeList: [settings.classLeadMinutes],
         );
       }
 
@@ -4011,17 +4021,125 @@ class _BookingTopCardState extends State<_BookingTopCard>
               );
             }
 
+            final primary = bookings.first;
+            final rest = bookings.length > 1
+                ? bookings.sublist(1)
+                : const <_NextBooking>[];
+
             return Column(
               children: [
-                for (int i = 0; i < bookings.length; i++) ...[
-                  _buildUpcomingBookingCard(next: bookings[i], p: p),
-                  if (i < bookings.length - 1) const SizedBox(height: 10),
+                _buildUpcomingBookingCard(next: primary, p: p),
+                if (rest.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: p.cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: p.border.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Other upcoming classes (${rest.length})',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: p.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        for (int i = 0; i < rest.length; i++) ...[
+                          _buildCompactUpcomingRow(next: rest[i], p: p),
+                          if (i < rest.length - 1)
+                            Divider(
+                              color: p.border.withValues(alpha: 0.8),
+                              height: 14,
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ],
               ],
             );
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildCompactUpcomingRow({
+    required _NextBooking next,
+    required _HomePalette p,
+  }) {
+    return FutureBuilder<_MeetInfo?>(
+      future: _meetInfoFutureFor(next),
+      builder: (context, ms) {
+        final meet = ms.data;
+        final now = DateTime.now();
+        final opensIn = _untilJoinOpens(next.start);
+        final closesIn = _untilJoinCloses(
+          next.start,
+          meet?.durationMinutes ?? next.durationMinutes,
+        );
+        final beforeOpen = now.isBefore(next.start);
+        final canJoin = _canJoinNow(next.start, meet?.durationMinutes ?? 60);
+        final readyColor = const Color(0xFF1D8A5A);
+        final statusText = canJoin
+            ? 'Join now (${_formatCountdown(closesIn)} left)'
+            : beforeOpen
+            ? 'Opens in ${_formatCountdown(opensIn)}'
+            : 'Join window closed';
+
+        return Row(
+          children: [
+            Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: canJoin ? readyColor : p.accent,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_friendlyDate(next.start)} • ${next.time}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    next.teacherName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: p.text.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              statusText,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+                color: canJoin ? readyColor : p.text.withValues(alpha: 0.72),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -4081,14 +4199,14 @@ class _BookingTopCardState extends State<_BookingTopCard>
               color: idleColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
-                color: idleColor.withValues(alpha: 0.95),
-                width: 2.2,
+                color: idleColor.withValues(alpha: 0.48),
+                width: 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: idleColor.withValues(alpha: 0.18),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
+                  color: idleColor.withValues(alpha: 0.1),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5),
                 ),
               ],
             ),
@@ -4128,9 +4246,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: p.soft.withValues(alpha: 0.6),
+                    color: Colors.white.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                    border: Border.all(color: p.border.withValues(alpha: 0.55)),
                   ),
                   child: Text(
                     'Meet link not set for this course yet.',
@@ -4162,19 +4280,19 @@ class _BookingTopCardState extends State<_BookingTopCard>
           decoration: BoxDecoration(
             color: canJoin
                 ? statusColor.withValues(alpha: 0.16)
-                : idleColor.withValues(alpha: 0.08 + (urgency * 0.14)),
+                : idleColor.withValues(alpha: 0.06 + (urgency * 0.08)),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(
               color: canJoin ? statusColor : idleColor,
-              width: canJoin ? 2.8 : (1.8 + (urgency * 1.8)),
+              width: canJoin ? 2.0 : (1.2 + (urgency * 0.9)),
             ),
             boxShadow: [
               BoxShadow(
                 color: (canJoin ? statusColor : idleColor).withValues(
-                  alpha: 0.18 + (urgency * 0.20),
+                  alpha: 0.1 + (urgency * 0.1),
                 ),
-                blurRadius: 14 + (urgency * 10),
-                offset: const Offset(0, 8),
+                blurRadius: 10 + (urgency * 6),
+                offset: const Offset(0, 5),
               ),
             ],
           ),
@@ -4222,12 +4340,12 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 decoration: BoxDecoration(
                   color: canJoin
                       ? statusColor.withValues(alpha: 0.12)
-                      : idleColor.withValues(alpha: 0.06 + (urgency * 0.10)),
+                      : Colors.white.withValues(alpha: 0.66),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: canJoin
-                        ? statusColor.withValues(alpha: 0.45)
-                        : idleColor.withValues(alpha: 0.60),
+                        ? statusColor.withValues(alpha: 0.35)
+                        : idleColor.withValues(alpha: 0.36),
                   ),
                 ),
                 child: Column(
@@ -6600,8 +6718,8 @@ class _LearnerDrawer extends StatelessWidget {
                   _DrawerTile(
                     targetKey: themeTileKey,
                     palette: palette,
-                    icon: LearnerIcons.theme,
-                    title: 'Theme Settings',
+                    icon: Icons.settings_rounded,
+                    title: 'Settings',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenThemeSettings();
@@ -6709,87 +6827,6 @@ class _DrawerTile extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThemeChoiceTile extends StatelessWidget {
-  const _ThemeChoiceTile({
-    required this.palette,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.preview1,
-    required this.preview2,
-    required this.onTap,
-  });
-
-  final _HomePalette palette;
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final Color preview1;
-  final Color preview2;
-  final VoidCallback onTap;
-
-  final Color _fallbackBorder = const Color(0xFFD1D9E0);
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: palette.cardBg,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected
-                  ? preview1
-                  : palette.border.withValues(alpha: 0.9),
-              width: selected ? 1.6 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(backgroundColor: preview1, radius: 12),
-              const SizedBox(width: 8),
-              CircleAvatar(backgroundColor: preview2, radius: 12),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: palette.text,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: palette.text.withValues(alpha: 0.62),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                color: selected ? preview1 : _fallbackBorder,
-              ),
-            ],
           ),
         ),
       ),
