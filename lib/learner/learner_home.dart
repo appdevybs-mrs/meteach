@@ -4987,7 +4987,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                           ),
                           const SizedBox(height: 14),
                           SizedBox(
-                            height: 245,
+                            height: 320,
                             child: PageView.builder(
                               controller: pageController,
                               itemCount: courses.length,
@@ -5039,7 +5039,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                       );
                                     },
                                     child: Container(
-                                      padding: const EdgeInsets.all(14),
+                                      padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(20),
                                         gradient: LinearGradient(
@@ -5069,15 +5069,15 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Row(
+                                          Stack(
                                             children: [
                                               Container(
-                                                width: 52,
-                                                height: 52,
+                                                width: double.infinity,
+                                                height: 112,
                                                 decoration: BoxDecoration(
                                                   color: p.appBg,
                                                   borderRadius:
-                                                      BorderRadius.circular(14),
+                                                      BorderRadius.circular(16),
                                                   border: Border.all(
                                                     color: p.border.withValues(
                                                       alpha: 0.9,
@@ -5092,107 +5092,115 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                                         filterQuality:
                                                             FilterQuality.low,
                                                         cacheWidth:
-                                                            (52 *
+                                                            (320 *
                                                                     MediaQuery.of(
                                                                       context,
                                                                     ).devicePixelRatio)
                                                                 .round()
-                                                                .clamp(96, 320),
+                                                                .clamp(
+                                                                  320,
+                                                                  1200,
+                                                                ),
                                                         cacheHeight:
-                                                            (52 *
+                                                            (112 *
                                                                     MediaQuery.of(
                                                                       context,
                                                                     ).devicePixelRatio)
                                                                 .round()
-                                                                .clamp(96, 320),
+                                                                .clamp(
+                                                                  112,
+                                                                  600,
+                                                                ),
                                                         errorBuilder:
                                                             (
                                                               _,
                                                               error,
                                                               stackTrace,
-                                                            ) => Icon(
-                                                              Icons
-                                                                  .menu_book_rounded,
-                                                              color: p.primary,
+                                                            ) => Center(
+                                                              child: Icon(
+                                                                Icons
+                                                                    .menu_book_rounded,
+                                                                color:
+                                                                    p.primary,
+                                                                size: 34,
+                                                              ),
                                                             ),
                                                       )
-                                                    : Icon(
-                                                        Icons.menu_book_rounded,
-                                                        color: p.primary,
+                                                    : Center(
+                                                        child: Icon(
+                                                          Icons
+                                                              .menu_book_rounded,
+                                                          color: p.primary,
+                                                          size: 34,
+                                                        ),
                                                       ),
                                               ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      c.title,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                        color: p.primary,
-                                                        fontSize: 15,
+                                              Positioned(
+                                                top: 8,
+                                                right: 8,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 6,
                                                       ),
+                                                  decoration: BoxDecoration(
+                                                    color: p.appBg.withValues(
+                                                      alpha: 0.96,
                                                     ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      c.code.isEmpty
-                                                          ? 'Code: —'
-                                                          : 'Code: ${c.code}',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        color: p.text
-                                                            .withValues(
-                                                              alpha: 0.65,
-                                                            ),
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: statColor.withValues(
-                                                    alpha: 0.12,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
-                                                  border: Border.all(
-                                                    color: statColor.withValues(
-                                                      alpha: 0.4,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: statColor
+                                                          .withValues(
+                                                            alpha: 0.34,
+                                                          ),
                                                     ),
                                                   ),
-                                                ),
-                                                child: Text(
-                                                  hasCreditInfo
-                                                      ? (left <= 0
-                                                            ? 'Refill needed'
-                                                            : '$left left')
-                                                      : 'Credits pending',
-                                                  style: TextStyle(
-                                                    color: statColor,
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 11,
+                                                  child: Text(
+                                                    hasCreditInfo
+                                                        ? (left <= 0
+                                                              ? 'Refill needed'
+                                                              : '$left left')
+                                                        : 'Credits pending',
+                                                    style: TextStyle(
+                                                      color: statColor,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 11,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 12),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            c.title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: p.primary,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            c.code.isEmpty
+                                                ? 'Code: -'
+                                                : 'Code: ${c.code}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: p.text.withValues(
+                                                alpha: 0.65,
+                                              ),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
                                           Text(
                                             _formatAssignedDate(c.assignedAt),
                                             style: TextStyle(
@@ -5222,26 +5230,24 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                           const SizedBox(height: 8),
                                           Row(
                                             children: [
-                                              _bookingStatChip(
-                                                p,
-                                                'Used',
-                                                '${c.consumedSessions}',
+                                              Expanded(
+                                                child: Text(
+                                                  hasCreditInfo
+                                                      ? 'Used ${c.consumedSessions} / Total ${c.totalSessions} • Left $left'
+                                                      : 'Credits are being prepared for this course',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: p.text.withValues(
+                                                      alpha: 0.72,
+                                                    ),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
                                               ),
-                                              const SizedBox(width: 6),
-                                              _bookingStatChip(
-                                                p,
-                                                'Total',
-                                                hasCreditInfo
-                                                    ? '${c.totalSessions}'
-                                                    : '—',
-                                              ),
-                                              const SizedBox(width: 6),
-                                              _bookingStatChip(
-                                                p,
-                                                'Left',
-                                                hasCreditInfo ? '$left' : '—',
-                                              ),
-                                              const Spacer(),
+                                              const SizedBox(width: 8),
                                               Text(
                                                 left <= 0 && hasCreditInfo
                                                     ? 'Tap for refill info'
@@ -5299,25 +5305,6 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   } finally {
     pageController.dispose();
   }
-}
-
-Widget _bookingStatChip(_HomePalette p, String label, String value) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: p.appBg,
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: p.border.withValues(alpha: 0.8)),
-    ),
-    child: Text(
-      '$label: $value',
-      style: TextStyle(
-        color: p.text.withValues(alpha: 0.72),
-        fontWeight: FontWeight.w800,
-        fontSize: 11,
-      ),
-    ),
-  );
 }
 
 Future<void> _openHomeworkCoursePicker(

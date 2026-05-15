@@ -44,8 +44,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   static const bookedBorder = Color(0xFFB9E2C5);
   static const otherSessionBg = Color(0xFFF1F3F5);
   static const otherSessionBorder = Color(0xFFCED4DA);
-  static const switchSessionBg = Color(0xFFFFF4E8);
-  static const switchSessionBorder = Color(0xFFF7B779);
+  static const switchSessionBg = Color(0xFFEAF6FF);
+  static const switchSessionBorder = Color(0xFF9FD4F5);
   static const emptyBg = Color(0xFFFFF1E3);
   static const emptyBorder = Color(0xFFF9C59D);
   static const lockedBg = Color(0xFFF4F4F5);
@@ -1110,14 +1110,180 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   String _timeChipLabel(String t, _SlotStatus status, {_Slot? slot}) {
-    if (status != _SlotStatus.unavailable || slot == null) return t;
+    if (slot == null) return t;
     final occ = globalSlotOccupancy[slot.key];
-    if (occ == null || occ.courseId == (courseId ?? '').trim()) return t;
-    final level = _levelLabelForCourseId(occ.courseId);
-    final session = occ.sessionNo != null && occ.sessionNo! > 0
-        ? ' S${occ.sessionNo}'
-        : '';
-    return '$t • Booked $level$session';
+    if (occ == null) return t;
+    final sameCourse = occ.courseId == (courseId ?? '').trim();
+    if (status == _SlotStatus.unavailable && !sameCourse) {
+      final level = _levelLabelForCourseId(occ.courseId);
+      final session = occ.sessionNo != null && occ.sessionNo! > 0
+          ? ' S${occ.sessionNo}'
+          : '';
+      return '$t • Booked $level$session';
+    }
+    if (status == _SlotStatus.joinWithSessionChange && sameCourse) {
+      final level = _levelLabelForCourseId(occ.courseId);
+      final session = occ.sessionNo != null && occ.sessionNo! > 0
+          ? ' S${occ.sessionNo}'
+          : '';
+      return '$t • Booked $level$session';
+    }
+    return t;
+  }
+
+  Future<bool?> _confirmJoinWithSessionChange({
+    required int selectedSession,
+    required int groupSession,
+    required String levelLabel,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 21,
+                      backgroundColor: Color(0xFFE7F3FF),
+                      child: Icon(Icons.swap_horiz_rounded, color: primaryBlue),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Join with session change',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'This slot is already booked by $levelLabel.\nهذا الموعد محجوز بالفعل بواسطة مستوى $levelLabel.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.96, end: 1),
+                  duration: const Duration(milliseconds: 780),
+                  curve: Curves.easeOutBack,
+                  builder: (_, scale, child) =>
+                      Transform.scale(scale: scale, child: child),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF6FF),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFF9FD4F5),
+                        width: 1.3,
+                      ),
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _sessionPulseChip('Selected: S$selectedSession'),
+                        _sessionPulseChip('المحدد: S$selectedSession'),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: primaryBlue,
+                        ),
+                        _sessionPulseChip(
+                          'Group: S$groupSession',
+                          emphasize: true,
+                        ),
+                        _sessionPulseChip(
+                          'المجموعة: S$groupSession',
+                          emphasize: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Join this group and switch your booking session to Session $groupSession?\nهل تريد الانضمام إلى هذه المجموعة وتغيير جلستك المحجوزة إلى الجلسة $groupSession؟',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800,
+                    fontSize: 15,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('No / لا'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: primaryBlue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text(
+                          'Join & Switch Session / انضم وغيّر الجلسة',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sessionPulseChip(String text, {bool emphasize = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: emphasize ? const Color(0xFFD9EEFF) : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: emphasize ? const Color(0xFF6CB6EA) : const Color(0xFFC7D2E0),
+          width: emphasize ? 1.6 : 1,
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: emphasize ? FontWeight.w900 : FontWeight.w800,
+          color: const Color(0xFF0F3659),
+          fontSize: emphasize ? 14 : 13,
+        ),
+      ),
+    );
   }
 
   bool _isJoinable(_Slot s) {
@@ -2289,12 +2455,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           liveOccupancy.sessionNo != targetSession &&
           !liveOccupancy.bookedByMe) {
         final groupSession = liveOccupancy.sessionNo!;
+        final levelLabel = _levelLabelForCourseId(liveOccupancy.courseId);
         _setProgressLabel('Preparing confirmation...');
-        final ok = await _confirmWithLogo(
-          title: 'Join with session change',
-          message:
-              'This slot already has a Session $groupSession group. You selected Session $targetSession.\n\nDo you want to join this group and switch your selected session to Session $groupSession?',
-          confirmLabel: 'Join & Switch Session',
+        final ok = await _confirmJoinWithSessionChange(
+          selectedSession: targetSession,
+          groupSession: groupSession,
+          levelLabel: levelLabel,
         );
         if (!mounted) return;
         if (ok != true) return;
