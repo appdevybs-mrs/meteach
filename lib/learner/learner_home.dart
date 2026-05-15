@@ -4855,12 +4855,6 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
           'image',
           'imageUrl',
         ]);
-        final syllabusThumb = _pickText(syllabus, [
-          'thumbnailUrl',
-          'thumbnail',
-          'image',
-          'imageUrl',
-        ]);
         final finalTitle = _pickText(syllabus, ['title']).isEmpty
             ? title
             : _pickText(syllabus, ['title']);
@@ -4873,7 +4867,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
             assignedAt: assignedAt,
             totalSessions: total,
             consumedSessions: consumed,
-            thumbnailUrl: thumb.isNotEmpty ? thumb : syllabusThumb,
+            thumbnailUrl: thumb,
           ),
         );
       }

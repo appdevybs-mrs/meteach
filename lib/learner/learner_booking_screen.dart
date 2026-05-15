@@ -1028,7 +1028,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   bool _isBookingLockedForNewBooking(_Slot slot) {
     if (_isBookedByMe(slot)) return false;
-    return _isWithin24Hours(slot);
+    if (!_isWithin24Hours(slot)) return false;
+    return !_isJoinAllowedWithin24h(slot);
+  }
+
+  bool _isJoinAllowedWithin24h(_Slot s) {
+    final occ = globalSlotOccupancy[s.key];
+    if (occ == null || occ.learnerCount <= 0) return false;
+    if (_isSlotFull(s)) return false;
+    return occ.courseId == (courseId ?? '').trim();
   }
 
   int _effectiveBookedCount(_Slot s) {
@@ -1055,7 +1063,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   _SlotStatus _slotStatus(_Slot s, {int? sessionNo}) {
-    if (_isBookingLockedForNewBooking(s)) return _SlotStatus.closed;
     if (_isBookedByMe(s)) return _SlotStatus.booked;
 
     final currentCourse = (courseId ?? '').trim();
@@ -1067,6 +1074,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     if (occ == null || occ.learnerCount <= 0) return _SlotStatus.availableBook;
     if (_isSlotFull(s)) return _SlotStatus.unavailable;
     if (occ.courseId != currentCourse) return _SlotStatus.unavailable;
+    if (_isWithin24Hours(s) && !_isJoinAllowedWithin24h(s)) {
+      return _SlotStatus.closed;
+    }
     if (occ.sessionNo == null || occ.sessionNo! <= 0) {
       return _SlotStatus.joinSameSession;
     }
@@ -1129,6 +1139,55 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       return '$t • Booked $level$session';
     }
     return t;
+  }
+
+  int _hhmmToMinutes(String hhmm) {
+    final p = hhmm.split(':');
+    if (p.length != 2) return 0;
+    final h = int.tryParse(p[0]) ?? 0;
+    final m = int.tryParse(p[1]) ?? 0;
+    return (h * 60) + m;
+  }
+
+  List<_Slot> _suggestedSlotsForTeacherDay() {
+    if (selectedDay == null || selectedTeacherFirstId == null) return const [];
+    final targetSession = _flowLessonNo;
+    final dk = _dateKey(selectedDay!);
+    final selectedTimeMins = selectedTime == null
+        ? null
+        : _hhmmToMinutes(selectedTime!);
+
+    final candidates = _slotsForCurrentLesson().where((s) {
+      if (s.dayKey != dk) return false;
+      if (s.teacherId == selectedTeacherFirstId) return false;
+      if (_isBookedByMe(s)) return false;
+      if (_isSlotFull(s)) return false;
+      final status = _slotStatus(s, sessionNo: targetSession);
+      return status == _SlotStatus.joinSameSession ||
+          status == _SlotStatus.joinWithSessionChange;
+    }).toList();
+
+    candidates.sort((a, b) {
+      final sa = (_effectiveGroupSessionNo(a) ?? targetSession);
+      final sb = (_effectiveGroupSessionNo(b) ?? targetSession);
+      final bySession = (sa - targetSession).abs().compareTo(
+        (sb - targetSession).abs(),
+      );
+      if (bySession != 0) return bySession;
+
+      if (selectedTimeMins != null) {
+        final da = (_hhmmToMinutes(a.time) - selectedTimeMins).abs();
+        final db = (_hhmmToMinutes(b.time) - selectedTimeMins).abs();
+        final byTimeDistance = da.compareTo(db);
+        if (byTimeDistance != 0) return byTimeDistance;
+      }
+
+      final byTime = _hhmmToMinutes(a.time).compareTo(_hhmmToMinutes(b.time));
+      if (byTime != 0) return byTime;
+      return a.teacherName.compareTo(b.teacherName);
+    });
+
+    return candidates.take(6).toList();
   }
 
   Future<bool?> _confirmJoinWithSessionChange({
@@ -2345,10 +2404,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
     _setProgressLabel('Checking slot...');
 
-    if (_isBookingLockedForNewBooking(slot)) {
-      _toast('Booking closes 24 hours before class.');
-      stopChecking();
-      return;
+    _GlobalSlotOccupancy? liveOccupancyFor24h;
+    if (_isWithin24Hours(slot)) {
+      liveOccupancyFor24h = await _loadLiveGlobalOccupancyForSlot(slot);
+      final sameLevelJoinWithin24h =
+          liveOccupancyFor24h != null &&
+          liveOccupancyFor24h.courseId == cid &&
+          liveOccupancyFor24h.learnerCount > 0 &&
+          liveOccupancyFor24h.learnerCount <
+              (slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot);
+      if (!sameLevelJoinWithin24h) {
+        _toast('Booking closes 24 hours before class.');
+        stopChecking();
+        return;
+      }
     }
 
     final latestBusyByTeacherDay = await _loadTeacherBusyRangesForWindow();
@@ -2439,7 +2508,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     _markBusyVisualStart();
 
     try {
-      final liveOccupancy = await _loadLiveGlobalOccupancyForSlot(slot);
+      final liveOccupancy =
+          liveOccupancyFor24h ?? await _loadLiveGlobalOccupancyForSlot(slot);
       if (liveOccupancy != null &&
           liveOccupancy.courseId != cid &&
           !liveOccupancy.bookedByMe) {
@@ -3909,15 +3979,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _helpStateClosed(String lang) {
     switch (lang) {
       case 'ar':
-        return 'مغلق: يبدأ الدرس خلال أقل من 24 ساعة، لذلك لا يمكن الحجز.';
+        return 'مغلق: الحجز الجديد يتوقف قبل 24 ساعة، لكن الانضمام لمجموعة نفس المستوى قد يكون متاحاً.';
       case 'fr':
-        return 'Fermé : le cours commence dans moins de 24h, réservation indisponible.';
+        return 'Fermé : une nouvelle réservation se ferme avant 24h, mais rejoindre un groupe du même niveau peut rester possible.';
       case 'tr':
-        return 'Kapalı: ders 24 saatten kısa sürede başlıyor, rezervasyon kapalı.';
+        return 'Kapalı: yeni rezervasyonlar 24 saat kala kapanır, ancak aynı seviyedeki mevcut gruba katılım mümkün olabilir.';
       case 'ur':
-        return 'بند: کلاس 24 گھنٹوں سے کم میں شروع ہوگی، اس لیے بکنگ بند ہے۔';
+        return 'بند: نئی بکنگ 24 گھنٹے پہلے بند ہو جاتی ہے، لیکن اسی لیول کے موجودہ گروپ میں شامل ہونا ممکن ہو سکتا ہے۔';
       default:
-        return 'Closed: class starts in less than 24 hours, booking is closed.';
+        return 'Closed: new bookings close 24h before class; joining an existing same-level group may still be allowed.';
     }
   }
 
@@ -5065,6 +5135,104 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 ),
             ],
           ),
+          ...() {
+            final suggestions = _suggestedSlotsForTeacherDay();
+            if (suggestions.isEmpty) return <Widget>[];
+            return [
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.tips_and_updates_rounded,
+                    color: Colors.lightBlue.shade700,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Suggested (same level)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Colors.lightBlue.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...suggestions.map((s) {
+                final status = _slotStatus(s, sessionNo: _flowLessonNo);
+                final session = _effectiveGroupSessionNo(s) ?? _flowLessonNo;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    setState(() {
+                      selectedTeacherId = s.teacherId;
+                      selectedTeacherFirstId = s.teacherId;
+                      selectedDay = DateTime(
+                        s.start.year,
+                        s.start.month,
+                        s.start.day,
+                      );
+                      selectedTime = s.time;
+                      confirmSessionNo =
+                          status == _SlotStatus.joinWithSessionChange
+                          ? session
+                          : _flowLessonNo;
+                      flowStep = _BookingFlowStep.confirm;
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.lightBlue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.lightBlue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${s.time} • ${s.teacherName} • Session $session',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: primaryBlue,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: status == _SlotStatus.joinWithSessionChange
+                                ? switchSessionBg
+                                : peerBg,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: status == _SlotStatus.joinWithSessionChange
+                                  ? switchSessionBorder
+                                  : peerBorder,
+                            ),
+                          ),
+                          child: Text(
+                            status == _SlotStatus.joinWithSessionChange
+                                ? 'Join + switch'
+                                : 'Join',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: primaryBlue,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ];
+          }(),
         ],
         if (selectedTime != null) ...[
           const SizedBox(height: 12),
