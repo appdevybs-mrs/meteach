@@ -1110,7 +1110,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _levelLabelForCourseId(String cid) {
     final title = (courseTitleById[cid] ?? cid).trim();
     final m = RegExp(
-      r'\b(A1|A2|B1|B2|C1|C2)\b',
+      r'\b(A0|A1|A2|B1|B2|C1|C2)\b',
       caseSensitive: false,
     ).firstMatch(title);
     if (m != null) return m.group(1)!.toUpperCase();
@@ -1124,6 +1124,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final occ = globalSlotOccupancy[slot.key];
     if (occ == null) return t;
     final sameCourse = occ.courseId == (courseId ?? '').trim();
+    final targetSession = _flowLessonNo;
+    final isDifferentSessionSameLevel =
+        sameCourse && occ.sessionNo != null && occ.sessionNo != targetSession;
     if (status == _SlotStatus.unavailable && !sameCourse) {
       final level = _levelLabelForCourseId(occ.courseId);
       final session = occ.sessionNo != null && occ.sessionNo! > 0
@@ -1131,7 +1134,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           : '';
       return '$t • Booked $level$session';
     }
-    if (status == _SlotStatus.joinWithSessionChange && sameCourse) {
+    if (status == _SlotStatus.joinWithSessionChange ||
+        isDifferentSessionSameLevel) {
       final level = _levelLabelForCourseId(occ.courseId);
       final session = occ.sessionNo != null && occ.sessionNo! > 0
           ? ' S${occ.sessionNo}'
