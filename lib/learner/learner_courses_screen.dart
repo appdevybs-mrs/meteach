@@ -1016,7 +1016,10 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     required String variantKey,
     required int sessionsDone,
     required Map<String, dynamic> summary,
+    required Map<String, dynamic> course,
   }) {
+    if (courseIsFreeBilling(course, summary)) return '';
+
     final sessionsPaidTotalRaw = _asInt(summary['sessionsPaidTotal']);
     final totalPaid = _asInt(summary['totalPaid']);
     final lastAmount = _asInt(summary['lastAmount']);
@@ -1099,6 +1102,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
           variantKey: variantKey,
           sessionsDone: sessionsDone,
           summary: summary,
+          course: course,
         ) ==
         'PAYMENT NEEDED';
   }
@@ -1409,6 +1413,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                             variantKey: variantKey,
                             sessionsDone: sessionsDone,
                             summary: sum,
+                            course: course,
                           );
 
                           Widget buildPill(String label, Color tone) {

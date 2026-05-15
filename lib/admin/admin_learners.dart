@@ -1465,6 +1465,8 @@ class _LearnersListState extends State<_LearnersList>
   }
 
   _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
+    if (courseIsFreeBilling(courseMap)) return _PayFlag.black;
+
     final variantKey = _normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
     );
@@ -3745,6 +3747,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       updates['$key/title'] = title;
       updates['$key/category'] = category;
       updates['$key/assignedAt'] = ServerValue.timestamp;
+      if (existingIdOnKey.isEmpty || existingIdOnKey != courseId) {
+        updates['$key/billingMode'] = 'paid';
+      }
 
       final chosenVariant = _normalizeVariantKey(
         (variantByCourseId[courseId] ?? 'inclass').trim(),
@@ -4584,6 +4589,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                     final paymentSessionsPaidTotal = _asInt(
                       payMeta['sessionsPaidTotal'],
                     );
+                    final billingMode = normalizeBillingMode(
+                      courseNode['billingMode'] ?? courseMap['billingMode'],
+                    );
+                    final isFreeCourse = billingMode == 'free';
 
                     final usesSessions = _variantUsesSessions(variantKey);
                     final usesReminder = _variantUsesReminder(variantKey);
@@ -4684,7 +4693,66 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                               _miniPill(compactVariant),
                               _miniPill(compactSessions),
                               _miniPill('Total: $totalPaid'),
+                              _miniPill(
+                                isFreeCourse
+                                    ? 'Billing: Free'
+                                    : 'Billing: Paid',
+                              ),
                             ],
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isFreeCourse
+                                  ? const Color(0xFFE9F8EF)
+                                  : const Color(0xFFF7F7FB),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isFreeCourse
+                                    ? const Color(0xFFB7E5C5)
+                                    : AdminLearnersScreen.uiBorders,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Billing mode',
+                                    style: TextStyle(
+                                      color: AdminLearnersScreen.primaryBlue,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  isFreeCourse ? 'Free' : 'Paid',
+                                  style: TextStyle(
+                                    color: isFreeCourse
+                                        ? const Color(0xFF157A3D)
+                                        : AdminLearnersScreen.primaryBlue,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Switch.adaptive(
+                                  value: isFreeCourse,
+                                  onChanged: (v) async {
+                                    await widget.db
+                                        .ref(
+                                          'users/${widget.uid}/courses/$courseKey',
+                                        )
+                                        .update({
+                                          'billingMode': v ? 'free' : 'paid',
+                                        });
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 6),
                           Container(
@@ -4754,7 +4822,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                if (due) ...[
+                                if (!isFreeCourse && due) ...[
                                   const SizedBox(height: 6),
                                   const Text(
                                     '⚠️ Payment is due now (all paid sessions consumed).',
@@ -4763,7 +4831,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                     ),
                                   ),
                                 ],
-                                if (expired) ...[
+                                if (!isFreeCourse && expired) ...[
                                   const SizedBox(height: 6),
                                   const Text(
                                     '⛔ Access expired.',
@@ -4771,7 +4839,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                ] else if (nearExpiry) ...[
+                                ] else if (!isFreeCourse && nearExpiry) ...[
                                   const SizedBox(height: 6),
                                   const Text(
                                     '⚠️ Access is near expiry.',

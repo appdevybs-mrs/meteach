@@ -182,6 +182,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   bool _isCoursePaymentNeeded(Map<String, dynamic> course) {
     final variantKey = _variantKeyOfCourse(course);
     if (variantKey == 'recorded') return false;
+    if (courseIsFreeBilling(course)) return false;
 
     final summaryRaw = course['payment_summary'];
     final summary = summaryRaw is Map
@@ -2082,8 +2083,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             children: [
               const SizedBox(height: 8),
 
-              _SectionTitle(palette: p, title: 'Homework • Reminders • Mail'),
-              const SizedBox(height: 10),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final tiny = constraints.maxWidth < 350;
@@ -2121,8 +2120,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
                   return Column(
                     children: [
-                      _SectionTitle(palette: p, title: 'Booking (حجز)'),
-                      const SizedBox(height: 10),
                       KeyedSubtree(
                         key: widget.bookingCardKey,
                         child: _BookingTopCard(key: widget.bookingTopCardKey),
@@ -2304,31 +2301,6 @@ class _CourseProgressItem {
     required this.meetUrl,
     required this.teacherUid,
   });
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.palette, required this.title});
-
-  final _HomePalette palette;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              color: palette.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 17,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _LoadingCard extends StatelessWidget {
@@ -3940,31 +3912,16 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Booking (حجز)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Book your next class',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'Book your next class',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      height: 1.2,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),

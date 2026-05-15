@@ -2689,15 +2689,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         ? mergedSessionsPaidTotal
         : fallbackSessionsPaid;
     final bool hasSessionBalance = effectiveSessionsPaidTotal > 0;
+    final bool isFreeCourse = courseIsFreeBilling(_course);
 
     final left = effectiveSessionsPaidTotal - sessionsPassed;
     final bool overdue =
+        !isFreeCourse &&
         hasSessionBalance &&
         isPaymentDueBySessions(
           sessionsPaidTotal: effectiveSessionsPaidTotal,
           sessionsPresent: sessionsPassed,
         );
     final bool dueSoon =
+        !isFreeCourse &&
         hasSessionBalance &&
         isPaymentWarningBySessions(
           sessionsPaidTotal: effectiveSessionsPaidTotal,
@@ -2706,9 +2709,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         );
 
     final expiresAt = _studyTypeExpiresAtMs();
-    final expiryDue = _deliveryKey == 'flexible' && _isExpiredMs(expiresAt);
+    final expiryDue =
+        !isFreeCourse && _deliveryKey == 'flexible' && _isExpiredMs(expiresAt);
     final expirySoon =
-        _deliveryKey == 'flexible' && !expiryDue && _isNearExpiryMs(expiresAt);
+        !isFreeCourse &&
+        _deliveryKey == 'flexible' &&
+        !expiryDue &&
+        _isNearExpiryMs(expiresAt);
 
     final int leftSafe = left < 0 ? 0 : left;
 

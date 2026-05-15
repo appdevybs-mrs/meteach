@@ -2746,6 +2746,8 @@ class _PaymentAttentionLogic {
   }
 
   static _PayFlag variantPaymentFlag(Map<String, dynamic> courseMap) {
+    if (courseIsFreeBilling(courseMap)) return _PayFlag.black;
+
     final variantKey = normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
     );
@@ -3266,6 +3268,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
   static _PayFlag _learnerStyleVariantPaymentFlag(
     Map<String, dynamic> courseMap,
   ) {
+    if (courseIsFreeBilling(courseMap)) return _PayFlag.black;
+
     final variantKey = _normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
     );

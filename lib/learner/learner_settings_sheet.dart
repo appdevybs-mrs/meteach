@@ -246,6 +246,7 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
     final enabled = _settings.masterEnabled;
 
     return ListView(
+      padding: const EdgeInsets.only(bottom: 8),
       children: [
         if (_loading)
           const Padding(
@@ -253,14 +254,11 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
             child: Center(child: CircularProgressIndicator()),
           )
         else ...[
-          _noticeCard(
+          _statusCard(
             p,
             title: _notifPermissionGranted
                 ? 'Notifications allowed'
                 : 'Notifications blocked',
-            body: _notifPermissionGranted
-                ? 'Learner notifications can be delivered.'
-                : 'Allow notifications to receive mail, homework, reminders, and class alerts.',
             icon: _notifPermissionGranted
                 ? Icons.notifications_active_rounded
                 : Icons.notifications_off_rounded,
@@ -270,14 +268,11 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
             onAction: _notifPermissionGranted ? null : _requestNotifications,
           ),
           const SizedBox(height: 12),
-          _noticeCard(
+          _statusCard(
             p,
             title: _exactAlarmGranted
                 ? 'Exact alarms allowed'
                 : 'Exact alarms needed',
-            body: _exactAlarmGranted
-                ? 'Class reminders can fire on time.'
-                : 'Allow exact alarms for the most reliable upcoming-class notifications.',
             icon: _exactAlarmGranted
                 ? Icons.schedule_rounded
                 : Icons.alarm_off_rounded,
@@ -285,7 +280,9 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
             onAction: _exactAlarmGranted ? null : _requestExactAlarms,
           ),
           const SizedBox(height: 12),
-          SwitchListTile(
+          _toggleCard(
+            p,
+            title: 'Enable notifications',
             value: _settings.masterEnabled,
             onChanged: (v) async {
               setState(() {
@@ -293,17 +290,11 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
               });
               await _saveSettings(cancelIfDisabled: true);
             },
-            title: Text(
-              'Enable notifications',
-              style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-            ),
-            subtitle: Text(
-              'Default is on. Turn it off to pause all learner notifications.',
-              style: TextStyle(color: p.text.withValues(alpha: 0.7)),
-            ),
           ),
-          const SizedBox(height: 8),
-          SwitchListTile(
+          const SizedBox(height: 10),
+          _toggleCard(
+            p,
+            title: 'Mail, homework, reminders',
             value: _settings.appEnabled,
             onChanged: enabled
                 ? (v) async {
@@ -313,17 +304,11 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
                     await _saveSettings();
                   }
                 : null,
-            title: Text(
-              'Mail, homework, reminders',
-              style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-            ),
-            subtitle: Text(
-              'Controls app messages and reminder alerts.',
-              style: TextStyle(color: p.text.withValues(alpha: 0.7)),
-            ),
           ),
-          const SizedBox(height: 8),
-          SwitchListTile(
+          const SizedBox(height: 10),
+          _toggleCard(
+            p,
+            title: 'Upcoming class alerts',
             value: _settings.classEnabled,
             onChanged: enabled
                 ? (v) async {
@@ -333,59 +318,49 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
                     await _saveSettings();
                   }
                 : null,
-            title: Text(
-              'Upcoming class alerts',
-              style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-            ),
-            subtitle: Text(
-              'Learns from class schedule and booking records.',
-              style: TextStyle(color: p.text.withValues(alpha: 0.7)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          IgnorePointer(
-            ignoring: !enabled,
-            child: Opacity(
-              opacity: enabled ? 1 : 0.55,
-              child: DropdownButtonFormField<int>(
-                initialValue: _settings.classLeadMinutes,
-                decoration: InputDecoration(
-                  labelText: 'Class reminder before',
-                  labelStyle: TextStyle(color: p.primary),
-                  border: const OutlineInputBorder(),
-                ),
-                items: LearnerNotificationSettingsService.leadOptions
-                    .map(
-                      (m) => DropdownMenuItem<int>(
-                        value: m,
-                        child: Text('$m min before'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) async {
-                  if (v == null) return;
-                  setState(() {
-                    _settings = _settings.copyWith(classLeadMinutes: v);
-                  });
-                  await _saveSettings();
-                },
-              ),
-            ),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: p.soft.withValues(alpha: 0.5),
+              color: p.cardBg,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: p.border.withValues(alpha: 0.85)),
             ),
-            child: Text(
-              'Class alerts are synced from the server, then scheduled locally for the selected lead time. This is the most reliable way to fire on time.',
-              style: TextStyle(
-                color: p.text.withValues(alpha: 0.78),
-                fontWeight: FontWeight.w600,
+            child: DropdownButtonFormField<int>(
+              initialValue: _settings.classLeadMinutes,
+              decoration: InputDecoration(
+                labelText: 'Class reminder before',
+                labelStyle: TextStyle(color: p.primary),
+                filled: true,
+                fillColor: p.soft.withValues(alpha: 0.35),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: p.border.withValues(alpha: 0.7),
+                  ),
+                ),
               ),
+              items: LearnerNotificationSettingsService.leadOptions
+                  .map(
+                    (m) => DropdownMenuItem<int>(
+                      value: m,
+                      child: Text('$m min before'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: enabled
+                  ? (v) async {
+                      if (v == null) return;
+                      setState(() {
+                        _settings = _settings.copyWith(classLeadMinutes: v);
+                      });
+                      await _saveSettings();
+                    }
+                  : null,
             ),
           ),
         ],
@@ -393,10 +368,9 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
     );
   }
 
-  Widget _noticeCard(
+  Widget _statusCard(
     AppPalette p, {
     required String title,
-    required String body,
     required IconData icon,
     String? actionLabel,
     VoidCallback? onAction,
@@ -432,22 +406,43 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  body,
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
                 if (actionLabel != null && onAction != null) ...[
                   const SizedBox(height: 10),
-                  TextButton(onPressed: onAction, child: Text(actionLabel)),
+                  FilledButton.tonal(
+                    onPressed: onAction,
+                    child: Text(actionLabel),
+                  ),
                 ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleCard(
+    AppPalette p, {
+    required String title,
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+            ),
+          ),
+          Switch.adaptive(value: value, onChanged: onChanged),
         ],
       ),
     );

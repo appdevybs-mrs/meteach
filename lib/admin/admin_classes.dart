@@ -2032,6 +2032,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         studyMode: studyMode,
       );
       if (courseMap == null) continue;
+      if (courseIsFreeBilling(courseMap)) continue;
 
       final summaryMap = (courseMap['payment_summary'] is Map)
           ? Map<String, dynamic>.from(courseMap['payment_summary'])
@@ -5343,6 +5344,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final summaryMap = (cm['payment_summary'] is Map)
             ? Map<String, dynamic>.from(cm['payment_summary'])
             : <String, dynamic>{};
+        if (courseIsFreeBilling(cm, summaryMap)) continue;
         final sessionsPaidTotal = _asInt(summaryMap['sessionsPaidTotal']);
         final remindBeforeSession = _asInt(summaryMap['remindBeforeSession']);
 
@@ -5542,6 +5544,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final summaryMap = (courseNode['payment_summary'] is Map)
             ? Map<String, dynamic>.from(courseNode['payment_summary'])
             : <String, dynamic>{};
+        if (courseIsFreeBilling(courseNode, summaryMap)) continue;
         final accessMap = (courseNode['recorded_access'] is Map)
             ? Map<String, dynamic>.from(courseNode['recorded_access'])
             : <String, dynamic>{};

@@ -7,6 +7,25 @@ int paymentAsInt(dynamic v) {
   return int.tryParse(v.toString().trim()) ?? 0;
 }
 
+String normalizeBillingMode(dynamic raw) {
+  final mode = (raw ?? '').toString().trim().toLowerCase();
+  if (mode == 'free') return 'free';
+  return 'paid';
+}
+
+bool courseIsFreeBilling(
+  Map<String, dynamic> course, [
+  Map<String, dynamic>? summary,
+]) {
+  final mode = normalizeBillingMode(
+    course['billingMode'] ??
+        course['billing_mode'] ??
+        summary?['billingMode'] ??
+        summary?['billing_mode'],
+  );
+  return mode == 'free';
+}
+
 bool paymentRecordIsPresent(Map<String, dynamic> record) {
   final status = (record['status'] ?? '').toString().trim().toLowerCase();
   if (status == 'present') return true;
