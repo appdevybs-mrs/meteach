@@ -1,0 +1,664 @@
+import 'package:flutter/material.dart';
+
+import '../shared/app_feedback.dart';
+import '../shared/human_error.dart';
+import '../shared/learner_web_layout.dart';
+import '../shared/profile_avatar.dart';
+import '../services/course_feedback_service.dart';
+
+class RecordedLessonCommentsScreen extends StatefulWidget {
+  const RecordedLessonCommentsScreen({
+    super.key,
+    required this.uid,
+    required this.primaryCourseId,
+    required this.fallbackCourseKey,
+    required this.lessonId,
+    required this.lessonTitle,
+  });
+
+  final String uid;
+  final String primaryCourseId;
+  final String fallbackCourseKey;
+  final String lessonId;
+  final String lessonTitle;
+
+  @override
+  State<RecordedLessonCommentsScreen> createState() =>
+      _RecordedLessonCommentsScreenState();
+}
+
+class _RecordedLessonCommentsScreenState
+    extends State<RecordedLessonCommentsScreen> {
+  final TextEditingController _commentC = TextEditingController();
+  final FocusNode _commentFocus = FocusNode();
+
+  bool _busy = true;
+  bool _posting = false;
+  String? _error;
+
+  List<LessonCommentItem> _comments = const [];
+  final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
+  final Set<String> _expandedReplies = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComments();
+  }
+
+  @override
+  void dispose() {
+    _commentC.dispose();
+    _commentFocus.dispose();
+    super.dispose();
+  }
+
+  String _fmtDateTime(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  List<String> get _feedbackCourseIds {
+    final ordered = <String>[];
+    final seen = <String>{};
+    final primary = widget.primaryCourseId.trim();
+    if (primary.isNotEmpty && seen.add(primary)) ordered.add(primary);
+    final secondary = widget.fallbackCourseKey.trim();
+    if (secondary.isNotEmpty && seen.add(secondary)) ordered.add(secondary);
+    return ordered;
+  }
+
+  Future<void> _loadComments() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      final mergedById = <String, LessonCommentItem>{};
+      for (final courseId in _feedbackCourseIds) {
+        final comments = await CourseFeedbackService.listLessonComments(
+          courseId,
+          widget.lessonId,
+          visibleOnly: true,
+        );
+        for (final comment in comments) {
+          mergedById.putIfAbsent(comment.id, () => comment);
+        }
+      }
+
+      final comments = mergedById.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      final repliesMap = <String, List<Map<String, dynamic>>>{};
+      for (final c in comments.take(80)) {
+        final sourceCourseId = c.courseId.trim().isEmpty
+            ? widget.primaryCourseId
+            : c.courseId.trim();
+        final replies = await CourseFeedbackService.listLessonReplies(
+          sourceCourseId,
+          widget.lessonId,
+          c.id,
+        );
+        repliesMap[c.id] = replies;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _comments = comments;
+        _repliesByComment
+          ..clear()
+          ..addAll(repliesMap);
+        _busy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = toHumanError(e);
+        _busy = false;
+      });
+    }
+  }
+
+  Future<void> _postComment() async {
+    final text = _commentC.text.trim();
+    if (text.isEmpty) {
+      AppToast.show(
+        context,
+        'Write a comment first.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (text.length > 400) {
+      AppToast.show(
+        context,
+        'Comment is too long (max 400 chars).',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    setState(() => _posting = true);
+    try {
+      await CourseFeedbackService.addLessonComment(
+        courseId: widget.primaryCourseId,
+        lessonId: widget.lessonId,
+        uid: widget.uid,
+        text: text,
+        type: 'comment',
+      );
+      _commentC.clear();
+      await _loadComments();
+      if (!mounted) return;
+      AppToast.show(context, 'Comment posted.');
+      FocusScope.of(context).requestFocus(_commentFocus);
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _posting = false);
+      }
+    }
+  }
+
+  Future<void> _replyToComment(String commentId, String courseId) async {
+    final controller = TextEditingController();
+    final submit = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottom),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Reply to comment',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    maxLength: 400,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Write your reply...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          icon: const Icon(Icons.send_rounded),
+                          label: const Text('Reply'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (submit != true) return;
+    final text = controller.text.trim();
+    if (text.isEmpty) return;
+
+    await CourseFeedbackService.addLessonReply(
+      courseId: courseId,
+      lessonId: widget.lessonId,
+      commentId: commentId,
+      uid: widget.uid,
+      text: text,
+    );
+    await _loadComments();
+  }
+
+  Future<void> _reportComment(String commentId, String courseId) async {
+    await CourseFeedbackService.reportLessonComment(
+      courseId: courseId,
+      lessonId: widget.lessonId,
+      commentId: commentId,
+      uid: widget.uid,
+      reason: 'Reported by learner',
+    );
+    if (!mounted) return;
+    AppToast.show(context, 'Comment reported.');
+  }
+
+  Widget _buildHeaderCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B2545), Color(0xFF1D4ED8)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Discussion',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.lessonTitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _busy ? 'Loading comments...' : '${_comments.length} comments',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComposer() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: _commentC,
+            focusNode: _commentFocus,
+            maxLength: 400,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              counterText: '',
+              hintText: 'Write a comment...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _posting ? null : _postComment,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  icon: const Icon(Icons.send_rounded),
+                  label: Text(_posting ? 'Posting...' : 'Post comment'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                onPressed: _loadComments,
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(54, 46),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyChip(String label, VoidCallback onPressed, Color color) {
+    return FilledButton.tonalIcon(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: color.withValues(alpha: 0.12),
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        minimumSize: const Size(0, 36),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      icon: const Icon(Icons.reply_rounded, size: 16),
+      label: Text(label),
+    );
+  }
+
+  Widget _buildCommentCard(LessonCommentItem item) {
+    final courseId = item.courseId.trim().isEmpty
+        ? widget.primaryCourseId
+        : item.courseId;
+    final replies = _repliesByComment[item.id] ?? const [];
+    final expanded = _expandedReplies.contains(item.id);
+    final visibleReplies = expanded ? replies : replies.take(2).toList();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ProfileAvatar(
+                name: item.displayName,
+                photoUrl: item.photoUrl,
+                radius: 16,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.firstName.isEmpty ? 'Learner' : item.firstName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF0F172A),
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _fmtDateTime(item.createdAt),
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        item.text.trim(),
+                        style: const TextStyle(
+                          color: Color(0xFF334155),
+                          fontWeight: FontWeight.w600,
+                          height: 1.38,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildReplyChip(
+                'Reply',
+                () => _replyToComment(item.id, courseId),
+                const Color(0xFF1D4ED8),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => _reportComment(item.id, courseId),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFEE2E2),
+                  foregroundColor: const Color(0xFFB91C1C),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 36),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                icon: const Icon(Icons.flag_rounded, size: 16),
+                label: const Text('Report'),
+              ),
+              if (replies.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      if (expanded) {
+                        _expandedReplies.remove(item.id);
+                      } else {
+                        _expandedReplies.add(item.id);
+                      }
+                    });
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    foregroundColor: const Color(0xFF334155),
+                    minimumSize: const Size(0, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  icon: Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    expanded
+                        ? 'Hide replies'
+                        : 'Show replies (${replies.length})',
+                  ),
+                ),
+            ],
+          ),
+          if (replies.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            for (final reply in visibleReplies)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ProfileAvatar(
+                      name: (reply['displayName'] ?? 'User').toString(),
+                      photoUrl: (reply['photoUrl'] ?? '').toString(),
+                      radius: 11,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (reply['firstName'] ?? 'User').toString(),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11.5,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            (reply['text'] ?? '').toString(),
+                            style: const TextStyle(
+                              color: Color(0xFF334155),
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _fmtDateTime(
+                              CourseFeedbackService.asInt(reply['createdAt']),
+                            ),
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FB),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0B2545),
+        foregroundColor: Colors.white,
+        title: const Text(
+          'Comments',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loadComments,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: learnerWebBodyFrame(
+        context: context,
+        maxWidth: 900,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Column(
+              children: [
+                _buildHeaderCard(),
+                const SizedBox(height: 10),
+                _buildComposer(),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: _busy
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                      ? Center(
+                          child: Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFFB91C1C),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      : _comments.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No comments yet.',
+                            style: TextStyle(
+                              color: Color(0xFF475569),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _loadComments,
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: _comments.length,
+                            itemBuilder: (_, index) {
+                              return _buildCommentCard(_comments[index]);
+                            },
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

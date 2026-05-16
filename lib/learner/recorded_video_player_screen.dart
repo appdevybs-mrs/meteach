@@ -10,6 +10,7 @@ import '../shared/learner_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/course_feedback_service.dart';
+import 'recorded_lesson_comments_screen.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
   const RecordedVideoPlayerScreen({
@@ -35,7 +36,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
 }
 
 class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver {
   static const String _usersNode = 'users';
   static const String _recordedProgressNode = 'recorded_progress';
 
@@ -49,32 +50,22 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _initialized = false;
   bool _isPlaying = false;
   bool _isCompleted = false;
-  bool _bookmarked = false;
   bool _showControls = true;
   bool _isFullscreen = false;
   bool _commentsBusy = false;
 
   String? _error;
-  String _notes = '';
 
   int _savedPositionMs = 0;
   int _savedDurationMs = 0;
-  int _bookmarkPositionMs = 0;
   int _lastSavedPositionMs = 0;
 
   Timer? _saveDebounce;
   Timer? _hideControlsTimer;
   bool _isDisposing = false;
-  late final TabController _tabController;
-  final TextEditingController _commentC = TextEditingController();
-  final FocusNode _commentFocus = FocusNode();
-  final TextEditingController _videoQuickCommentC = TextEditingController();
-  final FocusNode _videoQuickCommentFocus = FocusNode();
   List<LessonCommentItem> _comments = const [];
+  List<_LessonNoteItem> _lessonNotes = const [];
   final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
-  int _commentsVisible = 20;
-  final Set<String> _expandedComments = <String>{};
-  final Set<String> _expandedReplies = <String>{};
 
   void _debug(String message) {
     // no-op in production build
@@ -105,10 +96,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       .child(_recordedProgressNode)
       .child(widget.sessionId);
 
+  DatabaseReference get _lessonNotesRef => _progressRef.child('lessonNotes');
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addObserver(this);
     _enableScreenRotations();
     _loadAndInit();
@@ -122,11 +114,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _progressSub?.cancel();
     _saveDebounce?.cancel();
     _hideControlsTimer?.cancel();
-    _tabController.dispose();
-    _commentC.dispose();
-    _commentFocus.dispose();
-    _videoQuickCommentC.dispose();
-    _videoQuickCommentFocus.dispose();
     _persistProgressNow();
     _controller?.removeListener(_videoListener);
     _controller?.dispose();
@@ -223,9 +210,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         final map = Map<String, dynamic>.from(snap.value as Map);
         _savedPositionMs = _asInt(map['videoPositionMs']);
         _savedDurationMs = _asInt(map['videoDurationMs']);
-        _bookmarkPositionMs = _asInt(map['bookmarkPositionMs']);
-        _bookmarked = _asBool(map['bookmarked']);
-        _notes = (map['notes'] ?? '').toString();
+        _lessonNotes = _parseLessonNotes(map['lessonNotes']);
         _isCompleted = _asBool(map['videoCompleted']);
       }
 
@@ -285,16 +270,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       if (raw is! Map) return;
 
       final map = Map<String, dynamic>.from(raw);
-      final remoteNotes = (map['notes'] ?? '').toString();
-      final remoteBookmarked = _asBool(map['bookmarked']);
-      final remoteBookmarkMs = _asInt(map['bookmarkPositionMs']);
       final remoteCompleted = _asBool(map['videoCompleted']);
 
       if (!mounted) return;
       setState(() {
-        _notes = remoteNotes;
-        _bookmarked = remoteBookmarked;
-        _bookmarkPositionMs = remoteBookmarkMs;
+        _lessonNotes = _parseLessonNotes(map['lessonNotes']);
         _isCompleted = remoteCompleted;
       });
     });
@@ -312,9 +292,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       'videoDurationMs': durationMs,
       'lastOpenedAt': ServerValue.timestamp,
       'updatedAt': ServerValue.timestamp,
-      if (_notes.isNotEmpty) 'notes': _notes,
-      if (_bookmarked) 'bookmarked': true,
-      if (_bookmarkPositionMs > 0) 'bookmarkPositionMs': _bookmarkPositionMs,
     });
   }
 
@@ -491,53 +468,49 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _showControlsTemporarily();
   }
 
-  Future<void> _toggleBookmark() async {
+  int _currentVideoPositionMs() {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-
-    final currentMs = controller.value.position.inMilliseconds;
-    final nextBookmarked = !_bookmarked;
-    final nextBookmarkMs = nextBookmarked ? currentMs : 0;
-
-    await _progressRef.update({
-      'bookmarked': nextBookmarked,
-      'bookmarkPositionMs': nextBookmarkMs,
-      'updatedAt': ServerValue.timestamp,
-    });
-
-    if (!mounted) return;
-    setState(() {
-      _bookmarked = nextBookmarked;
-      _bookmarkPositionMs = nextBookmarkMs;
-    });
-
-    AppToast.show(
-      context,
-      nextBookmarked
-          ? 'Bookmark saved at ${_formatDurationMs(nextBookmarkMs)}.'
-          : 'Bookmark removed.',
-      type: AppToastType.info,
-    );
+    if (controller == null || !controller.value.isInitialized) {
+      return _savedPositionMs;
+    }
+    return controller.value.position.inMilliseconds;
   }
 
-  Future<void> _jumpToBookmark() async {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-    if (_bookmarkPositionMs <= 0) return;
+  List<_LessonNoteItem> _parseLessonNotes(dynamic raw) {
+    if (raw is! Map) return <_LessonNoteItem>[];
 
-    await controller.seekTo(Duration(milliseconds: _bookmarkPositionMs));
-    _scheduleProgressSave();
-    _showControlsTemporarily();
+    final items = <_LessonNoteItem>[];
+    for (final entry in Map<dynamic, dynamic>.from(raw).entries) {
+      final value = entry.value;
+      if (value is! Map) continue;
+      final note = _LessonNoteItem.fromMap(
+        entry.key.toString(),
+        Map<String, dynamic>.from(value),
+      );
+      if (note.deleted) continue;
+      items.add(note);
+    }
+
+    items.sort((a, b) {
+      final cmp = a.positionMs.compareTo(b.positionMs);
+      if (cmp != 0) return cmp;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+    return items;
   }
 
-  Future<void> _editNotes() async {
-    final notesController = TextEditingController(text: _notes);
+  Future<void> _openNoteEditor({_LessonNoteItem? note}) async {
+    final controller = TextEditingController(text: note?.text ?? '');
+    final positionMs = note?.positionMs ?? _currentVideoPositionMs();
+    final isEditing = note != null;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) {
-        final bottom = MediaQuery.of(context).viewInsets.bottom;
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
         return Padding(
           padding: EdgeInsets.only(bottom: bottom),
           child: SafeArea(
@@ -547,35 +520,87 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Session Notes',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                  Text(
+                    isEditing ? 'Edit note' : 'Add note',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.access_time_rounded,
+                          size: 16,
+                          color: Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatDurationMs(positionMs),
+                          style: const TextStyle(
+                            color: Color(0xFF1D4ED8),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
-                    controller: notesController,
-                    minLines: 5,
-                    maxLines: 10,
+                    controller: controller,
+                    minLines: 4,
+                    maxLines: 8,
+                    maxLength: 500,
                     decoration: const InputDecoration(
-                      hintText: 'Write your notes here...',
+                      hintText: 'Write your note...',
                       border: OutlineInputBorder(),
                       filled: true,
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context, false),
+                          onPressed: () => Navigator.pop(ctx, false),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(46),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
                           child: const Text('Cancel'),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Save Notes'),
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF4F46E5),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(46),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          icon: const Icon(Icons.save_rounded),
+                          label: const Text('Save'),
                         ),
                       ),
                     ],
@@ -590,18 +615,82 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     if (saved != true) return;
 
-    final nextNotes = notesController.text.trim();
-    await _progressRef.update({
-      'notes': nextNotes,
-      'updatedAt': ServerValue.timestamp,
+    final text = controller.text.trim();
+    if (text.isEmpty) {
+      AppToast.show(
+        // ignore: use_build_context_synchronously
+        context,
+        'Write a note before saving.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final existingNote = note;
+    final ref = existingNote == null
+        ? _lessonNotesRef.push()
+        : _lessonNotesRef.child(existingNote.id);
+
+    await ref.set({
+      'positionMs': positionMs,
+      'text': text,
+      'createdAt': existingNote?.createdAt ?? now,
+      'updatedAt': now,
+      'deleted': false,
     });
 
     if (!mounted) return;
-    setState(() {
-      _notes = nextNotes;
-    });
+    // ignore: use_build_context_synchronously
+    AppToast.show(
+      context,
+      isEditing
+          ? 'Note updated.'
+          : 'Note saved at ${_formatDurationMs(positionMs)}.',
+      type: AppToastType.success,
+    );
+  }
 
-    AppToast.show(context, 'Notes saved.', type: AppToastType.success);
+  Future<void> _deleteLessonNote(_LessonNoteItem note) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete note?'),
+        content: const Text(
+          'This note will be removed from your lesson notes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    await _lessonNotesRef.child(note.id).remove();
+    if (!mounted) return;
+    AppToast.show(context, 'Note deleted.');
+  }
+
+  Future<void> _seekToNote(_LessonNoteItem note) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    await controller.seekTo(Duration(milliseconds: note.positionMs));
+    _scheduleProgressSave();
+    _showControlsTemporarily();
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Jumped to ${_formatDurationMs(note.positionMs)}.',
+      type: AppToastType.info,
+    );
   }
 
   void _startHideControlsTimer() {
@@ -672,12 +761,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   ),
                 ),
               ),
-              if (_bookmarked)
-                const Icon(
-                  Icons.bookmark_rounded,
-                  size: 18,
-                  color: Color(0xFF7C3AED),
-                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -699,62 +782,105 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Widget _buildCompactActionPanel({required bool isLandscape}) {
-    final hasNotes = _notes.trim().isNotEmpty;
-
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
-              _smallActionButton(
-                onPressed: _toggleBookmark,
-                icon: _bookmarked
-                    ? Icons.bookmark_rounded
-                    : Icons.bookmark_border_rounded,
-                label: _bookmarked ? 'Saved' : 'Bookmark',
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.note_alt_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 18,
+                ),
               ),
-              _smallActionButton(
-                onPressed: _bookmarkPositionMs > 0 ? _jumpToBookmark : null,
-                icon: Icons.flag_rounded,
-                label: 'Go to mark',
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Lesson Notes',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14.5,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_lessonNotes.length} saved notes',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              _smallActionButton(
-                onPressed: _editNotes,
-                icon: Icons.note_alt_rounded,
-                label: hasNotes ? 'Edit notes' : 'Add notes',
+              FilledButton.icon(
+                onPressed: () => _openNoteEditor(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 38),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Add note'),
               ),
             ],
           ),
-          if (hasNotes) ...[
-            const SizedBox(height: 10),
+          const SizedBox(height: 10),
+          if (_lessonNotes.isEmpty)
             Container(
               width: double.infinity,
-              constraints: BoxConstraints(maxHeight: isLandscape ? 120 : 150),
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: SingleChildScrollView(
-                child: Text(
-                  _notes.trim(),
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.3,
-                    color: Colors.black.withValues(alpha: 0.78),
-                    fontWeight: FontWeight.w600,
-                  ),
+              child: const Text(
+                'No notes yet. Tap Add note while watching to capture a moment.',
+                style: TextStyle(
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
                 ),
+              ),
+            )
+          else ...[
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: isLandscape ? 220 : 260),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: _lessonNotes.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (_, index) =>
+                    _buildLessonNoteTile(_lessonNotes[index]),
               ),
             ),
           ],
@@ -763,43 +889,66 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     );
   }
 
-  Widget _smallActionButton({
-    required VoidCallback? onPressed,
-    required IconData icon,
-    required String label,
-  }) {
+  Widget _buildLessonNoteTile(_LessonNoteItem note) {
     return Material(
-      color: const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(12),
+        onTap: () => _seekToNote(note),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                icon,
-                size: 18,
-                color: onPressed == null
-                    ? Colors.grey
-                    : const Color(0xFF1A2B48),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: onPressed == null
-                      ? Colors.grey
-                      : const Color(0xFF1A2B48),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(999),
                 ),
+                child: Text(
+                  _formatDurationMs(note.positionMs),
+                  style: const TextStyle(
+                    color: Color(0xFF1D4ED8),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  note.text,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                children: [
+                  IconButton(
+                    tooltip: 'Edit note',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _openNoteEditor(note: note),
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete note',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _deleteLessonNote(note),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1029,6 +1178,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         ),
       ),
       actions: [
+        IconButton(
+          tooltip: 'Comments',
+          onPressed: _busy ? null : _openCommentsScreen,
+          icon: const Icon(Icons.forum_rounded),
+        ),
         if (_isCompleted)
           const Padding(
             padding: EdgeInsets.only(right: 12),
@@ -1054,9 +1208,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         const SizedBox(height: 10),
         _buildVideoArea(isLandscape: false),
         const SizedBox(height: 10),
-        _buildVideoInlineComposer(),
-        const SizedBox(height: 10),
         _buildCompactActionPanel(isLandscape: false),
+        const SizedBox(height: 10),
+        _buildCommentsPreviewSection(),
       ],
     );
   }
@@ -1076,9 +1230,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 children: [
                   _buildCompactStatusCard(),
                   const SizedBox(height: 10),
-                  _buildVideoInlineComposer(isLandscape: true),
-                  const SizedBox(height: 10),
                   _buildCompactActionPanel(isLandscape: true),
+                  const SizedBox(height: 10),
+                  _buildCommentsPreviewSection(),
                 ],
               ),
             ),
@@ -1088,35 +1242,256 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     );
   }
 
-  Widget _buildVideoInlineComposer({bool isLandscape = false}) {
+  void _openCommentsScreen() {
+    final lessonTitle = widget.sessionTitle.trim().isEmpty
+        ? 'Comments'
+        : widget.sessionTitle.trim();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordedLessonCommentsScreen(
+          uid: widget.uid,
+          primaryCourseId: _primaryFeedbackCourseId,
+          fallbackCourseKey: widget.courseKey,
+          lessonId: widget.sessionId,
+          lessonTitle: lessonTitle,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) {
+        _loadComments();
+      }
+    });
+  }
+
+  Widget _buildCommentsPreviewSection() {
+    final visible = _comments.take(2).toList();
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.forum_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Comments',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14.5,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _commentsBusy
+                          ? 'Loading discussion...'
+                          : '${_comments.length} comments',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _openCommentsScreen,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4F46E5),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 38),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                label: const Text('Open'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_commentsBusy)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                ),
+              ),
+            )
+          else if (_comments.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Text(
+                'No comments yet. Open discussion to start the conversation.',
+                style: TextStyle(
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            )
+          else ...[
+            for (final item in visible) ...[
+              _buildPreviewCommentCard(item),
+              const SizedBox(height: 8),
+            ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _openCommentsScreen,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                label: const Text('View full discussion'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF4F46E5),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewCommentCard(LessonCommentItem item) {
+    final replies = _repliesByComment[item.id] ?? const [];
+    final comment = item.text.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _videoQuickCommentC,
-              focusNode: _videoQuickCommentFocus,
-              maxLength: 400,
-              minLines: 1,
-              maxLines: isLandscape ? 2 : 3,
-              decoration: const InputDecoration(
-                counterText: '',
-                hintText: 'Comment under this video...',
-                border: InputBorder.none,
-                isDense: true,
-              ),
-            ),
+          ProfileAvatar(
+            name: item.displayName,
+            photoUrl: item.photoUrl,
+            radius: 14,
           ),
-          IconButton(
-            tooltip: 'Post comment',
-            onPressed: () => _postComment(fromVideoComposer: true),
-            icon: const Icon(Icons.send_rounded),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.firstName.isEmpty ? 'Learner' : item.firstName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _fmtDateTime(item.createdAt),
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  comment,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF334155),
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (replies.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF2FF),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${replies.length} replies',
+                          style: const TextStyle(
+                            color: Color(0xFF4338CA),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _openCommentsScreen,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF4F46E5),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        minimumSize: const Size(0, 34),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      child: const Text('Reply in comments'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1214,423 +1589,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  Future<void> _postComment({required bool fromVideoComposer}) async {
-    final controller = fromVideoComposer ? _videoQuickCommentC : _commentC;
-    final focus = fromVideoComposer ? _videoQuickCommentFocus : _commentFocus;
-    final text = controller.text.trim();
-    if (text.isEmpty) {
-      AppToast.show(
-        context,
-        'Write a comment first.',
-        type: AppToastType.error,
-      );
-      return;
-    }
-    if (text.length > 400) {
-      AppToast.show(
-        context,
-        'Comment is too long (max 400 chars).',
-        type: AppToastType.error,
-      );
-      return;
-    }
-    await CourseFeedbackService.addLessonComment(
-      courseId: _primaryFeedbackCourseId,
-      lessonId: widget.sessionId,
-      uid: widget.uid,
-      text: text,
-      type: 'comment',
-    );
-    controller.clear();
-    await _loadComments();
-    if (!mounted) return;
-    if (!fromVideoComposer) {
-      _tabController.animateTo(1);
-    }
-    FocusScope.of(context).requestFocus(focus);
-    AppToast.show(context, 'Comment posted.');
-  }
-
-  Future<void> _replyToComment(String commentId, String courseId) async {
-    final c = TextEditingController();
-    final submit = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reply'),
-        content: TextField(
-          controller: c,
-          maxLength: 400,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'Write your reply',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reply'),
-          ),
-        ],
-      ),
-    );
-    if (submit != true) return;
-    final text = c.text.trim();
-    if (text.isEmpty) return;
-
-    await CourseFeedbackService.addLessonReply(
-      courseId: courseId,
-      lessonId: widget.sessionId,
-      commentId: commentId,
-      uid: widget.uid,
-      text: text,
-    );
-    await _loadComments();
-  }
-
-  Future<void> _reportComment(String commentId, String courseId) async {
-    await CourseFeedbackService.reportLessonComment(
-      courseId: courseId,
-      lessonId: widget.sessionId,
-      commentId: commentId,
-      uid: widget.uid,
-      reason: 'Reported by learner',
-    );
-    if (!mounted) return;
-    AppToast.show(context, 'Comment reported.');
-  }
-
-  Future<void> _openCommentActions(LessonCommentItem item) async {
-    final courseId = item.courseId.trim().isEmpty
-        ? _primaryFeedbackCourseId
-        : item.courseId;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.reply_rounded),
-                title: Text('Reply'),
-                subtitle: Text('Add a reply to this comment'),
-                onTap: () => Navigator.pop(ctx, 'reply'),
-              ),
-              ListTile(
-                leading: Icon(Icons.flag_outlined),
-                title: Text('Report'),
-                subtitle: Text('Report inappropriate content'),
-                onTap: () => Navigator.pop(ctx, 'report'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (!mounted || action == null) return;
-    if (action == 'reply') {
-      await _replyToComment(item.id, courseId);
-    } else if (action == 'report') {
-      await _reportComment(item.id, courseId);
-    }
-  }
-
-  Widget _buildCommentsPanel() {
-    final visible = _comments.take(_commentsVisible).toList();
-
-    return Column(
-      children: [
-        SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentC,
-                    focusNode: _commentFocus,
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    maxLength: 400,
-                    minLines: 1,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      counterText: '',
-                      isDense: true,
-                      hintText: 'Write a comment...',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Post',
-                  onPressed: () => _postComment(fromVideoComposer: false),
-                  icon: const Icon(Icons.send_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Refresh comments',
-                  onPressed: _loadComments,
-                  icon: const Icon(Icons.refresh_rounded),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          child: _commentsBusy
-              ? const Center(child: CircularProgressIndicator())
-              : _comments.isEmpty
-              ? const Center(child: Text('No comments yet for this lesson.'))
-              : RefreshIndicator(
-                  onRefresh: _loadComments,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
-                    itemCount: visible.length + 1,
-                    itemBuilder: (context, i) {
-                      if (i >= visible.length) {
-                        if (_comments.length <= visible.length) {
-                          return const SizedBox(height: 1);
-                        }
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Center(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _commentsVisible += 20;
-                                });
-                              },
-                              icon: const Icon(Icons.expand_more_rounded),
-                              label: const Text('Load more comments'),
-                            ),
-                          ),
-                        );
-                      }
-
-                      final item = visible[i];
-                      final replies = _repliesByComment[item.id] ?? const [];
-                      final commentExpanded = _expandedComments.contains(
-                        item.id,
-                      );
-                      final replyExpanded = _expandedReplies.contains(item.id);
-                      final fullComment = item.text;
-                      final isLongComment = fullComment.length > 150;
-                      final shownComment = isLongComment && !commentExpanded
-                          ? '${fullComment.substring(0, 150)}...'
-                          : fullComment;
-
-                      final shownReplies = replyExpanded
-                          ? replies
-                          : const <Map<String, dynamic>>[];
-
-                      return GestureDetector(
-                        onLongPress: () => _openCommentActions(item),
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 6),
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  ProfileAvatar(
-                                    name: item.displayName,
-                                    photoUrl: item.photoUrl,
-                                    radius: 12,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      '${item.firstName.isEmpty ? 'Learner' : item.firstName} (${item.abbr.isEmpty ? 'L' : item.abbr})',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    _fmtDateTime(item.createdAt),
-                                    style: TextStyle(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.52,
-                                      ),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                  if (replies.isNotEmpty)
-                                    InkWell(
-                                      borderRadius: BorderRadius.circular(999),
-                                      onTap: () {
-                                        setState(() {
-                                          if (replyExpanded) {
-                                            _expandedReplies.remove(item.id);
-                                          } else {
-                                            _expandedReplies.add(item.id);
-                                          }
-                                        });
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(4),
-                                        child: Icon(
-                                          replyExpanded
-                                              ? Icons.keyboard_arrow_up_rounded
-                                              : Icons
-                                                    .keyboard_arrow_down_rounded,
-                                          size: 18,
-                                          color: const Color(0xFF64748B),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 5),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: const Color(0xFFE2E8F0),
-                                  ),
-                                  color: const Color(0xFFF8FAFC),
-                                ),
-                                child: Text(
-                                  shownComment,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.black.withValues(alpha: 0.8),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              if (isLongComment)
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        if (commentExpanded) {
-                                          _expandedComments.remove(item.id);
-                                        } else {
-                                          _expandedComments.add(item.id);
-                                        }
-                                      });
-                                    },
-                                    style: TextButton.styleFrom(
-                                      padding: EdgeInsets.zero,
-                                      minimumSize: const Size(0, 20),
-                                    ),
-                                    child: Text(
-                                      commentExpanded ? 'Collapse' : 'Expand',
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(height: 3),
-                              Text(
-                                'Long press for actions',
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.45),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              if (replies.isNotEmpty && replyExpanded) ...[
-                                const Divider(height: 12),
-                                ...shownReplies.map((r) {
-                                  final rName = (r['firstName'] ?? 'User')
-                                      .toString();
-                                  final rAbbr = (r['abbr'] ?? 'U').toString();
-                                  final rPhoto = (r['photoUrl'] ?? '')
-                                      .toString();
-                                  final rText = (r['text'] ?? '').toString();
-                                  final rAt = CourseFeedbackService.asInt(
-                                    r['createdAt'],
-                                  );
-                                  return Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 10,
-                                      bottom: 6,
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        ProfileAvatar(
-                                          name: rName,
-                                          photoUrl: rPhoto,
-                                          radius: 10,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                '$rName ($rAbbr)',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 1),
-                                              Text(
-                                                rText,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 1),
-                                              Text(
-                                                _fmtDateTime(rAt),
-                                                style: TextStyle(
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.5),
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final title = widget.sessionTitle.trim().isEmpty
@@ -1672,64 +1630,56 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 : _initialized
                 ? (_isFullscreen
                       ? _buildFullscreenLayout()
-                      : Column(
-                          children: [
-                            Container(
-                              color: Colors.white,
-                              child: TabBar(
-                                controller: _tabController,
-                                labelPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                tabs: const [
-                                  Tab(
-                                    height: 40,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.ondemand_video_rounded,
-                                          size: 18,
-                                        ),
-                                        SizedBox(width: 6),
-                                        Text('Video'),
-                                      ],
-                                    ),
-                                  ),
-                                  Tab(
-                                    height: 40,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.forum_rounded, size: 18),
-                                        SizedBox(width: 6),
-                                        Text('Comments'),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: TabBarView(
-                                controller: _tabController,
-                                children: [
-                                  isLandscape
-                                      ? _buildLandscapeLayout()
-                                      : _buildPortraitLayout(),
-                                  _buildCommentsPanel(),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ))
+                      : (isLandscape
+                            ? _buildLandscapeLayout()
+                            : _buildPortraitLayout()))
                 : const Center(
                     child: BrandedInlineLoader(message: 'Preparing player...'),
                   ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LessonNoteItem {
+  const _LessonNoteItem({
+    required this.id,
+    required this.positionMs,
+    required this.text,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.deleted,
+  });
+
+  final String id;
+  final int positionMs;
+  final String text;
+  final int createdAt;
+  final int updatedAt;
+  final bool deleted;
+
+  factory _LessonNoteItem.fromMap(String id, Map<String, dynamic> map) {
+    bool asBool(dynamic v) {
+      if (v is bool) return v;
+      final s = (v ?? '').toString().trim().toLowerCase();
+      return s == 'true' || s == '1';
+    }
+
+    int asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse((v ?? '').toString()) ?? 0;
+    }
+
+    return _LessonNoteItem(
+      id: id,
+      positionMs: asInt(map['positionMs']),
+      text: (map['text'] ?? '').toString().trim(),
+      createdAt: asInt(map['createdAt']),
+      updatedAt: asInt(map['updatedAt']),
+      deleted: asBool(map['deleted']),
     );
   }
 }
