@@ -2106,6 +2106,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                   );
                 },
               ),
+              const SizedBox(height: 16),
               FutureBuilder<bool>(
                 future: _hasFlexibleBookableCourseFuture,
                 builder: (context, snap) {
