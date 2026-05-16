@@ -53,6 +53,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _showControls = true;
   bool _isFullscreen = false;
   bool _commentsBusy = false;
+  bool _notesExpanded = true;
+  bool _commentsExpanded = true;
 
   String? _error;
 
@@ -63,6 +65,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Timer? _saveDebounce;
   Timer? _hideControlsTimer;
   bool _isDisposing = false;
+  bool _lastLandscape = false;
   List<LessonCommentItem> _comments = const [];
   List<_LessonNoteItem> _lessonNotes = const [];
   final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
@@ -195,6 +198,24 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         state == AppLifecycleState.detached) {
       _persistProgressNow();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape == _lastLandscape) return;
+    _lastLandscape = isLandscape;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposing) return;
+      if (isLandscape) {
+        _enterFullscreen();
+      } else {
+        _exitFullscreen();
+      }
+    });
   }
 
   Future<void> _loadAndInit() async {
@@ -782,16 +803,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Widget _buildCompactActionPanel({required bool isLandscape}) {
+    final accent = const Color(0xFF0EA5E9);
+    final title = 'Lesson Notes';
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+          colors: [accent.withValues(alpha: 0.08), const Color(0xFFF8FAFC)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -802,23 +826,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: accent.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.note_alt_rounded,
-                  color: Color(0xFF2563EB),
-                  size: 18,
-                ),
+                child: Icon(Icons.note_alt_rounded, color: accent, size: 18),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Lesson Notes',
-                      style: TextStyle(
+                    Text(
+                      title,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 14.5,
                         color: Color(0xFF0F172A),
@@ -828,7 +848,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                     Text(
                       '${_lessonNotes.length} saved notes',
                       style: const TextStyle(
-                        color: Color(0xFF64748B),
+                        color: Color(0xFF475569),
                         fontWeight: FontWeight.w700,
                         fontSize: 11.5,
                       ),
@@ -836,10 +856,25 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   ],
                 ),
               ),
+              TextButton.icon(
+                onPressed: () =>
+                    setState(() => _notesExpanded = !_notesExpanded),
+                icon: Icon(
+                  _notesExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                ),
+                label: Text(_notesExpanded ? 'Collapse' : 'Expand'),
+                style: TextButton.styleFrom(
+                  foregroundColor: accent,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: () => _openNoteEditor(),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: accent,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   minimumSize: const Size(0, 38),
@@ -854,36 +889,64 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             ],
           ),
           const SizedBox(height: 10),
-          if (_lessonNotes.isEmpty)
-            Container(
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: _notesExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstCurve: Curves.easeOut,
+            secondCurve: Curves.easeOut,
+            sizeCurve: Curves.easeOut,
+            firstChild: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: accent.withValues(alpha: 0.16)),
               ),
-              child: const Text(
-                'No notes yet. Tap Add note while watching to capture a moment.',
-                style: TextStyle(
+              child: Text(
+                _lessonNotes.isEmpty
+                    ? 'No notes yet. Tap Add note while watching.'
+                    : 'Tap Expand to view ${_lessonNotes.length} notes.',
+                style: const TextStyle(
                   color: Color(0xFF475569),
                   fontWeight: FontWeight.w700,
                   height: 1.35,
                 ),
               ),
-            )
-          else ...[
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: isLandscape ? 220 : 260),
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: _lessonNotes.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (_, index) =>
-                    _buildLessonNoteTile(_lessonNotes[index]),
-              ),
             ),
-          ],
+            secondChild: _lessonNotes.isEmpty
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: accent.withValues(alpha: 0.16)),
+                    ),
+                    child: const Text(
+                      'No notes yet. Tap Add note while watching to capture a moment.',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  )
+                : ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: isLandscape ? 220 : 260,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _lessonNotes.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (_, index) =>
+                          _buildLessonNoteTile(_lessonNotes[index]),
+                    ),
+                  ),
+          ),
         ],
       ),
     );
@@ -1215,33 +1278,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     );
   }
 
-  Widget _buildLandscapeLayout() {
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(flex: 9, child: _buildVideoArea(isLandscape: true)),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 5,
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildCompactStatusCard(),
-                  const SizedBox(height: 10),
-                  _buildCompactActionPanel(isLandscape: true),
-                  const SizedBox(height: 10),
-                  _buildCommentsPreviewSection(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _openCommentsScreen() {
     final lessonTitle = widget.sessionTitle.trim().isEmpty
         ? 'Comments'
@@ -1267,18 +1303,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   Widget _buildCommentsPreviewSection() {
     final visible = _comments.take(2).toList();
+    final accent = const Color(0xFFF97316);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+          colors: [accent.withValues(alpha: 0.08), const Color(0xFFF8FAFC)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1289,14 +1326,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEEF2FF),
+                  color: accent.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.forum_rounded,
-                  color: Color(0xFF4F46E5),
-                  size: 18,
-                ),
+                child: Icon(Icons.forum_rounded, color: accent, size: 18),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1317,7 +1350,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                           ? 'Loading discussion...'
                           : '${_comments.length} comments',
                       style: const TextStyle(
-                        color: Color(0xFF64748B),
+                        color: Color(0xFF475569),
                         fontWeight: FontWeight.w700,
                         fontSize: 11.5,
                       ),
@@ -1325,10 +1358,25 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   ],
                 ),
               ),
+              TextButton.icon(
+                onPressed: () =>
+                    setState(() => _commentsExpanded = !_commentsExpanded),
+                icon: Icon(
+                  _commentsExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                ),
+                label: Text(_commentsExpanded ? 'Collapse' : 'Expand'),
+                style: TextButton.styleFrom(
+                  foregroundColor: accent,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: _openCommentsScreen,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF4F46E5),
+                  backgroundColor: accent,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   minimumSize: const Size(0, 38),
@@ -1343,53 +1391,90 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             ],
           ),
           const SizedBox(height: 10),
-          if (_commentsBusy)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2.2),
-                ),
-              ),
-            )
-          else if (_comments.isEmpty)
-            Container(
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: _commentsExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstCurve: Curves.easeOut,
+            secondCurve: Curves.easeOut,
+            sizeCurve: Curves.easeOut,
+            firstChild: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: accent.withValues(alpha: 0.16)),
               ),
-              child: const Text(
-                'No comments yet. Open discussion to start the conversation.',
-                style: TextStyle(
+              child: Text(
+                _commentsBusy
+                    ? 'Loading discussion...'
+                    : _comments.isEmpty
+                    ? 'No comments yet. Open discussion to start the conversation.'
+                    : 'Tap Expand to preview ${_comments.length} comments.',
+                style: const TextStyle(
                   color: Color(0xFF475569),
                   fontWeight: FontWeight.w700,
                   height: 1.35,
                 ),
               ),
-            )
-          else ...[
-            for (final item in visible) ...[
-              _buildPreviewCommentCard(item),
-              const SizedBox(height: 8),
-            ],
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _openCommentsScreen,
-                icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                label: const Text('View full discussion'),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF4F46E5),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
             ),
-          ],
+            secondChild: _commentsBusy
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      ),
+                    ),
+                  )
+                : _comments.isEmpty
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: accent.withValues(alpha: 0.16)),
+                    ),
+                    child: const Text(
+                      'No comments yet. Open discussion to start the conversation.',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: [
+                      for (final item in visible) ...[
+                        _buildPreviewCommentCard(item),
+                        const SizedBox(height: 8),
+                      ],
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _openCommentsScreen,
+                          icon: const Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 18,
+                          ),
+                          label: const Text('View full discussion'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: accent,
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
@@ -1616,7 +1701,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           backgroundColor: _isFullscreen
               ? Colors.black
               : const Color(0xFFF4F7F9),
-          appBar: _isFullscreen ? null : _buildAppBar(title, isLandscape),
+          appBar: (_isFullscreen || isLandscape)
+              ? null
+              : _buildAppBar(title, isLandscape),
           body: learnerWebBodyFrame(
             context: context,
             maxWidth: 5000,
@@ -1628,11 +1715,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 : _error != null
                 ? _buildErrorState()
                 : _initialized
-                ? (_isFullscreen
+                ? (isLandscape || _isFullscreen
                       ? _buildFullscreenLayout()
-                      : (isLandscape
-                            ? _buildLandscapeLayout()
-                            : _buildPortraitLayout()))
+                      : _buildPortraitLayout())
                 : const Center(
                     child: BrandedInlineLoader(message: 'Preparing player...'),
                   ),

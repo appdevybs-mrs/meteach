@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your Bridge School</title>
+  <meta name="description" content="Your Bridge School offers premium English learning, teacher training, and a modern student experience.">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="/" aria-label="Your Bridge School home">
+        <span class="brand-mark">YB</span>
+        <span class="brand-text" data-i18n="brand.name">Your Bridge School</span>
+      </a>
+
+      <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="site-menu">Menu</button>
+
+      <nav class="site-menu" id="site-menu" data-menu>
+        <a class="active" href="/" data-i18n="nav.home">Home</a>
+        <a href="/media/" data-i18n="nav.media">Media</a>
+        <a href="#gallery" data-i18n="nav.gallery">Gallery</a>
+        <a href="/training/" data-i18n="nav.training">Training</a>
+        <a class="login-link" href="https://www.yourbridgeschool.com/online" data-i18n="nav.login">Login</a>
+
+        <label class="lang-picker" aria-label="Language selector">
+          <select id="language-switcher" class="lang-select" aria-label="Language selector">
+            <option value="en">EN</option>
+            <option value="ar">AR</option>
+            <option value="fr">FR</option>
+          </select>
+        </label>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero section-pad" id="home">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="pill" data-i18n="hero.pill">Your path to English excellence</span>
+          <h1 class="hero-title">
+            <span data-i18n="hero.titleA">Build your future</span>
+            <br>
+            <span><span data-i18n="hero.titleBPrefix">with</span> <span class="accent" data-i18n="hero.titleBBrand">Your Bridge School</span></span>
+          </h1>
+          <p class="lead" data-i18n="hero.lead">Access training programs, certifications, career pathways, and international opportunities. Learn practical skills with expert mentors and flexible study options.</p>
+          <p class="slogan" data-i18n="hero.slogan">Not for the certificate, for the skill</p>
+
+          <div class="cta-row">
+            <a class="btn btn-primary" href="/courses/" data-i18n="hero.primaryCta">Start Learning Today</a>
+            <a class="btn btn-outline" href="#courses" data-i18n="hero.secondaryCta">Explore Courses</a>
+          </div>
+        </div>
+
+        <div class="teacher-panel card">
+          <h2 data-i18n="teacher.title">Meet the Teachers</h2>
+          <div class="teacher-layout">
+            <div class="teacher-list" aria-label="Teacher list">
+              <button class="teacher-chip is-active" type="button">Farah Chahrazed Bekai</button>
+              <button class="teacher-chip" type="button">Teacher</button>
+              <button class="teacher-chip" type="button">Nadir Tamri</button>
+              <button class="teacher-chip" type="button">Amel Djihane Hamidi</button>
+            </div>
+            <div class="teacher-video" role="img" aria-label="Teacher video preview">
+              <div class="video-play">▶</div>
+              <div class="video-bar"></div>
+              <div class="video-meta">
+                <strong>0:00</strong>
+                <span>Classroom preview</span>
+              </div>
+            </div>
+          </div>
+          <p class="panel-note" data-i18n="teacher.note">Hear directly from our teachers and discover their classroom approach.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-pad section-soft" id="gallery">
+      <div class="container">
+        <div class="section-head center">
+          <h2 data-i18n="gallery.title">Our Gallery</h2>
+          <p data-i18n="gallery.lead">Discover moments from our students' learning journey</p>
+        </div>
+
+        <div class="gallery-shell">
+          <div class="gallery-stage" data-gallery>
+            <article class="gallery-slide is-active" data-slide>
+              <div class="gallery-art art-one"></div>
+              <div class="gallery-caption">
+                <h3 data-i18n="gallery.slide1Title">Creative classroom moments</h3>
+                <p data-i18n="gallery.slide1Text">Interactive sessions, guided practice, and active learning.</p>
+              </div>
+            </article>
+            <article class="gallery-slide" data-slide>
+              <div class="gallery-art art-two"></div>
+              <div class="gallery-caption">
+                <h3 data-i18n="gallery.slide2Title">Student progress</h3>
+                <p data-i18n="gallery.slide2Text">Confidence grows through steady, practical study.</p>
+              </div>
+            </article>
+            <article class="gallery-slide" data-slide>
+              <div class="gallery-art art-three"></div>
+              <div class="gallery-caption">
+                <h3 data-i18n="gallery.slide3Title">School community</h3>
+                <p data-i18n="gallery.slide3Text">A supportive environment for learners and teachers.</p>
+              </div>
+            </article>
+
+            <button class="gallery-arrow prev" type="button" data-gallery-prev aria-label="Previous gallery slide">‹</button>
+            <button class="gallery-arrow next" type="button" data-gallery-next aria-label="Next gallery slide">›</button>
+
+            <div class="gallery-dots" aria-label="Gallery navigation">
+              <button class="dot is-active" type="button" data-gallery-dot="0" aria-label="Slide 1"></button>
+              <button class="dot" type="button" data-gallery-dot="1" aria-label="Slide 2"></button>
+              <button class="dot" type="button" data-gallery-dot="2" aria-label="Slide 3"></button>
+            </div>
+          </div>
+
+          <aside class="gallery-side card">
+            <h3 data-i18n="gallery.sideTitle">A premium learning atmosphere</h3>
+            <p data-i18n="gallery.sideText">We keep the design clean, modern, and easy to navigate so families can find what they need fast.</p>
+            <ul class="mini-list">
+              <li data-i18n="gallery.sideItem1">Photo moments from class activities</li>
+              <li data-i18n="gallery.sideItem2">Teacher-led learning environments</li>
+              <li data-i18n="gallery.sideItem3">Student-first community culture</li>
+            </ul>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-pad" id="courses">
+      <div class="container">
+        <div class="section-head center">
+          <h2 data-i18n="courses.title">Our Courses</h2>
+          <p data-i18n="courses.lead">Browse learner programs and register directly from the website.</p>
+        </div>
+
+        <div class="courses-layout">
+          <div class="course-grid">
+            <article class="course-card course-highlight">
+              <div class="course-top badge-a0">A0</div>
+              <h3 data-i18n="courses.card1Title">Beginner English</h3>
+              <p data-i18n="courses.card1Text">Start from the basics with simple, structured lessons and practical speaking support.</p>
+              <div class="course-tags">
+                <span>A0</span><span data-i18n="courses.tag1">Basic</span><span>English</span>
+              </div>
+              <div class="course-footer">
+                <span data-i18n="courses.startingFrom">Starting from</span>
+                <strong>2000 DA</strong>
+              </div>
+            </article>
+
+            <article class="course-card">
+              <div class="course-top badge-a1">A1</div>
+              <h3 data-i18n="courses.card2Title">Starter English</h3>
+              <p data-i18n="courses.card2Text">Build everyday vocabulary, conversation habits, and learner confidence.</p>
+              <div class="course-tags">
+                <span>A1</span><span data-i18n="courses.tag2">Elementary</span><span>English</span>
+              </div>
+              <div class="course-footer">
+                <span data-i18n="courses.startingFrom">Starting from</span>
+                <strong>2000 DA</strong>
+              </div>
+            </article>
+
+            <article class="course-card">
+              <div class="course-top badge-a1p">A1+</div>
+              <h3 data-i18n="courses.card3Title">Upper Elementary</h3>
+              <p data-i18n="courses.card3Text">Improve fluency through focused speaking, reading, and teamwork activities.</p>
+              <div class="course-tags">
+                <span>A1+</span><span data-i18n="courses.tag3">English</span><span data-i18n="courses.tag4">Upper Elementary</span>
+              </div>
+              <div class="course-footer">
+                <span data-i18n="courses.startingFrom">Starting from</span>
+                <strong>2000 DA</strong>
+              </div>
+            </article>
+          </div>
+
+          <aside class="apply-panel">
+            <h3 data-i18n="courses.applyTitle">Apply in 1 minute</h3>
+            <p data-i18n="courses.applyText">Submit your details and our admissions team will contact you with the best next step.</p>
+            <a class="btn btn-primary wide" href="/training/" data-i18n="courses.applyButton">Want to be a teacher</a>
+
+            <div class="format-block">
+              <h4 data-i18n="courses.formatTitle">Choose Learning Format</h4>
+              <div class="format-grid">
+                <div class="format-pill is-active"><span>Online</span><small>4200 DA</small></div>
+                <div class="format-pill"><span>Flexible</span><small>4800 DA</small></div>
+                <div class="format-pill"><span>Private</span><small>9000 DA</small></div>
+                <div class="format-pill"><span>Recorded</span><small>2000 DA</small></div>
+              </div>
+            </div>
+
+            <div class="mock-form">
+              <label>
+                <span data-i18n="courses.formName">Full name</span>
+                <input type="text" placeholder="Enter your full name">
+              </label>
+              <label>
+                <span data-i18n="courses.formPhone">Phone</span>
+                <input type="tel" placeholder="+213...">
+              </label>
+              <label>
+                <span data-i18n="courses.formEmail">Email</span>
+                <input type="email" placeholder="you@example.com">
+              </label>
+              <label>
+                <span data-i18n="courses.formProgram">Program</span>
+                <input type="text" placeholder="A0 / A1 / Teacher Training">
+              </label>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <div class="footer-brand">
+          <span class="brand-mark">YB</span>
+          <strong data-i18n="brand.name">Your Bridge School</strong>
+        </div>
+        <p data-i18n="footer.mission">Your path to English excellence. Join a community that learns with confidence and purpose.</p>
+      </div>
+
+      <div>
+        <h4 data-i18n="footer.contact">Contact Us</h4>
+        <ul class="footer-list">
+          <li>+213 655 54 82 93</li>
+          <li>contact@yourbridgeschool.com</li>
+          <li>Bakouka 4236/42, Djelfa, Algeria</li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 data-i18n="footer.explore">Explore</h4>
+        <ul class="footer-links">
+          <li><a href="/courses/" data-i18n="nav.courses">Courses</a></li>
+          <li><a href="/training/" data-i18n="nav.training">Teacher Training</a></li>
+          <li><a href="/media/" data-i18n="nav.media">Media Hub</a></li>
+          <li><a href="/community/" data-i18n="nav.community">Meet Community</a></li>
+          <li><a href="/privacy-policy/" data-i18n="nav.privacy">Privacy Policy</a></li>
+          <li><a href="/terms-of-service/" data-i18n="nav.terms">Terms of Service</a></li>
+          <li><a href="/jobs/" data-i18n="nav.jobs">Apply Jobs</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="container footer-bottom" data-i18n="footer.rights">© 2026 Your Bridge School. All rights reserved.</div>
+  </footer>
+
+  <script src="/assets/js/main.js"></script>
+</body>
+</html>
