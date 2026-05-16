@@ -1042,20 +1042,53 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
   Widget _mainTabChip({
     required String label,
+    required IconData icon,
     required bool selected,
+    required Color accent,
     required VoidCallback onTap,
   }) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      labelStyle: TextStyle(
-        fontWeight: FontWeight.w800,
-        color: selected ? const Color(0xFF0F172A) : const Color(0xFF475569),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? accent : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? accent : accent.withValues(alpha: 0.22),
+              width: selected ? 0 : 1,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.22),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                : const [],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: selected ? Colors.white : accent),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13.5,
+                  color: selected ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      selectedColor: const Color(0xFFE2E8F0),
-      backgroundColor: const Color(0xFFF8FAFC),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
     );
   }
 
@@ -1308,20 +1341,28 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Row(
               children: [
-                _mainTabChip(
-                  label: 'Learners',
-                  selected: _mainTab == _MyPlatformMainTab.learners,
-                  onTap: () {
-                    setState(() => _mainTab = _MyPlatformMainTab.learners);
-                  },
+                Expanded(
+                  child: _mainTabChip(
+                    label: 'Learners',
+                    icon: Icons.groups_rounded,
+                    selected: _mainTab == _MyPlatformMainTab.learners,
+                    accent: const Color(0xFF0EA5A4),
+                    onTap: () {
+                      setState(() => _mainTab = _MyPlatformMainTab.learners);
+                    },
+                  ),
                 ),
-                const SizedBox(width: 8),
-                _mainTabChip(
-                  label: 'Courses',
-                  selected: _mainTab == _MyPlatformMainTab.courses,
-                  onTap: () {
-                    setState(() => _mainTab = _MyPlatformMainTab.courses);
-                  },
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _mainTabChip(
+                    label: 'Courses',
+                    icon: Icons.video_library_rounded,
+                    selected: _mainTab == _MyPlatformMainTab.courses,
+                    accent: const Color(0xFF7C3AED),
+                    onTap: () {
+                      setState(() => _mainTab = _MyPlatformMainTab.courses);
+                    },
+                  ),
                 ),
               ],
             ),
