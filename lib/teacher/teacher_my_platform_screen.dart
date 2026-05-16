@@ -3,7 +3,11 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../services/course_feedback_service.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/study_variant.dart';
+import 'teacher_learner_profile_screen.dart';
+import 'teacher_mail_thread_screen.dart';
+import 'teacher_reminder.dart';
 import 'teacher_recorded_course_comments_screen.dart';
 
 class TeacherMyPlatformScreen extends StatefulWidget {
@@ -50,6 +54,7 @@ class _LearnerRecordedProgressItem {
   const _LearnerRecordedProgressItem({
     required this.learnerUid,
     required this.learnerName,
+    required this.photoUrl,
     required this.courseKey,
     required this.courseId,
     required this.courseTitle,
@@ -60,6 +65,7 @@ class _LearnerRecordedProgressItem {
 
   final String learnerUid;
   final String learnerName;
+  final String photoUrl;
   final String courseKey;
   final String courseId;
   final String courseTitle;
@@ -424,6 +430,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       final learnerName = ('$first $last').trim().isNotEmpty
           ? ('$first $last').trim()
           : (email.isNotEmpty ? email : 'Learner');
+      final photoUrl = ProfileAvatar.resolvePhotoFromMap(user);
 
       final coursesRaw = user['courses'];
       if (coursesRaw is! Map) continue;
@@ -497,6 +504,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           _LearnerRecordedProgressItem(
             learnerUid: learnerUid,
             learnerName: learnerName,
+            photoUrl: photoUrl,
             courseKey: courseKey,
             courseId: courseId,
             courseTitle: courseTitle,
@@ -670,102 +678,212 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     return _RecordedLearnerDetails(studied: studied, left: left);
   }
 
-  Widget _compactStatusChip({
-    required IconData icon,
-    required String label,
-    required bool done,
-  }) {
-    final fg = done ? const Color(0xFF15803D) : const Color(0xFF64748B);
-    final bg = done ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: fg.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: fg),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              color: fg,
-            ),
-          ),
-        ],
+  String _courseLabel(String id) => _courseLabelById[id] ?? id;
+
+  String _threadIdFor(String a, String b, String scope) {
+    final ids = [a.trim(), b.trim()]..sort();
+    return 'support_${scope}_${ids[0]}_${ids[1]}';
+  }
+
+  Future<void> _openLearnerProfile(_LearnerRecordedProgressItem item) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeacherLearnerProfileScreen(
+          learnerUid: item.learnerUid,
+          learnerName: item.learnerName,
+          initialCourseTitle: item.courseTitle,
+        ),
       ),
     );
   }
 
-  Widget _lessonCompactRow(_RecordedLessonDetail item, {required bool done}) {
-    final contextBits = <String>[];
-    if (item.moduleTitle.isNotEmpty) contextBits.add(item.moduleTitle);
-    if (item.unitTitle.isNotEmpty) contextBits.add(item.unitTitle);
+  Future<void> _openLearnerMail(_LearnerRecordedProgressItem item) async {
+    final meUid = _uid;
+    if (meUid.isEmpty || item.learnerUid.trim().isEmpty) return;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
-      decoration: BoxDecoration(
-        color: done ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+    final subject = 'Course support: ${item.courseTitle}';
+    final threadId = _threadIdFor(meUid, item.learnerUid, item.courseId);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final threadRef = _db.child('mail_threads').child(threadId);
+    final snap = await threadRef.get();
+    if (!snap.exists) {
+      await threadRef.set({
+        'participants': {meUid: true, item.learnerUid: true},
+        'subject': subject,
+        'type': 'mail',
+        'createdAt': now,
+        'updatedAt': now,
+        'lastMessage':
+            'Hi ${item.learnerName}, I wanted to help with your progress.',
+        'lastMessageAt': now,
+      });
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeacherMailThreadScreen(
+          threadId: threadId,
+          peerUid: item.learnerUid,
+          peerName: item.learnerName,
+          subject: subject,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          if (contextBits.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              contextBits.join(' • '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF64748B),
-              ),
-            ),
-          ],
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
+    );
+  }
+
+  Future<void> _openLearnerReminder(_LearnerRecordedProgressItem item) async {
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const TeacherReminderScreen()));
+  }
+
+  void _showLearnerActions(_LearnerRecordedProgressItem item) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (item.hasVideo)
-                _compactStatusChip(
-                  icon: Icons.play_circle_fill_rounded,
-                  label: item.videoDone ? 'VD' : 'VP',
-                  done: item.videoDone,
-                ),
-              if (item.hasMaterials)
-                _compactStatusChip(
-                  icon: Icons.description_rounded,
-                  label: item.materialsDone ? 'MD' : 'MP',
-                  done: item.materialsDone,
-                ),
+              Row(
+                children: [
+                  ProfileAvatar(
+                    name: item.learnerName,
+                    photoUrl: item.photoUrl,
+                    radius: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item.learnerName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${item.progressPct}%',
+                      style: const TextStyle(
+                        color: Color(0xFF0369A1),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _sheetAction(
+                icon: Icons.person_outline_rounded,
+                title: 'Open profile',
+                subtitle: 'View learner profile and history',
+                color: const Color(0xFF2563EB),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openLearnerProfile(item);
+                },
+              ),
+              _sheetAction(
+                icon: Icons.mail_outline_rounded,
+                title: 'Send message',
+                subtitle: 'Open teacher mail thread',
+                color: const Color(0xFF7C3AED),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openLearnerMail(item);
+                },
+              ),
+              _sheetAction(
+                icon: Icons.alarm_rounded,
+                title: 'Send reminder',
+                subtitle: 'Open reminder center',
+                color: const Color(0xFFF97316),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openLearnerReminder(item);
+                },
+              ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  String _courseLabel(String id) => _courseLabelById[id] ?? id;
+  Widget _sheetAction({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: color),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Color _courseAccent(String courseId) {
     const accents = [
@@ -1150,22 +1268,74 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   border: Border.all(color: const Color(0xFFE5E7EB)),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
+                        InkWell(
+                          onTap: () => _showLearnerActions(item),
+                          borderRadius: BorderRadius.circular(999),
+                          child: ProfileAvatar(
+                            name: item.learnerName,
+                            photoUrl: item.photoUrl,
+                            radius: 18,
+                            borderColor: const Color(0xFFE0E7FF),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            item.learnerName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      item.learnerName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: Color(0xFF0F172A),
+                                        fontSize: 14.5,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE0F2FE),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '${item.progressPct}%',
+                                      style: const TextStyle(
+                                        color: Color(0xFF0369A1),
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Course: ${item.courseTitle}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF475569),
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         IconButton(
@@ -1192,38 +1362,12 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Course: ${item.courseTitle}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF334155),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Recorded progress: ${item.completedSessions} / ${item.totalSessions}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF475569),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Progress: ${item.progressPct}%',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF475569),
-                      ),
-                    ),
                     const SizedBox(height: 8),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(999),
                       child: LinearProgressIndicator(
                         value: progress,
-                        minHeight: 9,
+                        minHeight: 7,
                         backgroundColor: const Color(0xFFE2E8F0),
                         valueColor: const AlwaysStoppedAnimation<Color>(
                           Color(0xFF0EA5A4),
@@ -1232,84 +1376,118 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                     ),
                     if (expanded) ...[
                       const SizedBox(height: 10),
-                      FutureBuilder<_RecordedLearnerDetails>(
-                        future: _recordedDetailsFutureByRow[rowKey],
-                        builder: (context, snap) {
-                          if (snap.hasError) {
-                            return const Text(
-                              'Could not load lesson details.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFFB91C1C),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            );
-                          }
-                          if (!snap.hasData) {
-                            return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 6),
-                              child: SizedBox(
-                                height: 16,
-                                width: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                      DefaultTabController(
+                        length: 2,
+                        child: FutureBuilder<_RecordedLearnerDetails>(
+                          future: _recordedDetailsFutureByRow[rowKey],
+                          builder: (context, snap) {
+                            if (snap.hasError) {
+                              return const Text(
+                                'Could not load lesson details.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFFB91C1C),
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ),
-                            );
-                          }
+                              );
+                            }
+                            if (!snap.hasData) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 6),
+                                child: SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              );
+                            }
 
-                          final details = snap.data!;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Studied lessons',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF166534),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              if (details.studied.isEmpty)
-                                const Text(
-                                  'No studied lessons yet.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF64748B),
+                            final details = snap.data!;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
                                   ),
-                                )
-                              else
-                                ...details.studied.map(
-                                  (x) => _lessonCompactRow(x, done: true),
-                                ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Left lessons',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF9A3412),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              if (details.left.isEmpty)
-                                const Text(
-                                  'No pending lessons.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF64748B),
+                                  child: TabBar(
+                                    indicator: BoxDecoration(
+                                      color: const Color(0xFFDBEAFE),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    labelColor: const Color(0xFF1D4ED8),
+                                    unselectedLabelColor: const Color(
+                                      0xFF64748B,
+                                    ),
+                                    labelStyle: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11.5,
+                                    ),
+                                    tabs: const [
+                                      Tab(
+                                        height: 34,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.pending_actions_rounded,
+                                              size: 16,
+                                            ),
+                                            SizedBox(width: 6),
+                                            Text('Left lessons'),
+                                          ],
+                                        ),
+                                      ),
+                                      Tab(
+                                        height: 34,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.check_circle_rounded,
+                                              size: 16,
+                                            ),
+                                            SizedBox(width: 6),
+                                            Text('Studied lessons'),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                )
-                              else
-                                ...details.left.map(
-                                  (x) => _lessonCompactRow(x, done: false),
                                 ),
-                            ],
-                          );
-                        },
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  height: 230,
+                                  child: TabBarView(
+                                    children: [
+                                      _lessonTabList(
+                                        details.left,
+                                        done: false,
+                                        emptyText: 'No pending lessons.',
+                                        accent: const Color(0xFF9A3412),
+                                      ),
+                                      _lessonTabList(
+                                        details.studied,
+                                        done: true,
+                                        emptyText: 'No studied lessons yet.',
+                                        accent: const Color(0xFF166534),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ],
                   ],
@@ -1319,6 +1497,74 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _lessonTabList(
+    List<_RecordedLessonDetail> items, {
+    required bool done,
+    required String emptyText,
+    required Color accent,
+  }) {
+    if (items.isEmpty) {
+      return Center(
+        child: Text(
+          emptyText,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      itemCount: items.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 6),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final contextBits = <String>[];
+        if (item.moduleTitle.isNotEmpty) contextBits.add(item.moduleTitle);
+        if (item.unitTitle.isNotEmpty) contextBits.add(item.unitTitle);
+
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: done ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: accent.withValues(alpha: 0.18)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              if (contextBits.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  contextBits.join(' • '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 

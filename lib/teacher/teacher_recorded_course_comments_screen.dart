@@ -7,6 +7,9 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../services/course_feedback_service.dart';
+import 'teacher_learner_profile_screen.dart';
+import 'teacher_mail_thread_screen.dart';
+import 'teacher_reminder.dart';
 
 class TeacherRecordedCourseCommentsScreen extends StatefulWidget {
   const TeacherRecordedCourseCommentsScreen({
@@ -253,6 +256,194 @@ class _TeacherRecordedCourseCommentsScreenState
   int get _reportedCount => _comments.where(_isReported).length;
   int get _hiddenCount => _comments.where(_isHidden).length;
 
+  String _threadIdFor(String a, String b, String scope) {
+    final ids = [a.trim(), b.trim()]..sort();
+    return 'support_${scope}_${ids[0]}_${ids[1]}';
+  }
+
+  Future<void> _openLearnerProfile(LessonCommentItem item) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeacherLearnerProfileScreen(
+          learnerUid: item.uid,
+          learnerName: item.displayName,
+          initialCourseTitle: widget.courseTitle,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLearnerMail(LessonCommentItem item) async {
+    final meUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (meUid.isEmpty || item.uid.trim().isEmpty) return;
+
+    final subject = 'Course support: ${widget.courseTitle}';
+    final threadId = _threadIdFor(meUid, item.uid, widget.courseId);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final threadRef = _db.child('mail_threads').child(threadId);
+    final snap = await threadRef.get();
+    if (!snap.exists) {
+      await threadRef.set({
+        'participants': {meUid: true, item.uid: true},
+        'subject': subject,
+        'type': 'mail',
+        'createdAt': now,
+        'updatedAt': now,
+        'lastMessage':
+            'Hi ${item.displayName}, I wanted to help with your comment.',
+        'lastMessageAt': now,
+      });
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeacherMailThreadScreen(
+          threadId: threadId,
+          peerUid: item.uid,
+          peerName: item.displayName,
+          subject: subject,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLearnerReminder(LessonCommentItem item) async {
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const TeacherReminderScreen()));
+  }
+
+  void _showLearnerActions(LessonCommentItem item) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ProfileAvatar(
+                    name: item.displayName,
+                    photoUrl: item.photoUrl,
+                    radius: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item.displayName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _sheetAction(
+                icon: Icons.person_outline_rounded,
+                title: 'Open profile',
+                subtitle: 'View learner profile and history',
+                color: const Color(0xFF2563EB),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openLearnerProfile(item);
+                },
+              ),
+              _sheetAction(
+                icon: Icons.mail_outline_rounded,
+                title: 'Send message',
+                subtitle: 'Open teacher mail thread',
+                color: const Color(0xFF7C3AED),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openLearnerMail(item);
+                },
+              ),
+              _sheetAction(
+                icon: Icons.alarm_rounded,
+                title: 'Send reminder',
+                subtitle: 'Open reminder center',
+                color: const Color(0xFFF97316),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openLearnerReminder(item);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetAction({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: color),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showStats() {
     showDialog<void>(
       context: context,
@@ -350,10 +541,14 @@ class _TeacherRecordedCourseCommentsScreenState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ProfileAvatar(
-                name: item.displayName,
-                photoUrl: item.photoUrl,
-                radius: 16,
+              InkWell(
+                onTap: () => _showLearnerActions(item),
+                borderRadius: BorderRadius.circular(999),
+                child: ProfileAvatar(
+                  name: item.displayName,
+                  photoUrl: item.photoUrl,
+                  radius: 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -444,9 +639,7 @@ class _TeacherRecordedCourseCommentsScreenState
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
               FilledButton.tonalIcon(
                 onPressed: _posting ? null : () => _reply(item),
@@ -462,48 +655,24 @@ class _TeacherRecordedCourseCommentsScreenState
                 icon: const Icon(Icons.reply_rounded, size: 16),
                 label: const Text('Reply'),
               ),
-              FilledButton.tonalIcon(
-                onPressed: () => _moderate(item, 'visible'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFD1FAE5),
-                  foregroundColor: const Color(0xFF047857),
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                icon: const Icon(Icons.check_circle_rounded, size: 16),
-                label: const Text('Approve'),
-              ),
-              FilledButton.tonalIcon(
-                onPressed: () => _moderate(item, 'hidden'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFE2E8F0),
-                  foregroundColor: const Color(0xFF334155),
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
+                child: PopupMenuButton<String>(
+                  tooltip: 'More actions',
+                  icon: const Icon(Icons.more_horiz_rounded, size: 18),
+                  onSelected: (choice) => _moderate(item, choice),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'visible', child: Text('Approve')),
+                    PopupMenuItem(value: 'hidden', child: Text('Hide')),
+                    PopupMenuItem(value: 'removed', child: Text('Remove')),
+                  ],
                 ),
-                icon: const Icon(Icons.visibility_off_rounded, size: 16),
-                label: const Text('Hide'),
               ),
-              FilledButton.tonalIcon(
-                onPressed: () => _moderate(item, 'removed'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFEE2E2),
-                  foregroundColor: const Color(0xFFB91C1C),
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                label: const Text('Remove'),
-              ),
+              const Spacer(),
               OutlinedButton.icon(
                 onPressed: () async {
                   if (!expanded) {
@@ -573,13 +742,31 @@ class _TeacherRecordedCourseCommentsScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            (reply['firstName'] ?? 'User').toString(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 11.5,
-                              color: Color(0xFF0F172A),
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  (reply['firstName'] ?? 'User').toString(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11.5,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _fmtDateTime(
+                                  CourseFeedbackService.asInt(
+                                    reply['createdAt'],
+                                  ),
+                                ),
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -589,17 +776,6 @@ class _TeacherRecordedCourseCommentsScreenState
                               fontWeight: FontWeight.w600,
                               height: 1.3,
                               fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _fmtDateTime(
-                              CourseFeedbackService.asInt(reply['createdAt']),
-                            ),
-                            style: const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
