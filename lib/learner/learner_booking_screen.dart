@@ -1512,6 +1512,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           children: [
             Text(
               collapsed ? 'Expand teachers' : 'Collapse teachers',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: primaryBlue,
@@ -5038,8 +5040,53 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     required _SchedulePath path,
     required IconData icon,
     required String label,
+    bool fullWidth = true,
   }) {
     final selected = schedulePath == path;
+    final pill = InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () {
+        if (schedulePath == path) return;
+        setState(() {
+          schedulePath = path;
+          _resetScheduleSelections();
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? palette.primary : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? palette.primary : uiBorder),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? Colors.white : palette.primary,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: selected ? Colors.white : palette.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!fullWidth) return pill;
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
@@ -5070,6 +5117,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               const SizedBox(width: 8),
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   color: selected ? Colors.white : palette.primary,
@@ -5105,12 +5154,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: primaryBlue,
-            fontSize: 15,
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 15,
+            ),
           ),
         ),
       ],
@@ -5341,12 +5394,27 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(child: _buildStepLabel(1, 'Choose a teacher')),
-            if (hasRecommendations)
-              _teacherCollapseToggle(shouldCollapseTeachers),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compactHeader = constraints.maxWidth < 380;
+            if (compactHeader && hasRecommendations) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildStepLabel(1, 'Choose a teacher'),
+                  const SizedBox(height: 6),
+                  _teacherCollapseToggle(shouldCollapseTeachers),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: _buildStepLabel(1, 'Choose a teacher')),
+                if (hasRecommendations)
+                  _teacherCollapseToggle(shouldCollapseTeachers),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 8),
         if (shouldCollapseTeachers)
@@ -6177,28 +6245,57 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           ),
         ],
         const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: uiBorder),
-          ),
-          child: Row(
-            children: [
-              _buildSchedulePathPill(
-                path: _SchedulePath.byTeacher,
-                icon: Icons.person_search_rounded,
-                label: 'By Teacher',
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compactPathSwitch = constraints.maxWidth < 340;
+            return Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: uiBorder),
               ),
-              const SizedBox(width: 6),
-              _buildSchedulePathPill(
-                path: _SchedulePath.byDay,
-                icon: Icons.calendar_month_rounded,
-                label: 'By Day',
-              ),
-            ],
-          ),
+              child: compactPathSwitch
+                  ? Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: _buildSchedulePathPill(
+                            path: _SchedulePath.byTeacher,
+                            icon: Icons.person_search_rounded,
+                            label: 'By Teacher',
+                            fullWidth: false,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _buildSchedulePathPill(
+                            path: _SchedulePath.byDay,
+                            icon: Icons.calendar_month_rounded,
+                            label: 'By Day',
+                            fullWidth: false,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        _buildSchedulePathPill(
+                          path: _SchedulePath.byTeacher,
+                          icon: Icons.person_search_rounded,
+                          label: 'By Teacher',
+                        ),
+                        const SizedBox(width: 6),
+                        _buildSchedulePathPill(
+                          path: _SchedulePath.byDay,
+                          icon: Icons.calendar_month_rounded,
+                          label: 'By Day',
+                        ),
+                      ],
+                    ),
+            );
+          },
         ),
         const SizedBox(height: 14),
         AnimatedSwitcher(

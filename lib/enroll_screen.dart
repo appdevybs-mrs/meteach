@@ -898,21 +898,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
                               ),
                               const SizedBox(height: 12),
 
-                              DropdownButtonFormField<String>(
+                              FormField<String>(
                                 initialValue: _gender,
-                                decoration: _inputDeco(
-                                  label: 'Gender | الجنس',
-                                  icon: Icons.wc_rounded,
-                                  hint: _biHint('Select gender', 'اختر الجنس'),
-                                ),
-                                items: _genderOptions
-                                    .map(
-                                      (value) => DropdownMenuItem<String>(
-                                        value: value,
-                                        child: Text(value),
-                                      ),
-                                    )
-                                    .toList(),
                                 validator: (v) {
                                   if (!_genderOptions.contains(
                                     (v ?? '').trim(),
@@ -921,7 +908,35 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                   }
                                   return null;
                                 },
-                                onChanged: (v) => setState(() => _gender = v),
+                                builder: (field) {
+                                  return InputDecorator(
+                                    decoration: _inputDeco(
+                                      label: 'Gender | الجنس',
+                                      icon: Icons.wc_rounded,
+                                    ).copyWith(errorText: field.errorText),
+                                    isEmpty: (field.value ?? '').trim().isEmpty,
+                                    child: Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: _genderOptions.map((value) {
+                                        final selected = field.value == value;
+                                        return ChoiceChip(
+                                          label: Text(value),
+                                          selected: selected,
+                                          onSelected: saving
+                                              ? null
+                                              : (isSelected) {
+                                                  if (!isSelected) return;
+                                                  setState(
+                                                    () => _gender = value,
+                                                  );
+                                                  field.didChange(value);
+                                                },
+                                        );
+                                      }).toList(),
+                                    ),
+                                  );
+                                },
                               ),
                               const SizedBox(height: 12),
 

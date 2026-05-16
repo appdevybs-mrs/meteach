@@ -1792,7 +1792,7 @@ class _AutoScrollingStoryShelfState extends State<_AutoScrollingStoryShelf> {
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 236,
+          height: 244,
           child: Listener(
             onPointerDown: (_) => _pauseAutoScroll(),
             onPointerUp: (_) => _resumeAutoScrollSoon(),

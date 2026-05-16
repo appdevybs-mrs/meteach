@@ -475,7 +475,7 @@ class _RecordedLessonCommentsScreenState
   Widget _buildHeaderCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -491,22 +491,22 @@ class _RecordedLessonCommentsScreenState
             'Discussion',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           Text(
             widget.lessonTitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 12.5,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             _busy ? 'Loading comments...' : '${_comments.length} comments',
             style: const TextStyle(
@@ -522,7 +522,7 @@ class _RecordedLessonCommentsScreenState
   Widget _buildComposer() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -534,14 +534,15 @@ class _RecordedLessonCommentsScreenState
             controller: _commentC,
             focusNode: _commentFocus,
             maxLength: 400,
-            maxLines: 4,
+            minLines: 1,
+            maxLines: 3,
             decoration: const InputDecoration(
               counterText: '',
               hintText: 'Write a comment...',
               border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -550,7 +551,7 @@ class _RecordedLessonCommentsScreenState
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF4F46E5),
                     foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(46),
+                    minimumSize: const Size.fromHeight(40),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -840,9 +841,9 @@ class _RecordedLessonCommentsScreenState
             child: Column(
               children: [
                 _buildHeaderCard(),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 _buildComposer(),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Expanded(
                   child: _busy
                       ? const Center(child: CircularProgressIndicator())

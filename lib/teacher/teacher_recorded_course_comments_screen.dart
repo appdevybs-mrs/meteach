@@ -28,7 +28,7 @@ class TeacherRecordedCourseCommentsScreen extends StatefulWidget {
       _TeacherRecordedCourseCommentsScreenState();
 }
 
-enum _CourseCommentFilter { all, pending, reported, hidden }
+enum _CourseCommentFilter { approved, all, pending, reported, removed }
 
 class _TeacherRecordedCourseCommentsScreenState
     extends State<TeacherRecordedCourseCommentsScreen> {
@@ -41,8 +41,10 @@ class _TeacherRecordedCourseCommentsScreenState
 
   bool _busy = true;
   bool _posting = false;
+  bool _deletingPermanently = false;
   String? _error;
-  _CourseCommentFilter _filter = _CourseCommentFilter.all;
+  _CourseCommentFilter _filter = _CourseCommentFilter.approved;
+  final Set<String> _selectedRemovedCommentIds = <String>{};
 
   List<LessonCommentItem> _comments = const [];
 
@@ -64,20 +66,22 @@ class _TeacherRecordedCourseCommentsScreenState
   bool _isPending(LessonCommentItem item) => item.status == 'pending';
   bool _isReported(LessonCommentItem item) =>
       item.reportCount > 0 && item.status != 'removed';
-  bool _isHidden(LessonCommentItem item) =>
-      item.status == 'hidden' || item.status == 'removed';
+  bool _isApproved(LessonCommentItem item) => item.status == 'visible';
+  bool _isRemoved(LessonCommentItem item) => item.status == 'removed';
 
   List<LessonCommentItem> get _filteredComments {
     return _comments.where((item) {
       switch (_filter) {
+        case _CourseCommentFilter.approved:
+          return _isApproved(item);
         case _CourseCommentFilter.all:
           return true;
         case _CourseCommentFilter.pending:
           return _isPending(item);
         case _CourseCommentFilter.reported:
           return _isReported(item);
-        case _CourseCommentFilter.hidden:
-          return _isHidden(item);
+        case _CourseCommentFilter.removed:
+          return _isRemoved(item);
       }
     }).toList();
   }
@@ -191,6 +195,25 @@ class _TeacherRecordedCourseCommentsScreenState
   }
 
   Future<void> _moderate(LessonCommentItem item, String status) async {
+    if (status == 'delete_permanently') {
+      final ok = await _confirmPermanentDelete(count: 1);
+      if (!ok) return;
+      setState(() => _deletingPermanently = true);
+      try {
+        await CourseFeedbackService.deleteLessonCommentPermanently(
+          courseId: _courseId,
+          lessonId: item.lessonId,
+          commentId: item.id,
+        );
+        if (!mounted) return;
+        _selectedRemovedCommentIds.remove(item.id);
+        AppToast.show(context, 'Comment permanently deleted.');
+        await _loadComments();
+      } finally {
+        if (mounted) setState(() => _deletingPermanently = false);
+      }
+      return;
+    }
     await CourseFeedbackService.moderateLessonComment(
       courseId: _courseId,
       lessonId: item.lessonId,
@@ -198,6 +221,70 @@ class _TeacherRecordedCourseCommentsScreenState
       status: status,
     );
     await _loadComments();
+  }
+
+  Future<bool> _confirmPermanentDelete({required int count}) async {
+    final label = count == 1 ? 'this comment' : '$count comments';
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete permanently?'),
+        content: Text(
+          'This will permanently delete $label with all replies and reports. This cannot be undone.',
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return res == true;
+  }
+
+  Future<void> _deleteSelectedRemovedComments(
+    List<LessonCommentItem> removedItems,
+  ) async {
+    if (_selectedRemovedCommentIds.isEmpty) return;
+    final selected = removedItems
+        .where((item) => _selectedRemovedCommentIds.contains(item.id))
+        .toList();
+    if (selected.isEmpty) return;
+
+    final ok = await _confirmPermanentDelete(count: selected.length);
+    if (!ok) return;
+
+    setState(() => _deletingPermanently = true);
+    var deleted = 0;
+    try {
+      for (final item in selected) {
+        try {
+          await CourseFeedbackService.deleteLessonCommentPermanently(
+            courseId: _courseId,
+            lessonId: item.lessonId,
+            commentId: item.id,
+          );
+          deleted += 1;
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      _selectedRemovedCommentIds.clear();
+      AppToast.show(
+        context,
+        'Permanently deleted $deleted/${selected.length}.',
+      );
+      await _loadComments();
+    } finally {
+      if (mounted) setState(() => _deletingPermanently = false);
+    }
   }
 
   Future<void> _reply(LessonCommentItem item) async {
@@ -293,7 +380,8 @@ class _TeacherRecordedCourseCommentsScreenState
   int get _totalComments => _comments.length;
   int get _pendingCount => _comments.where(_isPending).length;
   int get _reportedCount => _comments.where(_isReported).length;
-  int get _hiddenCount => _comments.where(_isHidden).length;
+  int get _approvedCount => _comments.where(_isApproved).length;
+  int get _removedCount => _comments.where(_isRemoved).length;
 
   String _threadIdFor(String a, String b, String scope) {
     final ids = [a.trim(), b.trim()]..sort();
@@ -493,9 +581,10 @@ class _TeacherRecordedCourseCommentsScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Comments: $_totalComments'),
+            Text('Approved: $_approvedCount'),
             Text('Pending: $_pendingCount'),
             Text('Reported: $_reportedCount'),
-            Text('Hidden/removed: $_hiddenCount'),
+            Text('Removed: $_removedCount'),
           ],
         ),
         actions: [
@@ -514,7 +603,12 @@ class _TeacherRecordedCourseCommentsScreenState
       label: Text(label),
       selected: selected,
       onSelected: (_) {
-        setState(() => _filter = filter);
+        setState(() {
+          _filter = filter;
+          if (_filter != _CourseCommentFilter.removed) {
+            _selectedRemovedCommentIds.clear();
+          }
+        });
         _refreshReplyCountsForVisibleComments();
       },
       labelStyle: TextStyle(
@@ -561,13 +655,13 @@ class _TeacherRecordedCourseCommentsScreenState
     );
   }
 
-  Widget _commentCard(LessonCommentItem item) {
+  Widget _commentCard(LessonCommentItem item, {required bool removedView}) {
     final replies = _repliesByComment[item.id] ?? const [];
     final loadingReplies = _loadingReplies.contains(item.id);
     final expanded = _expandedReplies.contains(item.id);
     final replyCount = _replyCountByComment[item.id] ?? replies.length;
     final hasReplies = replyCount > 0 || replies.isNotEmpty;
-    final visibleReplies = expanded ? replies : replies.take(2).toList();
+    final visibleReplies = expanded ? replies : const <Map<String, dynamic>>[];
 
     final accent = _statusColor(item.status);
 
@@ -620,6 +714,23 @@ class _TeacherRecordedCourseCommentsScreenState
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        if (removedView)
+                          Checkbox(
+                            value: _selectedRemovedCommentIds.contains(item.id),
+                            onChanged: _deletingPermanently
+                                ? null
+                                : (v) {
+                                    setState(() {
+                                      if (v == true) {
+                                        _selectedRemovedCommentIds.add(item.id);
+                                      } else {
+                                        _selectedRemovedCommentIds.remove(
+                                          item.id,
+                                        );
+                                      }
+                                    });
+                                  },
+                          ),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -709,13 +820,44 @@ class _TeacherRecordedCourseCommentsScreenState
                   tooltip: 'More actions',
                   icon: const Icon(Icons.more_horiz_rounded, size: 18),
                   onSelected: (choice) => _moderate(item, choice),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'visible', child: Text('Approve')),
-                    PopupMenuItem(value: 'hidden', child: Text('Hide')),
-                    PopupMenuItem(value: 'removed', child: Text('Remove')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'visible',
+                      child: Text('Approve'),
+                    ),
+                    const PopupMenuItem(value: 'hidden', child: Text('Hide')),
+                    if (item.status == 'removed')
+                      const PopupMenuItem(
+                        value: 'delete_permanently',
+                        child: Text('Delete permanently'),
+                      )
+                    else
+                      const PopupMenuItem(
+                        value: 'removed',
+                        child: Text('Remove'),
+                      ),
                   ],
                 ),
               ),
+              if (removedView) ...[
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _deletingPermanently
+                      ? null
+                      : () => _moderate(item, 'delete_permanently'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFEE2E2),
+                    foregroundColor: const Color(0xFFB91C1C),
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  icon: const Icon(Icons.delete_forever_rounded, size: 16),
+                  label: const Text('Delete permanently'),
+                ),
+              ],
               const Spacer(),
               if (hasReplies)
                 OutlinedButton.icon(
@@ -765,7 +907,7 @@ class _TeacherRecordedCourseCommentsScreenState
                 ),
               ),
             )
-          else if (replies.isNotEmpty) ...[
+          else if (expanded && replies.isNotEmpty) ...[
             const SizedBox(height: 10),
             for (final reply in visibleReplies)
               Container(
@@ -865,6 +1007,8 @@ class _TeacherRecordedCourseCommentsScreenState
   @override
   Widget build(BuildContext context) {
     final comments = _filteredComments;
+    final removedView = _filter == _CourseCommentFilter.removed;
+    final removedVisibleComments = comments.where(_isRemoved).toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Course comments'),
@@ -922,6 +1066,12 @@ class _TeacherRecordedCourseCommentsScreenState
                         runSpacing: 8,
                         children: [
                           _miniStatChip(
+                            'Approved',
+                            _approvedCount,
+                            const Color(0xFFDCFCE7),
+                            const Color(0xFF166534),
+                          ),
+                          _miniStatChip(
                             'All',
                             _totalComments,
                             const Color(0xFFE0F2FE),
@@ -940,10 +1090,10 @@ class _TeacherRecordedCourseCommentsScreenState
                             const Color(0xFFB91C1C),
                           ),
                           _miniStatChip(
-                            'Hidden',
-                            _hiddenCount,
-                            const Color(0xFFE2E8F0),
-                            const Color(0xFF475569),
+                            'Removed',
+                            _removedCount,
+                            const Color(0xFFFEE2E2),
+                            const Color(0xFFB91C1C),
                           ),
                         ],
                       ),
@@ -955,6 +1105,11 @@ class _TeacherRecordedCourseCommentsScreenState
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    _filterChip(
+                      _CourseCommentFilter.approved,
+                      'Approved',
+                      const Color(0xFF16A34A),
+                    ),
                     _filterChip(
                       _CourseCommentFilter.all,
                       'All',
@@ -971,12 +1126,71 @@ class _TeacherRecordedCourseCommentsScreenState
                       const Color(0xFFEF4444),
                     ),
                     _filterChip(
-                      _CourseCommentFilter.hidden,
-                      'Hidden',
-                      const Color(0xFF64748B),
+                      _CourseCommentFilter.removed,
+                      'Removed',
+                      const Color(0xFFDC2626),
                     ),
                   ],
                 ),
+                if (removedView) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      border: Border.all(color: const Color(0xFFFED7AA)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        FilledButton.tonal(
+                          onPressed: _deletingPermanently
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRemovedCommentIds
+                                      ..clear()
+                                      ..addAll(
+                                        removedVisibleComments.map((e) => e.id),
+                                      );
+                                  });
+                                },
+                          child: const Text('Select all loaded'),
+                        ),
+                        OutlinedButton(
+                          onPressed: _deletingPermanently
+                              ? null
+                              : () => setState(
+                                  () => _selectedRemovedCommentIds.clear(),
+                                ),
+                          child: const Text('Clear'),
+                        ),
+                        FilledButton.icon(
+                          onPressed:
+                              _deletingPermanently ||
+                                  _selectedRemovedCommentIds.isEmpty
+                              ? null
+                              : () => _deleteSelectedRemovedComments(
+                                  removedVisibleComments,
+                                ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFB91C1C),
+                          ),
+                          icon: const Icon(Icons.delete_forever_rounded),
+                          label: Text(
+                            _deletingPermanently
+                                ? 'Deleting...'
+                                : 'Delete selected (${_selectedRemovedCommentIds.length})',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Expanded(
                   child: _busy
@@ -995,8 +1209,10 @@ class _TeacherRecordedCourseCommentsScreenState
                         )
                       : ListView.builder(
                           itemCount: comments.length,
-                          itemBuilder: (_, index) =>
-                              _commentCard(comments[index]),
+                          itemBuilder: (_, index) => _commentCard(
+                            comments[index],
+                            removedView: removedView,
+                          ),
                         ),
                 ),
               ],

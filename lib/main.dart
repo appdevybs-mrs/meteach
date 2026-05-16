@@ -3831,7 +3831,7 @@ class _CategoryGridCardState extends State<_CategoryGridCard> {
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 390;
     final cardW = compact ? 146.0 : 158.0;
-    final thumbH = compact ? 84.0 : 92.0;
+    final thumbH = compact ? 80.0 : 92.0;
     final topTone = _adaptiveColor == null ? null : _softened(_adaptiveColor!);
     final chipBg = topTone == null
         ? Brand.primaryBlue.withValues(alpha: 0.10)
@@ -3948,7 +3948,7 @@ class _CategoryGridCardState extends State<_CategoryGridCard> {
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                                padding: const EdgeInsets.fromLTRB(8, 5, 8, 4),
                                 child: Text(
                                   c.title.trim().isEmpty
                                       ? '(Untitled course)'

@@ -678,4 +678,23 @@ class CourseFeedbackService {
           'updatedAt': DateTime.now().millisecondsSinceEpoch,
         });
   }
+
+  static Future<void> deleteLessonCommentPermanently({
+    required String courseId,
+    required String lessonId,
+    required String commentId,
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeCommentId = commentId.trim();
+    if (safeCourseId.isEmpty || safeLessonId.isEmpty || safeCommentId.isEmpty) {
+      return;
+    }
+
+    await _db.update({
+      '$lessonCommentsNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
+      '$lessonRepliesNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
+      '$commentReportsNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
+    });
+  }
 }
