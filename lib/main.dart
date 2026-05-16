@@ -56,8 +56,20 @@ String _formatCompactCountdown(int totalSeconds) {
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  await runZonedGuarded<Future<void>>(
+    () {
+      WidgetsFlutterBinding.ensureInitialized();
 
+      return _bootstrapApp();
+    },
+    (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      debugPrint('Uncaught zone error: $error\n$stack');
+    },
+  );
+}
+
+Future<void> _bootstrapApp() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -104,23 +116,15 @@ Future<void> main() async {
     );
   };
 
-  runZonedGuarded(
-    () {
-      runApp(const YourBridgeSchoolApp());
+  runApp(const YourBridgeSchoolApp());
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        AppLaunchActionService.instance.init();
-        if (!kIsWeb) {
-          unawaited(AppConnectivity.instance.start());
-        }
-        unawaited(FCMService.I.init());
-      });
-    },
-    (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      debugPrint('Uncaught zone error: $error\n$stack');
-    },
-  );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    AppLaunchActionService.instance.init();
+    if (!kIsWeb) {
+      unawaited(AppConnectivity.instance.start());
+    }
+    unawaited(FCMService.I.init());
+  });
 }
 
 class Brand {
