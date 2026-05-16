@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -1840,6 +1842,30 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required String defaultFileName,
   }) async {
     if (!mounted) return;
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Certificate Notice'),
+        content: const Text(
+          'Depending on your country of origin, this certificate may require stamping by our office. Please contact us if you need this process.\n\n'
+          'قد تتطلب هذه الشهادة ختمًا من مكتبنا حسب بلدك. يرجى التواصل معنا إذا كنت تحتاج إلى هذه الإجراءات.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed != true) return;
 
     final action = await showDialog<String>(
       context: context,

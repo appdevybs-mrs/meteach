@@ -110,8 +110,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   String _searchQuery = "";
   Timer? _searchDebounce;
 
-  final TextEditingController _flexSearchCtrl = TextEditingController();
-  String _flexSearch = "";
   String _flexStatusFilter = 'all';
   bool _flexUnreadOnly = false;
   bool _recordedUnreadOnly = false;
@@ -163,13 +161,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       _searchDebounce?.cancel();
       _searchDebounce = Timer(const Duration(milliseconds: 300), () {
         if (!mounted) return;
-        setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+        setState(() => _searchQuery = _normalizeSearchText(_searchCtrl.text));
       });
-    });
-
-    _flexSearchCtrl.addListener(() {
-      if (!mounted) return;
-      setState(() => _flexSearch = _flexSearchCtrl.text.trim().toLowerCase());
     });
 
     // ===== Pause cooldown: check immediately, then daily =====
@@ -183,9 +176,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchCtrl.dispose();
-    _flexSearchCtrl.dispose();
     _pauseCooldownTimer?.cancel();
     super.dispose();
+  }
+
+  String _normalizeSearchText(String input) {
+    return input.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
   }
 
   // -------------------- Notifications --------------------
@@ -787,7 +783,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       setState(() {
         _showClassesSearch = true;
         _searchCtrl.text = searchId;
-        _searchQuery = searchId.toLowerCase();
+        _searchQuery = _normalizeSearchText(searchId);
       });
       return;
     }
@@ -1866,20 +1862,23 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool _matchesSearch(Map<String, dynamic> cls) {
     if (_searchQuery.isEmpty) return true;
 
-    final id = (cls["class_id"] ?? "").toString().toLowerCase();
-    final title = (cls["course_title"] ?? "").toString().toLowerCase();
-    final level = (cls["course_level"] ?? "").toString().toLowerCase();
-    final courseId = (cls["course_id"] ?? "").toString().toLowerCase();
-    final inst = (cls["instructor"] ?? "").toString().toLowerCase();
-    final status = (cls["status"] ?? "").toString().toLowerCase();
+    final q = _searchQuery;
+    String norm(dynamic v) => _normalizeSearchText(v.toString());
+
+    final id = norm(cls["class_id"]);
+    final title = norm(cls["course_title"]);
+    final level = norm(cls["course_level"]);
+    final courseId = norm(cls["course_id"]);
+    final inst = norm(cls["instructor"]);
+    final status = norm(cls["status"]);
 
     bool hit =
-        id.contains(_searchQuery) ||
-        title.contains(_searchQuery) ||
-        level.contains(_searchQuery) ||
-        courseId.contains(_searchQuery) ||
-        inst.contains(_searchQuery) ||
-        status.contains(_searchQuery);
+        id.contains(q) ||
+        title.contains(q) ||
+        level.contains(q) ||
+        courseId.contains(q) ||
+        inst.contains(q) ||
+        status.contains(q);
 
     if (hit) return true;
 
@@ -1893,9 +1892,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       final v = entry.value;
       if (v is Map) {
         final m = Map<String, dynamic>.from(v);
-        final name = (m["name"] ?? "").toString().toLowerCase();
-        final serial = (m["serial"] ?? "").toString().toLowerCase();
-        if (name.contains(_searchQuery) || serial.contains(_searchQuery)) {
+        final name = norm(m["name"]);
+        final serial = norm(m["serial"]);
+        if (name.contains(q) || serial.contains(q)) {
           return true;
         }
       }
@@ -5873,10 +5872,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             if (unread <= 0) return false;
           }
 
-          if (_flexSearch.isEmpty) return true;
-          final q = _flexSearch;
-          return item.learnerName.toLowerCase().contains(q) ||
-              item.courseTitle.toLowerCase().contains(q);
+          if (_searchQuery.isEmpty) return true;
+          final q = _searchQuery;
+          final learner = _normalizeSearchText(item.learnerName);
+          return learner.contains(q);
         }).toList();
 
         final consumedCount = shown.fold<int>(
@@ -5887,16 +5886,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              controller: _flexSearchCtrl,
-              decoration: const InputDecoration(
-                isDense: true,
-                prefixIcon: Icon(Icons.search),
-                labelText: 'Search learner / course',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -6273,11 +6262,20 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
         final rows = snap.data ?? const <_RecordedCourseSummary>[];
         _queueRecordedBadgeUidSync(rows);
-        final shown = _recordedUnreadOnly
+        final filteredBySearch = _searchQuery.isEmpty
             ? rows
+            : rows
+                  .where(
+                    (item) => _normalizeSearchText(
+                      item.learnerName,
+                    ).contains(_searchQuery),
+                  )
+                  .toList();
+        final shown = _recordedUnreadOnly
+            ? filteredBySearch
                   .where((item) => (unreadByLearner[item.uid.trim()] ?? 0) > 0)
                   .toList()
-            : rows;
+            : filteredBySearch;
         final totalCompleted = shown.fold<int>(
           0,
           (sum, item) => sum + item.completedSessions,
