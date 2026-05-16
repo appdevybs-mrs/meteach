@@ -607,18 +607,25 @@ class _EnrollScreenState extends State<EnrollScreen> {
     final isMale = value == 'Male';
     final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
     final gradient = selected
-        ? const LinearGradient(
+        ? LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Brand.primaryBlue, Color(0xFF2E4A78)],
+            colors: isMale
+                ? [Brand.primaryBlue, Color(0xFF2E4A78)]
+                : [Color(0xFFEC4899), Color(0xFFF472B6)],
           )
         : LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.98),
-              Brand.accentCyan.withValues(alpha: 0.05),
-            ],
+            colors: isMale
+                ? [
+                    Colors.white.withValues(alpha: 0.98),
+                    Brand.accentCyan.withValues(alpha: 0.05),
+                  ]
+                : [
+                    Colors.white.withValues(alpha: 0.98),
+                    const Color(0xFFFBCFE8).withValues(alpha: 0.35),
+                  ],
           );
 
     return Material(
@@ -984,45 +991,71 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                   return null;
                                 },
                                 builder: (field) {
-                                  return InputDecorator(
-                                    decoration: _inputDeco(
-                                      label: 'Gender | الجنس',
-                                      icon: Icons.wc_rounded,
-                                    ).copyWith(errorText: field.errorText),
-                                    isEmpty: (field.value ?? '').trim().isEmpty,
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: _genderPill(
-                                            value: 'Male',
-                                            selected: field.value == 'Male',
-                                            onTap: saving
-                                                ? null
-                                                : () {
-                                                    setState(
-                                                      () => _gender = 'Male',
-                                                    );
-                                                    field.didChange('Male');
-                                                  },
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Padding(
+                                        padding: EdgeInsets.only(
+                                          left: 18,
+                                          right: 18,
+                                          bottom: 8,
+                                        ),
+                                        child: Text(
+                                          'Gender | الجنس',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: Brand.mainText,
                                           ),
                                         ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: _genderPill(
-                                            value: 'Female',
-                                            selected: field.value == 'Female',
-                                            onTap: saving
-                                                ? null
-                                                : () {
-                                                    setState(
-                                                      () => _gender = 'Female',
-                                                    );
-                                                    field.didChange('Female');
-                                                  },
-                                          ),
+                                      ),
+                                      InputDecorator(
+                                        decoration: _inputDeco(
+                                          label: '',
+                                          icon: Icons.wc_rounded,
+                                        ).copyWith(errorText: field.errorText),
+                                        isEmpty: false,
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: _genderPill(
+                                                value: 'Male',
+                                                selected: field.value == 'Male',
+                                                onTap: saving
+                                                    ? null
+                                                    : () {
+                                                        setState(
+                                                          () =>
+                                                              _gender = 'Male',
+                                                        );
+                                                        field.didChange('Male');
+                                                      },
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: _genderPill(
+                                                value: 'Female',
+                                                selected:
+                                                    field.value == 'Female',
+                                                onTap: saving
+                                                    ? null
+                                                    : () {
+                                                        setState(
+                                                          () => _gender =
+                                                              'Female',
+                                                        );
+                                                        field.didChange(
+                                                          'Female',
+                                                        );
+                                                      },
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   );
                                 },
                               ),
