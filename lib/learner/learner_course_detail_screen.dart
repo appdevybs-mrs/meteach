@@ -1560,6 +1560,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     'content': (sess['content'] ?? '').toString(),
                     'homework': (sess['homework'] ?? '').toString(),
                     'materialsUrl': (sess['materialsUrl'] ?? '').toString(),
+                    'homeworkUrl': (sess['homeworkUrl'] ?? '').toString(),
                     'durationMinutes': sess['durationMinutes'] ?? 0,
                   });
                 }
@@ -1597,6 +1598,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       'content': (sess['content'] ?? '').toString(),
                       'homework': (sess['homework'] ?? '').toString(),
                       'materialsUrl': (sess['materialsUrl'] ?? '').toString(),
+                      'homeworkUrl': (sess['homeworkUrl'] ?? '').toString(),
                       'durationMinutes': sess['durationMinutes'] ?? 0,
                     });
                   }
@@ -3815,12 +3817,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     return uri.scheme == 'http' || uri.scheme == 'https';
   }
 
-  void _showMissingMaterialMessage() {
+  void _showMissingHomeworkMessage() {
     AppToast.fromSnackBar(
       context,
       const SnackBar(
         content: Text(
-          'Lesson material is not available yet. Please contact Your Bridge School administration for support.',
+          'Homework file is not available yet. Please contact Your Bridge School administration for support.',
         ),
       ),
     );
@@ -3871,9 +3873,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   Future<void> _openLessonMaterial(Map<String, dynamic> session) async {
-    final url = (session['materialsUrl'] ?? '').toString().trim();
+    final url = (session['homeworkUrl'] ?? '').toString().trim();
     if (!_isHttpUrl(url)) {
-      _showMissingMaterialMessage();
+      _showMissingHomeworkMessage();
       return;
     }
 
@@ -3889,7 +3891,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             context,
             MaterialPageRoute(
               builder: (_) => MaterialWebViewScreen.fromUrl(
-                title: title.isEmpty ? 'Lesson Material' : title,
+                title: title.isEmpty ? 'Homework' : '$title Homework',
                 url: url,
               ),
             ),
@@ -3897,7 +3899,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         },
       );
     } catch (_) {
-      _showMissingMaterialMessage();
+      _showMissingHomeworkMessage();
     }
   }
 
@@ -3941,7 +3943,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final sessionNumber = _asInt(s['sessionNumber']);
     final objective = (s['objective'] ?? '').toString().trim();
     final hw = (s['homework'] ?? '').toString().trim();
-    final hasMaterials = _isHttpUrl((s['materialsUrl'] ?? '').toString());
+    final hasHomeworkFile = _isHttpUrl((s['homeworkUrl'] ?? '').toString());
 
     final passed = _coveredSessionIds.contains(sessionId);
     final attended = _hasAttendedSession(
@@ -4068,9 +4070,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
-                      if (!hasMaterials)
+                      if (!hasHomeworkFile)
                         Text(
-                          'Material not uploaded yet.',
+                          'Homework not uploaded yet.',
                           style: TextStyle(
                             color: UiK.mainText.withValues(alpha: 0.62),
                             fontWeight: FontWeight.w700,

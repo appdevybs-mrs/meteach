@@ -1276,6 +1276,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           videoUrl: '',
           videoThumbnailUrl: '',
           materialsUrl: '',
+          homeworkUrl: '',
           serverFolderPath: '',
           lessonFiles: const <LessonFileAsset>[],
         ),
@@ -1298,6 +1299,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       videoUrl: res.videoUrl.trim(),
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
       materialsUrl: res.materialsUrl.trim(),
+      homeworkUrl: res.homeworkUrl.trim(),
       serverFolderPath: res.serverFolderPath.trim(),
       lessonFiles: res.lessonFiles,
     );
@@ -1345,6 +1347,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           videoUrl: s.videoUrl,
           videoThumbnailUrl: s.videoThumbnailUrl,
           materialsUrl: s.materialsUrl,
+          homeworkUrl: s.homeworkUrl,
           serverFolderPath: _resolveServerFolderPath(s),
           lessonFiles: s.lessonFiles,
         ),
@@ -1363,6 +1366,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       videoUrl: res.videoUrl.trim(),
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
       materialsUrl: res.materialsUrl.trim(),
+      homeworkUrl: res.homeworkUrl.trim(),
       serverFolderPath: res.serverFolderPath.trim(),
       lessonFiles: res.lessonFiles,
     );
@@ -3223,6 +3227,7 @@ class _SessionDraft {
     this.videoUrl = '',
     this.videoThumbnailUrl = '',
     this.materialsUrl = '',
+    this.homeworkUrl = '',
     this.serverFolderPath = '',
     this.lessonFiles = const <LessonFileAsset>[],
   });
@@ -3236,6 +3241,7 @@ class _SessionDraft {
   final String videoUrl;
   final String videoThumbnailUrl;
   final String materialsUrl;
+  final String homeworkUrl;
   final String serverFolderPath;
   final List<LessonFileAsset> lessonFiles;
 }
@@ -3342,17 +3348,22 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   late final TextEditingController videoUrlC;
   late final TextEditingController videoThumbC;
   late final TextEditingController materialsUrlC;
+  late final TextEditingController homeworkUrlC;
 
   SkillType _skill = SkillType.listening;
 
   bool _uploadingVideo = false;
   bool _uploadingMaterials = false;
+  bool _uploadingHomework = false;
   double _videoUploadProgress = 0;
   double _materialsUploadProgress = 0;
+  double _homeworkUploadProgress = 0;
   bool _recordedAssetFlowBusy = false;
   bool _verifyingServerState = false;
+  final bool _showLegacyFileList = false;
   bool _videoExistsOnServer = false;
   bool _materialsExistOnServer = false;
+  bool _homeworkExistsOnServer = false;
   late String _serverFolderPath;
   late List<LessonFileAsset> _lessonFiles;
   List<_SessionUploadQueueItem> _uploadQueue = <_SessionUploadQueueItem>[];
@@ -3497,12 +3508,14 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       _recordedAssetFlowBusy ||
       _uploadingVideo ||
       _uploadingMaterials ||
+      _uploadingHomework ||
       _verifyingServerState;
 
   bool get _hasInitialRecordedAssets =>
       widget.initial.serverFolderPath.trim().isNotEmpty ||
       widget.initial.videoUrl.trim().isNotEmpty ||
-      widget.initial.materialsUrl.trim().isNotEmpty;
+      widget.initial.materialsUrl.trim().isNotEmpty ||
+      widget.initial.homeworkUrl.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -3517,12 +3530,14 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     videoUrlC = TextEditingController(text: widget.initial.videoUrl);
     videoThumbC = TextEditingController(text: widget.initial.videoThumbnailUrl);
     materialsUrlC = TextEditingController(text: widget.initial.materialsUrl);
+    homeworkUrlC = TextEditingController(text: widget.initial.homeworkUrl);
     _serverFolderPath = widget.initial.serverFolderPath.trim();
     _lessonFiles = List<LessonFileAsset>.from(widget.initial.lessonFiles);
     if (_lessonFiles.isEmpty) {
       final legacy = <LessonFileAsset>[];
       final videoUrl = widget.initial.videoUrl.trim();
       final htmlUrl = widget.initial.materialsUrl.trim();
+      final homeworkUrl = widget.initial.homeworkUrl.trim();
       if (videoUrl.isNotEmpty) {
         legacy.add(
           LessonFileAsset(
@@ -3549,6 +3564,19 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
           ),
         );
       }
+      if (homeworkUrl.isNotEmpty) {
+        legacy.add(
+          LessonFileAsset(
+            url: homeworkUrl,
+            name: _fileNameFromUrl(homeworkUrl),
+            ext: _fileExt(_fileNameFromUrl(homeworkUrl)),
+            sizeBytes: 0,
+            uploadedAt: 0,
+            uploadedByUid: '',
+            kind: 'homework',
+          ),
+        );
+      }
       _lessonFiles = legacy;
     }
     _skill = widget.initial.skillType;
@@ -3568,6 +3596,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     videoUrlC.dispose();
     videoThumbC.dispose();
     materialsUrlC.dispose();
+    homeworkUrlC.dispose();
     super.dispose();
   }
 
@@ -3796,6 +3825,61 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     }
   }
 
+  Future<void> _clearHomeworkHtmlOnly() async {
+    if (_recordedAssetsBusy) {
+      _debug('clearHomeworkHtml ignored busy=true');
+      return;
+    }
+
+    if (homeworkUrlC.text.trim().isEmpty) {
+      _debug('clearHomeworkHtml skipped (nothing to clear)');
+      return;
+    }
+
+    final ok = await _confirmClearAsset(
+      title: 'Remove homework HTML?',
+      message:
+          'This will remove the homework HTML from this session. Learners will no longer see homework in Prepare.',
+      confirmText: 'Remove',
+    );
+
+    if (!ok) return;
+    final oldHtmlUrl = homeworkUrlC.text.trim();
+    if (mounted) {
+      setState(() => _recordedAssetFlowBusy = true);
+    }
+
+    try {
+      if (oldHtmlUrl.isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldHtmlUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) rethrow;
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        homeworkUrlC.clear();
+        _lessonFiles.removeWhere((x) => x.kind == 'homework');
+        _homeworkExistsOnServer = false;
+        _inlineError = null;
+      });
+    } catch (e) {
+      _showInlineError('Could not remove homework HTML: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _recordedAssetFlowBusy = false);
+      }
+    }
+  }
+
   Future<bool> _prepareRecordedReplacementIfNeeded() async {
     _debug(
       'prepareReplacement start isRecorded=${widget.isRecorded} '
@@ -3873,11 +3957,25 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
             kind: 'html',
           ),
         );
+        final homework = _lessonFiles.lastWhere(
+          (x) => x.kind == 'homework',
+          orElse: () => const LessonFileAsset(
+            url: '',
+            name: '',
+            ext: '',
+            sizeBytes: 0,
+            uploadedAt: 0,
+            uploadedByUid: '',
+            kind: 'homework',
+          ),
+        );
         videoUrlC.text = video.url;
         if (video.url.isEmpty) videoThumbC.clear();
         materialsUrlC.text = html.url;
+        homeworkUrlC.text = homework.url;
         _videoExistsOnServer = video.url.isNotEmpty;
         _materialsExistOnServer = html.url.isNotEmpty;
+        _homeworkExistsOnServer = homework.url.isNotEmpty;
       });
     } catch (e) {
       _showInlineError('Could not delete file: $e');
@@ -3924,12 +4022,14 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   Future<void> _syncRecordedAssetStateWithServer() async {
     final videoUrl = videoUrlC.text.trim();
     final materialsUrl = materialsUrlC.text.trim();
+    final homeworkUrl = homeworkUrlC.text.trim();
 
-    if (videoUrl.isEmpty && materialsUrl.isEmpty) {
+    if (videoUrl.isEmpty && materialsUrl.isEmpty && homeworkUrl.isEmpty) {
       if (!mounted) return;
       setState(() {
         _videoExistsOnServer = false;
         _materialsExistOnServer = false;
+        _homeworkExistsOnServer = false;
       });
       return;
     }
@@ -3945,11 +4045,15 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       final htmlExists = materialsUrl.isNotEmpty
           ? await _assetUrlExistsOnServer(materialsUrl, listCache)
           : false;
+      final homeworkExists = homeworkUrl.isNotEmpty
+          ? await _assetUrlExistsOnServer(homeworkUrl, listCache)
+          : false;
 
       if (!mounted) return;
       setState(() {
         _videoExistsOnServer = videoExists;
         _materialsExistOnServer = htmlExists;
+        _homeworkExistsOnServer = homeworkExists;
 
         if (videoUrl.isNotEmpty && !videoExists) {
           videoUrlC.clear();
@@ -3958,9 +4062,13 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         if (materialsUrl.isNotEmpty && !htmlExists) {
           materialsUrlC.clear();
         }
+        if (homeworkUrl.isNotEmpty && !homeworkExists) {
+          homeworkUrlC.clear();
+        }
 
         if ((videoUrl.isNotEmpty && !videoExists) ||
-            (materialsUrl.isNotEmpty && !htmlExists)) {
+            (materialsUrl.isNotEmpty && !htmlExists) ||
+            (homeworkUrl.isNotEmpty && !homeworkExists)) {
           _inlineError =
               'Some stored asset URLs were stale and have been auto-cleared because files are missing on server.';
         }
@@ -4087,7 +4195,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() => _materialsUploadProgress = 0);
 
       final result = await FilePicker.platform.pickFiles(
-        allowMultiple: true,
+        allowMultiple: false,
         withData: false,
         type: FileType.custom,
         allowedExtensions: const ['html', 'htm'],
@@ -4099,7 +4207,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       }
 
       final path = _resolvedSessionFolderPath();
-      final nextFiles = List<LessonFileAsset>.from(_lessonFiles);
+      final nextFiles = List<LessonFileAsset>.from(_lessonFiles)
+        ..removeWhere((x) => x.kind == 'html');
       final uploaded = await _uploadFilesWithTracking(
         files: result.files,
         path: path,
@@ -4132,6 +4241,69 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       _debug(
         'html upload finished uploading=$_uploadingMaterials busy=$_recordedAssetFlowBusy',
       );
+    }
+  }
+
+  Future<void> _pickAndUploadHomeworkHtml() async {
+    if (_recordedAssetsBusy) return;
+
+    final title = titleC.text.trim();
+    if (title.isEmpty) {
+      _showInlineError('Enter session title first.');
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _recordedAssetFlowBusy = true);
+    }
+
+    try {
+      _clearInlineError();
+      final prepared = await _prepareRecordedReplacementIfNeeded();
+      if (!prepared) return;
+
+      setState(() => _uploadingHomework = true);
+      setState(() => _homeworkUploadProgress = 0);
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: false,
+        type: FileType.custom,
+        allowedExtensions: const ['html', 'htm'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final path = _resolvedSessionFolderPath();
+      final nextFiles = List<LessonFileAsset>.from(_lessonFiles)
+        ..removeWhere((x) => x.kind == 'homework');
+      final uploaded = await _uploadFilesWithTracking(
+        files: result.files,
+        path: path,
+        suffixFor: (_) => 'homework',
+        kindFor: (_) => 'homework',
+        onOverallProgress: (p) => _homeworkUploadProgress = p,
+      );
+      nextFiles.addAll(uploaded);
+      final latest = uploaded.isNotEmpty ? uploaded.last.url : '';
+
+      if (!mounted) return;
+      setState(() {
+        _lessonFiles = nextFiles;
+        if (latest.isNotEmpty) homeworkUrlC.text = latest;
+        _homeworkExistsOnServer = latest.isNotEmpty;
+        _inlineError = null;
+      });
+    } catch (e) {
+      _showInlineError('Homework HTML upload failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _uploadingHomework = false;
+          _homeworkUploadProgress = 0;
+          _recordedAssetFlowBusy = false;
+        });
+      }
     }
   }
 
@@ -4416,7 +4588,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                         ],
                         const SizedBox(height: 16),
                         const Text(
-                          'HTML materials',
+                          'Lesson',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 8),
@@ -4438,7 +4610,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           )
                         else
                           const Text(
-                            'No HTML materials uploaded yet.',
+                            'No lesson HTML uploaded yet.',
                             style: TextStyle(fontWeight: FontWeight.w600),
                           ),
                         const SizedBox(height: 10),
@@ -4459,8 +4631,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                             _uploadingMaterials
                                 ? 'Uploading ${(_materialsUploadProgress * 100).round()}%'
                                 : (!_materialsExistOnServer
-                                      ? 'Upload HTML'
-                                      : 'Replace HTML'),
+                                      ? 'Upload Lesson'
+                                      : 'Replace Lesson'),
                           ),
                         ),
                         if (_uploadingMaterials) ...[
@@ -4482,7 +4654,82 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                                 ? null
                                 : _clearHtmlOnly,
                             icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('Remove HTML'),
+                            label: const Text('Remove Lesson'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade200),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Homework',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_verifyingServerState)
+                          Text(
+                            'Checking server state…',
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else if (_homeworkExistsOnServer)
+                          Text(
+                            _fileNameFromUrl(homeworkUrlC.text.trim()),
+                            style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        else
+                          const Text(
+                            'No homework HTML uploaded yet.',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _recordedAssetsBusy
+                              ? null
+                              : _pickAndUploadHomeworkHtml,
+                          icon: _uploadingHomework
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.assignment_rounded),
+                          label: Text(
+                            _uploadingHomework
+                                ? 'Uploading ${(_homeworkUploadProgress * 100).round()}%'
+                                : (!_homeworkExistsOnServer
+                                      ? 'Upload Homework'
+                                      : 'Replace Homework'),
+                          ),
+                        ),
+                        if (_uploadingHomework) ...[
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              minHeight: 7,
+                              value: _homeworkUploadProgress
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                            ),
+                          ),
+                        ],
+                        if (_homeworkExistsOnServer) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _recordedAssetsBusy
+                                ? null
+                                : _clearHomeworkHtmlOnly,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Remove Homework'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red.shade700,
                               side: BorderSide(color: Colors.red.shade200),
@@ -4507,7 +4754,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                 if (!widget.isRecorded) ...[
                   const SizedBox(height: 16),
                   const Text(
-                    'Lesson materials (HTML)',
+                    'Lesson and homework files (HTML)',
                     style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
                   ),
                   const SizedBox(height: 8),
@@ -4551,8 +4798,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                             _uploadingMaterials
                                 ? 'Uploading ${(_materialsUploadProgress * 100).round()}%'
                                 : (materialsUrlC.text.trim().isEmpty
-                                      ? 'Upload HTML'
-                                      : 'Replace HTML'),
+                                      ? 'Upload Lesson'
+                                      : 'Replace Lesson'),
                           ),
                         ),
                         if (_uploadingMaterials) ...[
@@ -4574,7 +4821,55 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                                 ? null
                                 : _clearHtmlOnly,
                             icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('Remove HTML'),
+                            label: const Text('Remove Lesson'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade200),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        Text(
+                          homeworkUrlC.text.trim().isEmpty
+                              ? 'No homework HTML uploaded yet.'
+                              : _fileNameFromUrl(homeworkUrlC.text.trim()),
+                          style: TextStyle(
+                            color: homeworkUrlC.text.trim().isEmpty
+                                ? Colors.black.withValues(alpha: 0.72)
+                                : Colors.blue.shade700,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _recordedAssetsBusy
+                              ? null
+                              : _pickAndUploadHomeworkHtml,
+                          icon: _uploadingHomework
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.assignment_rounded),
+                          label: Text(
+                            _uploadingHomework
+                                ? 'Uploading ${(_homeworkUploadProgress * 100).round()}%'
+                                : (homeworkUrlC.text.trim().isEmpty
+                                      ? 'Upload Homework'
+                                      : 'Replace Homework'),
+                          ),
+                        ),
+                        if (homeworkUrlC.text.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _recordedAssetsBusy
+                                ? null
+                                : _clearHomeworkHtmlOnly,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Remove Homework'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red.shade700,
                               side: BorderSide(color: Colors.red.shade200),
@@ -4596,127 +4891,130 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 14),
-                const Text(
-                  'Lesson files in this session',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-                ),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                  onPressed: _recordedAssetsBusy
-                      ? null
-                      : _pickAndUploadAnyFiles,
-                  icon: const Icon(Icons.upload_file_rounded),
-                  label: const Text('Upload files'),
-                ),
-                const SizedBox(height: 8),
-                if (_uploadQueue.isNotEmpty) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(10),
-                      color: Colors.white,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Upload queue',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 8),
-                        ...List.generate(_uploadQueue.length, (i) {
-                          final q = _uploadQueue[i];
-                          final percent = (q.progress * 100).round();
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${q.fileName} (${q.kind.toUpperCase()})',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  'Status: ${q.status}  $percent%  Time: ${_fmtDuration(q.elapsedMs)}  Speed: ${_fmtSpeed(q.speedBytesPerSec)}  ETA: ${_fmtEta(q.etaMs)}',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: q.status == 'failed'
-                                        ? Colors.red.shade700
-                                        : Colors.black.withValues(alpha: 0.7),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: LinearProgressIndicator(
-                                    minHeight: 6,
-                                    value: q.progress
-                                        .clamp(0.0, 1.0)
-                                        .toDouble(),
-                                  ),
-                                ),
-                                if (q.error.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    q.error,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.red.shade700,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
+                if (_showLegacyFileList) ...[
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Lesson files in this session',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
                   ),
                   const SizedBox(height: 8),
-                ],
-                if (_lessonFiles.isEmpty)
-                  Text(
-                    'No uploaded files yet.',
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  )
-                else
-                  ...List.generate(_lessonFiles.length, (i) {
-                    final f = _lessonFiles[i];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
+                  FilledButton.icon(
+                    onPressed: _recordedAssetsBusy
+                        ? null
+                        : _pickAndUploadAnyFiles,
+                    icon: const Icon(Icons.upload_file_rounded),
+                    label: const Text('Upload files'),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_uploadQueue.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(10),
+                        color: Colors.white,
                       ),
-                      child: ListTile(
-                        dense: true,
-                        title: Text(
-                          f.name.isEmpty ? _fileNameFromUrl(f.url) : f.name,
-                        ),
-                        subtitle: Text(
-                          '${f.kind.toUpperCase()}  ${f.ext.toUpperCase()}',
-                        ),
-                        trailing: IconButton(
-                          onPressed: _recordedAssetsBusy
-                              ? null
-                              : () => _removeLessonFileAt(i),
-                          icon: const Icon(Icons.delete_outline_rounded),
-                          color: Colors.red.shade700,
-                          tooltip: 'Delete from server',
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Upload queue',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 8),
+                          ...List.generate(_uploadQueue.length, (i) {
+                            final q = _uploadQueue[i];
+                            final percent = (q.progress * 100).round();
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${q.fileName} (${q.kind.toUpperCase()})',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Status: ${q.status}  $percent%  Time: ${_fmtDuration(q.elapsedMs)}  Speed: ${_fmtSpeed(q.speedBytesPerSec)}  ETA: ${_fmtEta(q.etaMs)}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: q.status == 'failed'
+                                          ? Colors.red.shade700
+                                          : Colors.black.withValues(alpha: 0.7),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: LinearProgressIndicator(
+                                      minHeight: 6,
+                                      value: q.progress
+                                          .clamp(0.0, 1.0)
+                                          .toDouble(),
+                                    ),
+                                  ),
+                                  if (q.error.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      q.error,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
                       ),
-                    );
-                  }),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_lessonFiles.isEmpty)
+                    Text(
+                      'No uploaded files yet.',
+                      style: TextStyle(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else
+                    ...List.generate(_lessonFiles.length, (i) {
+                      final f = _lessonFiles[i];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: ListTile(
+                          dense: true,
+                          title: Text(
+                            f.name.isEmpty ? _fileNameFromUrl(f.url) : f.name,
+                          ),
+                          subtitle: Text(
+                            '${f.kind.toUpperCase()}  ${f.ext.toUpperCase()}',
+                          ),
+                          trailing: IconButton(
+                            onPressed: _recordedAssetsBusy
+                                ? null
+                                : () => _removeLessonFileAt(i),
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            color: Colors.red.shade700,
+                            tooltip: 'Delete from server',
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+                const SizedBox(height: 14),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -4746,6 +5044,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                                     ? videoThumbC.text.trim()
                                     : '',
                                 materialsUrl: materialsUrlC.text.trim(),
+                                homeworkUrl: homeworkUrlC.text.trim(),
                                 serverFolderPath: _serverFolderPath.trim(),
                                 lessonFiles: _lessonFiles,
                               ),
@@ -6986,6 +7285,7 @@ class SyllabusSession {
     this.videoUrl = '',
     this.videoThumbnailUrl = '',
     this.materialsUrl = '',
+    this.homeworkUrl = '',
     this.serverFolderPath = '',
     this.lessonFiles = const <LessonFileAsset>[],
   });
@@ -7002,6 +7302,7 @@ class SyllabusSession {
   final String videoUrl;
   final String videoThumbnailUrl;
   final String materialsUrl;
+  final String homeworkUrl;
   final String serverFolderPath;
   final List<LessonFileAsset> lessonFiles;
 
@@ -7017,6 +7318,7 @@ class SyllabusSession {
     String? videoUrl,
     String? videoThumbnailUrl,
     String? materialsUrl,
+    String? homeworkUrl,
     String? serverFolderPath,
     List<LessonFileAsset>? lessonFiles,
   }) {
@@ -7033,6 +7335,7 @@ class SyllabusSession {
       videoUrl: videoUrl ?? this.videoUrl,
       videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
       materialsUrl: materialsUrl ?? this.materialsUrl,
+      homeworkUrl: homeworkUrl ?? this.homeworkUrl,
       serverFolderPath: serverFolderPath ?? this.serverFolderPath,
       lessonFiles: lessonFiles ?? this.lessonFiles,
     );
@@ -7058,11 +7361,13 @@ class SyllabusSession {
       map['videoUrl'] = videoUrl;
       map['videoThumbnailUrl'] = videoThumbnailUrl;
       map['materialsUrl'] = materialsUrl;
+      map['homeworkUrl'] = homeworkUrl;
       map['serverFolderPath'] = serverFolderPath;
     }
 
     if (includeOnlineExtras) {
       map['materialsUrl'] = materialsUrl;
+      map['homeworkUrl'] = homeworkUrl;
       map['serverFolderPath'] = serverFolderPath;
     }
 
@@ -7107,6 +7412,7 @@ class SyllabusSession {
       videoUrl: (m['videoUrl'] ?? '').toString(),
       videoThumbnailUrl: (m['videoThumbnailUrl'] ?? '').toString(),
       materialsUrl: (m['materialsUrl'] ?? '').toString(),
+      homeworkUrl: (m['homeworkUrl'] ?? '').toString(),
       serverFolderPath: (m['serverFolderPath'] ?? '').toString(),
       lessonFiles: lessonFiles,
     );

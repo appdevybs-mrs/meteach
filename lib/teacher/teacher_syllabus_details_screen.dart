@@ -337,6 +337,7 @@ class _TeacherSyllabusDetailsScreenState
           content: _readString(sm['content']),
           homework: _readString(sm['homework']),
           materialsUrl: _readString(sm['materialsUrl']),
+          homeworkUrl: _readString(sm['homeworkUrl']),
         ),
       );
     }
@@ -1605,6 +1606,29 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                       ),
                       const SizedBox(height: 10),
                     ],
+                    if (s.homeworkUrl.trim().isNotEmpty) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _openMaterials(s.homeworkUrl),
+                          icon: const Icon(Icons.assignment_rounded),
+                          label: const Text(
+                            'Open Homework',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: UiK.actionOrange,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     const SizedBox(height: 2),
                     const Row(
                       children: [
@@ -1943,6 +1967,7 @@ class _Session {
     required this.content,
     required this.homework,
     required this.materialsUrl,
+    required this.homeworkUrl,
   });
 
   final String id;
@@ -1954,4 +1979,5 @@ class _Session {
   final String content;
   final String homework;
   final String materialsUrl;
+  final String homeworkUrl;
 }
