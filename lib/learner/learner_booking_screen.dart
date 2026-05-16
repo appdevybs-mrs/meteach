@@ -175,6 +175,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
+  bool _isAtEntryStep() => flowStep == _BookingFlowStep.lessonChoice;
+
   void _onThemeChanged() {
     if (!mounted) return;
     setState(() {});
@@ -6590,11 +6592,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final busy = loading || booking || refreshing || progressLabel.isNotEmpty;
 
     return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (_, __) {
+      canPop: _isAtEntryStep(),
+      onPopInvokedWithResult: (didPop, __) {
+        if (didPop) return;
         final handled = _goBackOneStepInFlow();
         if (!handled) {
-          Navigator.maybePop(context);
+          Navigator.of(context).pop();
         }
       },
       child: Scaffold(
@@ -6609,7 +6612,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             onPressed: () {
               final handled = _goBackOneStepInFlow();
               if (!handled) {
-                Navigator.maybePop(context);
+                Navigator.of(context).pop();
               }
             },
           ),
