@@ -998,12 +998,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   Expanded(
                     child: Text(
                       note.text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
+                      maxLines: null,
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
                         fontWeight: FontWeight.w600,
-                        height: 1.2,
+                        height: 1.3,
                       ),
                     ),
                   ),

@@ -284,21 +284,32 @@ function initGallery() {
     const state = target.querySelector('[data-gallery-state]');
     const empty = target.querySelector('[data-gallery-empty]');
     const error = target.querySelector('[data-gallery-error]');
-    const grid = target.querySelector('[data-gallery-grid]');
-    if (!state || !empty || !error || !grid) return;
+    const carousel = target.querySelector('[data-gallery-carousel]');
+    const dots = target.querySelector('[data-gallery-dots]');
+    if (!state || !empty || !error || !carousel) return;
 
     state.hidden = stateName !== 'loading';
     empty.hidden = stateName !== 'empty';
     error.hidden = stateName !== 'error';
-    grid.hidden = stateName !== 'ready';
+    carousel.hidden = stateName !== 'ready';
+    if (dots) dots.hidden = stateName !== 'ready';
   };
 
   const render = (target, items) => {
-    const grid = target.querySelector('[data-gallery-grid]');
-    if (!grid) return;
-    grid.innerHTML = '';
+    const carousel = target.querySelector('[data-gallery-carousel]');
+    const track = target.querySelector('[data-gallery-track]');
+    const prev = target.querySelector('[data-gallery-prev]');
+    const next = target.querySelector('[data-gallery-next]');
+    const dots = target.querySelector('[data-gallery-dots]');
+    if (!carousel || !track || !prev || !next || !dots) return;
 
-    items.forEach((item) => {
+    let index = 0;
+    let timer = null;
+
+    const slides = items.map((item) => {
+      const slide = document.createElement('article');
+      slide.className = 'gallery-slide-card';
+
       const card = document.createElement('article');
       card.className = 'gallery-card';
 
@@ -308,37 +319,70 @@ function initGallery() {
       if (media) mediaWrap.appendChild(media);
       card.appendChild(mediaWrap);
 
-      const body = document.createElement('div');
-      body.className = 'gallery-body';
+      const caption = document.createElement('div');
+      caption.className = 'gallery-caption-overlay';
 
-      const pill = document.createElement('span');
-      pill.className = 'gallery-pill';
-      pill.textContent = (item.type || 'media').toString();
-      body.appendChild(pill);
+      const title = document.createElement('strong');
+      title.textContent = item.title || item.uploadedByName || 'Your Bridge School';
+      caption.appendChild(title);
 
-      const uploader = document.createElement('strong');
-      uploader.textContent = item.uploadedByName || 'Your Bridge School';
-      body.appendChild(uploader);
+      const label = document.createElement('span');
+      label.textContent = typeLabel(item.type);
+      caption.appendChild(label);
 
-      const meta = document.createElement('div');
-      meta.className = 'gallery-meta';
-
-      const by = document.createElement('span');
-      by.textContent = item.uploadedByName ? `By ${item.uploadedByName}` : '';
-      if (by.textContent) meta.appendChild(by);
-
-      const createdAt = formatDate(item.createdAt);
-      if (createdAt) {
-        const date = document.createElement('span');
-        date.textContent = createdAt;
-        meta.appendChild(date);
-      }
-
-      body.appendChild(meta);
-      card.appendChild(body);
-      grid.appendChild(card);
+      card.appendChild(caption);
+      slide.appendChild(card);
+      return slide;
     });
+
+    track.innerHTML = '';
+    slides.forEach((slide) => track.appendChild(slide));
+
+    dots.innerHTML = '';
+    const dotButtons = slides.map((_, slideIndex) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'gallery-dot';
+      button.setAttribute('aria-label', `Slide ${slideIndex + 1}`);
+      button.onclick = () => {
+        show(slideIndex);
+        restart();
+      };
+      dots.appendChild(button);
+      return button;
+    });
+
+    const show = (nextIndex) => {
+      if (!slides.length) return;
+      index = (nextIndex + slides.length) % slides.length;
+      track.style.transform = `translateX(-${index * 100}%)`;
+      dotButtons.forEach((button, slideIndex) => button.classList.toggle('is-active', slideIndex === index));
+    };
+
+    const restart = () => {
+      clearInterval(timer);
+      timer = setInterval(() => show(index + 1), 5000);
+    };
+
+    prev.onclick = () => {
+      show(index - 1);
+      restart();
+    };
+
+    next.onclick = () => {
+      show(index + 1);
+      restart();
+    };
+
+    show(0);
+    restart();
   };
+
+  function typeLabel(type) {
+    return (type || '').toString().trim().toLowerCase() === 'video'
+      ? 'Public gallery video'
+      : 'Public gallery photo';
+  }
 
   const load = async (target) => {
     try {
