@@ -416,7 +416,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     return list;
   }
 
-  List<Map<String, dynamic>> _groupAttendanceByDate() {
+  List<Map<String, dynamic>> _groupAttendanceByDate(Set<String> coveredSet) {
     final Map<String, Map<String, dynamic>> groups = {};
     var order = 0;
 
@@ -474,11 +474,14 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
       final taughtItems = record['taughtItems'];
       if (taughtItems is List && taughtItems.isNotEmpty) {
         for (final item in taughtItems.whereType<Map>()) {
+          final session = normalizeSession(Map<String, dynamic>.from(item));
+          final sessionId = (session['sessionId'] ?? '').toString().trim();
+          if (sessionId.isEmpty || !coveredSet.contains(sessionId)) continue;
           addGroupItem(
             dateKey: key,
             dateLabel: key,
             sortDate: sortDate,
-            session: normalizeSession(Map<String, dynamic>.from(item)),
+            session: session,
             recordId: entry.key,
             record: record,
           );
@@ -488,11 +491,14 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
 
       final taught = record['taught'];
       if (taught is Map && taught.isNotEmpty) {
+        final session = normalizeSession(Map<String, dynamic>.from(taught));
+        final sessionId = (session['sessionId'] ?? '').toString().trim();
+        if (sessionId.isEmpty || !coveredSet.contains(sessionId)) continue;
         addGroupItem(
           dateKey: key,
           dateLabel: key,
           sortDate: sortDate,
-          session: normalizeSession(Map<String, dynamic>.from(taught)),
+          session: session,
           recordId: entry.key,
           record: record,
         );
@@ -880,13 +886,13 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          color: selected ? p.cardBg : Colors.transparent,
+          color: selected ? p.primary : Colors.transparent,
         ),
         child: Center(
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? p.primary : p.primary.withValues(alpha: 0.7),
+              color: selected ? Colors.white : p.primary.withValues(alpha: 0.7),
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -1308,7 +1314,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
   }
 
   Widget _attendanceByDateCard(AppPalette p) {
-    final groups = _groupAttendanceByDate();
+    final groups = _groupAttendanceByDate(_classCoveredSessionIds);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1419,6 +1425,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     final attendanceRecord = passed
         ? _attendanceRecordForSession(sessionId)
         : null;
+    final isByDateView = _groupTabController.index == 1;
 
     return GestureDetector(
       onLongPress: () => _copySessionCardDetails(
@@ -1511,19 +1518,21 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                   ],
                 ],
               ),
-              subtitle: Text(
-                [
-                  if (skill.isNotEmpty) skill,
-                  statusText,
-                  if (passed && sessionDate.isNotEmpty) sessionDate,
-                ].join(' • '),
-                style: TextStyle(
-                  color: p.text.withValues(alpha: 0.7),
-                  fontWeight: FontWeight.w700,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
+              subtitle: isByDateView
+                  ? null
+                  : Text(
+                      [
+                        if (skill.isNotEmpty) skill,
+                        statusText,
+                        if (passed && sessionDate.isNotEmpty) sessionDate,
+                      ].join(' • '),
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
               children: [
                 Container(
                   width: double.infinity,
