@@ -763,6 +763,7 @@
       "$courseId": {
         "$lessonId": {
           ".read": "auth != null",
+          ".indexOn": ["createdAt"],
           "$commentId": {
             ".read": "auth != null",
             ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
@@ -819,6 +820,7 @@
         "$lessonId": {
           "$commentId": {
             ".read": "auth != null",
+            ".indexOn": ["createdAt"],
             "$replyId": {
               ".read": "auth != null",
               ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",

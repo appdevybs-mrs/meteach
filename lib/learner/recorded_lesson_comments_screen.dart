@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
@@ -29,6 +30,7 @@ class RecordedLessonCommentsScreen extends StatefulWidget {
 
 class _RecordedLessonCommentsScreenState
     extends State<RecordedLessonCommentsScreen> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final TextEditingController _commentC = TextEditingController();
   final FocusNode _commentFocus = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -43,6 +45,8 @@ class _RecordedLessonCommentsScreenState
   final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
   final Set<String> _expandedReplies = <String>{};
   final Set<String> _loadingReplies = <String>{};
+  final Map<String, int> _replyCountByComment = {};
+  int _replyCountRequestId = 0;
   final Map<String, int?> _nextBeforeByCourse = {};
   static const int _pageSize = 18;
 
@@ -98,34 +102,54 @@ class _RecordedLessonCommentsScreenState
       _repliesByComment.clear();
       _expandedReplies.clear();
       _loadingReplies.clear();
+      _replyCountByComment.clear();
+      _replyCountRequestId += 1;
       if (reset) {
         _nextBeforeByCourse.clear();
       }
     });
 
     try {
-      final pages = await Future.wait(
-        _feedbackCourseIds.map((courseId) {
-          return CourseFeedbackService.listLessonCommentsPage(
-            courseId,
-            widget.lessonId,
-            visibleOnly: true,
-            limit: _pageSize,
-            beforeCreatedAt: reset ? null : _nextBeforeByCourse[courseId],
-          );
+      final results = await Future.wait(
+        _feedbackCourseIds.map((courseId) async {
+          try {
+            final page = await CourseFeedbackService.listLessonCommentsPage(
+              courseId,
+              widget.lessonId,
+              visibleOnly: true,
+              limit: _pageSize,
+              beforeCreatedAt: reset ? null : _nextBeforeByCourse[courseId],
+            );
+            return {'courseId': courseId, 'page': page, 'ok': true};
+          } catch (e) {
+            return {'courseId': courseId, 'error': e, 'ok': false};
+          }
         }),
       );
 
       final mergedById = <String, LessonCommentItem>{};
-      for (var i = 0; i < _feedbackCourseIds.length; i++) {
-        final courseId = _feedbackCourseIds[i];
-        final page = pages[i];
+      var okCount = 0;
+      for (final result in results) {
+        final courseId = (result['courseId'] ?? '').toString();
+        final ok = result['ok'] == true;
+        if (!ok) {
+          if (courseId.isNotEmpty) {
+            _nextBeforeByCourse[courseId] = null;
+          }
+          continue;
+        }
+        okCount += 1;
+        final page = result['page'] as LessonCommentPage;
         _nextBeforeByCourse[courseId] = page.hasMore
             ? page.nextBeforeCreatedAt
             : null;
         for (final comment in page.items) {
           mergedById.putIfAbsent(comment.id, () => comment);
         }
+      }
+
+      if (okCount == 0) {
+        throw Exception('Could not load comments from any source.');
       }
 
       final comments = mergedById.values.toList()
@@ -142,6 +166,7 @@ class _RecordedLessonCommentsScreenState
         _busy = false;
         _hasMore = hasMore;
       });
+      _refreshReplyCountsForComments(comments);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -160,38 +185,58 @@ class _RecordedLessonCommentsScreenState
     });
 
     try {
-      final pages = await Future.wait(
-        _feedbackCourseIds.map((courseId) {
+      final results = await Future.wait(
+        _feedbackCourseIds.map((courseId) async {
           final cursor = _nextBeforeByCourse[courseId];
           if (cursor == null || cursor <= 0) {
-            return Future.value(
-              LessonCommentPage(
+            return {
+              'courseId': courseId,
+              'page': LessonCommentPage(
                 items: const [],
                 hasMore: false,
                 nextBeforeCreatedAt: 0,
               ),
-            );
+              'ok': true,
+            };
           }
-          return CourseFeedbackService.listLessonCommentsPage(
-            courseId,
-            widget.lessonId,
-            visibleOnly: true,
-            limit: _pageSize,
-            beforeCreatedAt: cursor,
-          );
+          try {
+            final page = await CourseFeedbackService.listLessonCommentsPage(
+              courseId,
+              widget.lessonId,
+              visibleOnly: true,
+              limit: _pageSize,
+              beforeCreatedAt: cursor,
+            );
+            return {'courseId': courseId, 'page': page, 'ok': true};
+          } catch (e) {
+            return {'courseId': courseId, 'error': e, 'ok': false};
+          }
         }),
       );
 
       final mergedById = {for (final c in _comments) c.id: c};
-      for (var i = 0; i < _feedbackCourseIds.length; i++) {
-        final courseId = _feedbackCourseIds[i];
-        final page = pages[i];
+      var okCount = 0;
+      for (final result in results) {
+        final courseId = (result['courseId'] ?? '').toString();
+        final ok = result['ok'] == true;
+        if (!ok) {
+          if (courseId.isNotEmpty) {
+            _nextBeforeByCourse[courseId] = null;
+          }
+          continue;
+        }
+        okCount += 1;
+        final page = result['page'] as LessonCommentPage;
         _nextBeforeByCourse[courseId] = page.hasMore
             ? page.nextBeforeCreatedAt
             : null;
         for (final comment in page.items) {
           mergedById.putIfAbsent(comment.id, () => comment);
         }
+      }
+
+      if (okCount == 0) {
+        throw Exception('Could not load comments from any source.');
       }
 
       final comments = mergedById.values.toList()
@@ -208,6 +253,7 @@ class _RecordedLessonCommentsScreenState
         _hasMore = hasMore;
         _loadingMore = false;
       });
+      _refreshReplyCountsForComments(comments);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingMore = false);
@@ -239,6 +285,7 @@ class _RecordedLessonCommentsScreenState
       if (!mounted) return;
       setState(() {
         _repliesByComment[item.id] = replies;
+        _replyCountByComment[item.id] = replies.length;
         _loadingReplies.remove(item.id);
       });
     } catch (_) {
@@ -252,6 +299,46 @@ class _RecordedLessonCommentsScreenState
         type: AppToastType.error,
       );
     }
+  }
+
+  Future<void> _refreshReplyCountsForComments(
+    List<LessonCommentItem> comments,
+  ) async {
+    final requestId = ++_replyCountRequestId;
+    final targets = comments
+        .where((item) => !_replyCountByComment.containsKey(item.id))
+        .toList();
+    if (targets.isEmpty) return;
+
+    final counts = <String, int>{};
+    await Future.wait(
+      targets.map((item) async {
+        final sourceCourseId = item.courseId.trim().isEmpty
+            ? widget.primaryCourseId
+            : item.courseId.trim();
+        try {
+          final snap = await _db
+              .child(CourseFeedbackService.lessonRepliesNode)
+              .child(sourceCourseId)
+              .child(widget.lessonId)
+              .child(item.id)
+              .get();
+          if (snap.exists && snap.value is Map) {
+            final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+            counts[item.id] = raw.length;
+          } else {
+            counts[item.id] = 0;
+          }
+        } catch (_) {
+          counts[item.id] = 0;
+        }
+      }),
+    );
+
+    if (!mounted || requestId != _replyCountRequestId) return;
+    setState(() {
+      _replyCountByComment.addAll(counts);
+    });
   }
 
   Future<void> _postComment() async {
@@ -503,6 +590,8 @@ class _RecordedLessonCommentsScreenState
     final replies = _repliesByComment[item.id] ?? const [];
     final loadingReplies = _loadingReplies.contains(item.id);
     final expanded = _expandedReplies.contains(item.id);
+    final replyCount = _replyCountByComment[item.id] ?? replies.length;
+    final hasReplies = replyCount > 0 || replies.isNotEmpty;
     final visibleReplies = expanded ? replies : replies.take(2).toList();
 
     return Container(
@@ -609,37 +698,41 @@ class _RecordedLessonCommentsScreenState
                 icon: const Icon(Icons.flag_rounded, size: 16),
                 label: const Text('Report'),
               ),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  if (!expanded) {
-                    await _ensureRepliesLoaded(item);
-                  }
-                  if (!mounted) return;
-                  setState(() {
+              if (hasReplies)
+                OutlinedButton.icon(
+                  onPressed: () async {
                     if (expanded) {
-                      _expandedReplies.remove(item.id);
-                    } else {
-                      _expandedReplies.add(item.id);
+                      setState(() => _expandedReplies.remove(item.id));
+                      return;
                     }
-                  });
-                },
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  foregroundColor: const Color(0xFF334155),
-                  minimumSize: const Size(0, 36),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+                    await _ensureRepliesLoaded(item);
+                    if (!mounted) return;
+                    if ((_repliesByComment[item.id] ?? const []).isEmpty) {
+                      return;
+                    }
+                    setState(() => _expandedReplies.add(item.id));
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    foregroundColor: const Color(0xFF334155),
+                    minimumSize: const Size(0, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  icon: Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    expanded
+                        ? 'Hide replies ($replyCount)'
+                        : 'Show replies ($replyCount)',
+                  ),
                 ),
-                icon: Icon(
-                  expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                ),
-                label: Text(expanded ? 'Hide replies' : 'Show replies'),
-              ),
             ],
           ),
           if (loadingReplies)

@@ -25,8 +25,8 @@ class TeacherClassProgressScreen extends StatefulWidget {
       _TeacherClassProgressScreenState();
 }
 
-class _TeacherClassProgressScreenState
-    extends State<TeacherClassProgressScreen> {
+class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
+    with SingleTickerProviderStateMixin {
   static const Color successGreen = Color(0xFF10B981);
   static const Color warningOrange = Color(0xFFF59E0B);
   static const Color dangerRed = Color(0xFFEF4444);
@@ -47,6 +47,8 @@ class _TeacherClassProgressScreenState
   bool _busy = true;
   String? _error;
 
+  late final TabController _groupTabController;
+
   Map<String, dynamic> _attendance = {};
   Map<String, dynamic> _learners = {};
 
@@ -65,12 +67,18 @@ class _TeacherClassProgressScreenState
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
+    _groupTabController = TabController(length: 2, vsync: this);
+    _groupTabController.addListener(() {
+      if (!mounted) return;
+      setState(() {});
+    });
     _boot();
   }
 
   @override
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
+    _groupTabController.dispose();
     _classSub?.cancel();
     super.dispose();
   }
@@ -408,6 +416,120 @@ class _TeacherClassProgressScreenState
     return list;
   }
 
+  List<Map<String, dynamic>> _groupAttendanceByDate() {
+    final Map<String, Map<String, dynamic>> groups = {};
+    var order = 0;
+
+    int n(dynamic v) =>
+        (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+
+    DateTime? parseDate(String raw) {
+      final v = raw.trim();
+      if (v.isEmpty) return null;
+      return DateTime.tryParse(v);
+    }
+
+    Map<String, dynamic> normalizeSession(Map<String, dynamic> raw) {
+      final out = Map<String, dynamic>.from(raw);
+      if ((out['sessionId'] ?? '').toString().trim().isNotEmpty) return out;
+      if ((out['id'] ?? '').toString().trim().isNotEmpty) {
+        out['sessionId'] = out['id'];
+      }
+      return out;
+    }
+
+    void addGroupItem({
+      required String dateKey,
+      required String dateLabel,
+      required DateTime? sortDate,
+      required Map<String, dynamic> session,
+      required String recordId,
+      required Map<String, dynamic> record,
+    }) {
+      groups.putIfAbsent(dateKey, () {
+        return {
+          'dateLabel': dateLabel,
+          'sortDate': sortDate,
+          'order': order++,
+          'sessions': <Map<String, dynamic>>[],
+        };
+      });
+
+      (groups[dateKey]!['sessions'] as List<Map<String, dynamic>>).add({
+        ...session,
+        '_recordId': recordId,
+        '_record': record,
+      });
+    }
+
+    for (final entry in _attendance.entries) {
+      final raw = entry.value;
+      if (raw is! Map) continue;
+
+      final record = Map<String, dynamic>.from(raw);
+      final dateLabel = (record['date'] ?? '').toString().trim();
+      final key = dateLabel.isEmpty ? 'No date' : dateLabel;
+      final sortDate = parseDate(dateLabel);
+
+      final taughtItems = record['taughtItems'];
+      if (taughtItems is List && taughtItems.isNotEmpty) {
+        for (final item in taughtItems.whereType<Map>()) {
+          addGroupItem(
+            dateKey: key,
+            dateLabel: key,
+            sortDate: sortDate,
+            session: normalizeSession(Map<String, dynamic>.from(item)),
+            recordId: entry.key,
+            record: record,
+          );
+        }
+        continue;
+      }
+
+      final taught = record['taught'];
+      if (taught is Map && taught.isNotEmpty) {
+        addGroupItem(
+          dateKey: key,
+          dateLabel: key,
+          sortDate: sortDate,
+          session: normalizeSession(Map<String, dynamic>.from(taught)),
+          recordId: entry.key,
+          record: record,
+        );
+      }
+    }
+
+    final list = groups.values.toList();
+    list.sort((a, b) {
+      final ad = a['sortDate'] as DateTime?;
+      final bd = b['sortDate'] as DateTime?;
+      if (ad != null && bd != null) {
+        final c = bd.compareTo(ad);
+        if (c != 0) return c;
+      } else if (ad != null) {
+        return -1;
+      } else if (bd != null) {
+        return 1;
+      }
+      return (a['order'] as int).compareTo(b['order'] as int);
+    });
+
+    for (final group in list) {
+      final sessions = (group['sessions'] as List<Map<String, dynamic>>);
+      sessions.sort((a, b) {
+        final ao = n(a['unitOrder']).compareTo(n(b['unitOrder']));
+        if (ao != 0) return ao;
+        final so = n(a['order']).compareTo(n(b['order']));
+        if (so != 0) return so;
+        return (a['title'] ?? '').toString().compareTo(
+          (b['title'] ?? '').toString(),
+        );
+      });
+    }
+
+    return list;
+  }
+
   String _progressLabel(int pct) {
     if (pct >= 90) return 'Excellent';
     if (pct >= 75) return 'Strong';
@@ -490,7 +612,7 @@ class _TeacherClassProgressScreenState
                           _learnerPickerCard(p),
                           const SizedBox(height: 12),
                         ],
-                        _unitsProgressCard(p),
+                        _groupByCard(p),
                       ],
                     ),
             ],
@@ -671,6 +793,75 @@ class _TeacherClassProgressScreenState
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupByCard(AppPalette p) {
+    final isByDate = _groupTabController.index == 1;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Group by',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.border.withValues(alpha: 0.9)),
+              color: p.primary.withValues(alpha: 0.04),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _toggleBtn(
+                    p,
+                    label: 'By Unit',
+                    selected: !isByDate,
+                    onTap: () {
+                      _groupTabController.animateTo(0);
+                      setState(() {});
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _toggleBtn(
+                    p,
+                    label: 'By Date',
+                    selected: isByDate,
+                    onTap: () {
+                      _groupTabController.animateTo(1);
+                      setState(() {});
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (!isByDate) _unitsProgressCard(p) else _attendanceByDateCard(p),
         ],
       ),
     );
@@ -1116,6 +1307,95 @@ class _TeacherClassProgressScreenState
     );
   }
 
+  Widget _attendanceByDateCard(AppPalette p) {
+    final groups = _groupAttendanceByDate();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Taught Lessons by Date',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'All taught lessons across the class, grouped by the session date.',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (groups.isEmpty)
+            Text(
+              'No taught lessons recorded yet.',
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w800),
+            )
+          else
+            ...groups.map(
+              (group) => _attendanceDateGroupCard(
+                p,
+                dateLabel: (group['dateLabel'] ?? 'No date').toString(),
+                sessions: (group['sessions'] as List<Map<String, dynamic>>),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _attendanceDateGroupCard(
+    AppPalette p, {
+    required String dateLabel,
+    required List<Map<String, dynamic>> sessions,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: p.primary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            dateLabel,
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...sessions.map(
+            (s) => _sessionExpansion(p, s, _classCoveredSessionIds),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sessionExpansion(
     AppPalette p,
     Map<String, dynamic> s,
@@ -1127,6 +1407,11 @@ class _TeacherClassProgressScreenState
     final skill = (s['skillType'] ?? '').toString();
     final objective = (s['objective'] ?? '').toString();
     final content = (s['content'] ?? '').toString();
+    final sessionDate = (s['_record'] is Map)
+        ? (Map<String, dynamic>.from(s['_record'] as Map)['date'] ?? '')
+              .toString()
+              .trim()
+        : '';
 
     final bool passed = sessionId.isNotEmpty && coveredSet.contains(sessionId);
     final statusText = passed ? 'Passed' : 'Coming';
@@ -1227,7 +1512,11 @@ class _TeacherClassProgressScreenState
                 ],
               ),
               subtitle: Text(
-                [if (skill.isNotEmpty) skill, statusText].join(' • '),
+                [
+                  if (skill.isNotEmpty) skill,
+                  statusText,
+                  if (passed && sessionDate.isNotEmpty) sessionDate,
+                ].join(' • '),
                 style: TextStyle(
                   color: p.text.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w700,
@@ -1417,6 +1706,7 @@ class _TeacherClassProgressScreenState
 
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: p.cardBg,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
@@ -1424,159 +1714,166 @@ class _TeacherClassProgressScreenState
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Session Details',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  date,
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  taughtTitle.isEmpty ? 'Untitled session' : taughtTitle,
-                  style: TextStyle(
-                    color: p.text,
-                    fontWeight: FontWeight.w800,
-                    height: 1.3,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _kpi(
-                      p,
-                      label: 'Present',
-                      value: '$presentCount',
-                      icon: Icons.check_circle_outline_rounded,
-                    ),
-                    _kpi(
-                      p,
-                      label: 'Absent',
-                      value: '$absentCount',
-                      icon: Icons.highlight_off_rounded,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _detailLine(
-                  p,
-                  'Unit Theme',
-                  unitTheme.isEmpty ? '-' : unitTheme,
-                ),
-                const SizedBox(height: 6),
-                _detailLine(p, 'Skill', skill.isEmpty ? '-' : skill),
-                const SizedBox(height: 6),
-                _detailLine(p, 'Level', level.isEmpty ? '-' : level),
-                if (objective.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Objective',
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    objective,
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-                if (content.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Content',
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    content,
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-                if (hasHomework) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Homework',
-                    style: TextStyle(
-                      color: p.text,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  if (homeworkText.isNotEmpty)
                     Text(
-                      homeworkText,
+                      'Session Details',
                       style: TextStyle(
-                        color: p.text,
-                        fontWeight: FontWeight.w700,
-                        height: 1.35,
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
                       ),
                     ),
-                  if (homeworkDue.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        'Due: $homeworkDue',
+                    const SizedBox(height: 10),
+                    Text(
+                      date,
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      taughtTitle.isEmpty ? 'Untitled session' : taughtTitle,
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _kpi(
+                          p,
+                          label: 'Present',
+                          value: '$presentCount',
+                          icon: Icons.check_circle_outline_rounded,
+                        ),
+                        _kpi(
+                          p,
+                          label: 'Absent',
+                          value: '$absentCount',
+                          icon: Icons.highlight_off_rounded,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _detailLine(
+                      p,
+                      'Unit Theme',
+                      unitTheme.isEmpty ? '-' : unitTheme,
+                    ),
+                    const SizedBox(height: 6),
+                    _detailLine(p, 'Skill', skill.isEmpty ? '-' : skill),
+                    const SizedBox(height: 6),
+                    _detailLine(p, 'Level', level.isEmpty ? '-' : level),
+                    if (objective.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Objective',
                         style: TextStyle(
-                          color: p.text.withValues(alpha: 0.72),
+                          color: p.text,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        objective,
+                        style: TextStyle(
+                          color: p.text,
                           fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    if (content.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Content',
+                        style: TextStyle(
+                          color: p.text,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        content,
+                        style: TextStyle(
+                          color: p.text,
+                          fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    if (hasHomework) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Homework',
+                        style: TextStyle(
+                          color: p.text,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      if (homeworkText.isNotEmpty)
+                        Text(
+                          homeworkText,
+                          style: TextStyle(
+                            color: p.text,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                      if (homeworkDue.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'Due: $homeworkDue',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.72),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: p.accent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _openEditAttendance(record);
+                        },
+                        icon: const Icon(Icons.edit_note_rounded),
+                        label: const Text(
+                          'Edit Attendance',
+                          style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
                     ),
-                ],
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: p.accent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _openEditAttendance(record);
-                    },
-                    icon: const Icon(Icons.edit_note_rounded),
-                    label: const Text(
-                      'Edit Attendance',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );

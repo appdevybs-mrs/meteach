@@ -1640,16 +1640,26 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     setState(() => _commentsBusy = true);
     try {
       final mergedById = <String, LessonCommentItem>{};
+      var okCount = 0;
       for (final courseId in _feedbackCourseIds) {
-        final page = await CourseFeedbackService.listLessonCommentsPage(
-          courseId,
-          widget.sessionId,
-          visibleOnly: true,
-          limit: 2,
-        );
-        for (final comment in page.items) {
-          mergedById.putIfAbsent(comment.id, () => comment);
+        try {
+          final page = await CourseFeedbackService.listLessonCommentsPage(
+            courseId,
+            widget.sessionId,
+            visibleOnly: true,
+            limit: 2,
+          );
+          okCount += 1;
+          for (final comment in page.items) {
+            mergedById.putIfAbsent(comment.id, () => comment);
+          }
+        } catch (_) {
+          continue;
         }
+      }
+
+      if (okCount == 0) {
+        throw Exception('Could not load comments from any source.');
       }
 
       final comments = mergedById.values.toList();

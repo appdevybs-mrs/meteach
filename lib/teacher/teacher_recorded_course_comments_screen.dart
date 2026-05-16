@@ -36,6 +36,8 @@ class _TeacherRecordedCourseCommentsScreenState
   final Set<String> _expandedReplies = <String>{};
   final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
   final Set<String> _loadingReplies = <String>{};
+  final Map<String, int> _replyCountByComment = {};
+  int _replyAvailabilityRequestId = 0;
 
   bool _busy = true;
   bool _posting = false;
@@ -87,6 +89,8 @@ class _TeacherRecordedCourseCommentsScreenState
       _repliesByComment.clear();
       _expandedReplies.clear();
       _loadingReplies.clear();
+      _replyCountByComment.clear();
+      _replyAvailabilityRequestId += 1;
     });
 
     try {
@@ -119,6 +123,7 @@ class _TeacherRecordedCourseCommentsScreenState
         _comments = out;
         _busy = false;
       });
+      _refreshReplyCountsForVisibleComments();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -143,12 +148,46 @@ class _TeacherRecordedCourseCommentsScreenState
       if (!mounted) return;
       setState(() {
         _repliesByComment[item.id] = replies;
+        _replyCountByComment[item.id] = replies.length;
         _loadingReplies.remove(item.id);
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingReplies.remove(item.id));
     }
+  }
+
+  Future<void> _refreshReplyCountsForVisibleComments() async {
+    final requestId = ++_replyAvailabilityRequestId;
+    final candidates = _filteredComments
+        .where((item) => !_replyCountByComment.containsKey(item.id))
+        .toList();
+    if (candidates.isEmpty) return;
+
+    final counts = <String, int>{};
+    await Future.wait(
+      candidates.map((item) async {
+        try {
+          final snap = await _db
+              .child(CourseFeedbackService.lessonRepliesNode)
+              .child(_courseId)
+              .child(item.lessonId)
+              .child(item.id)
+              .get();
+          if (snap.exists && snap.value is Map) {
+            final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+            counts[item.id] = raw.length;
+          } else {
+            counts[item.id] = 0;
+          }
+        } catch (_) {
+          counts[item.id] = 0;
+        }
+      }),
+    );
+
+    if (!mounted || requestId != _replyAvailabilityRequestId) return;
+    setState(() => _replyCountByComment.addAll(counts));
   }
 
   Future<void> _moderate(LessonCommentItem item, String status) async {
@@ -474,7 +513,10 @@ class _TeacherRecordedCourseCommentsScreenState
     return ChoiceChip(
       label: Text(label),
       selected: selected,
-      onSelected: (_) => setState(() => _filter = filter),
+      onSelected: (_) {
+        setState(() => _filter = filter);
+        _refreshReplyCountsForVisibleComments();
+      },
       labelStyle: TextStyle(
         fontWeight: FontWeight.w800,
         color: selected ? color : const Color(0xFF475569),
@@ -523,6 +565,8 @@ class _TeacherRecordedCourseCommentsScreenState
     final replies = _repliesByComment[item.id] ?? const [];
     final loadingReplies = _loadingReplies.contains(item.id);
     final expanded = _expandedReplies.contains(item.id);
+    final replyCount = _replyCountByComment[item.id] ?? replies.length;
+    final hasReplies = replyCount > 0 || replies.isNotEmpty;
     final visibleReplies = expanded ? replies : replies.take(2).toList();
 
     final accent = _statusColor(item.status);
@@ -673,37 +717,41 @@ class _TeacherRecordedCourseCommentsScreenState
                 ),
               ),
               const Spacer(),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  if (!expanded) {
-                    await _ensureRepliesLoaded(item);
-                  }
-                  if (!mounted) return;
-                  setState(() {
+              if (hasReplies)
+                OutlinedButton.icon(
+                  onPressed: () async {
                     if (expanded) {
-                      _expandedReplies.remove(item.id);
-                    } else {
-                      _expandedReplies.add(item.id);
+                      setState(() => _expandedReplies.remove(item.id));
+                      return;
                     }
-                  });
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF1D4ED8),
-                  side: const BorderSide(color: Color(0xFFBFDBFE)),
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+                    await _ensureRepliesLoaded(item);
+                    if (!mounted) return;
+                    if ((_repliesByComment[item.id] ?? const []).isEmpty) {
+                      return;
+                    }
+                    setState(() => _expandedReplies.add(item.id));
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1D4ED8),
+                    side: const BorderSide(color: Color(0xFFBFDBFE)),
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  icon: Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    expanded
+                        ? 'Hide replies ($replyCount)'
+                        : 'Show replies ($replyCount)',
                   ),
                 ),
-                icon: Icon(
-                  expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                ),
-                label: Text(expanded ? 'Hide replies' : 'Show replies'),
-              ),
             ],
           ),
           if (loadingReplies)
