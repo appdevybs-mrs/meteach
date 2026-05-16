@@ -105,6 +105,18 @@ class LessonCommentItem {
   }
 }
 
+class LessonCommentPage {
+  LessonCommentPage({
+    required this.items,
+    required this.hasMore,
+    required this.nextBeforeCreatedAt,
+  });
+
+  final List<LessonCommentItem> items;
+  final bool hasMore;
+  final int nextBeforeCreatedAt;
+}
+
 class CourseFeedbackService {
   static const String courseReviewsNode = 'course_reviews';
   static const String courseReviewStatsNode = 'course_review_stats';
@@ -534,17 +546,33 @@ class CourseFeedbackService {
     });
   }
 
-  static Future<List<LessonCommentItem>> listLessonComments(
+  static Future<LessonCommentPage> listLessonCommentsPage(
     String courseId,
     String lessonId, {
     bool visibleOnly = true,
+    int limit = 20,
+    int? beforeCreatedAt,
   }) async {
-    final snap = await _db
+    Query query = _db
         .child(lessonCommentsNode)
         .child(courseId)
         .child(lessonId)
-        .get();
-    if (!snap.exists || snap.value is! Map) return const [];
+        .orderByChild('createdAt')
+        .limitToLast(limit);
+
+    if (beforeCreatedAt != null) {
+      query = query.endAt(beforeCreatedAt.toDouble());
+    }
+
+    final snap = await query.get();
+    if (!snap.exists || snap.value is! Map) {
+      return LessonCommentPage(
+        items: const [],
+        hasMore: false,
+        nextBeforeCreatedAt: 0,
+      );
+    }
+
     final raw = Map<dynamic, dynamic>.from(snap.value as Map);
     final out = <LessonCommentItem>[];
     raw.forEach((key, value) {
@@ -554,7 +582,30 @@ class CourseFeedbackService {
       if (visibleOnly && item.status != 'visible') return;
       out.add(item);
     });
-    return out;
+
+    out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final oldest = out.isEmpty ? 0 : out.last.createdAt;
+    final hasMore = raw.length >= limit && oldest > 0;
+
+    return LessonCommentPage(
+      items: out,
+      hasMore: hasMore,
+      nextBeforeCreatedAt: oldest > 0 ? oldest - 1 : 0,
+    );
+  }
+
+  static Future<List<LessonCommentItem>> listLessonComments(
+    String courseId,
+    String lessonId, {
+    bool visibleOnly = true,
+  }) async {
+    final page = await listLessonCommentsPage(
+      courseId,
+      lessonId,
+      visibleOnly: visibleOnly,
+      limit: 5000,
+    );
+    return page.items;
   }
 
   static Future<List<Map<String, dynamic>>> listLessonReplies(

@@ -77,7 +77,7 @@
       </div>
     </section>
 
-    <section class="section-pad section-soft" id="gallery">
+    <section class="section-soft gallery-section" id="gallery">
       <div class="container">
         <div class="section-head center">
           <h2 data-i18n="gallery.title">Our Gallery</h2>
@@ -85,10 +85,6 @@
         </div>
 
         <div class="gallery-feed card gallery-feed-compact" data-public-gallery data-gallery-target="home">
-          <div class="gallery-state" data-gallery-state>
-            <span class="gallery-spinner"></span>
-            <span data-i18n="gallery.loading">Loading gallery...</span>
-          </div>
           <div class="gallery-carousel" data-gallery-carousel hidden>
             <button class="gallery-arrow prev" type="button" data-gallery-prev aria-label="Previous gallery item">‹</button>
             <div class="gallery-viewport">
@@ -97,14 +93,6 @@
             <button class="gallery-arrow next" type="button" data-gallery-next aria-label="Next gallery item">›</button>
           </div>
           <div class="gallery-dots" data-gallery-dots hidden></div>
-          <div class="gallery-state is-empty" data-gallery-empty hidden>
-            <strong data-i18n="gallery.emptyTitle">No gallery items yet</strong>
-            <span data-i18n="gallery.emptyText">New photos and videos will appear here when teachers publish them.</span>
-          </div>
-          <div class="gallery-state is-error" data-gallery-error hidden>
-            <strong data-i18n="gallery.errorTitle">Gallery unavailable</strong>
-            <span data-i18n="gallery.errorText">We could not load the live gallery right now.</span>
-          </div>
         </div>
       </div>
     </section>

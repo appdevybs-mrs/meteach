@@ -68,7 +68,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _lastLandscape = false;
   List<LessonCommentItem> _comments = const [];
   List<_LessonNoteItem> _lessonNotes = const [];
-  final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
 
   void _debug(String message) {
     // no-op in production build
@@ -1521,7 +1520,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Widget _buildPreviewCommentCard(LessonCommentItem item) {
-    final replies = _repliesByComment[item.id] ?? const [];
     final comment = item.text.trim();
 
     return Container(
@@ -1583,25 +1581,6 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    if (replies.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEF2FF),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '${replies.length} replies',
-                          style: const TextStyle(
-                            color: Color(0xFF4338CA),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
                     const Spacer(),
                     TextButton(
                       onPressed: _openCommentsScreen,
@@ -1662,12 +1641,13 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     try {
       final mergedById = <String, LessonCommentItem>{};
       for (final courseId in _feedbackCourseIds) {
-        final comments = await CourseFeedbackService.listLessonComments(
+        final page = await CourseFeedbackService.listLessonCommentsPage(
           courseId,
           widget.sessionId,
           visibleOnly: true,
+          limit: 2,
         );
-        for (final comment in comments) {
+        for (final comment in page.items) {
           mergedById.putIfAbsent(comment.id, () => comment);
         }
       }
@@ -1675,25 +1655,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       final comments = mergedById.values.toList();
       comments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      final repliesMap = <String, List<Map<String, dynamic>>>{};
-      for (final c in comments.take(60)) {
-        final sourceCourseId = c.courseId.trim().isEmpty
-            ? _primaryFeedbackCourseId
-            : c.courseId.trim();
-        final replies = await CourseFeedbackService.listLessonReplies(
-          sourceCourseId,
-          widget.sessionId,
-          c.id,
-        );
-        repliesMap[c.id] = replies;
-      }
-
       if (!mounted) return;
       setState(() {
         _comments = comments;
-        _repliesByComment
-          ..clear()
-          ..addAll(repliesMap);
         _commentsBusy = false;
       });
     } catch (_) {

@@ -31,18 +31,25 @@ class _RecordedLessonCommentsScreenState
     extends State<RecordedLessonCommentsScreen> {
   final TextEditingController _commentC = TextEditingController();
   final FocusNode _commentFocus = FocusNode();
+  final ScrollController _scrollController = ScrollController();
 
   bool _busy = true;
   bool _posting = false;
+  bool _loadingMore = false;
+  bool _hasMore = false;
   String? _error;
 
   List<LessonCommentItem> _comments = const [];
   final Map<String, List<Map<String, dynamic>>> _repliesByComment = {};
   final Set<String> _expandedReplies = <String>{};
+  final Set<String> _loadingReplies = <String>{};
+  final Map<String, int?> _nextBeforeByCourse = {};
+  static const int _pageSize = 18;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleScroll);
     _loadComments();
   }
 
@@ -50,6 +57,7 @@ class _RecordedLessonCommentsScreenState
   void dispose() {
     _commentC.dispose();
     _commentFocus.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -70,21 +78,52 @@ class _RecordedLessonCommentsScreenState
     return ordered;
   }
 
-  Future<void> _loadComments() async {
+  void _handleScroll() {
+    if (!_scrollController.hasClients || _busy || _loadingMore || !_hasMore) {
+      return;
+    }
+    const threshold = 260.0;
+    final remaining =
+        _scrollController.position.maxScrollExtent -
+        _scrollController.position.pixels;
+    if (remaining <= threshold) {
+      _loadMoreComments();
+    }
+  }
+
+  Future<void> _loadComments({bool reset = true}) async {
     setState(() {
       _busy = true;
       _error = null;
+      _repliesByComment.clear();
+      _expandedReplies.clear();
+      _loadingReplies.clear();
+      if (reset) {
+        _nextBeforeByCourse.clear();
+      }
     });
 
     try {
+      final pages = await Future.wait(
+        _feedbackCourseIds.map((courseId) {
+          return CourseFeedbackService.listLessonCommentsPage(
+            courseId,
+            widget.lessonId,
+            visibleOnly: true,
+            limit: _pageSize,
+            beforeCreatedAt: reset ? null : _nextBeforeByCourse[courseId],
+          );
+        }),
+      );
+
       final mergedById = <String, LessonCommentItem>{};
-      for (final courseId in _feedbackCourseIds) {
-        final comments = await CourseFeedbackService.listLessonComments(
-          courseId,
-          widget.lessonId,
-          visibleOnly: true,
-        );
-        for (final comment in comments) {
+      for (var i = 0; i < _feedbackCourseIds.length; i++) {
+        final courseId = _feedbackCourseIds[i];
+        final page = pages[i];
+        _nextBeforeByCourse[courseId] = page.hasMore
+            ? page.nextBeforeCreatedAt
+            : null;
+        for (final comment in page.items) {
           mergedById.putIfAbsent(comment.id, () => comment);
         }
       }
@@ -92,26 +131,16 @@ class _RecordedLessonCommentsScreenState
       final comments = mergedById.values.toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      final repliesMap = <String, List<Map<String, dynamic>>>{};
-      for (final c in comments.take(80)) {
-        final sourceCourseId = c.courseId.trim().isEmpty
-            ? widget.primaryCourseId
-            : c.courseId.trim();
-        final replies = await CourseFeedbackService.listLessonReplies(
-          sourceCourseId,
-          widget.lessonId,
-          c.id,
-        );
-        repliesMap[c.id] = replies;
-      }
+      final hasMore = _feedbackCourseIds.any((courseId) {
+        final cursor = _nextBeforeByCourse[courseId];
+        return cursor != null && cursor > 0;
+      });
 
       if (!mounted) return;
       setState(() {
         _comments = comments;
-        _repliesByComment
-          ..clear()
-          ..addAll(repliesMap);
         _busy = false;
+        _hasMore = hasMore;
       });
     } catch (e) {
       if (!mounted) return;
@@ -119,6 +148,109 @@ class _RecordedLessonCommentsScreenState
         _error = toHumanError(e);
         _busy = false;
       });
+    }
+  }
+
+  Future<void> _loadMoreComments() async {
+    if (_busy || _loadingMore || !_hasMore) return;
+
+    setState(() {
+      _loadingMore = true;
+      _error = null;
+    });
+
+    try {
+      final pages = await Future.wait(
+        _feedbackCourseIds.map((courseId) {
+          final cursor = _nextBeforeByCourse[courseId];
+          if (cursor == null || cursor <= 0) {
+            return Future.value(
+              LessonCommentPage(
+                items: const [],
+                hasMore: false,
+                nextBeforeCreatedAt: 0,
+              ),
+            );
+          }
+          return CourseFeedbackService.listLessonCommentsPage(
+            courseId,
+            widget.lessonId,
+            visibleOnly: true,
+            limit: _pageSize,
+            beforeCreatedAt: cursor,
+          );
+        }),
+      );
+
+      final mergedById = {for (final c in _comments) c.id: c};
+      for (var i = 0; i < _feedbackCourseIds.length; i++) {
+        final courseId = _feedbackCourseIds[i];
+        final page = pages[i];
+        _nextBeforeByCourse[courseId] = page.hasMore
+            ? page.nextBeforeCreatedAt
+            : null;
+        for (final comment in page.items) {
+          mergedById.putIfAbsent(comment.id, () => comment);
+        }
+      }
+
+      final comments = mergedById.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      final hasMore = _feedbackCourseIds.any((courseId) {
+        final cursor = _nextBeforeByCourse[courseId];
+        return cursor != null && cursor > 0;
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _comments = comments;
+        _hasMore = hasMore;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
+      AppToast.show(context, toHumanError(e), type: AppToastType.error);
+    }
+  }
+
+  Future<void> _ensureRepliesLoaded(LessonCommentItem item) async {
+    if (_repliesByComment.containsKey(item.id) ||
+        _loadingReplies.contains(item.id)) {
+      return;
+    }
+
+    final sourceCourseId = item.courseId.trim().isEmpty
+        ? widget.primaryCourseId
+        : item.courseId.trim();
+
+    setState(() {
+      _loadingReplies.add(item.id);
+    });
+
+    try {
+      final replies = await CourseFeedbackService.listLessonReplies(
+        sourceCourseId,
+        widget.lessonId,
+        item.id,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _repliesByComment[item.id] = replies;
+        _loadingReplies.remove(item.id);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingReplies.remove(item.id);
+      });
+      AppToast.show(
+        context,
+        'Could not load replies.',
+        type: AppToastType.error,
+      );
     }
   }
 
@@ -151,7 +283,7 @@ class _RecordedLessonCommentsScreenState
         type: 'comment',
       );
       _commentC.clear();
-      await _loadComments();
+      await _loadComments(reset: true);
       if (!mounted) return;
       AppToast.show(context, 'Comment posted.');
       FocusScope.of(context).requestFocus(_commentFocus);
@@ -238,7 +370,7 @@ class _RecordedLessonCommentsScreenState
       uid: widget.uid,
       text: text,
     );
-    await _loadComments();
+    await _loadComments(reset: true);
   }
 
   Future<void> _reportComment(String commentId, String courseId) async {
@@ -369,6 +501,7 @@ class _RecordedLessonCommentsScreenState
         ? widget.primaryCourseId
         : item.courseId;
     final replies = _repliesByComment[item.id] ?? const [];
+    final loadingReplies = _loadingReplies.contains(item.id);
     final expanded = _expandedReplies.contains(item.id);
     final visibleReplies = expanded ? replies : replies.take(2).toList();
 
@@ -476,41 +609,51 @@ class _RecordedLessonCommentsScreenState
                 icon: const Icon(Icons.flag_rounded, size: 16),
                 label: const Text('Report'),
               ),
-              if (replies.isNotEmpty)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      if (expanded) {
-                        _expandedReplies.remove(item.id);
-                      } else {
-                        _expandedReplies.add(item.id);
-                      }
-                    });
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    foregroundColor: const Color(0xFF334155),
-                    minimumSize: const Size(0, 36),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  if (!expanded) {
+                    await _ensureRepliesLoaded(item);
+                  }
+                  if (!mounted) return;
+                  setState(() {
+                    if (expanded) {
+                      _expandedReplies.remove(item.id);
+                    } else {
+                      _expandedReplies.add(item.id);
+                    }
+                  });
+                },
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  foregroundColor: const Color(0xFF334155),
+                  minimumSize: const Size(0, 36),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
                   ),
-                  icon: Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    size: 18,
-                  ),
-                  label: Text(
-                    expanded
-                        ? 'Hide replies'
-                        : 'Show replies (${replies.length})',
-                  ),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 ),
+                icon: Icon(
+                  expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                ),
+                label: Text(expanded ? 'Hide replies' : 'Show replies'),
+              ),
             ],
           ),
-          if (replies.isNotEmpty) ...[
+          if (loadingReplies)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (replies.isNotEmpty) ...[
             const SizedBox(height: 10),
             for (final reply in visibleReplies)
               Container(
@@ -632,11 +775,27 @@ class _RecordedLessonCommentsScreenState
                           ),
                         )
                       : RefreshIndicator(
-                          onRefresh: _loadComments,
+                          onRefresh: () => _loadComments(reset: true),
                           child: ListView.builder(
+                            controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
-                            itemCount: _comments.length,
+                            itemCount:
+                                _comments.length + (_loadingMore ? 1 : 0),
                             itemBuilder: (_, index) {
+                              if (index >= _comments.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 18),
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
                               return _buildCommentCard(_comments[index]);
                             },
                           ),

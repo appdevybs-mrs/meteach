@@ -31,16 +31,6 @@ const translations = {
     'gallery.slide2Text': 'Confidence grows through steady, practical study.',
     'gallery.slide3Title': 'School community',
     'gallery.slide3Text': 'A supportive environment for learners and teachers.',
-    'gallery.sideTitle': 'A premium learning atmosphere',
-    'gallery.sideText': 'We keep the design clean, modern, and easy to navigate so families can find what they need fast.',
-    'gallery.sideItem1': 'Photo moments from class activities',
-    'gallery.sideItem2': 'Teacher-led learning environments',
-    'gallery.sideItem3': 'Student-first community culture',
-    'gallery.loading': 'Loading gallery...',
-    'gallery.emptyTitle': 'No gallery items yet',
-    'gallery.emptyText': 'New photos and videos will appear here when teachers publish them.',
-    'gallery.errorTitle': 'Gallery unavailable',
-    'gallery.errorText': 'We could not load the live gallery right now.',
     'courses.title': 'Our Courses',
     'courses.lead': 'Browse learner programs and register directly from the website.',
     'courses.card1Title': 'Beginner English',
@@ -99,16 +89,6 @@ const translations = {
     'gallery.slide2Text': 'تنمو الثقة من خلال دراسة عملية ومنتظمة.',
     'gallery.slide3Title': 'مجتمع المدرسة',
     'gallery.slide3Text': 'بيئة داعمة للمتعلمين والمعلمين.',
-    'gallery.sideTitle': 'أجواء تعليمية مميزة',
-    'gallery.sideText': 'نحافظ على تصميم نظيف وحديث وسهل التصفح حتى تجد العائلات ما تحتاجه بسرعة.',
-    'gallery.sideItem1': 'صور من الأنشطة الصفية',
-    'gallery.sideItem2': 'بيئات تعلم بإشراف المعلم',
-    'gallery.sideItem3': 'ثقافة مجتمع تضع الطالب أولاً',
-    'gallery.loading': 'جارٍ تحميل المعرض...',
-    'gallery.emptyTitle': 'لا توجد عناصر في المعرض بعد',
-    'gallery.emptyText': 'ستظهر الصور ومقاطع الفيديو هنا عندما ينشرها المعلمون.',
-    'gallery.errorTitle': 'المعرض غير متاح',
-    'gallery.errorText': 'تعذر تحميل المعرض المباشر الآن.',
     'courses.title': 'دوراتنا',
     'courses.lead': 'تصفح البرامج وسجل مباشرة من الموقع.',
     'courses.card1Title': 'الإنجليزية للمبتدئين',
@@ -167,16 +147,6 @@ const translations = {
     'gallery.slide2Text': 'La confiance grandit grâce à une étude régulière et pratique.',
     'gallery.slide3Title': 'Communauté scolaire',
     'gallery.slide3Text': 'Un environnement bienveillant pour les apprenants et les enseignants.',
-    'gallery.sideTitle': 'Une atmosphère d’apprentissage premium',
-    'gallery.sideText': 'Nous gardons un design propre, moderne et simple pour que les familles trouvent vite ce qu’elles cherchent.',
-    'gallery.sideItem1': 'Moments photo des activités de classe',
-    'gallery.sideItem2': 'Environnements d’apprentissage guidés par les enseignants',
-    'gallery.sideItem3': 'Culture communautaire centrée sur l’élève',
-    'gallery.loading': 'Chargement de la galerie...',
-    'gallery.emptyTitle': 'Aucun élément pour le moment',
-    'gallery.emptyText': 'Les nouvelles photos et vidéos apparaîtront ici lorsque les enseignants les publieront.',
-    'gallery.errorTitle': 'Galerie indisponible',
-    'gallery.errorText': 'Impossible de charger la galerie en direct pour le moment.',
     'courses.title': 'Nos cours',
     'courses.lead': 'Parcourez les programmes et inscrivez-vous directement depuis le site.',
     'courses.card1Title': 'Anglais débutant',
@@ -275,24 +245,9 @@ function initGallery() {
     const img = document.createElement('img');
     img.className = 'gallery-media';
     img.loading = 'lazy';
-    img.alt = item.uploadedByName ? `${item.uploadedByName} gallery media` : 'Gallery media';
+    img.alt = 'Gallery media';
     img.src = url;
     return img;
-  };
-
-  const setState = (target, stateName) => {
-    const state = target.querySelector('[data-gallery-state]');
-    const empty = target.querySelector('[data-gallery-empty]');
-    const error = target.querySelector('[data-gallery-error]');
-    const carousel = target.querySelector('[data-gallery-carousel]');
-    const dots = target.querySelector('[data-gallery-dots]');
-    if (!state || !empty || !error || !carousel) return;
-
-    state.hidden = stateName !== 'loading';
-    empty.hidden = stateName !== 'empty';
-    error.hidden = stateName !== 'error';
-    carousel.hidden = stateName !== 'ready';
-    if (dots) dots.hidden = stateName !== 'ready';
   };
 
   const render = (target, items) => {
@@ -319,18 +274,6 @@ function initGallery() {
       if (media) mediaWrap.appendChild(media);
       card.appendChild(mediaWrap);
 
-      const caption = document.createElement('div');
-      caption.className = 'gallery-caption-overlay';
-
-      const title = document.createElement('strong');
-      title.textContent = item.title || item.uploadedByName || 'Your Bridge School';
-      caption.appendChild(title);
-
-      const label = document.createElement('span');
-      label.textContent = typeLabel(item.type);
-      caption.appendChild(label);
-
-      card.appendChild(caption);
       slide.appendChild(card);
       return slide;
     });
@@ -378,15 +321,8 @@ function initGallery() {
     restart();
   };
 
-  function typeLabel(type) {
-    return (type || '').toString().trim().toLowerCase() === 'video'
-      ? 'Public gallery video'
-      : 'Public gallery photo';
-  }
-
   const load = async (target) => {
     try {
-      setState(target, 'loading');
       const response = await fetch(`${DB_URL}/public_gallery_teasers.json`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`RTDB request failed (${response.status})`);
 
@@ -398,14 +334,11 @@ function initGallery() {
         : [];
 
       if (!items.length) {
-        setState(target, 'empty');
         return;
       }
 
       render(target, items);
-      setState(target, 'ready');
     } catch (e) {
-      setState(target, 'error');
       console.warn('Failed to load public gallery', e);
     }
   };

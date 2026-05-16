@@ -323,18 +323,26 @@ button, input, select { font: inherit; }
 .section-head p { margin: 10px auto 0; color: var(--muted); max-width: 58ch; }
 .section-head h2 { font-size: clamp(2rem, 4vw, 2.75rem); }
 
+.gallery-section .section-head,
+.gallery-page .section-head {
+  margin-bottom: 14px;
+}
+
+.gallery-section {
+  padding-top: 14px;
+  padding-bottom: 18px;
+}
+
+.gallery-page {
+  padding-top: 12px;
+  padding-bottom: 18px;
+}
+
 .gallery-shell {
   display: grid;
   grid-template-columns: 1.35fr 0.65fr;
   gap: 20px;
   align-items: stretch;
-}
-
-.gallery-home-grid {
-  display: grid;
-  grid-template-columns: 0.42fr 1fr;
-  gap: 20px;
-  align-items: start;
 }
 
 .gallery-stage {
@@ -447,30 +455,29 @@ button, input, select { font: inherit; }
 
 .dot.is-active { width: 32px; background: var(--brand); }
 
-.gallery-feed {
-  min-height: 320px;
-}
+.gallery-feed { min-height: auto; }
 
 .gallery-feed-compact {
-  width: min(100%, 920px);
+  width: min(100%, 860px);
   margin: 0 auto;
   padding: 0;
   background: transparent;
   border: 0;
   box-shadow: none;
+  position: relative;
 }
 
 .gallery-carousel {
   position: relative;
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 54px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .gallery-viewport {
   overflow: hidden;
-  border-radius: 24px;
+  border-radius: 18px;
   background: transparent;
 }
 
@@ -486,18 +493,17 @@ button, input, select { font: inherit; }
 
 .gallery-card {
   position: relative;
-  border-radius: 24px;
+  border-radius: 18px;
   overflow: hidden;
   background: #fff;
   box-shadow: 0 12px 26px rgba(18, 32, 72, 0.08);
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
+  display: block;
+  min-height: 0;
 }
 
 .gallery-media-wrap {
   background: #0e1728;
-  aspect-ratio: 4 / 3;
+  height: clamp(260px, 48vw, 430px);
   width: 100%;
 }
 
@@ -507,43 +513,6 @@ button, input, select { font: inherit; }
   object-fit: cover;
   display: block;
 }
-
-.gallery-caption-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 20px 20px 16px;
-  display: grid;
-  gap: 4px;
-  color: #fff;
-  background: linear-gradient(180deg, rgba(6, 12, 22, 0), rgba(6, 12, 22, 0.72));
-}
-
-.gallery-caption-overlay strong {
-  font-size: 1.1rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.gallery-caption-overlay span {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 0.88rem;
-}
-
-.gallery-state {
-  min-height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--muted);
-  text-align: center;
-  flex-direction: column;
-}
-
-.gallery-state strong { color: var(--text); }
-.gallery-state.is-error strong { color: #9a2e2e; }
 
 .gallery-carousel .gallery-arrow {
   position: static;
@@ -555,10 +524,15 @@ button, input, select { font: inherit; }
 }
 
 .gallery-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
   display: flex;
   justify-content: center;
   gap: 8px;
-  padding: 14px 0 0;
+  padding: 0;
+  z-index: 3;
 }
 
 .gallery-dot {
@@ -773,7 +747,6 @@ html[dir="rtl"] .course-footer { direction: rtl; }
 
 @media (max-width: 1060px) {
   .hero-grid,
-  .gallery-shell,
   .courses-layout,
   .footer-grid {
     grid-template-columns: 1fr;
