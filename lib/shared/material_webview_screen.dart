@@ -10,6 +10,8 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import 'story_audio_controller.dart';
 
+enum MaterialViewerMode { game, document }
+
 class MaterialWebViewScreen extends StatefulWidget {
   const MaterialWebViewScreen.fromUrl({
     super.key,
@@ -17,6 +19,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.url,
     this.headers = const <String, String>{},
     this.audioController,
+    this.viewerMode = MaterialViewerMode.game,
   }) : htmlString = null,
        assetPath = null;
 
@@ -25,6 +28,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.title,
     required this.assetPath,
     this.audioController,
+    this.viewerMode = MaterialViewerMode.game,
   }) : url = null,
        htmlString = null,
        headers = const <String, String>{};
@@ -34,6 +38,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.title,
     required this.htmlString,
     this.audioController,
+    this.viewerMode = MaterialViewerMode.game,
   }) : url = null,
        assetPath = null,
        headers = const <String, String>{};
@@ -44,6 +49,7 @@ class MaterialWebViewScreen extends StatefulWidget {
   final String? htmlString;
   final Map<String, String> headers;
   final StoryAudioController? audioController;
+  final MaterialViewerMode viewerMode;
 
   bool get isUrl => url != null && url!.trim().isNotEmpty;
   bool get isAsset => assetPath != null && assetPath!.trim().isNotEmpty;
@@ -70,6 +76,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
   bool get _isWebRuntime => kIsWeb;
   bool get _hasController => _controller != null;
+  bool get _isDocumentMode => widget.viewerMode == MaterialViewerMode.document;
 
   @override
   void initState() {
@@ -375,7 +382,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
             _stopLoadWatchdog();
 
-            await _applyGameEnhancementsIfNeeded();
+            await _applyContentEnhancementsIfNeeded();
             await _notifyViewportChanged();
             await _notifyGameLifecycle('resumed');
             _scheduleStabilityRelayouts();
@@ -518,15 +525,80 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     }
   }
 
-  Future<void> _applyGameEnhancementsIfNeeded() async {
+  Future<void> _applyContentEnhancementsIfNeeded() async {
     if (_isWebRuntime || !_hasController) return;
     if (_didApplyInitialEnhancements) return;
 
     _didApplyInitialEnhancements = true;
 
-    await _injectBaseGameSupport();
-    await _injectRevealAndViewportHooks();
+    if (_isDocumentMode) {
+      await _injectDocumentSupport();
+    } else {
+      await _injectBaseGameSupport();
+      await _injectRevealAndViewportHooks();
+    }
     await _notifyViewportChanged();
+  }
+
+  Future<void> _injectDocumentSupport() async {
+    const String script = '''
+(function () {
+  try {
+    var existingViewport = document.querySelector('meta[name="viewport"]');
+    if (!existingViewport) {
+      existingViewport = document.createElement('meta');
+      existingViewport.name = 'viewport';
+      document.head.appendChild(existingViewport);
+    }
+    existingViewport.setAttribute(
+      'content',
+      'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover'
+    );
+
+    var styleId = 'dea_document_host_style';
+    var style = document.getElementById(styleId);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = styleId;
+      document.head.appendChild(style);
+    }
+
+    style.textContent = `
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: auto !important;
+        background: #fff !important;
+        color-scheme: light !important;
+        -webkit-text-size-adjust: 100% !important;
+        text-size-adjust: 100% !important;
+      }
+
+      * {
+        box-sizing: border-box !important;
+      }
+
+      img, video, iframe, table {
+        max-width: 100% !important;
+      }
+    `;
+
+    document.documentElement.style.backgroundColor = '#ffffff';
+    document.body.style.backgroundColor = '#ffffff';
+    return true;
+  } catch (e) {
+    return false;
+  }
+})();
+''';
+
+    await _runJavascriptSafely(script);
   }
 
   Future<void> _injectBaseGameSupport() async {

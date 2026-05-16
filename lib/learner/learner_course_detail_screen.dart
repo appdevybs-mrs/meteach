@@ -3893,6 +3893,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               builder: (_) => MaterialWebViewScreen.fromUrl(
                 title: title.isEmpty ? 'Homework' : '$title Homework',
                 url: url,
+                viewerMode: MaterialViewerMode.document,
               ),
             ),
           );

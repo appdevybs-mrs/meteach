@@ -25,6 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/material_webview_screen.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/payment_status.dart';
 import '../shared/responsive_layout.dart';
@@ -201,6 +202,35 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok) _toast('Could not open the link.');
+  }
+
+  Future<void> _openHtmlInApp({
+    required String title,
+    required String url,
+  }) async {
+    var u = url.trim();
+    if (u.isEmpty) {
+      _toast('Missing material link.');
+      return;
+    }
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+    final uri = Uri.tryParse(u);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      _toast('Invalid material link.');
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: title,
+          url: u,
+          viewerMode: MaterialViewerMode.document,
+        ),
+      ),
+    );
   }
 
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
@@ -1086,6 +1116,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final content = (info['content'] ?? '').toString().trim();
     final homework = (info['homework'] ?? '').toString().trim();
     final materialsUrl = (info['materialsUrl'] ?? '').toString().trim();
+    final homeworkUrl = (info['homeworkUrl'] ?? '').toString().trim();
     final duration = _asInt(info['durationMinutes'] ?? 0) > 0
         ? _asInt(info['durationMinutes'] ?? 0)
         : bookingDurationMinutes;
@@ -1362,11 +1393,60 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                           vertical: 12,
                                         ),
                                       ),
-                                      onPressed: () =>
-                                          _openExternalUrl(materialsUrl),
+                                      onPressed: () => _openHtmlInApp(
+                                        title: titleRaw.isEmpty
+                                            ? 'Lesson Material'
+                                            : '$titleRaw Material',
+                                        url: materialsUrl,
+                                      ),
                                       icon: const Icon(Icons.slideshow_rounded),
                                       label: const Text(
                                         'Open materials',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                if (homeworkUrl.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: p.soft.withValues(alpha: 0.24),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: p.border.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFFB45309,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                      onPressed: () => _openHtmlInApp(
+                                        title: titleRaw.isEmpty
+                                            ? 'Homework'
+                                            : '$titleRaw Homework',
+                                        url: homeworkUrl,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.assignment_rounded,
+                                      ),
+                                      label: const Text(
+                                        'Open homework',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w900,
                                         ),
@@ -4911,6 +4991,43 @@ class _OnlineAttendanceHistoryScreenState
 
   String _safeStr(dynamic v) => (v ?? '').toString().trim();
 
+  Future<void> _openHistoryHtmlInApp({
+    required String title,
+    required String url,
+  }) async {
+    var u = url.trim();
+    if (u.isEmpty) {
+      AppToast.show(
+        context,
+        'Missing material link.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+    final uri = Uri.tryParse(u);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      AppToast.show(
+        context,
+        'Invalid material link.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: title,
+          url: u,
+          viewerMode: MaterialViewerMode.document,
+        ),
+      ),
+    );
+  }
+
   String _formatWhen(Map<String, dynamic> rec) {
     final day = _safeStr(rec['dayKey']);
     final time = _safeStr(rec['time']);
@@ -4969,6 +5086,8 @@ class _OnlineAttendanceHistoryScreenState
                 'objective': _safeStr(sm['objective']),
                 'content': _safeStr(sm['content']),
                 'homework': _safeStr(sm['homework']),
+                'materialsUrl': _safeStr(sm['materialsUrl']),
+                'homeworkUrl': _safeStr(sm['homeworkUrl']),
                 'skillType': _safeStr(sm['skillType']),
                 'variantKey': 'flexible',
                 'sessionNoResolved': sn > 0 ? sn : order,
@@ -5359,6 +5478,8 @@ class _OnlineAttendanceHistoryScreenState
     final objective = _safeStr(info?['objective']);
     final content = _safeStr(info?['content']);
     final homework = _safeStr(info?['homework']);
+    final materialsUrl = _safeStr(info?['materialsUrl']);
+    final homeworkUrl = _safeStr(info?['homeworkUrl']);
     final skillType = _safeStr(info?['skillType']);
     final unitTitle = _safeStr(info?['unitTitle']);
     final unitOrder = _toInt(info?['unitOrder']);
@@ -5512,6 +5633,44 @@ class _OnlineAttendanceHistoryScreenState
             title: 'Homework',
             body: homework,
           ),
+          if (materialsUrl.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: p.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () => _openHistoryHtmlInApp(
+                  title: title.isEmpty ? 'Lesson Material' : '$title Material',
+                  url: materialsUrl,
+                ),
+                icon: const Icon(Icons.slideshow_rounded),
+                label: const Text('Open materials'),
+              ),
+            ),
+          ],
+          if (homeworkUrl.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFB45309),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () => _openHistoryHtmlInApp(
+                  title: title.isEmpty ? 'Homework' : '$title Homework',
+                  url: homeworkUrl,
+                ),
+                icon: const Icon(Icons.assignment_rounded),
+                label: const Text('Open homework'),
+              ),
+            ),
+          ],
         ],
       ),
     );

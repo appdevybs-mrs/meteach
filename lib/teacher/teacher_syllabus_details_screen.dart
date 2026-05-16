@@ -1430,6 +1430,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
               ? 'Material Viewer'
               : widget.session.title.trim(),
           url: cleanUrl,
+          viewerMode: MaterialViewerMode.document,
         ),
       ),
     );
