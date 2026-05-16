@@ -592,7 +592,7 @@ class _RecordedLessonCommentsScreenState
     final expanded = _expandedReplies.contains(item.id);
     final replyCount = _replyCountByComment[item.id] ?? replies.length;
     final hasReplies = replyCount > 0 || replies.isNotEmpty;
-    final visibleReplies = expanded ? replies : replies.take(2).toList();
+    final visibleReplies = expanded ? replies : const <Map<String, dynamic>>[];
 
     return Container(
       width: double.infinity,
@@ -746,7 +746,7 @@ class _RecordedLessonCommentsScreenState
                 ),
               ),
             )
-          else if (replies.isNotEmpty) ...[
+          else if (expanded && replies.isNotEmpty) ...[
             const SizedBox(height: 10),
             for (final reply in visibleReplies)
               Container(
