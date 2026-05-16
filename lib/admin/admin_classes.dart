@@ -388,17 +388,55 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
   }
 
+  Future<bool> _confirmQuickAction({
+    required String title,
+    required String message,
+    required String confirmText,
+  }) async {
+    return (await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(confirmText),
+              ),
+            ],
+          ),
+        )) ??
+        false;
+  }
+
   Widget _actionIconButton({
     required IconData icon,
     required Color color,
     required String tooltip,
-    required VoidCallback onTap,
+    required Future<void> Function() onTap,
     Widget? badge,
+    String? confirmTitle,
+    String? confirmMessage,
+    String confirmText = 'Continue',
   }) {
     return Tooltip(
       message: tooltip,
       child: InkWell(
-        onTap: onTap,
+        onTap: () async {
+          if (confirmTitle != null && confirmMessage != null) {
+            final ok = await _confirmQuickAction(
+              title: confirmTitle,
+              message: confirmMessage,
+              confirmText: confirmText,
+            );
+            if (!ok) return;
+          }
+          await onTap();
+        },
         borderRadius: BorderRadius.circular(999),
         child: Stack(
           clipBehavior: Clip.none,
@@ -435,6 +473,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           icon: Icons.payments_rounded,
           color: const Color(0xFF7C3AED),
           tooltip: 'Payment reminder',
+          confirmTitle: 'Send payment reminder?',
+          confirmMessage: 'Send a payment reminder to this learner?',
+          confirmText: 'Send',
           onTap: () => _sendLearnerQuickReminder(
             uid: uid,
             type: _QuickLearnerReminder.payment,
@@ -444,6 +485,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           icon: Icons.event_busy_rounded,
           color: const Color(0xFFEF4444),
           tooltip: 'Absence reminder',
+          confirmTitle: 'Send absence reminder?',
+          confirmMessage: 'Send an absence reminder to this learner?',
+          confirmText: 'Send',
           onTap: () => _sendLearnerQuickReminder(
             uid: uid,
             type: _QuickLearnerReminder.absence,
@@ -453,6 +497,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           icon: Icons.access_time_rounded,
           color: const Color(0xFFF97316),
           tooltip: 'Late reminder',
+          confirmTitle: 'Send late reminder?',
+          confirmMessage: 'Send a late reminder to this learner?',
+          confirmText: 'Send',
           onTap: () => _sendLearnerQuickReminder(
             uid: uid,
             type: _QuickLearnerReminder.late,
@@ -469,6 +516,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           icon: Icons.mail_rounded,
           color: const Color(0xFF2563EB),
           tooltip: unreadCount > 0 ? 'Mail ($unreadLabel)' : 'Mail',
+          confirmTitle: 'Open mail?',
+          confirmMessage: 'Open this learner\'s mail threads?',
+          confirmText: 'Open',
           onTap: () async {
             await Navigator.of(context).push(
               MaterialPageRoute(

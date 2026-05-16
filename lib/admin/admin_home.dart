@@ -4313,6 +4313,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   final cEmailC = TextEditingController();
   final cAccreditationC = TextEditingController();
   final cAddressC = TextEditingController();
+  final cAcademicDirectorC = TextEditingController();
 
   bool loading = true;
   bool saving = false;
@@ -4379,6 +4380,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     cEmailC.dispose();
     cAccreditationC.dispose();
     cAddressC.dispose();
+    cAcademicDirectorC.dispose();
 
     _tabController.dispose();
 
@@ -4450,6 +4452,12 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
             .toString();
     cAddressC.text = (m['companyAddress'] ?? m['company address'] ?? '')
         .toString();
+    cAcademicDirectorC.text =
+        (m['academicDirectorName'] ??
+                m['academic director name'] ??
+                m['directorName'] ??
+                '')
+            .toString();
   }
 
   Map<String, dynamic> _companyControllersToMap() {
@@ -4459,6 +4467,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       'companyEmail': cEmailC.text.trim(),
       'companyAccreditationNumber': cAccreditationC.text.trim(),
       'companyAddress': cAddressC.text.trim(),
+      'academicDirectorName': cAcademicDirectorC.text.trim(),
     };
   }
 
@@ -4780,6 +4789,14 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
             controller: cAddressC,
             maxLines: 2,
             decoration: const InputDecoration(labelText: 'Company address'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cAcademicDirectorC,
+            decoration: const InputDecoration(
+              labelText: 'Academic director name',
+              hintText: "Used on certificates",
+            ),
           ),
         ],
       ),

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -25,6 +26,10 @@ class HardcopyCertificateInput {
 
 class CertificatePdfService {
   static const int _templateRasterDpi = 300;
+  static const String _academicDirectorFallback = "Abdelkader B'";
+  static final DatabaseReference _appConfigRoot = FirebaseDatabase.instance.ref(
+    'appConfig',
+  );
 
   static String buildPdfFileName(Certificate cert) {
     final title = _sanitizeFileNamePart(
@@ -83,6 +88,50 @@ class CertificatePdfService {
     return null;
   }
 
+  static dynamic _valueByAliases(
+    Map<String, dynamic> map,
+    List<String> aliases,
+  ) {
+    final normalized = <String, dynamic>{};
+    map.forEach((k, v) {
+      normalized[k.toString().toLowerCase().replaceAll(
+            RegExp(r'[^a-z0-9]'),
+            '',
+          )] =
+          v;
+    });
+
+    for (final alias in aliases) {
+      final key = alias.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (normalized.containsKey(key)) return normalized[key];
+    }
+    return null;
+  }
+
+  Future<String> _resolveAcademicDirectorName() async {
+    const paths = ['Company info', 'companyInfo'];
+    const aliases = [
+      'academicDirectorName',
+      'academic director name',
+      'academic_director_name',
+      'directorName',
+    ];
+
+    try {
+      for (final path in paths) {
+        final snap = await _appConfigRoot.child(path).get();
+        if (snap.value is! Map) continue;
+        final map = (snap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        final resolved = _valueByAliases(map, aliases)?.toString().trim() ?? '';
+        if (resolved.isNotEmpty) return resolved;
+      }
+    } catch (_) {}
+
+    return _academicDirectorFallback;
+  }
+
   Future<Uint8List> generateCertificatePdfBytes(Certificate cert) async {
     final doc = pw.Document();
     pw.MemoryImage? template;
@@ -130,6 +179,7 @@ class CertificatePdfService {
     final instructor = (cert.instructorName ?? '').trim().isNotEmpty
         ? cert.instructorName!.trim()
         : 'Seddik. B';
+    final academicDirectorName = await _resolveAcademicDirectorName();
 
     pw.Widget centeredText({
       required double centerX,
@@ -211,7 +261,7 @@ class CertificatePdfService {
                 centerX: 466,
                 top: academicDirectorTop,
                 boxWidth: 170,
-                text: 'Seddik. B',
+                text: academicDirectorName,
                 style: pw.TextStyle(
                   fontSize: 14,
                   font: playfairBold,
