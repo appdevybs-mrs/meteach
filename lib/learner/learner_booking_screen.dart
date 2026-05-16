@@ -1498,40 +1498,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
-  Widget _teacherCollapseToggle(bool collapsed) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () {
-        setState(() {
-          _teachersCollapseTouched = true;
-          _teachersCollapsed = !_teachersCollapsed;
-        });
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              collapsed ? 'Expand teachers' : 'Collapse teachers',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: primaryBlue,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              collapsed ? Icons.expand_more_rounded : Icons.expand_less_rounded,
-              color: primaryBlue,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   int _hhmmToMinutes(String hhmm) {
     final p = hhmm.split(':');
     if (p.length != 2) return 0;
@@ -5403,28 +5369,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final compactHeader = constraints.maxWidth < 380;
-            if (compactHeader && hasRecommendations) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildStepLabel(1, 'Choose a teacher'),
-                  const SizedBox(height: 6),
-                  _teacherCollapseToggle(shouldCollapseTeachers),
-                ],
-              );
-            }
-            return Row(
-              children: [
-                Expanded(child: _buildStepLabel(1, 'Choose a teacher')),
-                if (hasRecommendations)
-                  _teacherCollapseToggle(shouldCollapseTeachers),
-              ],
-            );
-          },
-        ),
+        _buildStepLabel(1, 'Choose a teacher'),
         const SizedBox(height: 8),
         if (shouldCollapseTeachers)
           _collapsedTeachersCard(teachers)
