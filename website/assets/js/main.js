@@ -36,6 +36,11 @@ const translations = {
     'gallery.sideItem1': 'Photo moments from class activities',
     'gallery.sideItem2': 'Teacher-led learning environments',
     'gallery.sideItem3': 'Student-first community culture',
+    'gallery.loading': 'Loading gallery...',
+    'gallery.emptyTitle': 'No gallery items yet',
+    'gallery.emptyText': 'New photos and videos will appear here when teachers publish them.',
+    'gallery.errorTitle': 'Gallery unavailable',
+    'gallery.errorText': 'We could not load the live gallery right now.',
     'courses.title': 'Our Courses',
     'courses.lead': 'Browse learner programs and register directly from the website.',
     'courses.card1Title': 'Beginner English',
@@ -99,6 +104,11 @@ const translations = {
     'gallery.sideItem1': 'صور من الأنشطة الصفية',
     'gallery.sideItem2': 'بيئات تعلم بإشراف المعلم',
     'gallery.sideItem3': 'ثقافة مجتمع تضع الطالب أولاً',
+    'gallery.loading': 'جارٍ تحميل المعرض...',
+    'gallery.emptyTitle': 'لا توجد عناصر في المعرض بعد',
+    'gallery.emptyText': 'ستظهر الصور ومقاطع الفيديو هنا عندما ينشرها المعلمون.',
+    'gallery.errorTitle': 'المعرض غير متاح',
+    'gallery.errorText': 'تعذر تحميل المعرض المباشر الآن.',
     'courses.title': 'دوراتنا',
     'courses.lead': 'تصفح البرامج وسجل مباشرة من الموقع.',
     'courses.card1Title': 'الإنجليزية للمبتدئين',
@@ -162,6 +172,11 @@ const translations = {
     'gallery.sideItem1': 'Moments photo des activités de classe',
     'gallery.sideItem2': 'Environnements d’apprentissage guidés par les enseignants',
     'gallery.sideItem3': 'Culture communautaire centrée sur l’élève',
+    'gallery.loading': 'Chargement de la galerie...',
+    'gallery.emptyTitle': 'Aucun élément pour le moment',
+    'gallery.emptyText': 'Les nouvelles photos et vidéos apparaîtront ici lorsque les enseignants les publieront.',
+    'gallery.errorTitle': 'Galerie indisponible',
+    'gallery.errorText': 'Impossible de charger la galerie en direct pour le moment.',
     'courses.title': 'Nos cours',
     'courses.lead': 'Parcourez les programmes et inscrivez-vous directement depuis le site.',
     'courses.card1Title': 'Anglais débutant',
@@ -194,7 +209,7 @@ function setLanguage(lang) {
   const locale = translations[lang] ? lang : 'en';
   const copy = translations[locale];
 
-  document.documentElement.lang = locale === 'ar' ? 'ar' : 'en';
+  document.documentElement.lang = locale;
   document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
   document.title = copy.pageTitle;
 
@@ -223,33 +238,135 @@ function initMenu() {
 }
 
 function initGallery() {
-  const stage = document.querySelector('[data-gallery]');
-  if (!stage) return;
+  const targets = Array.from(document.querySelectorAll('[data-public-gallery]'));
+  if (!targets.length) return;
 
-  const slides = Array.from(stage.querySelectorAll('[data-slide]'));
-  const prev = stage.querySelector('[data-gallery-prev]');
-  const next = stage.querySelector('[data-gallery-next]');
-  const dots = Array.from(stage.querySelectorAll('[data-gallery-dot]'));
-  let index = 0;
-  let timer;
+  const DB_URL = 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com';
 
-  function show(nextIndex) {
-    index = (nextIndex + slides.length) % slides.length;
-    slides.forEach((slide, slideIndex) => slide.classList.toggle('is-active', slideIndex === index));
-    dots.forEach((dot, dotIndex) => dot.classList.toggle('is-active', dotIndex === index));
-  }
+  const toInt = (value) => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return Number.parseInt(value, 10) || 0;
+    return 0;
+  };
 
-  function restart() {
-    clearInterval(timer);
-    timer = setInterval(() => show(index + 1), 5500);
-  }
+  const formatDate = (value) => {
+    const ms = toInt(value);
+    if (!ms) return '';
+    const d = new Date(ms);
+    const two = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+  };
 
-  prev?.addEventListener('click', () => { show(index - 1); restart(); });
-  next?.addEventListener('click', () => { show(index + 1); restart(); });
-  dots.forEach((dot) => dot.addEventListener('click', () => { show(Number(dot.dataset.galleryDot || 0)); restart(); }));
+  const mediaNode = (item) => {
+    const url = (item.url || '').toString().trim();
+    const type = (item.type || '').toString().trim().toLowerCase();
+    if (!url) return null;
 
-  show(0);
-  restart();
+    if (type === 'video') {
+      const video = document.createElement('video');
+      video.controls = true;
+      video.preload = 'metadata';
+      video.playsInline = true;
+      video.className = 'gallery-media';
+      video.src = url;
+      return video;
+    }
+
+    const img = document.createElement('img');
+    img.className = 'gallery-media';
+    img.loading = 'lazy';
+    img.alt = item.uploadedByName ? `${item.uploadedByName} gallery media` : 'Gallery media';
+    img.src = url;
+    return img;
+  };
+
+  const setState = (target, stateName) => {
+    const state = target.querySelector('[data-gallery-state]');
+    const empty = target.querySelector('[data-gallery-empty]');
+    const error = target.querySelector('[data-gallery-error]');
+    const grid = target.querySelector('[data-gallery-grid]');
+    if (!state || !empty || !error || !grid) return;
+
+    state.hidden = stateName !== 'loading';
+    empty.hidden = stateName !== 'empty';
+    error.hidden = stateName !== 'error';
+    grid.hidden = stateName !== 'ready';
+  };
+
+  const render = (target, items) => {
+    const grid = target.querySelector('[data-gallery-grid]');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    items.forEach((item) => {
+      const card = document.createElement('article');
+      card.className = 'gallery-card';
+
+      const mediaWrap = document.createElement('div');
+      mediaWrap.className = 'gallery-media-wrap';
+      const media = mediaNode(item);
+      if (media) mediaWrap.appendChild(media);
+      card.appendChild(mediaWrap);
+
+      const body = document.createElement('div');
+      body.className = 'gallery-body';
+
+      const pill = document.createElement('span');
+      pill.className = 'gallery-pill';
+      pill.textContent = (item.type || 'media').toString();
+      body.appendChild(pill);
+
+      const uploader = document.createElement('strong');
+      uploader.textContent = item.uploadedByName || 'Your Bridge School';
+      body.appendChild(uploader);
+
+      const meta = document.createElement('div');
+      meta.className = 'gallery-meta';
+
+      const by = document.createElement('span');
+      by.textContent = item.uploadedByName ? `By ${item.uploadedByName}` : '';
+      if (by.textContent) meta.appendChild(by);
+
+      const createdAt = formatDate(item.createdAt);
+      if (createdAt) {
+        const date = document.createElement('span');
+        date.textContent = createdAt;
+        meta.appendChild(date);
+      }
+
+      body.appendChild(meta);
+      card.appendChild(body);
+      grid.appendChild(card);
+    });
+  };
+
+  const load = async (target) => {
+    try {
+      setState(target, 'loading');
+      const response = await fetch(`${DB_URL}/public_gallery_teasers.json`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`RTDB request failed (${response.status})`);
+
+      const value = await response.json();
+      const items = value && typeof value === 'object'
+        ? Object.entries(value)
+            .map(([id, item]) => ({ id, ...(item && typeof item === 'object' ? item : {}) }))
+            .sort((a, b) => toInt(b.createdAt) - toInt(a.createdAt))
+        : [];
+
+      if (!items.length) {
+        setState(target, 'empty');
+        return;
+      }
+
+      render(target, items);
+      setState(target, 'ready');
+    } catch (e) {
+      setState(target, 'error');
+      console.warn('Failed to load public gallery', e);
+    }
+  };
+
+  targets.forEach((target) => load(target));
 }
 
 function initLanguage() {

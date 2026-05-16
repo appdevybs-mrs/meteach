@@ -84,40 +84,7 @@
           <p data-i18n="gallery.lead">Discover moments from our students' learning journey</p>
         </div>
 
-        <div class="gallery-shell">
-          <div class="gallery-stage" data-gallery>
-            <article class="gallery-slide is-active" data-slide>
-              <div class="gallery-art art-one"></div>
-              <div class="gallery-caption">
-                <h3 data-i18n="gallery.slide1Title">Creative classroom moments</h3>
-                <p data-i18n="gallery.slide1Text">Interactive sessions, guided practice, and active learning.</p>
-              </div>
-            </article>
-            <article class="gallery-slide" data-slide>
-              <div class="gallery-art art-two"></div>
-              <div class="gallery-caption">
-                <h3 data-i18n="gallery.slide2Title">Student progress</h3>
-                <p data-i18n="gallery.slide2Text">Confidence grows through steady, practical study.</p>
-              </div>
-            </article>
-            <article class="gallery-slide" data-slide>
-              <div class="gallery-art art-three"></div>
-              <div class="gallery-caption">
-                <h3 data-i18n="gallery.slide3Title">School community</h3>
-                <p data-i18n="gallery.slide3Text">A supportive environment for learners and teachers.</p>
-              </div>
-            </article>
-
-            <button class="gallery-arrow prev" type="button" data-gallery-prev aria-label="Previous gallery slide">‹</button>
-            <button class="gallery-arrow next" type="button" data-gallery-next aria-label="Next gallery slide">›</button>
-
-            <div class="gallery-dots" aria-label="Gallery navigation">
-              <button class="dot is-active" type="button" data-gallery-dot="0" aria-label="Slide 1"></button>
-              <button class="dot" type="button" data-gallery-dot="1" aria-label="Slide 2"></button>
-              <button class="dot" type="button" data-gallery-dot="2" aria-label="Slide 3"></button>
-            </div>
-          </div>
-
+        <div class="gallery-home-grid">
           <aside class="gallery-side card">
             <h3 data-i18n="gallery.sideTitle">A premium learning atmosphere</h3>
             <p data-i18n="gallery.sideText">We keep the design clean, modern, and easy to navigate so families can find what they need fast.</p>
@@ -127,6 +94,22 @@
               <li data-i18n="gallery.sideItem3">Student-first community culture</li>
             </ul>
           </aside>
+
+          <div class="gallery-feed card" data-public-gallery data-gallery-target="home">
+            <div class="gallery-state" data-gallery-state>
+              <span class="gallery-spinner"></span>
+              <span data-i18n="gallery.loading">Loading gallery...</span>
+            </div>
+            <div class="gallery-grid" data-gallery-grid hidden></div>
+            <div class="gallery-state is-empty" data-gallery-empty hidden>
+              <strong data-i18n="gallery.emptyTitle">No gallery items yet</strong>
+              <span data-i18n="gallery.emptyText">New photos and videos will appear here when teachers publish them.</span>
+            </div>
+            <div class="gallery-state is-error" data-gallery-error hidden>
+              <strong data-i18n="gallery.errorTitle">Gallery unavailable</strong>
+              <span data-i18n="gallery.errorText">We could not load the live gallery right now.</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>

@@ -29,10 +29,19 @@
         <h1>Our Gallery</h1>
         <p>Discover moments from our students' learning journey</p>
       </div>
-      <div class="gallery-stage" style="position:relative; min-height:420px;">
-        <div class="gallery-slide is-active" style="position:absolute; inset:0; opacity:1; transform:none;">
-          <div class="gallery-art art-one"></div>
-          <div class="gallery-caption"><h3>Creative classroom moments</h3><p>Interactive sessions and active learning.</p></div>
+      <div class="gallery-feed card" data-public-gallery data-gallery-target="page">
+        <div class="gallery-state" data-gallery-state>
+          <span class="gallery-spinner"></span>
+          <span>Loading gallery...</span>
+        </div>
+        <div class="gallery-grid" data-gallery-grid hidden></div>
+        <div class="gallery-state is-empty" data-gallery-empty hidden>
+          <strong>No gallery items yet</strong>
+          <span>New photos and videos will appear here when teachers publish them.</span>
+        </div>
+        <div class="gallery-state is-error" data-gallery-error hidden>
+          <strong>Gallery unavailable</strong>
+          <span>We could not load the live gallery right now.</span>
         </div>
       </div>
     </div>

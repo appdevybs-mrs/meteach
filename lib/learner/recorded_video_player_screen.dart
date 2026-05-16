@@ -807,7 +807,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final title = 'Lesson Notes';
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -823,15 +823,15 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.note_alt_rounded, color: accent, size: 18),
+                child: Icon(Icons.note_alt_rounded, color: accent, size: 16),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -840,17 +840,16 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
-                        fontSize: 14.5,
+                        fontSize: 13.5,
                         color: Color(0xFF0F172A),
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
                       '${_lessonNotes.length} saved notes',
                       style: const TextStyle(
                         color: Color(0xFF475569),
                         fontWeight: FontWeight.w700,
-                        fontSize: 11.5,
+                        fontSize: 10.5,
                       ),
                     ),
                   ],
@@ -860,6 +859,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 onPressed: () =>
                     setState(() => _notesExpanded = !_notesExpanded),
                 icon: Icon(
+                  size: 18,
                   _notesExpanded
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
@@ -867,7 +867,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 label: Text(_notesExpanded ? 'Collapse' : 'Expand'),
                 style: TextButton.styleFrom(
                   foregroundColor: accent,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -876,19 +881,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  minimumSize: const Size(0, 38),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 34),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-                icon: const Icon(Icons.add_rounded, size: 18),
+                icon: const Icon(Icons.add_rounded, size: 16),
                 label: const Text('Add note'),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
             crossFadeState: _notesExpanded
@@ -960,71 +965,90 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         onTap: () => _seekToNote(note),
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  _formatDurationMs(note.positionMs),
-                  style: const TextStyle(
-                    color: Color(0xFF1D4ED8),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 10.5,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  note.text,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontWeight: FontWeight.w600,
-                    height: 1.25,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Column(
-                mainAxisSize: MainAxisSize.min,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    tooltip: 'Edit note',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 30,
-                      minHeight: 30,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 5,
                     ),
-                    onPressed: () => _openNoteEditor(note: note),
-                    icon: const Icon(Icons.edit_rounded, size: 17),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _formatDurationMs(note.positionMs),
+                      style: const TextStyle(
+                        color: Color(0xFF1D4ED8),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ),
-                  IconButton(
-                    tooltip: 'Delete note',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 30,
-                      minHeight: 30,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      note.text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _noteActionIcon(
+                    icon: Icons.edit_rounded,
+                    tooltip: 'Edit note',
+                    onPressed: () => _openNoteEditor(note: note),
+                  ),
+                  const SizedBox(width: 6),
+                  _noteActionIcon(
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Delete note',
                     onPressed: () => _deleteLessonNote(note),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 17),
                   ),
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _noteActionIcon({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.all(7),
+            child: Icon(icon, size: 16, color: const Color(0xFF334155)),
           ),
         ),
       ),
@@ -1318,7 +1342,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -1334,15 +1358,15 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.forum_rounded, color: accent, size: 18),
+                child: Icon(Icons.forum_rounded, color: accent, size: 16),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1351,11 +1375,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       'Comments',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
-                        fontSize: 14.5,
+                        fontSize: 13.5,
                         color: Color(0xFF0F172A),
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
                       _commentsBusy
                           ? 'Loading discussion...'
@@ -1363,7 +1386,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       style: const TextStyle(
                         color: Color(0xFF475569),
                         fontWeight: FontWeight.w700,
-                        fontSize: 11.5,
+                        fontSize: 10.5,
                       ),
                     ),
                   ],
@@ -1373,6 +1396,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 onPressed: () =>
                     setState(() => _commentsExpanded = !_commentsExpanded),
                 icon: Icon(
+                  size: 18,
                   _commentsExpanded
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
@@ -1380,7 +1404,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 label: Text(_commentsExpanded ? 'Collapse' : 'Expand'),
                 style: TextButton.styleFrom(
                   foregroundColor: accent,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1389,19 +1418,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  minimumSize: const Size(0, 38),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 34),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-                icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                icon: const Icon(Icons.open_in_full_rounded, size: 16),
                 label: const Text('Open'),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
             crossFadeState: _commentsExpanded
