@@ -3300,6 +3300,35 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
   }
 
+  Future<bool> _confirm({
+    required String title,
+    required String message,
+    required String confirmText,
+    bool danger = false,
+  }) async {
+    return (await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: danger ? Colors.red : null,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmText),
+              ),
+            ],
+          ),
+        )) ??
+        false;
+  }
+
   static const List<String> _variantKeys = [
     'inclass',
     'flexible',
@@ -4754,12 +4783,28 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 Switch.adaptive(
                                   value: isFreeCourse,
                                   onChanged: (v) async {
+                                    final enableFree = v;
+                                    final ok = await _confirm(
+                                      title: enableFree
+                                          ? 'Set course to Free?'
+                                          : 'Set course to Paid?',
+                                      message: enableFree
+                                          ? 'This will make this learner\'s course free. Continue?'
+                                          : 'This will switch this learner\'s course back to paid billing. Continue?',
+                                      confirmText: enableFree
+                                          ? 'Set to Free'
+                                          : 'Set to Paid',
+                                    );
+                                    if (!ok) return;
+
                                     await widget.db
                                         .ref(
                                           'users/${widget.uid}/courses/$courseKey',
                                         )
                                         .update({
-                                          'billingMode': v ? 'free' : 'paid',
+                                          'billingMode': enableFree
+                                              ? 'free'
+                                              : 'paid',
                                         });
                                   },
                                 ),

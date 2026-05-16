@@ -270,67 +270,154 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
   }
 
-  Future<void> _showQuickReminderSheet({
+  Future<void> _sendLearnerAlert({
     required String uid,
     required String learnerName,
-    required int unreadCount,
+    required String title,
+    required String message,
   }) async {
-    if (!mounted) return;
+    final cleanUid = uid.trim();
+    if (cleanUid.isEmpty) return;
 
-    final picked = await showModalBottomSheet<_QuickLearnerReminder>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final cleanTitle = title.trim().isEmpty ? 'Priority alert' : title.trim();
+    final cleanMessage = message.trim().isEmpty ? cleanTitle : message.trim();
+    final ref = FirebaseDatabase.instance
+        .ref('flash_messages/$cleanUid')
+        .push();
+
+    await ref.set({
+      'title': cleanTitle,
+      'message': cleanMessage,
+      'tone': 'high',
+      'status': 'new',
+      'createdAt': ServerValue.timestamp,
+      'seenAt': null,
+      'resentFromId': '',
+      'targetUid': cleanUid,
+      'targetRole': 'learner',
+      'targetName': learnerName.trim().isEmpty ? 'Learner' : learnerName.trim(),
+      'targetEmail': '',
+      'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+      'createdByName': (FirebaseAuth.instance.currentUser?.email ?? 'Admin')
+          .trim(),
+    });
+
+    try {
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.flashMessage,
+        targetUid: cleanUid,
+        title: cleanTitle,
+        message: cleanMessage,
+        context: const PushDispatchContext(
+          screen: 'admin/admin_priority_alerts',
+          action: 'learner_alert',
+        ),
+        eventParts: ['flash', cleanUid, ref.key ?? ''],
+        data: {'targetUid': cleanUid, 'alertId': ref.key ?? ''},
+        route: 'flash_messages',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _showLearnerAlertDialog({
+    required String uid,
+    required String learnerName,
+  }) async {
+    final titleCtrl = TextEditingController(text: 'Priority alert');
+    final messageCtrl = TextEditingController();
+
+    try {
+      final sent = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(
+              'Alert ${learnerName.trim().isEmpty ? 'learner' : learnerName}',
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Title',
+                      prefixIcon: Icon(Icons.add_alert_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: messageCtrl,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Message',
+                      prefixIcon: Icon(Icons.message_rounded),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.send_rounded),
+                label: const Text('Send'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (sent != true) return;
+      await _sendLearnerAlert(
+        uid: uid,
+        learnerName: learnerName,
+        title: titleCtrl.text,
+        message: messageCtrl.text,
+      );
+      if (!mounted) return;
+      _notify('Alert sent');
+    } finally {
+      titleCtrl.dispose();
+      messageCtrl.dispose();
+    }
+  }
+
+  Widget _actionIconButton({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onTap,
+    Widget? badge,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            const SizedBox(height: 6),
-            ListTile(
-              leading: const Icon(Icons.payments_rounded),
-              title: const Text('Payment'),
-              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.payment),
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withValues(alpha: 0.14),
+                border: Border.all(color: color.withValues(alpha: 0.35)),
+              ),
+              child: Icon(icon, size: 16, color: color),
             ),
-            ListTile(
-              leading: const Icon(Icons.event_busy_rounded),
-              title: const Text('Absence'),
-              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
-            ),
-            ListTile(
-              leading: const Icon(Icons.access_time_rounded),
-              title: const Text('Late'),
-              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.late),
-            ),
-            ListTile(
-              leading: const Icon(Icons.mail_rounded),
-              title: Text(unreadCount > 0 ? 'Mail ($unreadCount)' : 'Mail'),
-              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty),
-            ),
-            const SizedBox(height: 10),
+            if (badge != null) Positioned(right: -7, top: -7, child: badge),
           ],
         ),
       ),
     );
-
-    if (picked == null) return;
-
-    try {
-      if (picked == _QuickLearnerReminder.empty) {
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AdminLearnerMailTopicsScreen(
-              learnerUid: uid,
-              learnerName: learnerName.trim().isEmpty ? 'Learner' : learnerName,
-            ),
-          ),
-        );
-      } else {
-        await _sendLearnerQuickReminder(uid: uid, type: picked);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      _notify('Could not send reminder. Please try again.', error: true);
-    }
   }
 
   Widget _learnerQuickActionsBadge({
@@ -339,46 +426,66 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     required int unreadCount,
   }) {
     final unreadLabel = _countLabel(unreadCount);
-    return Tooltip(
-      message: 'Mail / Reminder',
-      child: InkWell(
-        onTap: () => _showQuickReminderSheet(
-          uid: uid,
-          learnerName: learnerName,
-          unreadCount: unreadCount,
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      children: [
+        _actionIconButton(
+          icon: Icons.payments_rounded,
+          color: const Color(0xFF7C3AED),
+          tooltip: 'Payment reminder',
+          onTap: () => _sendLearnerQuickReminder(
+            uid: uid,
+            type: _QuickLearnerReminder.payment,
+          ),
         ),
-        borderRadius: BorderRadius.circular(999),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFFEE2E2),
-                border: Border.all(color: const Color(0xFFFCA5A5)),
-              ),
-              child: const Text(
-                '!',
-                style: TextStyle(
-                  color: Color(0xFFB91C1C),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
+        _actionIconButton(
+          icon: Icons.event_busy_rounded,
+          color: const Color(0xFFEF4444),
+          tooltip: 'Absence reminder',
+          onTap: () => _sendLearnerQuickReminder(
+            uid: uid,
+            type: _QuickLearnerReminder.absence,
+          ),
+        ),
+        _actionIconButton(
+          icon: Icons.access_time_rounded,
+          color: const Color(0xFFF97316),
+          tooltip: 'Late reminder',
+          onTap: () => _sendLearnerQuickReminder(
+            uid: uid,
+            type: _QuickLearnerReminder.late,
+          ),
+        ),
+        _actionIconButton(
+          icon: Icons.add_alert_rounded,
+          color: const Color(0xFF0EA5E9),
+          tooltip: 'Send alert',
+          onTap: () =>
+              _showLearnerAlertDialog(uid: uid, learnerName: learnerName),
+        ),
+        _actionIconButton(
+          icon: Icons.mail_rounded,
+          color: const Color(0xFF2563EB),
+          tooltip: unreadCount > 0 ? 'Mail ($unreadLabel)' : 'Mail',
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AdminLearnerMailTopicsScreen(
+                  learnerUid: uid,
+                  learnerName: learnerName.trim().isEmpty
+                      ? 'Learner'
+                      : learnerName,
                 ),
               ),
-            ),
-            if (unreadCount > 0)
-              Positioned(
-                right: -7,
-                top: -7,
-                child: _countPill(unreadLabel, fontSize: 9, horizontal: 5),
-              ),
-          ],
+            );
+          },
+          badge: unreadCount > 0
+              ? _countPill(unreadLabel, fontSize: 9, horizontal: 5)
+              : null,
         ),
-      ),
+      ],
     );
   }
 
@@ -5344,7 +5451,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final summaryMap = (cm['payment_summary'] is Map)
             ? Map<String, dynamic>.from(cm['payment_summary'])
             : <String, dynamic>{};
-        if (courseIsFreeBilling(cm, summaryMap)) continue;
+        final isFreeCourse = courseIsFreeBilling(cm, summaryMap);
         final sessionsPaidTotal = _asInt(summaryMap['sessionsPaidTotal']);
         final remindBeforeSession = _asInt(summaryMap['remindBeforeSession']);
 
@@ -5397,6 +5504,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             rows: const <_FlexAttendanceRow>[],
             paymentBlocks: const <_FlexPaymentBlock>[],
             latestTs: latestTs,
+            isFree: isFreeCourse,
           ),
         );
       }
@@ -5544,7 +5652,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final summaryMap = (courseNode['payment_summary'] is Map)
             ? Map<String, dynamic>.from(courseNode['payment_summary'])
             : <String, dynamic>{};
-        if (courseIsFreeBilling(courseNode, summaryMap)) continue;
+        final isFreeCourse = courseIsFreeBilling(courseNode, summaryMap);
         final accessMap = (courseNode['recorded_access'] is Map)
             ? Map<String, dynamic>.from(courseNode['recorded_access'])
             : <String, dynamic>{};
@@ -5618,6 +5726,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             expiresAt: expiresAt,
             durationMonths: durationMonths,
             lastPaymentAt: lastPaymentAt,
+            isFree: isFreeCourse,
           ),
         );
       }
@@ -5655,6 +5764,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       rows: details.rows,
       paymentBlocks: details.paymentBlocks,
       latestTs: item.latestTs,
+      isFree: item.isFree,
     );
   }
 
@@ -5910,6 +6020,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
+                                if (item.isFree) ...[
+                                  const SizedBox(height: 8),
+                                  _smallCue('Free', Colors.green.shade700),
+                                ],
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 6,
@@ -5983,28 +6097,30 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  item.sessionsPaidTotal > 0
-                                      ? 'Payment progress: ${item.consumed} / ${item.sessionsPaidTotal}'
-                                      : 'Payment progress: no package total',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade800,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: LinearProgressIndicator(
-                                    value: paymentValue,
-                                    minHeight: 9,
-                                    backgroundColor: const Color(0xFFE5E7EB),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      _flexStatusColor(item.statusLabel),
+                                if (!item.isFree) ...[
+                                  Text(
+                                    item.sessionsPaidTotal > 0
+                                        ? 'Payment progress: ${item.consumed} / ${item.sessionsPaidTotal}'
+                                        : 'Payment progress: no package total',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade800,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(height: 4),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: LinearProgressIndicator(
+                                      value: paymentValue,
+                                      minHeight: 9,
+                                      backgroundColor: const Color(0xFFE5E7EB),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        _flexStatusColor(item.statusLabel),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             children: [
@@ -6246,6 +6362,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                                if (item.isFree) ...[
+                                  const SizedBox(height: 8),
+                                  _smallCue('Free', Colors.green.shade700),
+                                ],
                                 const SizedBox(height: 4),
                                 Text(
                                   'Recorded progress: ${item.completedSessions} / ${item.totalSessions}',
@@ -6309,26 +6429,28 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Payment duration progress',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade800,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: LinearProgressIndicator(
-                                    value: paymentValue,
-                                    minHeight: 10,
-                                    backgroundColor: const Color(0xFFE5E7EB),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      paymentColor,
+                                if (!item.isFree) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Payment duration progress',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade800,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(height: 4),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: LinearProgressIndicator(
+                                      value: paymentValue,
+                                      minHeight: 10,
+                                      backgroundColor: const Color(0xFFE5E7EB),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        paymentColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -6857,6 +6979,7 @@ class _FlexCourseSummary {
   final List<_FlexAttendanceRow> rows;
   final List<_FlexPaymentBlock> paymentBlocks;
   final int latestTs;
+  final bool isFree;
 
   const _FlexCourseSummary({
     required this.uid,
@@ -6876,6 +6999,7 @@ class _FlexCourseSummary {
     required this.rows,
     required this.paymentBlocks,
     required this.latestTs,
+    required this.isFree,
   });
 }
 
@@ -6928,6 +7052,7 @@ class _RecordedCourseSummary {
   final int expiresAt;
   final int durationMonths;
   final int lastPaymentAt;
+  final bool isFree;
 
   const _RecordedCourseSummary({
     required this.uid,
@@ -6941,6 +7066,7 @@ class _RecordedCourseSummary {
     required this.expiresAt,
     required this.durationMonths,
     required this.lastPaymentAt,
+    required this.isFree,
   });
 }
 
