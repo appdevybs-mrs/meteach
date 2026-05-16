@@ -65,6 +65,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   bool _didApplyInitialEnhancements = false;
   bool _openedWebUrl = false;
   bool _audioPillExpanded = false;
+  Timer? _loadWatchdog;
+  bool _didAutoFallbackToBrowser = false;
 
   bool get _isWebRuntime => kIsWeb;
   bool get _hasController => _controller != null;
@@ -86,6 +88,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
   @override
   void dispose() {
+    _loadWatchdog?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
@@ -95,6 +98,22 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       DeviceOrientation.landscapeRight,
     ]);
     super.dispose();
+  }
+
+  void _startLoadWatchdog() {
+    _loadWatchdog?.cancel();
+    if (!widget.isUrl || _isWebRuntime || _didAutoFallbackToBrowser) return;
+    _loadWatchdog = Timer(const Duration(seconds: 10), () {
+      if (!mounted || !_isLoading || _didAutoFallbackToBrowser) return;
+      if (_progress >= 25) return;
+      _didAutoFallbackToBrowser = true;
+      unawaited(_openInExternalBrowser(showFailureToast: false));
+    });
+  }
+
+  void _stopLoadWatchdog() {
+    _loadWatchdog?.cancel();
+    _loadWatchdog = null;
   }
 
   @override
@@ -335,6 +354,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               _currentUrl = url;
               _didApplyInitialEnhancements = false;
             });
+            _startLoadWatchdog();
           },
           onProgress: (int progress) {
             if (!mounted) return;
@@ -353,12 +373,15 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               _pageTitle = title;
             });
 
+            _stopLoadWatchdog();
+
             await _applyGameEnhancementsIfNeeded();
             await _notifyViewportChanged();
             await _notifyGameLifecycle('resumed');
             _scheduleStabilityRelayouts();
           },
           onWebResourceError: (WebResourceError error) {
+            _stopLoadWatchdog();
             if (!mounted) return;
             setState(() {
               _isLoading = false;
@@ -366,6 +389,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
                   ? 'Failed to load content.'
                   : 'Failed to load content.\n${error.description}';
             });
+            if (widget.isUrl && !_didAutoFallbackToBrowser) {
+              _didAutoFallbackToBrowser = true;
+              unawaited(_openInExternalBrowser(showFailureToast: false));
+            }
           },
           onNavigationRequest: (NavigationRequest request) {
             final String url = request.url.trim();
@@ -455,6 +482,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       _isLoading = true;
       _progress = 0;
       _didApplyInitialEnhancements = false;
+      _didAutoFallbackToBrowser = false;
     });
 
     if (_isWebRuntime) {
@@ -472,6 +500,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     }
 
     await _controller!.reload();
+    _startLoadWatchdog();
   }
 
   void _handleJsMessage(String message) {
@@ -886,13 +915,23 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     );
   }
 
-  Future<void> _openUrlAgain() async {
+  Future<void> _openInExternalBrowser({bool showFailureToast = true}) async {
     if (!widget.isUrl) return;
-
     final Uri? uri = Uri.tryParse(widget.url!.trim());
     if (uri == null) return;
 
-    await launchUrl(uri, webOnlyWindowName: '_self');
+    final bool ok = _isWebRuntime
+        ? await launchUrl(uri, webOnlyWindowName: '_self')
+        : await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && showFailureToast && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this page in browser.')),
+      );
+    }
+  }
+
+  Future<void> _openUrlAgain() async {
+    await _openInExternalBrowser();
   }
 
   bool _looksLikeMissingContentError(String raw) {
@@ -956,6 +995,14 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Try again'),
               ),
+              if (widget.isUrl) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => unawaited(_openInExternalBrowser()),
+                  icon: const Icon(Icons.open_in_browser_rounded),
+                  label: const Text('Open in browser'),
+                ),
+              ],
             ],
           ),
         ),
@@ -1062,6 +1109,18 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               ),
+              if (widget.isUrl) ...[
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => unawaited(_openInExternalBrowser()),
+                  icon: const Icon(Icons.open_in_browser_rounded),
+                  label: const Text('Open in browser'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
