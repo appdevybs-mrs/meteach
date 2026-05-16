@@ -960,7 +960,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         onTap: () => _seekToNote(note),
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFFE2E8F0)),
@@ -969,7 +969,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(999),
@@ -979,37 +979,48 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   style: const TextStyle(
                     color: Color(0xFF1D4ED8),
                     fontWeight: FontWeight.w900,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  note.text,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
+                    fontSize: 10.5,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  note.text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
                     tooltip: 'Edit note',
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 30,
+                    ),
                     onPressed: () => _openNoteEditor(note: note),
-                    icon: const Icon(Icons.edit_rounded, size: 18),
+                    icon: const Icon(Icons.edit_rounded, size: 17),
                   ),
                   IconButton(
                     tooltip: 'Delete note',
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 30,
+                    ),
                     onPressed: () => _deleteLessonNote(note),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 17),
                   ),
                 ],
               ),

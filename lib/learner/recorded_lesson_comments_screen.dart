@@ -341,18 +341,6 @@ class _RecordedLessonCommentsScreenState
                   label: Text(_posting ? 'Posting...' : 'Post comment'),
                 ),
               ),
-              const SizedBox(width: 10),
-              OutlinedButton(
-                onPressed: _loadComments,
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(54, 46),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                child: const Icon(Icons.refresh_rounded),
-              ),
             ],
           ),
         ],
