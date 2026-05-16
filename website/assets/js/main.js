@@ -25,6 +25,8 @@ const translations = {
     'teacher.note': 'Hear directly from our teachers and discover their classroom approach.',
     'gallery.title': 'Our Gallery',
     'gallery.lead': "Discover moments from our students' learning journey",
+    'gallery.photosTitle': 'Photos',
+    'gallery.videosTitle': 'Videos',
     'gallery.slide1Title': 'Creative classroom moments',
     'gallery.slide1Text': 'Interactive sessions, guided practice, and active learning.',
     'gallery.slide2Title': 'Student progress',
@@ -83,6 +85,8 @@ const translations = {
     'teacher.note': 'استمع مباشرة إلى معلمينا واكتشف أسلوبهم داخل الصف.',
     'gallery.title': 'معرضنا',
     'gallery.lead': 'اكتشف لحظات من رحلة تعلم طلابنا',
+    'gallery.photosTitle': 'الصور',
+    'gallery.videosTitle': 'الفيديوهات',
     'gallery.slide1Title': 'لحظات صفية إبداعية',
     'gallery.slide1Text': 'جلسات تفاعلية، وتطبيق عملي، وتعلم نشط.',
     'gallery.slide2Title': 'تقدم الطلاب',
@@ -141,6 +145,8 @@ const translations = {
     'teacher.note': 'Entendez directement nos enseignants et découvrez leur approche en classe.',
     'gallery.title': 'Notre galerie',
     'gallery.lead': 'Découvrez des moments du parcours d’apprentissage de nos élèves',
+    'gallery.photosTitle': 'Photos',
+    'gallery.videosTitle': 'Vidéos',
     'gallery.slide1Title': 'Moments créatifs en classe',
     'gallery.slide1Text': 'Sessions interactives, pratique guidée et apprentissage actif.',
     'gallery.slide2Title': 'Progression des élèves',
@@ -250,6 +256,51 @@ function initGallery() {
     return img;
   };
 
+  const modal = document.querySelector('[data-gallery-modal]');
+  const modalBody = document.querySelector('[data-gallery-modal-body]');
+
+  const closeModal = () => {
+    if (!modal || !modalBody) return;
+    modal.hidden = true;
+    modalBody.innerHTML = '';
+  };
+
+  const openModal = (item) => {
+    if (!modal || !modalBody) return;
+
+    modalBody.innerHTML = '';
+    const type = (item.type || '').toString().trim().toLowerCase();
+    const url = (item.url || '').toString().trim();
+    if (!url) return;
+
+    if (type === 'video') {
+      const video = document.createElement('video');
+      video.controls = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.src = url;
+      modalBody.appendChild(video);
+      modal.hidden = false;
+      video.play().catch(() => {});
+      return;
+    }
+
+    const img = document.createElement('img');
+    img.alt = 'Gallery media';
+    img.src = url;
+    modalBody.appendChild(img);
+    modal.hidden = false;
+  };
+
+  if (modal) {
+    modal.addEventListener('click', (event) => {
+      if (event.target?.matches?.('[data-gallery-close]')) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !modal.hidden) closeModal();
+    });
+  }
+
   const render = (target, items) => {
     const carousel = target.querySelector('[data-gallery-carousel]');
     const track = target.querySelector('[data-gallery-track]');
@@ -321,6 +372,43 @@ function initGallery() {
     restart();
   };
 
+  const renderBoard = (target, items) => {
+    const photosGrid = target.querySelector('[data-public-gallery-photos]');
+    const videosGrid = target.querySelector('[data-public-gallery-videos]');
+    if (!photosGrid || !videosGrid) return;
+
+    const photos = items.filter((item) => (item.type || '').toString().trim().toLowerCase() !== 'video');
+    const videos = items.filter((item) => (item.type || '').toString().trim().toLowerCase() === 'video');
+
+    const buildTile = (item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `gallery-tile ${(item.type || '').toString().trim().toLowerCase() === 'video' ? 'video' : 'photo'}`;
+      button.setAttribute('aria-label', item.title || 'Open media');
+      button.addEventListener('click', () => openModal(item));
+
+      const media = mediaNode(item);
+      if (media) {
+        if (media.tagName === 'VIDEO') {
+          media.muted = true;
+          media.autoplay = true;
+          media.loop = true;
+          media.playsInline = true;
+          media.preload = 'metadata';
+        }
+        button.appendChild(media);
+      }
+
+      return button;
+    };
+
+    photosGrid.innerHTML = '';
+    videosGrid.innerHTML = '';
+
+    photos.forEach((item) => photosGrid.appendChild(buildTile(item)));
+    videos.forEach((item) => videosGrid.appendChild(buildTile(item)));
+  };
+
   const load = async (target) => {
     try {
       const response = await fetch(`${DB_URL}/public_gallery_teasers.json`, { cache: 'no-store' });
@@ -337,7 +425,11 @@ function initGallery() {
         return;
       }
 
-      render(target, items);
+      if (target.dataset.galleryTarget === 'page') {
+        renderBoard(target, items);
+      } else {
+        render(target, items);
+      }
     } catch (e) {
       console.warn('Failed to load public gallery', e);
     }

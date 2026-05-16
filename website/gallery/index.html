@@ -24,20 +24,32 @@
   </header>
 
   <main class="section-pad gallery-page">
-    <div class="container">
+    <div class="container gallery-board">
       <div class="section-head center">
         <h1 data-i18n="gallery.title">Our Gallery</h1>
         <p data-i18n="gallery.lead">Discover moments from our students' learning journey</p>
       </div>
-      <div class="gallery-feed card gallery-feed-compact" data-public-gallery data-gallery-target="page">
-        <div class="gallery-carousel" data-gallery-carousel hidden>
-          <button class="gallery-arrow prev" type="button" data-gallery-prev aria-label="Previous gallery item">‹</button>
-          <div class="gallery-viewport">
-            <div class="gallery-track" data-gallery-track></div>
-          </div>
-          <button class="gallery-arrow next" type="button" data-gallery-next aria-label="Next gallery item">›</button>
+
+      <section class="gallery-section-block">
+        <div class="section-head">
+          <h2 data-i18n="gallery.photosTitle">Photos</h2>
         </div>
-        <div class="gallery-dots" data-gallery-dots hidden></div>
+        <div class="gallery-media-grid" data-public-gallery-photos></div>
+      </section>
+
+      <section class="gallery-section-block">
+        <div class="section-head">
+          <h2 data-i18n="gallery.videosTitle">Videos</h2>
+        </div>
+        <div class="gallery-media-grid" data-public-gallery-videos></div>
+      </section>
+    </div>
+
+    <div class="gallery-modal" data-gallery-modal hidden>
+      <div class="gallery-modal-backdrop" data-gallery-close></div>
+      <div class="gallery-modal-dialog" role="dialog" aria-modal="true" aria-label="Gallery preview">
+        <button class="gallery-modal-close" type="button" data-gallery-close aria-label="Close">×</button>
+        <div class="gallery-modal-body" data-gallery-modal-body></div>
       </div>
     </div>
   </main>

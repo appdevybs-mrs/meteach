@@ -3,9 +3,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../services/course_feedback_service.dart';
-import '../shared/profile_avatar.dart';
 import '../shared/study_variant.dart';
-import 'teacher_mail_thread_screen.dart';
+import 'teacher_recorded_course_comments_screen.dart';
 
 class TeacherMyPlatformScreen extends StatefulWidget {
   const TeacherMyPlatformScreen({super.key});
@@ -15,9 +14,7 @@ class TeacherMyPlatformScreen extends StatefulWidget {
       _TeacherMyPlatformScreenState();
 }
 
-enum _MyPlatformTab { needsReply, reported, recent, hidden }
-
-enum _MyPlatformMainTab { comments, learners }
+enum _MyPlatformMainTab { learners, courses }
 
 class _MyPlatformItem {
   const _MyPlatformItem({
@@ -71,6 +68,32 @@ class _LearnerRecordedProgressItem {
   final int progressPct;
 }
 
+class _RecordedCourseSummary {
+  const _RecordedCourseSummary({
+    required this.courseId,
+    required this.courseTitle,
+    required this.courseCode,
+    required this.learnerCount,
+    required this.completedLearnerCount,
+    required this.commentCount,
+    required this.pendingCommentCount,
+    required this.reportedCommentCount,
+    required this.hiddenCommentCount,
+    required this.latestCommentAt,
+  });
+
+  final String courseId;
+  final String courseTitle;
+  final String courseCode;
+  final int learnerCount;
+  final int completedLearnerCount;
+  final int commentCount;
+  final int pendingCommentCount;
+  final int reportedCommentCount;
+  final int hiddenCommentCount;
+  final int latestCommentAt;
+}
+
 class _RecordedSessionMeta {
   const _RecordedSessionMeta({
     required this.hasVideo,
@@ -122,9 +145,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   String? _error;
   bool _learnersBusy = true;
   String? _learnersError;
-  _MyPlatformMainTab _mainTab = _MyPlatformMainTab.comments;
-  _MyPlatformTab _tab = _MyPlatformTab.needsReply;
-  String _courseFilter = 'all';
+  _MyPlatformMainTab _mainTab = _MyPlatformMainTab.learners;
 
   List<_MyPlatformItem> _all = const [];
   List<_LearnerRecordedProgressItem> _learnerProgressRows = const [];
@@ -744,267 +765,279 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
   }
 
-  List<_MyPlatformItem> get _filtered {
-    return _all.where((x) {
-      if (_courseFilter != 'all' && x.courseId != _courseFilter) return false;
+  String _courseLabel(String id) => _courseLabelById[id] ?? id;
 
-      switch (_tab) {
-        case _MyPlatformTab.needsReply:
-          return x.status == 'visible' || x.status == 'pending';
-        case _MyPlatformTab.reported:
-          return x.reportCount > 0 && x.status != 'removed';
-        case _MyPlatformTab.recent:
-          return x.status != 'removed';
-        case _MyPlatformTab.hidden:
-          return x.status == 'hidden' || x.status == 'removed';
+  Color _courseAccent(String courseId) {
+    const accents = [
+      Color(0xFF2563EB),
+      Color(0xFF7C3AED),
+      Color(0xFFF97316),
+      Color(0xFF0EA5A4),
+      Color(0xFFEC4899),
+      Color(0xFF14B8A6),
+    ];
+    return accents[courseId.hashCode.abs() % accents.length];
+  }
+
+  List<_RecordedCourseSummary> get _recordedCourseSummaries {
+    final learnerSets = <String, Set<String>>{};
+    final completedSets = <String, Set<String>>{};
+    final commentCounts = <String, int>{};
+    final pendingCounts = <String, int>{};
+    final reportedCounts = <String, int>{};
+    final hiddenCounts = <String, int>{};
+    final lastCommentAt = <String, int>{};
+    final titles = <String, String>{};
+
+    for (final row in _learnerProgressRows) {
+      learnerSets
+          .putIfAbsent(row.courseId, () => <String>{})
+          .add(row.learnerUid);
+      if (row.progressPct >= 100) {
+        completedSets
+            .putIfAbsent(row.courseId, () => <String>{})
+            .add(row.learnerUid);
       }
+      titles[row.courseId] = row.courseTitle;
+    }
+
+    for (final item in _all) {
+      commentCounts[item.courseId] = (commentCounts[item.courseId] ?? 0) + 1;
+      if (item.status == 'pending') {
+        pendingCounts[item.courseId] = (pendingCounts[item.courseId] ?? 0) + 1;
+      }
+      if (item.reportCount > 0 && item.status != 'removed') {
+        reportedCounts[item.courseId] =
+            (reportedCounts[item.courseId] ?? 0) + 1;
+      }
+      if (item.status == 'hidden' || item.status == 'removed') {
+        hiddenCounts[item.courseId] = (hiddenCounts[item.courseId] ?? 0) + 1;
+      }
+      final prev = lastCommentAt[item.courseId] ?? 0;
+      if (item.createdAt > prev) lastCommentAt[item.courseId] = item.createdAt;
+    }
+
+    final courseIds = learnerSets.keys.where((courseId) {
+      if (_assignedCourseIds.isEmpty) return true;
+      return _assignedCourseIds.contains(courseId);
+    }).toList()..sort();
+    return courseIds.map((courseId) {
+      return _RecordedCourseSummary(
+        courseId: courseId,
+        courseTitle: titles[courseId] ?? _courseLabel(courseId),
+        courseCode: _courseLabelById[courseId] ?? courseId,
+        learnerCount: learnerSets[courseId]?.length ?? 0,
+        completedLearnerCount: completedSets[courseId]?.length ?? 0,
+        commentCount: commentCounts[courseId] ?? 0,
+        pendingCommentCount: pendingCounts[courseId] ?? 0,
+        reportedCommentCount: reportedCounts[courseId] ?? 0,
+        hiddenCommentCount: hiddenCounts[courseId] ?? 0,
+        latestCommentAt: lastCommentAt[courseId] ?? 0,
+      );
     }).toList();
   }
 
-  String _fmtDate(int ms) {
-    if (ms <= 0) return '-';
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
-  }
-
-  String _courseLabel(String id) => _courseLabelById[id] ?? id;
-
-  Future<void> _moderate(_MyPlatformItem item, String status) async {
-    await CourseFeedbackService.moderateLessonComment(
-      courseId: item.courseId,
-      lessonId: item.lessonId,
-      commentId: item.entryId,
-      status: status,
-    );
-    await _load();
-  }
-
-  Future<void> _reply(_MyPlatformItem item) async {
-    final c = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reply to learner'),
-        content: TextField(
-          controller: c,
-          maxLength: 400,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'Write your reply',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final text = c.text.trim();
-    if (text.isEmpty) return;
-
-    await CourseFeedbackService.addLessonReply(
-      courseId: item.courseId,
-      lessonId: item.lessonId,
-      commentId: item.entryId,
-      uid: _uid,
-      text: text,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Reply posted.')));
-  }
-
-  Future<String> _resolveLearnerName(String uid, String fallback) async {
-    final snap = await _db.child('users').child(uid).get();
-    if (snap.exists && snap.value is Map) {
-      final m = Map<String, dynamic>.from(snap.value as Map);
-      final first = (m['first_name'] ?? '').toString().trim();
-      final last = (m['last_name'] ?? '').toString().trim();
-      final full = '$first $last'.trim();
-      if (full.isNotEmpty) return full;
-      final email = (m['email'] ?? '').toString().trim();
-      if (email.isNotEmpty) return email;
-    }
-    if (fallback.trim().isNotEmpty) return fallback.trim();
-    return 'Learner';
-  }
-
-  Future<void> _messageLearner(_MyPlatformItem item) async {
-    final subject = 'Course support: ${_courseLabel(item.courseId)}';
-    final threadId = _threadIdFor(_uid, item.uid, item.courseId);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final learnerName = await _resolveLearnerName(item.uid, item.firstName);
-    final meEmail = (FirebaseAuth.instance.currentUser?.email ?? '').trim();
-    final meLabel = meEmail.isEmpty ? 'Teacher' : meEmail;
-
-    final threadRef = _db.child('mail_threads').child(threadId);
-    final tSnap = await threadRef.get();
-    if (!tSnap.exists) {
-      await threadRef.set({
-        'participants': {_uid: true, item.uid: true},
-        'subject': subject,
-        'type': 'mail',
-        'createdAt': now,
-        'updatedAt': now,
-        'lastMessage':
-            'Hi $learnerName, I saw your comment and wanted to help.',
-        'lastMessageAt': now,
-        'lastMessagePreview': 'Started from My Platform',
-      });
-    }
-
-    final msgId = _db.child('mail_messages').child(threadId).push().key;
-    if (msgId != null) {
-      await _db.child('mail_messages').child(threadId).child(msgId).set({
-        'fromUid': _uid,
-        'body': 'Hi $learnerName, I saw your comment and wanted to help.',
-        'toUids': {item.uid: true},
-        'ccUids': {},
-        'bccUids': {},
-        'attachments': [],
-        'deletedFor': {},
-        'reactions': {},
-        'createdAt': now,
-      });
-    }
-
-    final preview = 'Hi $learnerName, I saw your comment and wanted to help.';
-
-    await _db.child('mail_index').child(_uid).child(threadId).update({
-      'subject': subject,
-      'type': 'mail',
-      'updatedAt': now,
-      'lastMessage': preview,
-      'unreadCount': 0,
-      'peerUid': item.uid,
-      'peerName': learnerName,
-      'deletedAt': null,
-    });
-    await _db.child('mail_index').child(item.uid).child(threadId).update({
-      'subject': subject,
-      'type': 'mail',
-      'updatedAt': now,
-      'lastMessage': preview,
-      'unreadCount': 1,
-      'peerUid': _uid,
-      'peerName': meLabel,
-      'deletedAt': null,
-    });
-
-    await _db.child('mail_threads').child(threadId).update({
-      'updatedAt': now,
-      'lastMessage': preview,
-      'type': 'mail',
-    });
-
-    if (!mounted) return;
-    await Navigator.of(context).push(
+  void _openRecordedCourseComments(_RecordedCourseSummary course) {
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TeacherMailThreadScreen(
-          threadId: threadId,
-          peerUid: item.uid,
-          peerName: learnerName,
-          subject: subject,
+        builder: (_) => TeacherRecordedCourseCommentsScreen(
+          courseId: course.courseId,
+          courseTitle: course.courseTitle,
+          courseCode: course.courseCode,
         ),
       ),
     );
   }
 
-  String _threadIdFor(String a, String b, String scope) {
-    final ids = [a.trim(), b.trim()]..sort();
-    return 'support_${scope}_${ids[0]}_${ids[1]}';
-  }
+  Widget _buildRecordedCoursesBody() {
+    final summaries =
+        _recordedCourseSummaries
+            .where((course) => course.learnerCount > 0)
+            .toList()
+          ..sort((a, b) {
+            final cmp = b.latestCommentAt.compareTo(a.latestCommentAt);
+            if (cmp != 0) return cmp;
+            return a.courseTitle.toLowerCase().compareTo(
+              b.courseTitle.toLowerCase(),
+            );
+          });
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return const Color(0xFFD97706);
-      case 'visible':
-        return const Color(0xFF047857);
-      case 'hidden':
-        return const Color(0xFF64748B);
-      case 'removed':
-        return const Color(0xFFB91C1C);
-      default:
-        return const Color(0xFF475569);
+    if (summaries.isEmpty) {
+      return const Center(
+        child: Text('No recorded courses with learners yet.'),
+      );
     }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+      itemCount: summaries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final course = summaries[index];
+        final accent = _courseAccent(course.courseId);
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => _openRecordedCourseComments(course),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: accent.withValues(alpha: 0.16)),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.05),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          Icons.video_library_rounded,
+                          color: accent,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              course.courseTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              course.courseCode.isEmpty
+                                  ? course.courseId
+                                  : course.courseCode,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFDE68A),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          '!',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _courseStatChip(
+                        'Learners',
+                        course.learnerCount,
+                        const Color(0xFFE0F2FE),
+                        const Color(0xFF0369A1),
+                      ),
+                      _courseStatChip(
+                        'Comments',
+                        course.commentCount,
+                        const Color(0xFFEDE9FE),
+                        const Color(0xFF6D28D9),
+                      ),
+                      _courseStatChip(
+                        'Pending',
+                        course.pendingCommentCount,
+                        const Color(0xFFFEF3C7),
+                        const Color(0xFFB45309),
+                      ),
+                      _courseStatChip(
+                        'Reported',
+                        course.reportedCommentCount,
+                        const Color(0xFFFEE2E2),
+                        const Color(0xFFB91C1C),
+                      ),
+                      _courseStatChip(
+                        'Completed',
+                        course.completedLearnerCount,
+                        const Color(0xFFD1FAE5),
+                        const Color(0xFF047857),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: () => _openRecordedCourseComments(course),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 38),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                      label: const Text('Open comments'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  Widget _statusChip(String status) {
-    final color = _statusColor(status);
+  Widget _courseStatChip(String label, int value, Color bg, Color fg) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        border: Border.all(color: color.withValues(alpha: 0.24)),
+        color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        status.toUpperCase(),
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 10,
-        ),
+        '$label $value',
+        style: TextStyle(color: fg, fontWeight: FontWeight.w900, fontSize: 11),
       ),
     );
-  }
-
-  PopupMenuButton<String> _actionsMenu(_MyPlatformItem item) {
-    return PopupMenuButton<String>(
-      tooltip: 'Actions',
-      icon: const Text(
-        '!',
-        style: TextStyle(
-          fontWeight: FontWeight.w900,
-          fontSize: 18,
-          color: Color(0xFF0F172A),
-        ),
-      ),
-      onSelected: (v) async {
-        if (v == 'visible' || v == 'hidden' || v == 'removed') {
-          await _moderate(item, v);
-          return;
-        }
-        if (v == 'reply') {
-          await _reply(item);
-          return;
-        }
-        if (v == 'message') {
-          await _messageLearner(item);
-        }
-      },
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: 'visible', child: Text('Accept')),
-        PopupMenuItem(value: 'hidden', child: Text('Hide')),
-        PopupMenuItem(value: 'removed', child: Text('Remove')),
-        PopupMenuItem(value: 'reply', child: Text('Answer')),
-        PopupMenuItem(value: 'message', child: Text('Message learner')),
-      ],
-    );
-  }
-
-  String _tabLabel(_MyPlatformTab tab) {
-    switch (tab) {
-      case _MyPlatformTab.needsReply:
-        return 'Needs reply';
-      case _MyPlatformTab.reported:
-        return 'Reported';
-      case _MyPlatformTab.recent:
-        return 'Recent';
-      case _MyPlatformTab.hidden:
-        return 'Hidden';
-    }
   }
 
   Widget _mainTabChip({
@@ -1258,9 +1291,6 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rows = _filtered;
-    final courses = _assignedCourseIds.toList()..sort();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Platform'),
@@ -1279,99 +1309,23 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             child: Row(
               children: [
                 _mainTabChip(
-                  label: 'Comments',
-                  selected: _mainTab == _MyPlatformMainTab.comments,
-                  onTap: () {
-                    setState(() => _mainTab = _MyPlatformMainTab.comments);
-                  },
-                ),
-                const SizedBox(width: 8),
-                _mainTabChip(
                   label: 'Learners',
                   selected: _mainTab == _MyPlatformMainTab.learners,
                   onTap: () {
                     setState(() => _mainTab = _MyPlatformMainTab.learners);
                   },
                 ),
+                const SizedBox(width: 8),
+                _mainTabChip(
+                  label: 'Courses',
+                  selected: _mainTab == _MyPlatformMainTab.courses,
+                  onTap: () {
+                    setState(() => _mainTab = _MyPlatformMainTab.courses);
+                  },
+                ),
               ],
             ),
           ),
-          if (_mainTab == _MyPlatformMainTab.comments)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<_MyPlatformTab>(
-                      initialValue: _tab,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'View',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: _MyPlatformTab.values
-                          .map(
-                            (t) => DropdownMenuItem(
-                              value: t,
-                              child: Text(_tabLabel(t)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => _tab = v);
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _courseFilter,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Course',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: [
-                        const DropdownMenuItem(
-                          value: 'all',
-                          child: Text('All courses'),
-                        ),
-                        ...courses.map(
-                          (c) => DropdownMenuItem(
-                            value: c,
-                            child: Text(
-                              _courseLabel(c),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        ),
-                      ],
-                      selectedItemBuilder: (_) {
-                        final labels = [
-                          'All courses',
-                          ...courses.map(_courseLabel),
-                        ];
-                        return labels
-                            .map(
-                              (x) => Text(
-                                x,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            )
-                            .toList();
-                      },
-                      onChanged: (v) =>
-                          setState(() => _courseFilter = v ?? 'all'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           Expanded(
             child: _mainTab == _MyPlatformMainTab.learners
                 ? _buildLearnersProgressBody()
@@ -1384,111 +1338,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                             child: Text(_error!, textAlign: TextAlign.center),
                           ),
                         )
-                      : rows.isEmpty
-                      ? const Center(
-                          child: Text('No comments in this view yet.'),
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                          itemCount: rows.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 6),
-                          itemBuilder: (context, i) {
-                            final item = rows[i];
-                            final lessonMeta =
-                                'Lesson: ${item.lessonId.isEmpty ? '-' : item.lessonId}';
-
-                            return Container(
-                              padding: const EdgeInsets.fromLTRB(9, 7, 7, 7),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(
-                                  color: const Color(0xFFE5E7EB),
-                                ),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      ProfileAvatar(
-                                        name: item.displayName,
-                                        photoUrl: item.photoUrl,
-                                        radius: 11,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          item.firstName.isEmpty
-                                              ? 'Learner'
-                                              : item.firstName,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                      Text(
-                                        _fmtDate(item.createdAt),
-                                        style: TextStyle(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.52,
-                                          ),
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                      _actionsMenu(item),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      _statusChip(item.status),
-                                      const SizedBox(width: 8),
-                                      if (item.reportCount > 0)
-                                        Text(
-                                          'Reports ${item.reportCount}',
-                                          style: const TextStyle(
-                                            color: Color(0xFFB45309),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      const Spacer(),
-                                      Flexible(
-                                        child: Text(
-                                          lessonMeta,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.58,
-                                            ),
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 10.5,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    item.text,
-                                    style: TextStyle(
-                                      fontStyle: FontStyle.italic,
-                                      color: Colors.black.withValues(
-                                        alpha: 0.78,
-                                      ),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        )),
+                      : _buildRecordedCoursesBody()),
           ),
         ],
       ),
