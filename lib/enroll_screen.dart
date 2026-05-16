@@ -599,6 +599,81 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
   String _biHint(String english, String arabic) => '$english  |  $arabic';
 
+  Widget _genderPill({
+    required String value,
+    required bool selected,
+    VoidCallback? onTap,
+  }) {
+    final isMale = value == 'Male';
+    final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
+    final gradient = selected
+        ? const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Brand.primaryBlue, Color(0xFF2E4A78)],
+          )
+        : LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: 0.98),
+              Brand.accentCyan.withValues(alpha: 0.05),
+            ],
+          );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: gradient,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? Brand.accentCyan : Brand.uiBorder,
+              width: selected ? 2 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: selected
+                    ? Brand.primaryBlue.withValues(alpha: 0.18)
+                    : Colors.black.withValues(alpha: 0.04),
+                blurRadius: selected ? 18 : 10,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected ? Colors.white : Brand.primaryBlue,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  value,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: selected ? Colors.white : Brand.primaryBlue,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   InputDecoration _inputDeco({
     required String label,
     required IconData icon,
@@ -915,25 +990,38 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                       icon: Icons.wc_rounded,
                                     ).copyWith(errorText: field.errorText),
                                     isEmpty: (field.value ?? '').trim().isEmpty,
-                                    child: Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
-                                      children: _genderOptions.map((value) {
-                                        final selected = field.value == value;
-                                        return ChoiceChip(
-                                          label: Text(value),
-                                          selected: selected,
-                                          onSelected: saving
-                                              ? null
-                                              : (isSelected) {
-                                                  if (!isSelected) return;
-                                                  setState(
-                                                    () => _gender = value,
-                                                  );
-                                                  field.didChange(value);
-                                                },
-                                        );
-                                      }).toList(),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: _genderPill(
+                                            value: 'Male',
+                                            selected: field.value == 'Male',
+                                            onTap: saving
+                                                ? null
+                                                : () {
+                                                    setState(
+                                                      () => _gender = 'Male',
+                                                    );
+                                                    field.didChange('Male');
+                                                  },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: _genderPill(
+                                            value: 'Female',
+                                            selected: field.value == 'Female',
+                                            onTap: saving
+                                                ? null
+                                                : () {
+                                                    setState(
+                                                      () => _gender = 'Female',
+                                                    );
+                                                    field.didChange('Female');
+                                                  },
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   );
                                 },

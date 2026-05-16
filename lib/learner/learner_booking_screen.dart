@@ -6559,7 +6559,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 child: const Text('Book another class'),
               ),
               OutlinedButton(
-                onPressed: () => Navigator.maybePop(context),
+                onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Done'),
               ),
             ],
