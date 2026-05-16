@@ -3240,8 +3240,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     String teacherId,
   ) async {
     try {
-      if (_parseSlotStart(dayKey, hhmm) == null) {
+      final slotStart = _parseSlotStart(dayKey, hhmm);
+      if (slotStart == null) {
         return _CancelBookingStatus.failed;
+      }
+      final locked = !slotStart.isAfter(
+        DateTime.now().add(const Duration(hours: 24)),
+      );
+      if (locked) {
+        return _CancelBookingStatus.locked;
       }
 
       Future<_CancelBookingStatus> cancelAtRef(DatabaseReference ref) async {
