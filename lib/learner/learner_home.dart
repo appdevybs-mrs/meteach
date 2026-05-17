@@ -4481,6 +4481,24 @@ class _BookingPickerCourse {
   }
 }
 
+class _HomeworkPickerCourse {
+  final String courseKey;
+  final String title;
+  final String code;
+  final int assignedAt;
+  final int pendingCount;
+  final String thumbnailUrl;
+
+  const _HomeworkPickerCourse({
+    required this.courseKey,
+    required this.title,
+    required this.code,
+    required this.assignedAt,
+    required this.pendingCount,
+    required this.thumbnailUrl,
+  });
+}
+
 class _SchoolContactInfo {
   final String name;
   final String phone;
@@ -5327,10 +5345,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   }
 }
 
-Future<void> _openHomeworkCoursePicker(
-  BuildContext context, {
-  Set<String> courseKeysWithUndone = const {},
-}) async {
+Future<void> _openHomeworkCoursePicker(BuildContext context) async {
   final homeworkEnabled = await WindowAccessService.instance.isWindowEnabled(
     role: AppWindowRole.learner,
     windowKey: AppWindowKeys.learnerHomework,
@@ -5357,15 +5372,21 @@ Future<void> _openHomeworkCoursePicker(
   final db = FirebaseDatabase.instance.ref();
   final p = _paletteFromTheme();
 
-  List<Map<String, dynamic>> courses = [];
+  final courses = <_HomeworkPickerCourse>[];
   try {
     final snap = await db.child('users/$uid/courses').get();
     final v = snap.value;
 
     if (v is Map) {
       final raw = Map<dynamic, dynamic>.from(v);
+      final coursesCatalogSnap = await db.child('courses').get();
+      final coursesCatalog = (coursesCatalogSnap.value is Map)
+          ? (coursesCatalogSnap.value as Map).map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            )
+          : <String, dynamic>{};
 
-      courses = raw.entries.map((e) {
+      for (final e in raw.entries) {
         final key = e.key.toString();
         final m = (e.value is Map)
             ? Map<String, dynamic>.from(e.value as Map)
@@ -5377,17 +5398,42 @@ Future<void> _openHomeworkCoursePicker(
             (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
         final assignedAt = numVal(m['assignedAt']);
 
-        return {
-          'courseKey': key,
-          'title': title,
-          'code': code,
-          'assignedAt': assignedAt,
-        };
-      }).toList();
+        int pendingCount = 0;
+        final attendance = m['attendance'];
+        if (attendance is Map) {
+          final attMap = Map<dynamic, dynamic>.from(attendance);
+          for (final sessionVal in attMap.values) {
+            if (sessionVal is! Map) continue;
+            final session = Map<dynamic, dynamic>.from(sessionVal);
+            final hwMapAny = session['homework'];
+            if (hwMapAny is! Map) continue;
+            final hwMap = Map<dynamic, dynamic>.from(hwMapAny);
+            final text = (hwMap['text'] ?? '').toString().trim();
+            final due = (hwMap['dueDate'] ?? '').toString().trim();
+            if (text.isEmpty && due.isEmpty) continue;
+            if (hwMap['doneAt'] == null) pendingCount += 1;
+          }
+        }
 
-      courses.sort(
-        (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
-      );
+        final catalogNode = coursesCatalog[key];
+        final catalogMap = (catalogNode is Map)
+            ? catalogNode.map((k, vv) => MapEntry(k.toString(), vv))
+            : <String, dynamic>{};
+        final thumb = (catalogMap['thumbnail'] ?? '').toString().trim();
+
+        courses.add(
+          _HomeworkPickerCourse(
+            courseKey: key,
+            title: title,
+            code: code,
+            assignedAt: assignedAt,
+            pendingCount: pendingCount,
+            thumbnailUrl: thumb,
+          ),
+        );
+      }
+
+      courses.sort((a, b) => b.assignedAt.compareTo(a.assignedAt));
     }
   } catch (e) {
     if (!context.mounted) return;
@@ -5407,161 +5453,363 @@ Future<void> _openHomeworkCoursePicker(
   if (courses.isEmpty) {
     AppToast.fromSnackBar(
       context,
-      const SnackBar(
-        content: Text('All slots are full, please try again later'),
-      ),
+      const SnackBar(content: Text('No courses available right now.')),
     );
     return;
   }
 
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: p.appBg,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (ctx) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Choose course',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                  color: p.primary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.60,
-                ),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: courses.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final c = courses[i];
-                    final courseKey = (c['courseKey'] ?? '').toString();
-                    final title = (c['title'] ?? 'Course').toString();
-                    final code = (c['code'] ?? '').toString();
+  final pageController = PageController(viewportFraction: 0.94);
+  var currentPage = 0;
 
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => hw.LearnerHomeworkScreen(
-                              courseKey: courseKey,
-                              courseTitle: title,
-                            ),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: p.soft,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: p.border.withValues(alpha: 0.85),
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.school_rounded,
-                                color: p.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: p.primary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    code.isEmpty ? '—' : 'Code: $code',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.text.withValues(alpha: 0.62),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (courseKeysWithUndone.contains(courseKey))
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withValues(alpha: 0.10),
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(
-                                        color: Colors.red.withValues(
-                                          alpha: 0.25,
-                                        ),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'HW',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                const SizedBox(width: 8),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: p.primary,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+  try {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 22,
           ),
-        ),
-      );
-    },
-  );
+          child: StatefulBuilder(
+            builder: (context, setDialogState) {
+              return ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 760,
+                  maxHeight: MediaQuery.of(context).size.height * 0.76,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: p.appBg,
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: p.border.withValues(alpha: 0.9)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 26,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Choose course',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                              color: p.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Swipe left or right to view all courses',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.64),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 276,
+                            child: PageView.builder(
+                              controller: pageController,
+                              itemCount: courses.length,
+                              onPageChanged: (index) {
+                                setDialogState(() => currentPage = index);
+                              },
+                              itemBuilder: (_, i) {
+                                final c = courses[i];
+                                final hasUndone = c.pendingCount > 0;
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(20),
+                                    onTap: () {
+                                      Navigator.of(dialogCtx).pop();
+                                      if (!context.mounted) return;
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              hw.LearnerHomeworkScreen(
+                                                courseKey: c.courseKey,
+                                                courseTitle: c.title,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            p.cardBg,
+                                            p.soft.withValues(alpha: 0.9),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: p.border.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.06,
+                                            ),
+                                            blurRadius: 14,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Stack(
+                                            children: [
+                                              Container(
+                                                width: double.infinity,
+                                                height: 138,
+                                                decoration: BoxDecoration(
+                                                  color: p.appBg,
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                  border: Border.all(
+                                                    color: p.border.withValues(
+                                                      alpha: 0.9,
+                                                    ),
+                                                  ),
+                                                ),
+                                                clipBehavior: Clip.antiAlias,
+                                                child: c.thumbnailUrl.isNotEmpty
+                                                    ? Image.network(
+                                                        c.thumbnailUrl,
+                                                        fit: BoxFit.cover,
+                                                        filterQuality:
+                                                            FilterQuality.low,
+                                                        errorBuilder:
+                                                            (
+                                                              context,
+                                                              error,
+                                                              stackTrace,
+                                                            ) => Center(
+                                                              child: Icon(
+                                                                Icons
+                                                                    .menu_book_rounded,
+                                                                color:
+                                                                    p.primary,
+                                                                size: 34,
+                                                              ),
+                                                            ),
+                                                      )
+                                                    : Center(
+                                                        child: Icon(
+                                                          Icons
+                                                              .menu_book_rounded,
+                                                          color: p.primary,
+                                                          size: 34,
+                                                        ),
+                                                      ),
+                                              ),
+                                              Positioned(
+                                                top: 8,
+                                                right: 8,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 6,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: p.appBg.withValues(
+                                                      alpha: 0.96,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                    border: Border.all(
+                                                      color:
+                                                          (hasUndone
+                                                                  ? Colors.red
+                                                                  : p.primary)
+                                                              .withValues(
+                                                                alpha: 0.34,
+                                                              ),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    hasUndone
+                                                        ? '${c.pendingCount} HW'
+                                                        : 'No HW',
+                                                    style: TextStyle(
+                                                      color: hasUndone
+                                                          ? Colors.red
+                                                          : p.primary,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  c.title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                    color: p.primary,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                _formatAssignedDate(
+                                                  c.assignedAt,
+                                                ).replaceFirst('Assigned ', ''),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: p.text.withValues(
+                                                    alpha: 0.66,
+                                                  ),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  c.code.isEmpty
+                                                      ? 'Code: —'
+                                                      : 'Code: ${c.code}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: p.text.withValues(
+                                                      alpha: 0.72,
+                                                    ),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              FilledButton(
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: p.primary,
+                                                  foregroundColor: Colors.white,
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8,
+                                                      ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                  ),
+                                                ),
+                                                onPressed: () {
+                                                  Navigator.of(dialogCtx).pop();
+                                                  if (!context.mounted) return;
+                                                  Navigator.of(context).push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          hw.LearnerHomeworkScreen(
+                                                            courseKey:
+                                                                c.courseKey,
+                                                            courseTitle:
+                                                                c.title,
+                                                          ),
+                                                    ),
+                                                  );
+                                                },
+                                                child: const Text(
+                                                  'Open',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(courses.length, (index) {
+                                final selected = currentPage == index;
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 220),
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 3,
+                                  ),
+                                  width: selected ? 18 : 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? p.primary
+                                        : p.border.withValues(alpha: 0.75),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  } finally {
+    pageController.dispose();
+  }
 }
 
 class _LearnerHomeworkHomeCard extends StatelessWidget {
@@ -5569,6 +5817,77 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
 
   final bool compact;
   final GlobalKey? targetKey;
+
+  Future<_HomeworkHomeSummary> _loadHomeworkSummary(
+    String uid,
+    List<Map<String, dynamic>> courses,
+  ) async {
+    final db = FirebaseDatabase.instance.ref();
+    int undoneTotal = 0;
+    final Set<String> courseKeysWithUndone = {};
+
+    for (final c in courses) {
+      final courseKey = (c['courseKey'] ?? '').toString().trim();
+      if (courseKey.isEmpty) continue;
+
+      bool thisCourseHasUndone = false;
+
+      try {
+        final inClassSnap = await db
+            .child('users/$uid/courses/$courseKey/attendance')
+            .get();
+        if (inClassSnap.exists && inClassSnap.value is Map) {
+          final attMap = Map<dynamic, dynamic>.from(inClassSnap.value as Map);
+          for (final sessionVal in attMap.values) {
+            if (sessionVal is! Map) continue;
+            final session = Map<dynamic, dynamic>.from(sessionVal);
+            final hwMapAny = session['homework'];
+            if (hwMapAny is! Map) continue;
+            final hwMap = Map<dynamic, dynamic>.from(hwMapAny);
+            final text = (hwMap['text'] ?? '').toString().trim();
+            final due = (hwMap['dueDate'] ?? '').toString().trim();
+            if (text.isEmpty && due.isEmpty) continue;
+            if (hwMap['doneAt'] == null) {
+              undoneTotal += 1;
+              thisCourseHasUndone = true;
+            }
+          }
+        }
+      } catch (_) {}
+
+      try {
+        final onlineSnap = await db
+            .child('booking_progress/$uid/$courseKey/online_attendance')
+            .get();
+        if (onlineSnap.exists && onlineSnap.value is Map) {
+          final onlineMap = Map<dynamic, dynamic>.from(onlineSnap.value as Map);
+          for (final bookingVal in onlineMap.values) {
+            if (bookingVal is! Map) continue;
+            final rec = Map<dynamic, dynamic>.from(bookingVal);
+            final hwMapAny = rec['homework'];
+            if (hwMapAny is! Map) continue;
+            final hwMap = Map<dynamic, dynamic>.from(hwMapAny);
+            final text = (hwMap['text'] ?? '').toString().trim();
+            final due = (hwMap['dueDate'] ?? '').toString().trim();
+            if (text.isEmpty && due.isEmpty) continue;
+            if (hwMap['doneAt'] == null) {
+              undoneTotal += 1;
+              thisCourseHasUndone = true;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (thisCourseHasUndone) {
+        courseKeysWithUndone.add(courseKey);
+      }
+    }
+
+    return _HomeworkHomeSummary(
+      undoneTotal: undoneTotal,
+      courseKeysWithUndone: courseKeysWithUndone,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5580,180 +5899,184 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
       builder: (context, snap) {
-        int undoneTotal = 0;
-        final Set<String> courseKeysWithUndone = {};
-
         final v = snap.data?.snapshot.value;
         if (v is Map) {
           final courses = Map<dynamic, dynamic>.from(v);
+          final list = courses.entries
+              .map((entry) {
+                final courseKey = entry.key.toString();
+                final courseVal = entry.value;
+                if (courseVal is! Map) return <String, dynamic>{};
+                final course = Map<dynamic, dynamic>.from(courseVal);
+                return {'courseKey': courseKey, 'course': course};
+              })
+              .where((e) => e.isNotEmpty)
+              .toList();
 
-          for (final entry in courses.entries) {
-            final courseKey = entry.key.toString();
+          return FutureBuilder<_HomeworkHomeSummary>(
+            future: _loadHomeworkSummary(
+              meUid,
+              list
+                  .map((e) => {'courseKey': e['courseKey']})
+                  .toList()
+                  .cast<Map<String, dynamic>>(),
+            ),
+            builder: (context, homeworkSnap) {
+              final summary = homeworkSnap.data;
+              final courseKeysWithUndone =
+                  summary?.courseKeysWithUndone ?? <String>{};
+              final undoneTotal = summary?.undoneTotal ?? 0;
+              final coursesCount = courseKeysWithUndone.length;
+              final subtitle =
+                  homeworkSnap.connectionState == ConnectionState.waiting
+                  ? 'Loading homework…'
+                  : (coursesCount == 0
+                        ? 'All done ✅'
+                        : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending');
 
-            final courseVal = entry.value;
-            if (courseVal is! Map) continue;
-            final course = Map<dynamic, dynamic>.from(courseVal);
+              return KeyedSubtree(
+                key: targetKey,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: homeworkSnap.connectionState == ConnectionState.waiting
+                      ? null
+                      : () async {
+                          unawaited(
+                            OfflineActionGuard.runExclusive(
+                              context,
+                              'learner.homework.open_picker',
+                              () => _openHomeworkCoursePicker(context),
+                            ),
+                          );
+                        },
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final tiny = compact && constraints.maxWidth < 112;
+                      final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+                      final iconSize = tiny ? 18.0 : 22.0;
+                      final contentPadding = tiny
+                          ? 8.0
+                          : (compact ? 12.0 : 14.0);
 
-            final attendance = course['attendance'];
-            if (attendance is! Map) continue;
-
-            final attMap = Map<dynamic, dynamic>.from(attendance);
-
-            bool thisCourseHasUndone = false;
-
-            for (final sessionVal in attMap.values) {
-              if (sessionVal is! Map) continue;
-              final session = Map<dynamic, dynamic>.from(sessionVal);
-
-              final hwMapAny = session['homework'];
-              if (hwMapAny is! Map) continue;
-              final hwMap = Map<dynamic, dynamic>.from(hwMapAny);
-
-              final text = (hwMap['text'] ?? '').toString().trim();
-              final due = (hwMap['dueDate'] ?? '').toString().trim();
-              if (text.isEmpty && due.isEmpty) continue;
-
-              final doneAt = hwMap['doneAt'];
-              final isDone = doneAt != null;
-
-              if (!isDone) {
-                undoneTotal += 1;
-                thisCourseHasUndone = true;
-              }
-            }
-
-            if (thisCourseHasUndone) {
-              courseKeysWithUndone.add(courseKey);
-            }
-          }
-        }
-
-        final coursesCount = courseKeysWithUndone.length;
-        final subtitle = coursesCount == 0
-            ? 'All done ✅'
-            : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending';
-
-        return KeyedSubtree(
-          key: targetKey,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(20),
-            onTap: () async {
-              unawaited(
-                OfflineActionGuard.runExclusive(
-                  context,
-                  'learner.homework.open_picker',
-                  () => _openHomeworkCoursePicker(
-                    context,
-                    courseKeysWithUndone: courseKeysWithUndone,
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: p.cardBg,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 12,
+                              offset: const Offset(0, 7),
+                            ),
+                          ],
+                        ),
+                        padding: EdgeInsets.all(contentPadding),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: iconBox,
+                                  height: iconBox,
+                                  decoration: BoxDecoration(
+                                    color: p.soft,
+                                    borderRadius: BorderRadius.circular(
+                                      tiny ? 12 : 15,
+                                    ),
+                                    border: Border.all(
+                                      color: p.border.withValues(alpha: 0.85),
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    LearnerIcons.homework,
+                                    color: p.primary,
+                                    size: iconSize,
+                                  ),
+                                ),
+                                if (undoneTotal > 0)
+                                  Positioned(
+                                    right: tiny ? -6 : -8,
+                                    top: tiny ? -6 : -8,
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: tiny ? 6 : 8,
+                                        vertical: tiny ? 2 : 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        undoneTotal > 99
+                                            ? '99+'
+                                            : '$undoneTotal',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: tiny ? 9 : 11,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            SizedBox(height: tiny ? 10 : 18),
+                            Text(
+                              'Homework',
+                              style: TextStyle(
+                                color: p.primary,
+                                fontWeight: FontWeight.w900,
+                                fontSize: tiny ? 12 : 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: p.text.withValues(alpha: 0.62),
+                                fontWeight: FontWeight.w700,
+                                fontSize: tiny ? 10 : 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
               );
             },
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final tiny = compact && constraints.maxWidth < 112;
-                final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
-                final iconSize = tiny ? 18.0 : 22.0;
-                final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+          );
+        }
 
-                return Container(
-                  decoration: BoxDecoration(
-                    color: p.cardBg,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 12,
-                        offset: const Offset(0, 7),
-                      ),
-                    ],
-                  ),
-                  padding: EdgeInsets.all(contentPadding),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            width: iconBox,
-                            height: iconBox,
-                            decoration: BoxDecoration(
-                              color: p.soft,
-                              borderRadius: BorderRadius.circular(
-                                tiny ? 12 : 15,
-                              ),
-                              border: Border.all(
-                                color: p.border.withValues(alpha: 0.85),
-                              ),
-                            ),
-                            child: Icon(
-                              LearnerIcons.homework,
-                              color: p.primary,
-                              size: iconSize,
-                            ),
-                          ),
-                          if (undoneTotal > 0)
-                            Positioned(
-                              right: tiny ? -6 : -8,
-                              top: tiny ? -6 : -8,
-                              child: Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: tiny ? 6 : 8,
-                                  vertical: tiny ? 2 : 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 2,
-                                  ),
-                                ),
-                                child: Text(
-                                  undoneTotal > 99 ? '99+' : '$undoneTotal',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: tiny ? 9 : 11,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      SizedBox(height: tiny ? 10 : 18),
-                      Text(
-                        'Homework',
-                        style: TextStyle(
-                          color: p.primary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: tiny ? 12 : 16,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: p.text.withValues(alpha: 0.62),
-                          fontWeight: FontWeight.w700,
-                          fontSize: tiny ? 10 : 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        );
+        return const SizedBox.shrink();
       },
     );
   }
+}
+
+class _HomeworkHomeSummary {
+  const _HomeworkHomeSummary({
+    required this.undoneTotal,
+    required this.courseKeysWithUndone,
+  });
+
+  final int undoneTotal;
+  final Set<String> courseKeysWithUndone;
 }
 
 class _RemindersHomeCard extends StatelessWidget {

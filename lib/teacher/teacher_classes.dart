@@ -3961,10 +3961,12 @@ class _OnlineTakeAttendanceScreenState
         final ln = (m['last_name'] ?? '').toString().trim();
         final full = ('$fn $ln').trim();
         final profilePhoto = (m['profile_photo'] ?? '').toString().trim();
+        final serial = (m['serial'] ?? '').toString().trim();
 
         final out = {
           'full': full.isEmpty ? 'Learner' : full,
           'profilePhoto': profilePhoto,
+          'serial': serial,
         };
 
         _localLearnerMiniCache[uid] = out;
@@ -3972,7 +3974,7 @@ class _OnlineTakeAttendanceScreenState
       }
     } catch (_) {}
 
-    final out = {'full': 'Learner', 'profilePhoto': ''};
+    final out = {'full': 'Learner', 'profilePhoto': '', 'serial': ''};
     _localLearnerMiniCache[uid] = out;
     return out;
   }
@@ -4644,6 +4646,9 @@ class _OnlineTakeAttendanceScreenState
     final when =
         '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
+    final presentCount = presentMap.values.where((v) => v).length;
+    final totalCount = b.learnerUids.length;
+    final absentCount = (totalCount - presentCount).clamp(0, totalCount);
 
     return PopScope(
       canPop: false,
@@ -4715,45 +4720,115 @@ class _OnlineTakeAttendanceScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: p.primary,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                b.courseTitle.trim().isEmpty
+                                    ? b.courseId
+                                    : b.courseTitle,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: p.primary,
+                                  fontSize: 20,
+                                  height: 1.15,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'When: $when',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: p.text.withValues(alpha: 0.72),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _statusChip(
+                              label: totalCount == 1
+                                  ? '1 learner'
+                                  : '$totalCount learners',
+                              color: p.primary,
+                              icon: Icons.groups_rounded,
+                            ),
+                            const SizedBox(height: 8),
+                            _statusChip(
+                              label: b.sessionNo > 0
+                                  ? 'Session ${b.sessionNo}'
+                                  : 'Session -',
+                              color: p.accent,
+                              icon: Icons.menu_book_rounded,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'When: $when',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: p.text.withValues(alpha: 0.72),
-                      ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _metricChip(
+                          'Present',
+                          '$presentCount',
+                          Icons.check_circle_rounded,
+                        ),
+                        _metricChip(
+                          'Absent',
+                          '$absentCount',
+                          Icons.cancel_rounded,
+                        ),
+                        _metricChip(
+                          'Meet',
+                          b.meetUrl.isEmpty ? '-' : 'Open link',
+                          Icons.videocam_rounded,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Learners: ${b.learnerUids.length}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: p.text.withValues(alpha: 0.72),
+                    if (b.meetUrl.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: p.soft.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.link_rounded,
+                              size: 18,
+                              color: p.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                b.meetUrl,
+                                style: TextStyle(
+                                  color: p.text.withValues(alpha: 0.72),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Session: ${b.sessionNo > 0 ? b.sessionNo : '-'}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: p.text.withValues(alpha: 0.72),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: p.text.withValues(alpha: 0.62),
-                      ),
-                    ),
+                    ],
                     if (loadingExisting) ...[
                       const SizedBox(height: 8),
                       Row(
@@ -4825,174 +4900,16 @@ class _OnlineTakeAttendanceScreenState
                         ),
                       )
                     else
-                      ...b.learnerUids.map((uid) {
-                        final v = presentMap[uid] == true;
-                        final rating = _normalizedRating(teacherRatingMap[uid]);
-                        final commentC = _commentController(uid);
-                        final homeworkC = _homeworkController(uid);
-                        final readOnly = !canEditCurrent || loadingExisting;
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
-                            ),
-                            color: p.soft.withValues(alpha: 0.18),
+                      ...List.generate(
+                        b.learnerUids.length,
+                        (index) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildLearnerCard(
+                            b.learnerUids[index],
+                            index: index,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: FutureBuilder<Map<String, String>>(
-                                      future: _loadLearnerMini(uid),
-                                      builder: (context, snap) {
-                                        final name =
-                                            (snap.data?['full'] ?? 'Learner')
-                                                .trim();
-                                        final profilePhotoUrl =
-                                            (snap.data?['profilePhoto'] ?? '')
-                                                .trim();
-
-                                        return Row(
-                                          children: [
-                                            _learnerAvatar(
-                                              profilePhotoUrl: profilePhotoUrl,
-                                              size: 36,
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Text(
-                                                name.isEmpty ? 'Learner' : name,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w900,
-                                                  color: p.text,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Switch(
-                                    value: v,
-                                    onChanged: readOnly
-                                        ? null
-                                        : (x) => setState(() {
-                                            presentMap[uid] = x;
-                                            _dirty = true;
-                                          }),
-                                    activeThumbColor: p.accent,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Teacher handoff',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: p.primary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 2,
-                                children: List.generate(5, (i) {
-                                  final on = i < rating;
-                                  return IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    constraints: const BoxConstraints(
-                                      minWidth: 34,
-                                      minHeight: 34,
-                                    ),
-                                    padding: EdgeInsets.zero,
-                                    onPressed: readOnly
-                                        ? null
-                                        : () => setState(() {
-                                            teacherRatingMap[uid] = i + 1;
-                                            _dirty = true;
-                                          }),
-                                    icon: Icon(
-                                      on
-                                          ? Icons.star_rounded
-                                          : Icons.star_border_rounded,
-                                      color: on ? p.accent : p.text,
-                                      size: 20,
-                                    ),
-                                    tooltip: '${i + 1} stars',
-                                  );
-                                }),
-                              ),
-                              TextField(
-                                controller: commentC,
-                                enabled: !readOnly,
-                                minLines: 2,
-                                maxLines: 3,
-                                onChanged: (_) => _markDirty(),
-                                decoration: InputDecoration(
-                                  hintText:
-                                      'Comment for next teacher (same course)',
-                                  filled: true,
-                                  fillColor: p.cardBg,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: p.border),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: p.border),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 10,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Homework',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: p.primary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              TextField(
-                                controller: homeworkC,
-                                enabled: !readOnly,
-                                minLines: 2,
-                                maxLines: 4,
-                                onChanged: (_) => _markDirty(),
-                                decoration: InputDecoration(
-                                  hintText:
-                                      'Homework to send to learner by mail',
-                                  filled: true,
-                                  fillColor: p.cardBg,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: p.border),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: p.border),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 10,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -5031,13 +4948,282 @@ class _OnlineTakeAttendanceScreenState
 
   Widget _box({required Widget child}) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: p.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withValues(alpha: 0.82)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: child,
+    );
+  }
+
+  Widget _statusChip({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricChip(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: p.soft.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: p.primary),
+          const SizedBox(width: 6),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeacherHandoffStars(String uid, {required bool readOnly}) {
+    final rating = _normalizedRating(teacherRatingMap[uid]);
+    return Wrap(
+      spacing: 2,
+      children: List.generate(5, (i) {
+        final on = i < rating;
+        return IconButton(
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+          padding: EdgeInsets.zero,
+          onPressed: readOnly
+              ? null
+              : () => setState(() {
+                  teacherRatingMap[uid] = i + 1;
+                  _dirty = true;
+                }),
+          icon: Icon(
+            on ? Icons.star_rounded : Icons.star_border_rounded,
+            color: on ? p.accent : p.text.withValues(alpha: 0.45),
+            size: 20,
+          ),
+          tooltip: '${i + 1} stars',
+        );
+      }),
+    );
+  }
+
+  Widget _buildLearnerCard(String uid, {required int index}) {
+    final isPresent = presentMap[uid] == true;
+    final readOnly = !canEditCurrent || loadingExisting;
+
+    return _box(
+      child: FutureBuilder<Map<String, String>>(
+        future: _loadLearnerMini(uid),
+        builder: (context, snap) {
+          final info = snap.data ?? const <String, String>{};
+          final name = (info['full'] ?? 'Learner').trim();
+          final profilePhotoUrl = (info['profilePhoto'] ?? '').trim();
+          final serial = (_localLearnerMiniCache[uid]?['serial'] ?? '').trim();
+          final commentC = _commentController(uid);
+          final homeworkC = _homeworkController(uid);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _learnerAvatar(profilePhotoUrl: profilePhotoUrl, size: 42),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name.isEmpty ? 'Learner' : name,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: p.primary,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            if (widget.booking.learnerUids.length > 1)
+                              _statusChip(
+                                label: 'Learner ${index + 1}',
+                                color: p.primary,
+                              ),
+                          ],
+                        ),
+                        if (serial.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Serial: $serial',
+                            style: TextStyle(
+                              color: p.text.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _statusChip(
+                        label: isPresent ? 'Present' : 'Absent',
+                        color: isPresent ? Colors.green : Colors.red,
+                        icon: isPresent
+                            ? Icons.check_circle_rounded
+                            : Icons.cancel_rounded,
+                      ),
+                      const SizedBox(height: 4),
+                      Switch(
+                        value: isPresent,
+                        activeThumbColor: Colors.green,
+                        onChanged: readOnly
+                            ? null
+                            : (v) => setState(() {
+                                presentMap[uid] = v;
+                                _dirty = true;
+                              }),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Teacher handoff',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: p.primary,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 6),
+              _buildTeacherHandoffStars(uid, readOnly: readOnly),
+              const SizedBox(height: 10),
+              TextField(
+                controller: commentC,
+                enabled: !readOnly,
+                minLines: 2,
+                maxLines: 3,
+                onChanged: (_) => _markDirty(),
+                decoration: InputDecoration(
+                  hintText: 'Comment for next teacher (same course)',
+                  filled: true,
+                  fillColor: p.cardBg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.accent, width: 1.6),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Homework',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: p.primary,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: homeworkC,
+                enabled: !readOnly,
+                minLines: 2,
+                maxLines: 4,
+                onChanged: (_) => _markDirty(),
+                decoration: InputDecoration(
+                  hintText: 'Homework to send to learner by mail',
+                  filled: true,
+                  fillColor: p.cardBg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.accent, width: 1.6),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
