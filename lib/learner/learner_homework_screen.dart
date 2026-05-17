@@ -57,19 +57,32 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         '${lesson.isEmpty ? '' : ' • $lesson'}';
   }
 
-  DatabaseReference _hwRef(String sessionId) {
-    return _usersRef
-        .child(_uid)
-        .child('courses')
-        .child(widget.courseKey)
-        .child('attendance')
-        .child(sessionId)
-        .child('homework');
+  DatabaseReference _hwRefByPath(String homeworkRefPath) {
+    return _db.child(homeworkRefPath);
   }
 
-  Future<void> _markSeen(String sessionId) async {
+  String _legacyHwRefPath(String sessionId) {
+    return 'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework';
+  }
+
+  String _itemKey(String source, String sessionId) => '$source:$sessionId';
+
+  String _formatOnlineWhen(Map<String, dynamic> rec) {
+    final startAt = rec['startAt'];
+    final ts = startAt is num ? startAt.toInt() : int.tryParse('$startAt') ?? 0;
+    if (ts > 0) {
+      final d = DateTime.fromMillisecondsSinceEpoch(ts);
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    }
+    final dayKey = (rec['dayKey'] ?? '').toString().trim();
+    final time = (rec['time'] ?? '').toString().trim();
+    if (dayKey.isEmpty && time.isEmpty) return '';
+    return [dayKey, time].where((s) => s.isNotEmpty).join(' ');
+  }
+
+  Future<void> _markSeen(String homeworkRefPath) async {
     try {
-      await _hwRef(sessionId).update({'seenAt': _nowMs()});
+      await _hwRefByPath(homeworkRefPath).update({'seenAt': _nowMs()});
     } catch (_) {}
   }
 
@@ -92,6 +105,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   Future<void> _createHomeworkMailAndOpen({
     required String sessionId,
+    required String homeworkRefPath,
     required String teacherUid,
     required String teacherName,
     required String date,
@@ -119,8 +133,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     final msgKey = _db.child('mail_messages').child(threadId).push().key;
     if (msgKey == null) return;
     // Save the auto-created message key so we can delete it on Undo (if not reviewed)
-    final hwMsgKeyPath =
-        'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework/autoMailMsgKey';
+    final hwMsgKeyPath = '$homeworkRefPath/autoMailMsgKey';
     // Multi-location update (thread + message + my index)
     final learnerName = await _myDisplayName();
     final learnerRole = await MailConsistencyService.resolveUserRole(
@@ -152,8 +165,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_threads/$threadId/sessionId': sessionId,
       'mail_threads/$threadId/learnerUid': _uid,
       'mail_threads/$threadId/teacherUid': teacherUid,
-      'mail_threads/$threadId/homeworkRef':
-          'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
+      'mail_threads/$threadId/homeworkRef': homeworkRefPath,
 
       // message itself
       'mail_messages/$threadId/$msgKey/body': body,
@@ -175,8 +187,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_index/$_uid/$threadId/updatedAt': now,
       'mail_index/$_uid/$threadId/type': 'homework',
       'mail_index/$_uid/$threadId/peerRole': teacherRole,
-      'mail_index/$_uid/$threadId/homeworkRef':
-          'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
+      'mail_index/$_uid/$threadId/homeworkRef': homeworkRefPath,
 
       // my read state (optional but consistent)
       'mail_state/$_uid/$threadId/lastReadAt': now,
@@ -193,8 +204,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_index/$teacherUid/$threadId/updatedAt': now,
       'mail_index/$teacherUid/$threadId/type': 'homework',
       'mail_index/$teacherUid/$threadId/peerRole': learnerRole,
-      'mail_index/$teacherUid/$threadId/homeworkRef':
-          'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
+      'mail_index/$teacherUid/$threadId/homeworkRef': homeworkRefPath,
       'mail_index/$teacherUid/$threadId/deletedAt': null,
       'mail_index/$teacherUid/$threadId/unreadCount': ServerValue.increment(1),
     };
@@ -265,13 +275,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   Future<void> _deleteAutoHomeworkMessageIfAllowed({
     required String sessionId,
+    required String homeworkRefPath,
     required String teacherUid,
   }) async {
     try {
       if (teacherUid.trim().isEmpty) return;
 
       // Read latest homework state (do NOT rely only on UI state)
-      final hwSnap = await _hwRef(sessionId).get();
+      final hwSnap = await _hwRefByPath(homeworkRefPath).get();
       if (!hwSnap.exists || hwSnap.value == null) return;
 
       final hw = Map<String, dynamic>.from(hwSnap.value as Map);
@@ -290,8 +301,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       // Also clear the saved key so we don't try to delete twice.
       final Map<String, dynamic> updates = {
         'mail_messages/$threadId/$msgKey': null,
-        'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework/autoMailMsgKey':
-            null,
+        '$homeworkRefPath/autoMailMsgKey': null,
 
         // Optional: reduce clutter in lists by clearing previews (safe UI-only)
         'mail_threads/$threadId/lastMessage': '',
@@ -308,12 +318,13 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   Future<void> _toggleDone(
     String sessionId, {
+    required String homeworkRefPath,
     required bool currentlyDone,
   }) async {
     try {
       if (currentlyDone) {
         // undo
-        await _hwRef(sessionId).child('doneAt').remove();
+        await _hwRefByPath(homeworkRefPath).child('doneAt').remove();
         await AuditLogService.logSuccess(
           actionKey: AuditActionKeys.learnerHomeworkUndoSubmit,
           domain: AuditDomain.homework,
@@ -327,7 +338,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           keywords: [widget.courseKey, sessionId],
         );
       } else {
-        await _hwRef(sessionId).update({'doneAt': _nowMs()});
+        await _hwRefByPath(homeworkRefPath).update({'doneAt': _nowMs()});
         await AuditLogService.logSuccess(
           actionKey: AuditActionKeys.learnerHomeworkDone,
           domain: AuditDomain.homework,
@@ -398,78 +409,107 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
 
-      final snap = await _usersRef
+      final List<Map<String, dynamic>> list = [];
+
+      Future<void> addItemsFromMap({
+        required Map<String, dynamic> raw,
+        required String source,
+      }) async {
+        for (final entry in raw.entries) {
+          if (entry.value is! Map) continue;
+          final rec = Map<String, dynamic>.from(entry.value as Map);
+
+          Map<String, dynamic> hw = <String, dynamic>{};
+          if (rec['homework'] is Map) {
+            hw = Map<String, dynamic>.from(rec['homework'] as Map);
+          }
+
+          final text = (hw['text'] ?? hw['homeworkText'] ?? '')
+              .toString()
+              .trim();
+          final due = (hw['dueDate'] ?? '').toString().trim();
+          if (text.isEmpty && due.isEmpty) continue;
+
+          final sessionId = entry.key.toString();
+          final itemKey = _itemKey(source, sessionId);
+          final homeworkRefPath = source == 'online'
+              ? 'booking_progress/$_uid/${widget.courseKey}/online_attendance/$sessionId/homework'
+              : _legacyHwRefPath(sessionId);
+
+          final taughtTitle = source == 'online'
+              ? 'Online session ${(rec['sessionNo'] ?? '').toString().trim()}'
+              : ((rec['taught'] is Map)
+                    ? (Map<String, dynamic>.from(
+                                rec['taught'] as Map,
+                              )['title'] ??
+                              '')
+                          .toString()
+                    : '');
+
+          final date = source == 'online'
+              ? _formatOnlineWhen(rec)
+              : (rec['date'] ?? '').toString();
+
+          final seenAt = hw['seenAt'];
+          final doneAt = hw['doneAt'];
+          final submittedAt = hw['submittedAt'];
+          final reviewedAt = hw['reviewedAt'];
+          final autoMailMsgKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
+          final reviewStatus = (hw['reviewStatus'] ?? '').toString().trim();
+          final reviewScore = hw['reviewScore'];
+          final reviewGrade = (hw['reviewGrade'] ?? '').toString().trim();
+          final reviewNote = (hw['reviewNote'] ?? '').toString();
+          final needsRedo = hw['needsRedo'] == true;
+
+          final teacherUid = (rec['teacherUid'] ?? '').toString().trim();
+          final teacherName = (rec['teacherName'] ?? '').toString().trim();
+
+          list.add({
+            'itemKey': itemKey,
+            'source': source,
+            'homeworkRefPath': homeworkRefPath,
+            'sessionId': sessionId,
+            'date': date,
+            'taughtTitle': taughtTitle,
+            'text': text,
+            'dueDate': due,
+            'seenAt': seenAt,
+            'doneAt': doneAt,
+            'submittedAt': submittedAt,
+            'autoMailMsgKey': autoMailMsgKey,
+            'reviewedAt': reviewedAt,
+            'reviewStatus': reviewStatus,
+            'reviewScore': reviewScore,
+            'reviewGrade': reviewGrade,
+            'reviewNote': reviewNote,
+            'needsRedo': needsRedo,
+            'teacherUid': teacherUid,
+            'teacherName': teacherName,
+          });
+        }
+      }
+
+      final inClassSnap = await _usersRef
           .child(_uid)
           .child('courses')
           .child(widget.courseKey)
           .child('attendance')
           .get();
-      if (!snap.exists || snap.value == null) {
-        setState(() => _busy = false);
-        return;
+      if (inClassSnap.exists && inClassSnap.value is Map) {
+        await addItemsFromMap(
+          raw: Map<String, dynamic>.from(inClassSnap.value as Map),
+          source: 'in_class',
+        );
       }
 
-      final raw = Map<String, dynamic>.from(snap.value as Map);
-      final List<Map<String, dynamic>> list = [];
-
-      for (final entry in raw.entries) {
-        if (entry.value is! Map) continue;
-        final rec = Map<String, dynamic>.from(entry.value as Map);
-
-        final hw = (rec['homework'] is Map)
-            ? Map<String, dynamic>.from(rec['homework'] as Map)
-            : <String, dynamic>{};
-        final text = (hw['text'] ?? '').toString().trim();
-        final due = (hw['dueDate'] ?? '').toString().trim();
-
-        if (text.isEmpty && due.isEmpty) continue;
-
-        final taught = (rec['taught'] is Map)
-            ? Map<String, dynamic>.from(rec['taught'] as Map)
-            : <String, dynamic>{};
-        final taughtTitle = (taught['title'] ?? '').toString();
-
-        final seenAt = hw['seenAt'];
-        final doneAt = hw['doneAt'];
-        final submittedAt = hw['submittedAt'];
-
-        final reviewedAt = hw['reviewedAt'];
-        final autoMailMsgKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
-        final reviewStatus = (hw['reviewStatus'] ?? '')
-            .toString()
-            .trim(); // pass / redo
-        final reviewScore = hw['reviewScore'];
-        final reviewGrade = (hw['reviewGrade'] ?? '')
-            .toString()
-            .trim(); // A/B/C/D (new)
-        final reviewNote = (hw['reviewNote'] ?? '').toString();
-        final needsRedo = hw['needsRedo'] == true; // new
-
-        final teacherUid = (rec['teacherUid'] ?? '').toString().trim();
-        final teacherName = (rec['teacherName'] ?? '').toString().trim();
-
-        list.add({
-          'sessionId': entry.key.toString(),
-          'date': (rec['date'] ?? '').toString(),
-          'taughtTitle': taughtTitle,
-          'text': text,
-          'dueDate': due,
-          'seenAt': seenAt,
-          'doneAt': doneAt,
-          'submittedAt': submittedAt,
-          'autoMailMsgKey': autoMailMsgKey,
-
-          'reviewedAt': reviewedAt,
-          'reviewStatus': reviewStatus,
-          'reviewScore': reviewScore,
-          'reviewGrade': reviewGrade,
-          'reviewNote': reviewNote,
-          'needsRedo': needsRedo,
-
-          // ✅ needed for auto-mail
-          'teacherUid': teacherUid,
-          'teacherName': teacherName,
-        });
+      final onlineSnap = await _db
+          .child('booking_progress/$_uid/${widget.courseKey}/online_attendance')
+          .get();
+      if (onlineSnap.exists && onlineSnap.value is Map) {
+        await addItemsFromMap(
+          raw: Map<String, dynamic>.from(onlineSnap.value as Map),
+          source: 'online',
+        );
       }
 
       list.sort(
@@ -806,7 +846,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         final text = (it['text'] ?? '').toString();
         final taughtTitle = (it['taughtTitle'] ?? '').toString();
         final sessionId = (it['sessionId'] ?? '').toString();
-        final isExpanded = _expanded.contains(sessionId);
+        final itemKey = (it['itemKey'] ?? sessionId).toString();
+        final homeworkRefPath = (it['homeworkRefPath'] ?? '').toString().trim();
+        final isExpanded = _expanded.contains(itemKey);
         final seenAt = it['seenAt'];
         final doneAt = it['doneAt'];
         final isSeen = seenAt != null;
@@ -872,16 +914,16 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         return InkWell(
           borderRadius: BorderRadius.circular(18),
           onTap: () async {
-            final willExpand = !_expanded.contains(sessionId);
+            final willExpand = !_expanded.contains(itemKey);
             setState(() {
               if (willExpand) {
-                _expanded.add(sessionId);
+                _expanded.add(itemKey);
               } else {
-                _expanded.remove(sessionId);
+                _expanded.remove(itemKey);
               }
             });
             if (willExpand && !isSeen) {
-              await _markSeen(sessionId);
+              await _markSeen(homeworkRefPath);
               if (mounted) {
                 setState(() {
                   it['seenAt'] = _nowMs();
@@ -1069,10 +1111,15 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                       .trim();
                                   final teacherName = (it['teacherName'] ?? '')
                                       .toString();
+                                  final homeworkRefPath =
+                                      (it['homeworkRefPath'] ?? '')
+                                          .toString()
+                                          .trim();
                                   if (isDone) {
                                     if (!isReviewed) {
                                       await _deleteAutoHomeworkMessageIfAllowed(
                                         sessionId: sessionId,
+                                        homeworkRefPath: homeworkRefPath,
                                         teacherUid: teacherUid,
                                       );
                                       if (mounted) {
@@ -1083,6 +1130,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     }
                                     await _toggleDone(
                                       sessionId,
+                                      homeworkRefPath: homeworkRefPath,
                                       currentlyDone: true,
                                     );
                                     if (mounted) {
@@ -1098,7 +1146,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     if (!ok) return;
                                   }
                                   final now = _nowMs();
-                                  await _hwRef(sessionId).update({
+                                  await _hwRefByPath(homeworkRefPath).update({
                                     'doneAt': now,
                                     'submittedAt': now,
                                     'seenAt': it['seenAt'] ?? now,
@@ -1118,6 +1166,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     dueDate: due,
                                     taughtTitle: taughtTitle,
                                     homeworkText: text,
+                                    homeworkRefPath: homeworkRefPath,
                                   );
                                 },
                               ),
