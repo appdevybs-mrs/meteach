@@ -128,19 +128,29 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     switch (state) {
       case AppLifecycleState.resumed:
         unawaited(_enterFullscreen());
-        unawaited(_notifyGameLifecycle('resumed'));
+        if (!_isDocumentMode) {
+          unawaited(_notifyGameLifecycle('resumed'));
+        }
         break;
       case AppLifecycleState.inactive:
-        unawaited(_notifyGameLifecycle('inactive'));
+        if (!_isDocumentMode) {
+          unawaited(_notifyGameLifecycle('inactive'));
+        }
         break;
       case AppLifecycleState.paused:
-        unawaited(_notifyGameLifecycle('paused'));
+        if (!_isDocumentMode) {
+          unawaited(_notifyGameLifecycle('paused'));
+        }
         break;
       case AppLifecycleState.detached:
-        unawaited(_notifyGameLifecycle('detached'));
+        if (!_isDocumentMode) {
+          unawaited(_notifyGameLifecycle('detached'));
+        }
         break;
       case AppLifecycleState.hidden:
-        unawaited(_notifyGameLifecycle('hidden'));
+        if (!_isDocumentMode) {
+          unawaited(_notifyGameLifecycle('hidden'));
+        }
         break;
     }
   }
@@ -384,8 +394,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
             await _applyContentEnhancementsIfNeeded();
             await _notifyViewportChanged();
-            await _notifyGameLifecycle('resumed');
-            _scheduleStabilityRelayouts();
+            if (!_isDocumentMode) {
+              await _notifyGameLifecycle('resumed');
+              _scheduleStabilityRelayouts();
+            }
           },
           onWebResourceError: (WebResourceError error) {
             _stopLoadWatchdog();
@@ -519,6 +531,11 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       return;
     }
 
+    if (message == 'printRequested') {
+      unawaited(_openInExternalBrowser());
+      return;
+    }
+
     if (message == 'reload') {
       unawaited(_reload());
       return;
@@ -587,10 +604,51 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       img, video, iframe, table {
         max-width: 100% !important;
       }
+
+      [data-action="print"] {
+        cursor: pointer;
+      }
     `;
 
     document.documentElement.style.backgroundColor = '#ffffff';
     document.body.style.backgroundColor = '#ffffff';
+
+    var openPrintInHost = function () {
+      try {
+        if (window.GameHost && typeof window.GameHost.postMessage === 'function') {
+          window.GameHost.postMessage('printRequested');
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    };
+
+    try {
+      window.__deaOriginalPrint = window.__deaOriginalPrint || window.print;
+      window.print = function () {
+        if (!openPrintInHost()) {
+          try {
+            return window.__deaOriginalPrint();
+          } catch (_) {}
+        }
+      };
+    } catch (_) {}
+
+    try {
+      var printButtons = document.querySelectorAll('[data-action="print"]');
+      for (var i = 0; i < printButtons.length; i++) {
+        printButtons[i].addEventListener('click', function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (!openPrintInHost()) {
+            try {
+              window.__deaOriginalPrint();
+            } catch (_) {}
+          }
+        }, true);
+      }
+    } catch (_) {}
+
     return true;
   } catch (e) {
     return false;
