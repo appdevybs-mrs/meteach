@@ -424,6 +424,30 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
             hw = Map<String, dynamic>.from(rec['homework'] as Map);
           }
 
+          if (hw.isEmpty) {
+            final legacyText = (rec['homeworkLastBody'] ?? '')
+                .toString()
+                .trim();
+            final legacySubject = (rec['homeworkSubject'] ?? '')
+                .toString()
+                .trim();
+            if (legacyText.isNotEmpty || legacySubject.isNotEmpty) {
+              hw = {
+                'text': legacyText.isNotEmpty ? legacyText : legacySubject,
+                'dueDate': '',
+                'doneAt': rec['doneAt'],
+                'submittedAt': rec['submittedAt'],
+                'reviewedAt': rec['reviewedAt'],
+                'autoMailMsgKey': rec['autoMailMsgKey'] ?? '',
+                'reviewStatus': rec['reviewStatus'] ?? '',
+                'reviewScore': rec['reviewScore'],
+                'reviewGrade': rec['reviewGrade'] ?? '',
+                'reviewNote': rec['reviewNote'] ?? '',
+                'needsRedo': rec['needsRedo'] ?? false,
+              };
+            }
+          }
+
           final text = (hw['text'] ?? hw['homeworkText'] ?? '')
               .toString()
               .trim();

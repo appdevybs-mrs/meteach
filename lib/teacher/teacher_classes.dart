@@ -4550,7 +4550,9 @@ class _OnlineTakeAttendanceScreenState
           'homeworkByName': effectiveHomeworkBody.isNotEmpty
               ? _homeworkSignature()
               : '',
-          ...?homeworkRecord == null ? null : {'homework': homeworkRecord},
+          ...homeworkRecord == null
+              ? const <String, dynamic>{}
+              : {'homework': homeworkRecord},
           'taughtItems': taughtItems,
           'countedCredit': countedCredit,
           'creditCountReason':
