@@ -3891,6 +3891,7 @@ class _OnlineTakeAttendanceScreenState
   bool saving = false;
   bool loadingExisting = false;
   bool canEditCurrent = true;
+  bool _dirty = false;
   String lockReason = '';
 
   final Map<String, bool> presentMap = {};
@@ -3937,6 +3938,11 @@ class _OnlineTakeAttendanceScreenState
   void _toast(String msg) {
     if (!mounted) return;
     AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
+  }
+
+  void _markDirty() {
+    if (!mounted || _dirty) return;
+    setState(() => _dirty = true);
   }
 
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
@@ -4329,7 +4335,12 @@ class _OnlineTakeAttendanceScreenState
         }
       }
     } catch (_) {}
-    if (mounted) setState(() => loadingExisting = false);
+    if (mounted) {
+      setState(() {
+        loadingExisting = false;
+        _dirty = false;
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -4452,8 +4463,29 @@ class _OnlineTakeAttendanceScreenState
             isPresent ||
             widget.booking.sessionNo > 0;
 
-        final needsHomeworkSend =
-            homework.isNotEmpty && homework.trim() != oldHomework;
+        final hasHomework = homework.isNotEmpty;
+        final needsHomeworkSend = hasHomework && homework != oldHomework;
+        final existingHomework = existing['homework'] is Map
+            ? Map<String, dynamic>.from(existing['homework'] as Map)
+            : <String, dynamic>{};
+        final homeworkRecord = hasHomework
+            ? {
+                'text': homework,
+                'dueDate': existingHomework['dueDate'] ?? '',
+                'teacherUid': widget.teacherUid,
+                'teacherName': widget.teacherName,
+                'subject': homeworkSubject,
+                'updatedAt': ServerValue.timestamp,
+                'submittedAt': existingHomework['submittedAt'] ?? 0,
+                'reviewedAt': existingHomework['reviewedAt'] ?? 0,
+                'reviewStatus': existingHomework['reviewStatus'] ?? '',
+                'reviewScore': existingHomework['reviewScore'],
+                'reviewGrade': existingHomework['reviewGrade'] ?? '',
+                'reviewNote': existingHomework['reviewNote'] ?? '',
+                'needsRedo': existingHomework['needsRedo'] ?? false,
+                'autoMailMsgKey': existingHomework['autoMailMsgKey'] ?? '',
+              }
+            : null;
 
         if (needsHomeworkSend) {
           try {
@@ -4516,6 +4548,7 @@ class _OnlineTakeAttendanceScreenState
           'homeworkByName': effectiveHomeworkBody.isNotEmpty
               ? _homeworkSignature()
               : '',
+          ...?homeworkRecord == null ? null : {'homework': homeworkRecord},
           'taughtItems': taughtItems,
           'countedCredit': countedCredit,
           'creditCountReason':
@@ -4596,6 +4629,7 @@ class _OnlineTakeAttendanceScreenState
         );
       }
       if (mounted) Navigator.pop(context);
+      if (mounted) setState(() => _dirty = false);
     } catch (e) {
       _toast('Save failed: $e');
     } finally {
@@ -4611,322 +4645,385 @@ class _OnlineTakeAttendanceScreenState
         '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
 
-    return Scaffold(
-      backgroundColor: p.appBg,
-      appBar: AppBar(
-        backgroundColor: p.cardBg,
-        elevation: 0,
-        surfaceTintColor: p.cardBg,
-        iconTheme: IconThemeData(color: p.primary),
-        title: Text(
-          'Online Attendance',
-          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Save',
-            onPressed: (saving || loadingExisting || !canEditCurrent)
-                ? null
-                : _save,
-            icon: saving
-                ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: p.accent,
-                    ),
-                  )
-                : Icon(Icons.save_rounded, color: p.accent),
-          ),
-        ],
-      ),
-      body: teacherWebBodyFrame(
-        context: context,
-        maxWidth: 1180,
-        child: ListView(
-          padding: const EdgeInsets.all(14),
-          children: [
-            _box(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'When: $when',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: p.text.withValues(alpha: 0.72),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Learners: ${b.learnerUids.length}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: p.text.withValues(alpha: 0.72),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Session: ${b.sessionNo > 0 ? b.sessionNo : '-'}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: p.text.withValues(alpha: 0.72),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: p.text.withValues(alpha: 0.62),
-                    ),
-                  ),
-                  if (loadingExisting) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: p.accent,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Loading existing attendance…',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: p.text.withValues(alpha: 0.72),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (!canEditCurrent) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.red.withValues(alpha: 0.25),
-                        ),
-                      ),
-                      child: Text(
-                        lockReason.isEmpty
-                            ? 'Read-only: only the teacher who created this attendance can edit it.'
-                            : 'Read-only: $lockReason',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.red.shade700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || saving || loadingExisting) return;
+        if (!_dirty) {
+          if (mounted) Navigator.of(context).pop();
+          return;
+        }
+
+        final leave = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Discard changes?'),
+            content: const Text(
+              'You have unsaved attendance or homework changes. Leave without saving?',
             ),
-            const SizedBox(height: 12),
-            _box(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Presence',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: p.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (b.learnerUids.isEmpty)
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Stay'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Leave'),
+              ),
+            ],
+          ),
+        );
+        if (leave == true && context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        backgroundColor: p.appBg,
+        appBar: AppBar(
+          backgroundColor: p.cardBg,
+          elevation: 0,
+          surfaceTintColor: p.cardBg,
+          iconTheme: IconThemeData(color: p.primary),
+          title: Text(
+            'Online Attendance',
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Save',
+              onPressed: (saving || loadingExisting || !canEditCurrent)
+                  ? null
+                  : _save,
+              icon: saving
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: p.accent,
+                      ),
+                    )
+                  : Icon(Icons.save_rounded, color: p.accent),
+            ),
+          ],
+        ),
+        body: teacherWebBodyFrame(
+          context: context,
+          maxWidth: 1180,
+          child: ListView(
+            padding: const EdgeInsets.all(14),
+            children: [
+              _box(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      'No learners found in this booking.',
+                      'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'When: $when',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Learners: ${b.learnerUids.length}',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: p.text.withValues(alpha: 0.72),
                       ),
-                    )
-                  else
-                    ...b.learnerUids.map((uid) {
-                      final v = presentMap[uid] == true;
-                      final rating = _normalizedRating(teacherRatingMap[uid]);
-                      final commentC = _commentController(uid);
-                      final homeworkC = _homeworkController(uid);
-                      final readOnly = !canEditCurrent || loadingExisting;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Session: ${b.sessionNo > 0 ? b.sessionNo : '-'}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: p.text.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withValues(alpha: 0.62),
+                      ),
+                    ),
+                    if (loadingExisting) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: p.accent,
+                            ),
                           ),
-                          color: p.soft.withValues(alpha: 0.18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Loading existing attendance…',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: p.text.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (!canEditCurrent) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.25),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: FutureBuilder<Map<String, String>>(
-                                    future: _loadLearnerMini(uid),
-                                    builder: (context, snap) {
-                                      final name =
-                                          (snap.data?['full'] ?? 'Learner')
-                                              .trim();
-                                      final profilePhotoUrl =
-                                          (snap.data?['profilePhoto'] ?? '')
-                                              .trim();
+                        child: Text(
+                          lockReason.isEmpty
+                              ? 'Read-only: only the teacher who created this attendance can edit it.'
+                              : 'Read-only: $lockReason',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _box(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Presence',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (b.learnerUids.isEmpty)
+                      Text(
+                        'No learners found in this booking.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: p.text.withValues(alpha: 0.72),
+                        ),
+                      )
+                    else
+                      ...b.learnerUids.map((uid) {
+                        final v = presentMap[uid] == true;
+                        final rating = _normalizedRating(teacherRatingMap[uid]);
+                        final commentC = _commentController(uid);
+                        final homeworkC = _homeworkController(uid);
+                        final readOnly = !canEditCurrent || loadingExisting;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: p.border.withValues(alpha: 0.85),
+                            ),
+                            color: p.soft.withValues(alpha: 0.18),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: FutureBuilder<Map<String, String>>(
+                                      future: _loadLearnerMini(uid),
+                                      builder: (context, snap) {
+                                        final name =
+                                            (snap.data?['full'] ?? 'Learner')
+                                                .trim();
+                                        final profilePhotoUrl =
+                                            (snap.data?['profilePhoto'] ?? '')
+                                                .trim();
 
-                                      return Row(
-                                        children: [
-                                          _learnerAvatar(
-                                            profilePhotoUrl: profilePhotoUrl,
-                                            size: 36,
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Text(
-                                              name.isEmpty ? 'Learner' : name,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: p.text,
+                                        return Row(
+                                          children: [
+                                            _learnerAvatar(
+                                              profilePhotoUrl: profilePhotoUrl,
+                                              size: 36,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                name.isEmpty ? 'Learner' : name,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  color: p.text,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      );
-                                    },
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Switch(
+                                    value: v,
+                                    onChanged: readOnly
+                                        ? null
+                                        : (x) => setState(() {
+                                            presentMap[uid] = x;
+                                            _dirty = true;
+                                          }),
+                                    activeThumbColor: p.accent,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Teacher handoff',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: p.primary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 2,
+                                children: List.generate(5, (i) {
+                                  final on = i < rating;
+                                  return IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 34,
+                                      minHeight: 34,
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    onPressed: readOnly
+                                        ? null
+                                        : () => setState(() {
+                                            teacherRatingMap[uid] = i + 1;
+                                            _dirty = true;
+                                          }),
+                                    icon: Icon(
+                                      on
+                                          ? Icons.star_rounded
+                                          : Icons.star_border_rounded,
+                                      color: on ? p.accent : p.text,
+                                      size: 20,
+                                    ),
+                                    tooltip: '${i + 1} stars',
+                                  );
+                                }),
+                              ),
+                              TextField(
+                                controller: commentC,
+                                enabled: !readOnly,
+                                minLines: 2,
+                                maxLines: 3,
+                                onChanged: (_) => _markDirty(),
+                                decoration: InputDecoration(
+                                  hintText:
+                                      'Comment for next teacher (same course)',
+                                  filled: true,
+                                  fillColor: p.cardBg,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: p.border),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: p.border),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 10,
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Switch(
-                                  value: v,
-                                  onChanged: readOnly
-                                      ? null
-                                      : (x) =>
-                                            setState(() => presentMap[uid] = x),
-                                  activeThumbColor: p.accent,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Teacher handoff',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: p.primary,
-                                fontSize: 12,
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 2,
-                              children: List.generate(5, (i) {
-                                final on = i < rating;
-                                return IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 34,
-                                    minHeight: 34,
+                              const SizedBox(height: 10),
+                              Text(
+                                'Homework',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: p.primary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: homeworkC,
+                                enabled: !readOnly,
+                                minLines: 2,
+                                maxLines: 4,
+                                onChanged: (_) => _markDirty(),
+                                decoration: InputDecoration(
+                                  hintText:
+                                      'Homework to send to learner by mail',
+                                  filled: true,
+                                  fillColor: p.cardBg,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: p.border),
                                   ),
-                                  padding: EdgeInsets.zero,
-                                  onPressed: readOnly
-                                      ? null
-                                      : () => setState(
-                                          () => teacherRatingMap[uid] = i + 1,
-                                        ),
-                                  icon: Icon(
-                                    on
-                                        ? Icons.star_rounded
-                                        : Icons.star_border_rounded,
-                                    color: on ? p.accent : p.text,
-                                    size: 20,
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: p.border),
                                   ),
-                                  tooltip: '${i + 1} stars',
-                                );
-                              }),
-                            ),
-                            TextField(
-                              controller: commentC,
-                              enabled: !readOnly,
-                              minLines: 2,
-                              maxLines: 3,
-                              decoration: InputDecoration(
-                                hintText:
-                                    'Comment for next teacher (same course)',
-                                filled: true,
-                                fillColor: p.cardBg,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: p.border),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: p.border),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 10,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 10,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Homework',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: p.primary,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            TextField(
-                              controller: homeworkC,
-                              enabled: !readOnly,
-                              minLines: 2,
-                              maxLines: 4,
-                              decoration: InputDecoration(
-                                hintText: 'Homework to send to learner by mail',
-                                filled: true,
-                                fillColor: p.cardBg,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: p.border),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: p.border),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 10,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                ],
+                            ],
+                          ),
+                        );
+                      }),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              _box(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed:
+                            (saving || loadingExisting || !canEditCurrent)
+                            ? null
+                            : _save,
+                        icon: saving
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: p.cardBg,
+                                ),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: const Text('Save attendance'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

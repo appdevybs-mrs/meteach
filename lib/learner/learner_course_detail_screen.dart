@@ -43,7 +43,6 @@ import '../shared/learner_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
-import '../shared/material_webview_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import '../services/course_feedback_service.dart';
 import '../services/learner_join_signal_service.dart';
@@ -3828,50 +3827,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
-  bool _hasAttendedSession({
-    required String sessionId,
-    required int sessionNumber,
-  }) {
-    for (final row in _attendanceAll) {
-      final status = (row['status'] ?? '').toString().trim().toLowerCase();
-      if (status != 'present') continue;
-
-      final source = (row['source'] ?? '').toString().trim().toLowerCase();
-      if (source == 'online') {
-        if (sessionNumber > 0 && _asInt(row['sessionNo']) == sessionNumber) {
-          return true;
-        }
-        continue;
-      }
-
-      final taughtItems = row['taughtItems'];
-      if (taughtItems is List) {
-        for (final it in taughtItems) {
-          if (it is! Map) continue;
-          final item = Map<String, dynamic>.from(it);
-          final type = (item['type'] ?? '').toString().trim().toLowerCase();
-          if (type != 'syllabus') continue;
-
-          final sid = (item['sessionId'] ?? '').toString().trim();
-          if (sessionId.isNotEmpty && sid == sessionId) return true;
-
-          final sn = _asInt(item['sessionNumber']);
-          if (sessionNumber > 0 && sn == sessionNumber) return true;
-        }
-      }
-
-      final taughtOld = (row['taught'] is Map)
-          ? Map<String, dynamic>.from(row['taught'] as Map)
-          : const <String, dynamic>{};
-      final oldSid = (taughtOld['sessionId'] ?? '').toString().trim();
-      final oldNo = _asInt(taughtOld['sessionNumber']);
-      if (sessionId.isNotEmpty && oldSid == sessionId) return true;
-      if (sessionNumber > 0 && oldNo == sessionNumber) return true;
-    }
-
-    return false;
-  }
-
   Future<void> _openLessonMaterial(Map<String, dynamic> session) async {
     final url = (session['homeworkUrl'] ?? '').toString().trim();
     if (!_isHttpUrl(url)) {
@@ -3879,7 +3834,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       return;
     }
 
-    final title = (session['title'] ?? '').toString().trim();
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      _showMissingHomeworkMessage();
+      return;
+    }
+
     if (!mounted) return;
 
     try {
@@ -3887,16 +3847,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         context,
         'learner.course_detail.material.${widget.courseKey}.${session.hashCode}',
         () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MaterialWebViewScreen.fromUrl(
-                title: title.isEmpty ? 'Homework' : '$title Homework',
-                url: url,
-                viewerMode: MaterialViewerMode.document,
-              ),
-            ),
-          );
+          final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!ok && mounted) {
+            _showMissingHomeworkMessage();
+          }
         },
       );
     } catch (_) {
@@ -3941,17 +3895,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Widget _sessionLessonRow(Map<String, dynamic> s) {
     final title = (s['title'] ?? '').toString().trim();
     final sessionId = (s['sessionId'] ?? '').toString().trim();
-    final sessionNumber = _asInt(s['sessionNumber']);
     final objective = (s['objective'] ?? '').toString().trim();
     final hw = (s['homework'] ?? '').toString().trim();
     final hasHomeworkFile = _isHttpUrl((s['homeworkUrl'] ?? '').toString());
 
     final passed = _coveredSessionIds.contains(sessionId);
-    final attended = _hasAttendedSession(
-      sessionId: sessionId,
-      sessionNumber: sessionNumber,
-    );
-    final materialAction = attended ? 'Revise' : 'Prepare';
+    const materialAction = 'Homework';
     final statusText = passed ? 'Passed' : 'Coming';
     final passedBorder = UiK.primaryBlue.withValues(alpha: 0.30);
     final pendingBorder = UiK.uiBorder.withValues(alpha: 0.85);
