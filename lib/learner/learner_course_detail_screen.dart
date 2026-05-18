@@ -31,6 +31,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'learner_homework_screen.dart';
+import 'learner_booking_screen.dart';
 import 'learner_mail_thread_screen.dart';
 import 'recorded_course_study_screen.dart';
 import '../shared/offline_action_guard.dart';
@@ -2699,6 +2700,30 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
+  void _openFlexibleBooking() {
+    if (_courseId.trim().isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Course booking is not available yet.')),
+      );
+      return;
+    }
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'learner.course_detail.booking.${widget.courseKey}',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LearnerBookingScreen(courseId: _courseId),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _flexibleMergedBody({
     required bool desktopWorkspace,
     required int meetingsHeld,
@@ -3052,6 +3077,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   ),
                 ),
               ],
+              SizedBox(height: compact ? 8 : 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _openFlexibleBooking,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFE65C00),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.event_available_rounded, size: 18),
+                  label: const Text('Book Next Class'),
+                ),
+              ),
             ],
           ),
         ),
@@ -3426,27 +3465,37 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               child: Icon(icon, color: iconFg, size: compact ? 24 : 28),
             ),
             SizedBox(height: compact ? 6 : 8),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: compact ? 14 : 16,
+            SizedBox(
+              height: compact ? 18 : 20,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: compact ? 13 : 15,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 2),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontWeight: FontWeight.w700,
-                fontSize: compact ? 10 : 11,
+            SizedBox(
+              height: compact ? 14 : 16,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w700,
+                    fontSize: compact ? 9.6 : 10.6,
+                  ),
+                ),
               ),
             ),
           ],
@@ -3891,33 +3940,33 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           _expandedFlexibleUnitKey = isOpen ? null : key;
         });
       },
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: EdgeInsets.symmetric(
-          horizontal: compact ? 11 : 12,
-          vertical: compact ? 8 : 9,
+          horizontal: compact ? 12 : 14,
+          vertical: compact ? 10 : 11,
         ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isOpen
-                ? UiK.actionOrange.withValues(alpha: 0.8)
-                : UiK.uiBorder.withValues(alpha: 0.85),
+                ? UiK.primaryBlue.withValues(alpha: 0.5)
+                : UiK.uiBorder.withValues(alpha: 0.75),
           ),
-          color: Colors.white,
+          color: isOpen ? const Color(0xFFF9FCFF) : Colors.white,
         ),
         child: Row(
           children: [
             SizedBox(
-              width: compact ? 44 : 48,
-              height: compact ? 44 : 48,
+              width: compact ? 46 : 50,
+              height: compact ? 46 : 50,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   CircularProgressIndicator(
                     value: total == 0 ? 0 : (covered / total).clamp(0.0, 1.0),
-                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
-                    valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
+                    valueColor: const AlwaysStoppedAnimation(UiK.primaryBlue),
                     strokeWidth: compact ? 4 : 4.5,
                   ),
                   Center(
@@ -3933,7 +3982,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ],
               ),
             ),
-            SizedBox(width: compact ? 9 : 10),
+            SizedBox(width: compact ? 10 : 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3943,17 +3992,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     style: TextStyle(
                       color: UiK.mainText,
                       fontWeight: FontWeight.w900,
-                      fontSize: compact ? 14 : 16,
+                      fontSize: compact ? 14 : 15,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Text(
                     '$covered/$total lessons',
                     style: UiK.subtleText().copyWith(
                       fontSize: compact ? 11 : 12,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -5260,20 +5309,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final passed = _coveredSessionIds.contains(sessionId);
     const materialAction = 'Homework';
     final statusText = passed ? 'Passed' : 'Coming';
-    final passedBorder = UiK.primaryBlue.withValues(alpha: 0.30);
-    final pendingBorder = UiK.uiBorder.withValues(alpha: 0.85);
+    final passedBorder = UiK.primaryBlue.withValues(alpha: 0.24);
+    final pendingBorder = UiK.uiBorder.withValues(alpha: 0.75);
 
     return InkWell(
       onTap: () => _openSessionDetailsSheet(s),
       borderRadius: BorderRadius.circular(14),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: passed ? passedBorder : pendingBorder),
           color: passed
-              ? UiK.primaryBlue.withValues(alpha: 0.05)
+              ? UiK.primaryBlue.withValues(alpha: 0.03)
               : Colors.white,
         ),
         child: Row(
@@ -5305,10 +5354,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   Wrap(
                     spacing: 8,
-                    runSpacing: 8,
+                    runSpacing: 6,
                     children: [
                       _miniChip(
                         icon: passed
@@ -5326,20 +5375,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         _miniChip(
                           icon: Icons.assignment_rounded,
                           text: 'Homework',
-                          fg: UiK.actionOrange,
-                          bg: UiK.actionOrange.withValues(alpha: 0.10),
+                          fg: Colors.white,
+                          bg: UiK.actionOrange,
                         ),
                     ],
                   ),
                   if (objective.isNotEmpty) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 7),
                     Text(
                       objective,
                       style: TextStyle(
                         color: UiK.mainText.withValues(alpha: 0.70),
                         fontWeight: FontWeight.w700,
                       ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -5406,16 +5455,39 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               final objective = (s['objective'] ?? '').toString().trim();
               final content = (s['content'] ?? '').toString().trim();
               final hw = (s['homework'] ?? '').toString().trim();
-              final duration = (s['duration'] ?? s['durationMin'] ?? '8')
-                  .toString();
-              final level = (s['level'] ?? 'Beginner').toString();
-              final skillTheme = _skillThemeForSession(s);
-
               final passed = _coveredSessionIds.contains(sessionId);
               final statusText = passed ? 'Passed' : 'Coming';
-
               final hwBlocks = _parseHomework(hw);
               final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+
+              Widget section({required String label, required String value}) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: UiK.uiBorder.withValues(alpha: 0.85),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: UiK.mainText,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(value, style: UiK.subtleText()),
+                    ],
+                  ),
+                );
+              }
 
               return Container(
                 decoration: BoxDecoration(
@@ -5451,135 +5523,64 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         ),
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(14),
                               gradient: const LinearGradient(
                                 colors: [Color(0xFF052B66), Color(0xFF001A4F)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                             ),
-                            child: Row(
+                            child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  width: 96,
-                                  height: 96,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: skillTheme.color.withValues(
-                                        alpha: 0.85,
-                                      ),
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    skillTheme.icon,
+                                Text(
+                                  title.isEmpty ? 'Session' : title,
+                                  style: const TextStyle(
                                     color: Colors.white,
-                                    size: 44,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 20,
                                   ),
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        skillTheme.label,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 20,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        unitTitle.isEmpty ? 'Unit' : unitTitle,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      _miniChip(
-                                        icon: passed
-                                            ? Icons.check_rounded
-                                            : Icons.schedule_rounded,
-                                        text: statusText,
-                                        fg: Colors.white,
-                                        bg: Colors.white.withValues(
-                                          alpha: 0.18,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        objective.isEmpty
-                                            ? 'Students will practice this session skills.'
-                                            : objective,
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.92,
-                                          ),
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          _miniChip(
-                                            icon: Icons.timer_outlined,
-                                            text: '$duration min',
-                                            fg: Colors.white,
-                                            bg: Colors.white.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                          ),
-                                          _miniChip(
-                                            icon: Icons.bar_chart_rounded,
-                                            text: level,
-                                            fg: Colors.white,
-                                            bg: Colors.white.withValues(
-                                              alpha: 0.18,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                                const SizedBox(height: 6),
+                                Text(
+                                  unitTitle.isEmpty ? 'Unit' : unitTitle,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w700,
                                   ),
+                                ),
+                                const SizedBox(height: 8),
+                                _miniChip(
+                                  icon: passed
+                                      ? Icons.check_rounded
+                                      : Icons.schedule_rounded,
+                                  text: statusText,
+                                  fg: Colors.white,
+                                  bg: Colors.white.withValues(alpha: 0.18),
                                 ),
                               ],
                             ),
                           ),
                           const SizedBox(height: 12),
-                          _sessionDetailTile(
-                            accent: const Color(0xFF1FB7D5),
-                            icon: Icons.gps_fixed_rounded,
-                            title: 'Learning Outcome',
-                            text: objective.isEmpty
+                          section(
+                            label: 'Learning Outcome',
+                            value: objective.isEmpty
                                 ? 'Students will understand and practice the topic.'
                                 : objective,
                           ),
                           const SizedBox(height: 12),
-                          _sessionDetailTile(
-                            accent: const Color(0xFFFF6C20),
-                            icon: Icons.assignment_rounded,
-                            title: 'Homework',
-                            text: hw.isEmpty
+                          section(
+                            label: 'Homework',
+                            value: hw.isEmpty
                                 ? 'No homework for this session.'
                                 : hwBlocks.first.lines.join(' '),
                           ),
                           const SizedBox(height: 12),
-                          _sessionDetailTile(
-                            accent: const Color(0xFF1F9AC5),
-                            icon: Icons.menu_book_rounded,
-                            title: 'Session Content',
-                            text: content.isEmpty
+                          section(
+                            label: 'Session Content',
+                            value: content.isEmpty
                                 ? 'Session content will be added soon.'
                                 : content,
                           ),
@@ -5587,66 +5588,31 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: UiK.uiBorder.withValues(alpha: 0.85),
                               ),
                               color: const Color(0xFFF7FAFF),
                             ),
-                            child: Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const CircleAvatar(
-                                  radius: 24,
-                                  backgroundColor: Color(0xFF0B4DBA),
-                                  child: Icon(
-                                    Icons.headset_mic_rounded,
-                                    color: Colors.white,
+                                const Text(
+                                  'Need help with this lesson?',
+                                  style: TextStyle(
+                                    color: UiK.mainText,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                const Expanded(
-                                  child: Text(
-                                    'Contact Teacher\nHave a question or need help with this session?',
-                                    style: TextStyle(
-                                      color: UiK.mainText,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.3,
-                                    ),
-                                  ),
-                                ),
-                                OutlinedButton.icon(
+                                const SizedBox(height: 8),
+                                OutlinedButton(
                                   onPressed: _mailingTeacher
                                       ? null
                                       : _mailTeacherDirectly,
-                                  icon: const Icon(Icons.mail_outline_rounded),
-                                  label: const Text('Contact Teacher'),
+                                  child: const Text('Contact Teacher'),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () => Navigator.pop(context),
-                                  icon: const Icon(
-                                    Icons.bookmark_border_rounded,
-                                  ),
-                                  label: const Text('Bookmark Lesson'),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: UiK.actionOrange,
-                                  ),
-                                  child: const Text('Continue Learning'),
-                                ),
-                              ),
-                            ],
                           ),
                         ],
                       ),
