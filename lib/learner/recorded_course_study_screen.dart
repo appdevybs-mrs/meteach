@@ -39,10 +39,14 @@ class RecordedCourseStudyScreen extends StatefulWidget {
     super.key,
     required this.courseKey,
     required this.courseData,
+    this.embedded = false,
+    this.showOverviewCard = true,
   });
 
   final String courseKey;
   final Map<String, dynamic> courseData;
+  final bool embedded;
+  final bool showOverviewCard;
 
   @override
   State<RecordedCourseStudyScreen> createState() =>
@@ -804,97 +808,183 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Widget _buildUnitProgressTrack() {
     final moduleGroups = _unitsByModule.values.toList();
-    final unitNodes = _units;
-    final lessonNodes = _flatSessions.map((e) => e.session).toList();
-    final lessonSplitIndex = (lessonNodes.length / 2).ceil();
-    final lessonTopRow = lessonNodes.take(lessonSplitIndex).toList();
-    final lessonBottomRow = lessonNodes.skip(lessonSplitIndex).toList();
+    final totalModules = moduleGroups.length;
+    final doneModules = moduleGroups.where((units) {
+      return units.isNotEmpty && _moduleCompletedUnits(units) == units.length;
+    }).length;
+    final totalUnits = _units.length;
+    final doneUnits = _units.where(_isUnitCompleted).length;
+    final allSessions = _flatSessions.map((e) => e.session).toList();
+    final totalLessons = allSessions.length;
+    final doneLessons = allSessions.where(_isSessionCompleted).length;
 
-    Widget buildNode({
-      required bool done,
-      required double size,
-      required Color doneColor,
-    }) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: done ? doneColor : Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: done ? doneColor : const Color(0xFF94A3B8),
-            width: done ? 1.5 : 1.2,
-          ),
+    final modulesValue = totalModules == 0
+        ? 0.0
+        : (doneModules / totalModules).clamp(0.0, 1.0);
+    final unitsValue = totalUnits == 0
+        ? 0.0
+        : (doneUnits / totalUnits).clamp(0.0, 1.0);
+    final lessonsValue = totalLessons == 0
+        ? 0.0
+        : (doneLessons / totalLessons).clamp(0.0, 1.0);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 340;
+        final size = isNarrow ? 118.0 : 132.0;
+        return Column(
+          children: [
+            Center(
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: 1,
+                      strokeWidth: 11,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    CircularProgressIndicator(
+                      value: modulesValue,
+                      strokeWidth: 11,
+                      backgroundColor: Colors.transparent,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFFEA580C),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: CircularProgressIndicator(
+                        value: 1,
+                        strokeWidth: 8,
+                        backgroundColor: const Color(0xFFE2E8F0),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFFE2E8F0),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: CircularProgressIndicator(
+                        value: unitsValue,
+                        strokeWidth: 8,
+                        backgroundColor: Colors.transparent,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(26),
+                      child: CircularProgressIndicator(
+                        value: 1,
+                        strokeWidth: 6,
+                        backgroundColor: const Color(0xFFE2E8F0),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFFE2E8F0),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(26),
+                      child: CircularProgressIndicator(
+                        value: lessonsValue,
+                        strokeWidth: 6,
+                        strokeCap: StrokeCap.round,
+                        backgroundColor: Colors.transparent,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFF16A34A),
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${(modulesValue * 100).round()}%',
+                            style: const TextStyle(
+                              color: Color(0xFFEA580C),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            '${(unitsValue * 100).round()}%',
+                            style: const TextStyle(
+                              color: Color(0xFF0284C7),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            '${(lessonsValue * 100).round()}%',
+                            style: const TextStyle(
+                              color: Color(0xFF15803D),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                _legendPill(
+                  label: 'Modules',
+                  pct: (modulesValue * 100).round(),
+                  color: const Color(0xFFEA580C),
+                ),
+                _legendPill(
+                  label: 'Units',
+                  pct: (unitsValue * 100).round(),
+                  color: const Color(0xFF0284C7),
+                ),
+                _legendPill(
+                  label: 'Lessons',
+                  pct: (lessonsValue * 100).round(),
+                  color: const Color(0xFF15803D),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _legendPill({
+    required String label,
+    required int pct,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$label $pct%',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 11.5,
         ),
-      );
-    }
-
-    Widget buildDotRow(List<Widget> dots) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: dots),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            minHeight: 5,
-            value: _progressValue.clamp(0, 1),
-            backgroundColor: const Color(0xFFE2E8F0),
-            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        buildDotRow([
-          for (final units in moduleGroups) ...[
-            buildNode(
-              done:
-                  _moduleCompletedUnits(units) == units.length &&
-                  units.isNotEmpty,
-              size: 12,
-              doneColor: const Color(0xFFEA580C),
-            ),
-            const SizedBox(width: 5),
-          ],
-        ]),
-        const SizedBox(height: 6),
-        buildDotRow([
-          for (final unit in unitNodes) ...[
-            buildNode(
-              done: _isUnitCompleted(unit),
-              size: 9,
-              doneColor: const Color(0xFF0EA5E9),
-            ),
-            const SizedBox(width: 4),
-          ],
-        ]),
-        const SizedBox(height: 6),
-        buildDotRow([
-          for (final session in lessonTopRow) ...[
-            buildNode(
-              done: _isSessionCompleted(session),
-              size: 6,
-              doneColor: const Color(0xFF16A34A),
-            ),
-            const SizedBox(width: 3),
-          ],
-        ]),
-        const SizedBox(height: 4),
-        buildDotRow([
-          for (final session in lessonBottomRow) ...[
-            buildNode(
-              done: _isSessionCompleted(session),
-              size: 6,
-              doneColor: const Color(0xFF16A34A),
-            ),
-            const SizedBox(width: 3),
-          ],
-        ]),
-      ],
+      ),
     );
   }
 
@@ -3074,16 +3164,22 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        width: 360,
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 8, 18),
-                          children: [_buildTopOverviewCard()],
+                      if (widget.showOverviewCard)
+                        SizedBox(
+                          width: 360,
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(12, 10, 8, 18),
+                            children: [_buildTopOverviewCard()],
+                          ),
                         ),
-                      ),
                       Expanded(
                         child: ListView(
-                          padding: const EdgeInsets.fromLTRB(8, 10, 12, 18),
+                          padding: EdgeInsets.fromLTRB(
+                            widget.showOverviewCard ? 8 : 12,
+                            10,
+                            12,
+                            18,
+                          ),
                           children: [_buildUnitsList()],
                         ),
                       ),
@@ -3097,14 +3193,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       isNarrow ? 16 : 18,
                     ),
                     children: [
-                      _buildTopOverviewCard(),
-                      const SizedBox(height: 10),
+                      if (widget.showOverviewCard) ...[
+                        _buildTopOverviewCard(),
+                        const SizedBox(height: 10),
+                      ],
                       _buildUnitsList(),
                     ],
                   ),
           ],
         ),
       );
+    }
+
+    if (widget.embedded) {
+      return content;
     }
 
     return Scaffold(
