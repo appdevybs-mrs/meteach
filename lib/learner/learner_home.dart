@@ -41,6 +41,20 @@ import '../services/learner_join_signal_service.dart';
 import '../services/story_preload_service.dart';
 import '../services/window_access_service.dart';
 
+Future<String> _resolveLearnerUidForAuth(
+  DatabaseReference db,
+  String authUid,
+) async {
+  final clean = authUid.trim();
+  if (clean.isEmpty) return '';
+  try {
+    final snap = await db.child('users/$clean/uid').get();
+    final canonical = (snap.value ?? '').toString().trim();
+    if (canonical.isNotEmpty) return canonical;
+  } catch (_) {}
+  return clean;
+}
+
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
 
@@ -628,28 +642,47 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   Future<List<_CourseProgressItem>>? _progressFuture;
   Future<bool>? _hasFlexibleBookableCourseFuture;
-  Future<_JoinFabPayload?>? _joinFabFuture;
+  final ValueNotifier<_JoinFabPayload?> _joinFabPayload =
+      ValueNotifier<_JoinFabPayload?>(null);
   Timer? _progressRefreshTimer;
   Timer? _joinFabRefreshTimer;
+  List<_CourseProgressItem> _cachedProgressItems =
+      const <_CourseProgressItem>[];
+  bool _hasLoadedProgressOnce = false;
+  bool? _cachedHasFlexibleBookableCourse;
 
   @override
   void initState() {
     super.initState();
-    _progressFuture = _loadProgressItems();
-    _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse();
-    _joinFabFuture = _findJoinFabPayload();
+    _progressFuture = _loadProgressItems().then((items) {
+      _cachedProgressItems = items;
+      _hasLoadedProgressOnce = true;
+      return items;
+    });
+    _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse().then((v) {
+      _cachedHasFlexibleBookableCourse = v;
+      return v;
+    });
+    unawaited(_refreshJoinFabPayload());
     _progressRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!mounted) return;
       setState(() {
-        _progressFuture = _loadProgressItems();
-        _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse();
+        _progressFuture = _loadProgressItems().then((items) {
+          _cachedProgressItems = items;
+          _hasLoadedProgressOnce = true;
+          return items;
+        });
+        _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse().then((
+          v,
+        ) {
+          _cachedHasFlexibleBookableCourse = v;
+          return v;
+        });
       });
     });
     _joinFabRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!mounted) return;
-      setState(() {
-        _joinFabFuture = _findJoinFabPayload();
-      });
+      unawaited(_refreshJoinFabPayload());
     });
   }
 
@@ -657,7 +690,14 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   void dispose() {
     _progressRefreshTimer?.cancel();
     _joinFabRefreshTimer?.cancel();
+    _joinFabPayload.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshJoinFabPayload() async {
+    final payload = await _findJoinFabPayload();
+    if (!mounted) return;
+    _joinFabPayload.value = payload;
   }
 
   String _joinTwo(int n) => n < 10 ? '0$n' : '$n';
@@ -880,8 +920,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   }
 
   Future<_JoinFabPayload?> _findJoinFabPayload() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return null;
+    final authUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (authUid.isEmpty) return null;
+    final uid = await _resolveLearnerUidForAuth(_db, authUid);
 
     final courses = await _loadJoinFabCourses();
     if (courses.isEmpty) return null;
@@ -1099,9 +1140,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             .toLowerCase();
 
     if (variant == 'recorded') return 'Recorded course';
-    if (variant == 'flexible' || variant == 'online') {
-      return 'Flexible course (Flexible)';
-    }
+    if (variant == 'flexible' || variant == 'online') return 'Flexible course';
     if (variant == 'private' || variant == 'live') {
       if (studyMode == 'online') return 'Private course (Online)';
       if (studyMode == 'inclass' ||
@@ -1110,7 +1149,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           studyMode == 'in class') {
         return 'Private course (In-Class)';
       }
-      return 'Private course (Private)';
+      return 'Private course';
     }
     if (variant == 'inclass' ||
         variant == 'in_class' ||
@@ -2109,12 +2148,16 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               const SizedBox(height: 16),
               FutureBuilder<bool>(
                 future: _hasFlexibleBookableCourseFuture,
+                initialData: _cachedHasFlexibleBookableCourse,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
-                    return const SizedBox.shrink();
+                    if (_cachedHasFlexibleBookableCourse == null) {
+                      return const SizedBox.shrink();
+                    }
                   }
 
-                  final hasFlexible = snap.data ?? false;
+                  final hasFlexible =
+                      snap.data ?? _cachedHasFlexibleBookableCourse ?? false;
                   if (!hasFlexible) {
                     return const SizedBox.shrink();
                   }
@@ -2136,15 +2179,18 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 key: widget.coursesListKey,
                 child: FutureBuilder<List<_CourseProgressItem>>(
                   future: _progressFuture,
+                  initialData: _cachedProgressItems,
                   builder: (context, snap) {
                     if (snap.connectionState == ConnectionState.waiting) {
-                      return _LoadingCard(
-                        palette: p,
-                        text: 'Loading your progress...',
-                      );
+                      if (!_hasLoadedProgressOnce) {
+                        return _LoadingCard(
+                          palette: p,
+                          text: 'Loading your progress...',
+                        );
+                      }
                     }
 
-                    final items = snap.data ?? const <_CourseProgressItem>[];
+                    final items = snap.data ?? _cachedProgressItems;
                     if (items.isEmpty) {
                       return _EmptyCard(
                         palette: p,
@@ -2202,10 +2248,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             left: isNarrowPhone ? 16 : null,
             right: isNarrowPhone ? 16 : 18,
             bottom: 14 + (bottomPad > 0 ? bottomPad : 0),
-            child: FutureBuilder<_JoinFabPayload?>(
-              future: _joinFabFuture,
-              builder: (context, snap) {
-                final payload = snap.data;
+            child: ValueListenableBuilder<_JoinFabPayload?>(
+              valueListenable: _joinFabPayload,
+              builder: (context, payload, _) {
                 if (payload == null) return const SizedBox.shrink();
 
                 if (isNarrowPhone) {
@@ -2442,7 +2487,11 @@ class _ProgressCard extends StatelessWidget {
   }
 
   Future<void> _notifyTeacherJoinTap(_CourseProgressItem item) async {
-    final learnerUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final authUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final learnerUid = await _resolveLearnerUidForAuth(
+      FirebaseDatabase.instance.ref(),
+      authUid,
+    );
     final teacherUid = item.teacherUid.trim();
     if (learnerUid.isEmpty || teacherUid.isEmpty) return;
     try {
@@ -3277,8 +3326,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
   }
 
   Future<List<_NextBooking>> _findMyUpcomingBookingsAcrossCourses() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) return const <_NextBooking>[];
+    final authUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (authUid.isEmpty) return const <_NextBooking>[];
+    final uid = await _resolveLearnerUidForAuth(_db, authUid);
 
     final courses = await _loadJoinableCourses();
     if (courses.isEmpty) return const <_NextBooking>[];
@@ -3767,7 +3817,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
   }
 
   Future<void> _notifyTeacherJoinTap(_NextBooking next) async {
-    final learnerUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final authUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final learnerUid = await _resolveLearnerUidForAuth(_db, authUid);
     if (learnerUid.isEmpty || next.teacherId.trim().isEmpty) return;
     try {
       final learnerName = await _myDisplayName();
@@ -4373,8 +4424,12 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   ),
                   onPressed: canJoin
                       ? () async {
-                          final uid =
+                          final authUid =
                               FirebaseAuth.instance.currentUser?.uid ?? '';
+                          final uid = await _resolveLearnerUidForAuth(
+                            _db,
+                            authUid,
+                          );
 
                           await _notifyTeacherJoinTap(next);
                           if (!context.mounted) return;
@@ -4806,8 +4861,8 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   }
 
   final me = FirebaseAuth.instance.currentUser;
-  final uid = me?.uid ?? '';
-  if (uid.isEmpty) {
+  final authUid = me?.uid ?? '';
+  if (authUid.isEmpty) {
     if (!context.mounted) return;
     AppToast.fromSnackBar(
       context,
@@ -4817,12 +4872,13 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   }
 
   final db = FirebaseDatabase.instance.ref();
+  final learnerUid = await _resolveLearnerUidForAuth(db, authUid);
   final p = _paletteFromTheme();
 
   final courses = <_BookingPickerCourse>[];
 
   try {
-    final snap = await db.child('users/$uid/courses').get();
+    final snap = await db.child('users/$authUid/courses').get();
     final v = snap.value;
 
     if (v is Map) {
@@ -4867,7 +4923,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
             : <String, dynamic>{};
 
         final attendanceSnap = await db
-            .child('booking_progress/$uid/$courseId/online_attendance')
+            .child('booking_progress/$learnerUid/$courseId/online_attendance')
             .get();
         final consumed = countPresentOnlineAttendance(attendanceSnap.value);
         final total = _resolveTotalSessions(
@@ -5823,6 +5879,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
     List<Map<String, dynamic>> courses,
   ) async {
     final db = FirebaseDatabase.instance.ref();
+    final learnerUid = await _resolveLearnerUidForAuth(db, uid);
     int undoneTotal = 0;
     final Set<String> courseKeysWithUndone = {};
 
@@ -5857,7 +5914,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
 
       try {
         final onlineSnap = await db
-            .child('booking_progress/$uid/$courseKey/online_attendance')
+            .child('booking_progress/$learnerUid/$courseKey/online_attendance')
             .get();
         if (onlineSnap.exists && onlineSnap.value is Map) {
           final onlineMap = Map<dynamic, dynamic>.from(onlineSnap.value as Map);

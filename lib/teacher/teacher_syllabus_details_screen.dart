@@ -12,6 +12,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
@@ -1408,7 +1409,7 @@ class _SessionExpansion extends StatefulWidget {
 
 class _SessionExpansionState extends State<_SessionExpansion> {
   bool _expanded = false;
-  Future<void> _openMaterials(String url) async {
+  Future<void> _openInApp(String url, {required String title}) async {
     final cleanUrl = url.trim();
     final uri = Uri.tryParse(cleanUrl);
 
@@ -1426,14 +1427,89 @@ class _SessionExpansionState extends State<_SessionExpansion> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MaterialWebViewScreen.fromUrl(
-          title: widget.session.title.trim().isEmpty
-              ? 'Material Viewer'
-              : widget.session.title.trim(),
+          title: title,
           url: cleanUrl,
           viewerMode: MaterialViewerMode.document,
         ),
       ),
     );
+  }
+
+  Future<void> _openInBrowser(String url) async {
+    final cleanUrl = url.trim();
+    final uri = Uri.tryParse(cleanUrl);
+
+    if (cleanUrl.isEmpty || uri == null) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid materials link.')),
+      );
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open this link in browser.')),
+      );
+    }
+  }
+
+  Future<void> _openMaterials(String url, {required String title}) async {
+    final cleanUrl = url.trim();
+    final uri = Uri.tryParse(cleanUrl);
+
+    if (cleanUrl.isEmpty || uri == null) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid materials link.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: const Text(
+            'Open link',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: const Text('Open this inside the app or in the browser?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'browser'),
+              child: const Text('Open in browser'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'app'),
+              child: const Text('Open in app'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || choice == null) return;
+
+    if (choice == 'browser') {
+      await _openInBrowser(cleanUrl);
+      return;
+    }
+
+    await _openInApp(cleanUrl, title: title);
   }
 
   List<_RecItem> _sessionRecs(_Session s) {
@@ -1588,7 +1664,11 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () => _openMaterials(s.materialsUrl),
+                          onPressed: () => _openMaterials(
+                            s.materialsUrl,
+                            title:
+                                'Materials • ${s.title.trim().isEmpty ? 'Session' : s.title.trim()}',
+                          ),
                           icon: const Icon(Icons.menu_book_rounded),
                           label: const Text(
                             'Open Materials',
@@ -1611,7 +1691,11 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () => _openMaterials(s.homeworkUrl),
+                          onPressed: () => _openMaterials(
+                            s.homeworkUrl,
+                            title:
+                                'Homework • ${s.title.trim().isEmpty ? 'Session' : s.title.trim()}',
+                          ),
                           icon: const Icon(Icons.assignment_rounded),
                           label: const Text(
                             'Open Homework',

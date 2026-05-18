@@ -37,10 +37,26 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   String? _error;
 
   String _uid = '';
+  String _learnerUid = '';
+  String _courseId = '';
   List<Map<String, dynamic>> _items = [];
   final Set<String> _expanded = <String>{};
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+  Future<String> _resolveLearnerUidFromAuth(String authUid) async {
+    final clean = authUid.trim();
+    if (clean.isEmpty) return '';
+    try {
+      final snap = await _usersRef.child(clean).get();
+      if (snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final canonical = (m['uid'] ?? '').toString().trim();
+        if (canonical.isNotEmpty) return canonical;
+      }
+    } catch (_) {}
+    return clean;
+  }
+
   // ---- Helpers: shorten long text for subject/body (UI only) ----
   String _short(String s, int max) {
     final t = s.trim().replaceAll(RegExp(r'\s+'), ' ');
@@ -402,12 +418,23 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       _error = null;
       _items = [];
       _uid = '';
+      _learnerUid = '';
+      _courseId = '';
     });
 
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
+      _learnerUid = await _resolveLearnerUidFromAuth(_uid);
+
+      final courseSnap = await _usersRef
+          .child(_uid)
+          .child('courses')
+          .child(widget.courseKey)
+          .child('id')
+          .get();
+      _courseId = (courseSnap.value ?? '').toString().trim();
 
       final List<Map<String, dynamic>> list = [];
 
@@ -457,7 +484,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           final sessionId = entry.key.toString();
           final itemKey = _itemKey(source, sessionId);
           final homeworkRefPath = source == 'online'
-              ? 'booking_progress/$_uid/${widget.courseKey}/online_attendance/$sessionId/homework'
+              ? 'booking_progress/$_learnerUid/$_courseId/online_attendance/$sessionId/homework'
               : _legacyHwRefPath(sessionId);
 
           final taughtTitle = source == 'online'
@@ -526,14 +553,16 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         );
       }
 
-      final onlineSnap = await _db
-          .child('booking_progress/$_uid/${widget.courseKey}/online_attendance')
-          .get();
-      if (onlineSnap.exists && onlineSnap.value is Map) {
-        await addItemsFromMap(
-          raw: Map<String, dynamic>.from(onlineSnap.value as Map),
-          source: 'online',
-        );
+      if (_courseId.isNotEmpty) {
+        final onlineSnap = await _db
+            .child('booking_progress/$_learnerUid/$_courseId/online_attendance')
+            .get();
+        if (onlineSnap.exists && onlineSnap.value is Map) {
+          await addItemsFromMap(
+            raw: Map<String, dynamic>.from(onlineSnap.value as Map),
+            source: 'online',
+          );
+        }
       }
 
       list.sort(

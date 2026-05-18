@@ -112,6 +112,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Timer? _joinTicker;
   _TeacherMiniProfile? _teacherProfile;
   bool _mailingTeacher = false;
+  bool _showFlexibleDetails = false;
+  String? _expandedFlexibleUnitKey;
 
   @override
   void initState() {
@@ -2449,6 +2451,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final syllabusPct = totalLessons == 0
         ? 0
         : ((coveredLessons / totalLessons) * 100).round();
+    final isFlexible = _deliveryKey == 'flexible';
 
     return Scaffold(
       backgroundColor: UiK.appBg,
@@ -2473,25 +2476,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           IconButton(
             tooltip: 'Homework',
             icon: const Icon(Icons.assignment_rounded, color: UiK.actionOrange),
-            onPressed: () {
-              unawaited(
-                OfflineActionGuard.runExclusive(
-                  context,
-                  'learner.course_detail.homework.${widget.courseKey}',
-                  () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => LearnerHomeworkScreen(
-                          courseKey: widget.courseKey,
-                          courseTitle: _courseTitle,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
+            onPressed: _openHomework,
           ),
           IconButton(
             tooltip: 'Refresh',
@@ -2499,15 +2484,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             onPressed: _busy ? null : _load,
           ),
         ],
-        bottom: TabBar(
-          controller: _tab,
-          labelColor: UiK.primaryBlue,
-          indicatorColor: UiK.actionOrange,
-          tabs: const [
-            Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
-            Tab(icon: Icon(Icons.insights_rounded), text: 'Progress'),
-          ],
-        ),
+        bottom: isFlexible
+            ? null
+            : TabBar(
+                controller: _tab,
+                labelColor: UiK.primaryBlue,
+                indicatorColor: UiK.actionOrange,
+                tabs: const [
+                  Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
+                  Tab(icon: Icon(Icons.insights_rounded), text: 'Progress'),
+                ],
+              ),
       ),
       body: learnerWebBodyFrame(
         context: context,
@@ -2529,12 +2516,76 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ),
                   ),
                 )
-              : (desktopWorkspace
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: TabBarView(
+              : (isFlexible
+                    ? _flexibleMergedBody(
+                        desktopWorkspace: desktopWorkspace,
+                        meetingsHeld: meetingsHeld,
+                        present: present,
+                        attPct: attPct,
+                        sessionsConsumed: sessionsConsumed,
+                        syllabusPct: syllabusPct,
+                        coveredLessons: coveredLessons,
+                        totalLessons: totalLessons,
+                      )
+                    : (desktopWorkspace
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: TabBarView(
+                                    controller: _tab,
+                                    children: [
+                                      _paymentTab(
+                                        sessionsPassed: sessionsConsumed,
+                                        attPct: attPct,
+                                        present: present,
+                                        total: meetingsHeld,
+                                      ),
+                                      _progressTab(
+                                        meetingsHeld: meetingsHeld,
+                                        plannedMeetings: _plannedMeetings,
+                                        syllabusPct: syllabusPct,
+                                        coveredLessons: coveredLessons,
+                                        totalLessons: totalLessons,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  width: 1,
+                                  color: UiK.uiBorder.withValues(alpha: 0.8),
+                                ),
+                                SizedBox(
+                                  width: 320,
+                                  child: ListView(
+                                    padding: const EdgeInsets.all(16),
+                                    children: [
+                                      _desktopSummaryCard(
+                                        title: 'Meetings held',
+                                        value: '$meetingsHeld',
+                                        subtitle:
+                                            '$present present • $attPct% attendance',
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _desktopSummaryCard(
+                                        title: 'Lessons covered',
+                                        value: '$coveredLessons/$totalLessons',
+                                        subtitle:
+                                            'Syllabus progress: $syllabusPct%',
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _desktopSummaryCard(
+                                        title: 'Sessions consumed',
+                                        value: '$sessionsConsumed',
+                                        subtitle:
+                                            'Used in payment and completion tracking',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : TabBarView(
                               controller: _tab,
                               children: [
                                 _paymentTab(
@@ -2551,62 +2602,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                   totalLessons: totalLessons,
                                 ),
                               ],
-                            ),
-                          ),
-                          Container(
-                            width: 1,
-                            color: UiK.uiBorder.withValues(alpha: 0.8),
-                          ),
-                          SizedBox(
-                            width: 320,
-                            child: ListView(
-                              padding: const EdgeInsets.all(16),
-                              children: [
-                                _desktopSummaryCard(
-                                  title: 'Meetings held',
-                                  value: '$meetingsHeld',
-                                  subtitle:
-                                      '$present present • $attPct% attendance',
-                                ),
-                                const SizedBox(height: 12),
-                                _desktopSummaryCard(
-                                  title: 'Lessons covered',
-                                  value: '$coveredLessons/$totalLessons',
-                                  subtitle: 'Syllabus progress: $syllabusPct%',
-                                ),
-                                const SizedBox(height: 12),
-                                _desktopSummaryCard(
-                                  title: 'Sessions consumed',
-                                  value: '$sessionsConsumed',
-                                  subtitle:
-                                      'Used in payment and completion tracking',
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      )
-                    : TabBarView(
-                        controller: _tab,
-                        children: [
-                          _paymentTab(
-                            sessionsPassed: sessionsConsumed,
-                            attPct: attPct,
-                            present: present,
-                            total: meetingsHeld,
-                          ),
-                          _progressTab(
-                            meetingsHeld: meetingsHeld,
-                            plannedMeetings: _plannedMeetings,
-                            syllabusPct: syllabusPct,
-                            coveredLessons: coveredLessons,
-                            totalLessons: totalLessons,
-                          ),
-                        ],
-                      )),
+                            ))),
         ),
       ),
-      floatingActionButton: _busy
+      floatingActionButton: _busy || isFlexible
           ? null
           : FloatingActionButton.extended(
               onPressed: _openReviewSheet,
@@ -2614,6 +2613,507 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               icon: const Icon(Icons.reviews_rounded),
               label: const Text('Write Review'),
             ),
+    );
+  }
+
+  void _openHomework() {
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'learner.course_detail.homework.${widget.courseKey}',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LearnerHomeworkScreen(
+                courseKey: widget.courseKey,
+                courseTitle: _courseTitle,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _flexibleMergedBody({
+    required bool desktopWorkspace,
+    required int meetingsHeld,
+    required int present,
+    required int attPct,
+    required int sessionsConsumed,
+    required int syllabusPct,
+    required int coveredLessons,
+    required int totalLessons,
+  }) {
+    final units = _groupSyllabiByUnit();
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+
+    final sum = _paymentSummary;
+    final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
+    final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+    final totalPaid = _asInt(sum['totalPaid']);
+    final hasPaymentHistory = totalPaid > 0 || sessionsPaidTotal > 0;
+    final lastAmount = _asInt(sum['lastAmount']);
+    final lastMethod = (sum['lastMethod'] ?? '').toString();
+    final lastPaymentAtMs = _asInt(sum['lastPaymentAt']);
+    final lastPaymentAt = _fmtDateFromMs(lastPaymentAtMs);
+    final derivedSessionsPaidTotal = _derivedSessionsReady
+        ? _derivedSessionsPaidTotal
+        : 0;
+    final mergedSessionsPaidTotal =
+        (sessionsPaidTotal >= derivedSessionsPaidTotal)
+        ? sessionsPaidTotal
+        : derivedSessionsPaidTotal;
+    final fallbackSessionsPaid = mergedSessionsPaidTotal <= 0
+        ? (hasPaymentHistory ? 8 : 0)
+        : 0;
+    final effectiveSessionsPaidTotal = mergedSessionsPaidTotal > 0
+        ? mergedSessionsPaidTotal
+        : fallbackSessionsPaid;
+    final hasSessionBalance = effectiveSessionsPaidTotal > 0;
+    final left = effectiveSessionsPaidTotal - sessionsConsumed;
+    final leftSafe = left < 0 ? 0 : left;
+    final isFreeCourse = courseIsFreeBilling(_course);
+
+    final overdue =
+        !isFreeCourse &&
+        hasSessionBalance &&
+        isPaymentDueBySessions(
+          sessionsPaidTotal: effectiveSessionsPaidTotal,
+          sessionsPresent: sessionsConsumed,
+        );
+    final dueSoon =
+        !isFreeCourse &&
+        hasSessionBalance &&
+        isPaymentWarningBySessions(
+          sessionsPaidTotal: effectiveSessionsPaidTotal,
+          sessionsPresent: sessionsConsumed,
+          remindBeforeSession: remindBeforeSession,
+        );
+
+    final expiresAt = _studyTypeExpiresAtMs();
+    final expiryDue = !isFreeCourse && _isExpiredMs(expiresAt);
+    final expirySoon =
+        !isFreeCourse && !expiryDue && _isNearExpiryMs(expiresAt);
+
+    final plannedStr = (_plannedMeetings == null || _plannedMeetings! <= 0)
+        ? '-'
+        : '${_plannedMeetings!}';
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        12 + (bottomPad > 0 ? bottomPad : 8),
+      ),
+      children: [
+        _sectionCard(
+          icon: Icons.school_rounded,
+          title: _courseTitle,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId} • Flexible',
+                style: UiK.subtleText(),
+              ),
+              const SizedBox(height: 8),
+              Text(_compactScheduleText(), style: UiK.subtleText()),
+              if (_compactNextSessionText().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(_compactNextSessionText(), style: UiK.subtleText()),
+              ],
+              const SizedBox(height: 8),
+              _progressLine(
+                icon: Icons.payments_rounded,
+                title: 'Payment',
+                subtitle: hasSessionBalance
+                    ? 'Paid $effectiveSessionsPaidTotal • Used $sessionsConsumed • Left $leftSafe'
+                    : 'Payment data is syncing',
+                value: hasSessionBalance
+                    ? (sessionsConsumed / effectiveSessionsPaidTotal).clamp(
+                        0.0,
+                        1.0,
+                      )
+                    : 0,
+              ),
+              const SizedBox(height: 8),
+              _progressLine(
+                icon: Icons.menu_book_rounded,
+                title: 'Syllabus',
+                subtitle: 'Covered $coveredLessons/$totalLessons lessons',
+                value: totalLessons == 0
+                    ? 0
+                    : (coveredLessons / totalLessons).clamp(0.0, 1.0),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        _flexActionsRow(),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _kpi(
+              icon: Icons.how_to_reg_rounded,
+              label: 'Attend',
+              value: '$attPct%',
+            ),
+            _kpi(
+              icon: Icons.event_available_rounded,
+              label: 'Meetings',
+              value: '$meetingsHeld/$plannedStr',
+            ),
+            _kpi(
+              icon: Icons.bar_chart_rounded,
+              label: 'Syllabus',
+              value: '$syllabusPct%',
+            ),
+            _kpi(
+              icon: Icons.account_balance_wallet_rounded,
+              label: 'Left',
+              value: hasSessionBalance ? '$leftSafe' : '-',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _showFlexibleDetails = !_showFlexibleDetails;
+              });
+            },
+            icon: const Icon(Icons.error_outline_rounded, size: 18),
+            label: Text(
+              _showFlexibleDetails ? '! Details: Hide' : '! Details: Show',
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
+        if (expiryDue || expirySoon)
+          _expiryBanner(expired: expiryDue, expiresAt: expiresAt),
+        _sectionCard(
+          icon: Icons.view_module_rounded,
+          title: 'Units',
+          child: _unitsGridSection(units: units, twoPerRow: desktopWorkspace),
+        ),
+        if (_showFlexibleDetails) ...[
+          const SizedBox(height: 8),
+          _sectionCard(
+            icon: Icons.receipt_long_rounded,
+            title: 'Payment details',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sessionsTable(
+                  paid: hasSessionBalance ? effectiveSessionsPaidTotal : null,
+                  passed: sessionsConsumed,
+                  left: hasSessionBalance ? leftSafe : null,
+                ),
+                const SizedBox(height: 8),
+                if (!hasPaymentHistory)
+                  Text(
+                    'Payment history is not synced yet.',
+                    style: UiK.subtleText(),
+                  )
+                else ...[
+                  _kvRow(
+                    'Amount',
+                    lastAmount > 0 ? _fmtMoney(lastAmount) : '—',
+                  ),
+                  const SizedBox(height: 6),
+                  _kvRow('Method', lastMethod.isNotEmpty ? lastMethod : '—'),
+                  const SizedBox(height: 6),
+                  _kvRow(
+                    'Date',
+                    lastPaymentAt.isNotEmpty ? lastPaymentAt : '—',
+                  ),
+                ],
+                if (_payLoading) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(minHeight: 4),
+                ],
+                if (_deliveryKey == 'flexible') ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    hasSessionBalance
+                        ? 'Flexible access depends on session balance and expiry date.'
+                        : 'Session balance is syncing from payment records.',
+                    style: UiK.subtleText(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _sectionCard(
+            icon: Icons.how_to_reg_rounded,
+            title: 'Attendance history',
+            child: _attendanceAll.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No attendance records yet.',
+                      style: TextStyle(
+                        color: UiK.mainText,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: _attendanceAll.map(_attendanceCard).toList(),
+                  ),
+          ),
+          if (_teacherProfile != null) ...[
+            const SizedBox(height: 8),
+            _teacherContactSection(),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _progressLine({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required double value,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: UiK.actionOrange),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                color: UiK.mainText,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: value.clamp(0.0, 1.0),
+            minHeight: 8,
+            backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
+            valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(subtitle, style: UiK.subtleText()),
+      ],
+    );
+  }
+
+  Widget _flexActionsRow() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        FilledButton.icon(
+          onPressed: _openCourseBook,
+          icon: const Icon(Icons.menu_book_rounded, size: 18),
+          label: const Text('Book'),
+          style: FilledButton.styleFrom(
+            backgroundColor: UiK.primaryBlue,
+            foregroundColor: Colors.white,
+            visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
+          ),
+        ),
+        FilledButton.icon(
+          onPressed: _openHomework,
+          icon: const Icon(Icons.assignment_rounded, size: 18),
+          label: const Text('Homework'),
+          style: FilledButton.styleFrom(
+            backgroundColor: UiK.actionOrange,
+            foregroundColor: Colors.white,
+            visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: _openReviewSheet,
+          icon: const Icon(Icons.reviews_rounded, size: 18),
+          label: const Text('Review'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _mailingTeacher ? null : _mailTeacherDirectly,
+          icon: _mailingTeacher
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.mail_rounded, size: 18),
+          label: const Text('Message'),
+        ),
+      ],
+    );
+  }
+
+  Widget _unitsGridSection({
+    required List<Map<String, dynamic>> units,
+    required bool twoPerRow,
+  }) {
+    if (units.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'Syllabus not found for this course.',
+          style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800),
+        ),
+      );
+    }
+
+    final List<Widget> rows = [];
+    for (int i = 0; i < units.length; i += (twoPerRow ? 2 : 1)) {
+      final chunk = units.sublist(
+        i,
+        (i + (twoPerRow ? 2 : 1)) > units.length
+            ? units.length
+            : (i + (twoPerRow ? 2 : 1)),
+      );
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (int c = 0; c < chunk.length; c++) ...[
+              Expanded(child: _unitGridCard(chunk[c])),
+              if (twoPerRow && c == 0) const SizedBox(width: 8),
+            ],
+            if (twoPerRow && chunk.length == 1)
+              const Expanded(child: SizedBox.shrink()),
+          ],
+        ),
+      );
+      rows.add(const SizedBox(height: 8));
+
+      final expandedInChunk = chunk
+          .where((u) => _unitKey(u) == _expandedFlexibleUnitKey)
+          .toList();
+      if (expandedInChunk.isNotEmpty) {
+        final sessions =
+            (expandedInChunk.first['sessions'] as List<Map<String, dynamic>>);
+        rows.add(
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+              color: Colors.white,
+            ),
+            child: Column(children: sessions.map(_sessionLessonRow).toList()),
+          ),
+        );
+      }
+    }
+
+    return Column(children: rows);
+  }
+
+  String _unitKey(Map<String, dynamic> u) {
+    final unitId = (u['unitId'] ?? '').toString().trim();
+    if (unitId.isNotEmpty) return unitId;
+    return '${u['unitOrder'] ?? ''}|${u['unitTitle'] ?? ''}';
+  }
+
+  Widget _unitGridCard(Map<String, dynamic> u) {
+    final unitTitle = (u['unitTitle'] ?? 'Unit').toString();
+    final sessions = (u['sessions'] as List<Map<String, dynamic>>);
+    final total = sessions.length;
+    var covered = 0;
+    for (final s in sessions) {
+      final sid = (s['sessionId'] ?? '').toString();
+      if (_coveredSessionIds.contains(sid)) covered++;
+    }
+    final pct = total == 0 ? 0 : ((covered / total) * 100).round();
+    final key = _unitKey(u);
+    final isOpen = _expandedFlexibleUnitKey == key;
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _expandedFlexibleUnitKey = isOpen ? null : key;
+        });
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isOpen
+                ? UiK.actionOrange.withValues(alpha: 0.8)
+                : UiK.uiBorder.withValues(alpha: 0.85),
+          ),
+          color: Colors.white,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CircularProgressIndicator(
+                    value: total == 0 ? 0 : (covered / total).clamp(0.0, 1.0),
+                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.12),
+                    valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+                    strokeWidth: 5,
+                  ),
+                  Center(
+                    child: Text(
+                      '$pct%',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: UiK.mainText,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    unitTitle,
+                    style: const TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text('$covered/$total lessons', style: UiK.subtleText()),
+                ],
+              ),
+            ),
+            Icon(
+              isOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              color: UiK.primaryBlue,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3914,26 +4414,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: passed ? passedBorder : pendingBorder),
-          color: passed ? null : Colors.white,
-          gradient: passed
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    UiK.primaryBlue.withValues(alpha: 0.11),
-                    UiK.primaryBlue.withValues(alpha: 0.04),
-                  ],
-                )
-              : null,
-          boxShadow: passed
-              ? [
-                  BoxShadow(
-                    color: UiK.primaryBlue.withValues(alpha: 0.09),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : const [],
+          color: passed
+              ? UiK.primaryBlue.withValues(alpha: 0.05)
+              : Colors.white,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -58,6 +58,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   // Auth
+  String _authUid = '';
   String myUid = '';
   bool loading = true;
   bool booking = false;
@@ -380,6 +381,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   String _bookingKey(String courseId, String dayKey, String hhmm) =>
       '$courseId|$dayKey|$hhmm';
+
+  Future<String> _resolveLearnerUidFromAuth(String authUid) async {
+    final clean = authUid.trim();
+    if (clean.isEmpty) return '';
+    try {
+      final snap = await _db.child('users/$clean').get();
+      if (snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final canonical = (m['uid'] ?? '').toString().trim();
+        if (canonical.isNotEmpty) return canonical;
+      }
+    } catch (_) {}
+    return clean;
+  }
 
   String _bilingual(String en, String ar) => '$en\n$ar';
 
@@ -1712,7 +1727,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Future<String> _getMyFullName() async {
     try {
-      final snap = await _db.child('users/$myUid').get();
+      final snap = await _db.child('users/$_authUid').get();
       if (!snap.exists || snap.value is! Map) return 'Learner';
 
       final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
@@ -1805,8 +1820,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Future<void> _scheduleLearnerLocalReminder(_Slot slot) async {
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final settings = await LearnerNotificationSettingsService.load(uid);
+      final settings = await LearnerNotificationSettingsService.load(_authUid);
       if (!settings.masterEnabled || !settings.classEnabled) return;
 
       await NotificationService.I.init();
@@ -1884,13 +1898,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   // ================== Init ==================
 
   Future<void> _init() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
+    final authUid = FirebaseAuth.instance.currentUser?.uid;
+    if (authUid == null) {
       setState(() => loading = false);
       _toast('Not logged in.');
       return;
     }
-    myUid = uid;
+    _authUid = authUid;
+    myUid = await _resolveLearnerUidFromAuth(authUid);
 
     if (widget.courseId != null && widget.courseId!.trim().isNotEmpty) {
       courseId = widget.courseId!.trim();
@@ -1937,7 +1952,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   Future<List<_CourseChoice>> _loadLearnerBookingCourses() async {
     final out = <_CourseChoice>[];
     try {
-      final snap = await _db.child('users/$myUid/courses').get();
+      final snap = await _db.child('users/$_authUid/courses').get();
       final v = snap.value;
       if (v is! Map) return out;
 
