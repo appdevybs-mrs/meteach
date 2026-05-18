@@ -1370,13 +1370,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _bookingScreenTitle() {
     final title = courseTitle.trim();
     if (title.isEmpty) return 'Book Your Class';
-    final m = RegExp(
-      r'\b(A0|A1|A2|B1|B2|C1|C2)\b',
-      caseSensitive: false,
-    ).firstMatch(title);
-    if (m != null) {
-      return 'Book for ${m.group(1)!.toUpperCase()} $title';
-    }
     return 'Book for $title';
   }
 

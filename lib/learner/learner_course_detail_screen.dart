@@ -874,12 +874,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     setState(() => _mailingTeacher = true);
 
     try {
-      final teachers = await _loadAllTeachersForMessaging();
+      final teachers = await _loadAssignedTeachersForMessaging();
       if (!mounted) return;
       if (teachers.isEmpty) {
         AppToast.fromSnackBar(
           context,
-          const SnackBar(content: Text('No teachers available yet.')),
+          const SnackBar(
+            content: Text('No assigned teachers for this course.'),
+          ),
         );
         return;
       }
@@ -912,54 +914,55 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     }
   }
 
-  Future<List<_TeacherMiniProfile>> _loadAllTeachersForMessaging() async {
+  Future<List<_TeacherMiniProfile>> _loadAssignedTeachersForMessaging() async {
     final out = <_TeacherMiniProfile>[];
     try {
-      final snap = await _usersRef.get();
-      if (!snap.exists || snap.value is! Map) {
-        return out;
-      }
+      final classId = _classId.trim();
+      final learnerUid = _uid.trim();
+      if (classId.isEmpty || learnerUid.isEmpty) return out;
 
-      final root = Map<dynamic, dynamic>.from(snap.value as Map);
-      for (final e in root.entries) {
-        final uid = e.key.toString().trim();
-        if (uid.isEmpty || uid == _uid || e.value is! Map) continue;
-        final m = (e.value as Map).map((k, v) => MapEntry('$k', v));
-        final roleRaw = (m['role'] ?? '').toString().trim().toLowerCase();
-        final role = roleRaw == 'instructor' ? 'teacher' : roleRaw;
-        if (role != 'teacher') continue;
+      final classSnap = await _classesRef.child(classId).get();
+      if (!classSnap.exists || classSnap.value is! Map) return out;
+      final classNode = (classSnap.value as Map).map(
+        (k, v) => MapEntry('$k', v),
+      );
 
-        final first = (m['first_name'] ?? m['firstName'] ?? '')
-            .toString()
-            .trim();
-        final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
-        final full = '$first $last'.trim();
-        final email = (m['email'] ?? '').toString().trim();
-        final name = full.isNotEmpty
-            ? full
-            : (email.isNotEmpty ? email : 'Teacher');
+      final learnersRaw = classNode['learners'];
+      final learners = learnersRaw is Map
+          ? Map<dynamic, dynamic>.from(learnersRaw)
+          : <dynamic, dynamic>{};
+      if (!learners.containsKey(learnerUid)) return out;
 
-        out.add(
-          _TeacherMiniProfile(
-            uid: uid,
-            name: name,
-            photoUrl: ProfileAvatar.resolvePhotoFromMap(m),
-            aboutMe: '',
-            introVideoUrl: '',
-            socialVisible: false,
-            socialLinks: const <String, String>{},
-          ),
-        );
-      }
+      final teacherUid = _bestTeacherUidFromClassNode(classNode).trim();
+      if (teacherUid.isEmpty || teacherUid == learnerUid) return out;
 
-      final current = _teacherProfile;
-      if (current != null &&
-          current.uid.trim().isNotEmpty &&
-          !out.any((x) => x.uid == current.uid)) {
-        out.add(current);
-      }
+      final teacherSnap = await _usersRef.child(teacherUid).get();
+      if (!teacherSnap.exists || teacherSnap.value is! Map) return out;
+      final m = (teacherSnap.value as Map).map((k, v) => MapEntry('$k', v));
+      final roleRaw = (m['role'] ?? '').toString().trim().toLowerCase();
+      final role = roleRaw == 'instructor' ? 'teacher' : roleRaw;
+      if (role != 'teacher') return out;
 
-      out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final full = '$first $last'.trim();
+      final email = (m['email'] ?? '').toString().trim();
+      final name = full.isNotEmpty
+          ? full
+          : (email.isNotEmpty ? email : 'Teacher');
+
+      out.add(
+        _TeacherMiniProfile(
+          uid: teacherUid,
+          name: name,
+          photoUrl: ProfileAvatar.resolvePhotoFromMap(m),
+          aboutMe: '',
+          introVideoUrl: '',
+          socialVisible: false,
+          socialLinks: const <String, String>{},
+        ),
+      );
+
       return out;
     } catch (_) {
       return out;
@@ -2020,6 +2023,38 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           }
         } catch (_) {}
       }
+
+      if (_deliveryKey == 'recorded') {
+        try {
+          final progressSnap = await _usersRef
+              .child(_uid)
+              .child('courses')
+              .child(widget.courseKey)
+              .child('recorded_progress')
+              .get();
+          final recordedCovered = <String>{};
+          if (progressSnap.exists && progressSnap.value is Map) {
+            final pm = Map<String, dynamic>.from(progressSnap.value as Map);
+            bool asBool(dynamic v) {
+              if (v is bool) return v;
+              final s = (v ?? '').toString().trim().toLowerCase();
+              return s == 'true' || s == '1';
+            }
+
+            for (final e in pm.entries) {
+              final sid = e.key.toString().trim();
+              if (sid.isEmpty || e.value is! Map) continue;
+              final rec = Map<String, dynamic>.from(e.value as Map);
+              final doneVideo = asBool(rec['videoCompleted']);
+              final doneMaterials = asBool(rec['materialsCompleted']);
+              if (doneVideo || doneMaterials) recordedCovered.add(sid);
+            }
+          }
+          _coveredSessionIds = recordedCovered;
+        } catch (_) {
+          _coveredSessionIds = <String>{};
+        }
+      }
       // merge + sort (newest first)
       final all = <Map<String, dynamic>>[];
       all.addAll(attList);
@@ -2628,7 +2663,92 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Widget _recordedMergedBody() {
     final mq = MediaQuery.of(context);
     final compact = mq.size.width < 420;
+    final veryNarrow = mq.size.width < 370;
     final bottomPad = mq.viewPadding.bottom;
+
+    final units = _groupSyllabiByUnit();
+    final totalUnits = units.length;
+    int doneUnits = 0;
+    final moduleProgress = <String, List<Map<String, dynamic>>>{};
+    for (final u in units) {
+      final module = (u['unitOtherTitle'] ?? 'Module').toString().trim().isEmpty
+          ? 'Module'
+          : (u['unitOtherTitle'] ?? 'Module').toString().trim();
+      moduleProgress.putIfAbsent(module, () => <Map<String, dynamic>>[]).add(u);
+      final sessions =
+          (u['sessions'] as List<Map<String, dynamic>>?) ?? const [];
+      int covered = 0;
+      for (final s in sessions) {
+        final sid = (s['sessionId'] ?? '').toString();
+        if (_coveredSessionIds.contains(sid)) covered++;
+      }
+      if (sessions.isNotEmpty && covered == sessions.length) doneUnits++;
+    }
+    final totalModules = moduleProgress.length;
+    int doneModules = 0;
+    for (final entry in moduleProgress.entries) {
+      final list = entry.value;
+      bool allDone = list.isNotEmpty;
+      for (final u in list) {
+        final sessions =
+            (u['sessions'] as List<Map<String, dynamic>>?) ?? const [];
+        int covered = 0;
+        for (final s in sessions) {
+          final sid = (s['sessionId'] ?? '').toString();
+          if (_coveredSessionIds.contains(sid)) covered++;
+        }
+        if (sessions.isEmpty || covered != sessions.length) {
+          allDone = false;
+          break;
+        }
+      }
+      if (allDone) doneModules++;
+    }
+
+    final totalLessons = _syllabiFlat.length;
+    final doneLessons = _coveredSessionIds.length;
+
+    final modulePct = totalModules == 0
+        ? 0
+        : ((doneModules / totalModules) * 100).round();
+    final unitPct = totalUnits == 0
+        ? 0
+        : ((doneUnits / totalUnits) * 100).round();
+    final lessonPct = totalLessons == 0
+        ? 0
+        : ((doneLessons / totalLessons) * 100).round();
+
+    final sum = _paymentSummary;
+    final access = (_course['recorded_access'] is Map)
+        ? Map<String, dynamic>.from(_course['recorded_access'] as Map)
+        : const <String, dynamic>{};
+    final accessExpiresAt = _asInt(access['expiresAt']);
+    final summaryExpiresAt = _asInt(sum['expiresAt']);
+    final effectiveExpiresAt = accessExpiresAt > 0
+        ? accessExpiresAt
+        : summaryExpiresAt;
+    final expiryDue =
+        effectiveExpiresAt > 0 && _isExpiredMs(effectiveExpiresAt);
+    final expirySoon =
+        effectiveExpiresAt > 0 &&
+        !expiryDue &&
+        _isNearExpiryMs(effectiveExpiresAt);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final daysLeft = effectiveExpiresAt > 0
+        ? ((effectiveExpiresAt - nowMs) / Duration.millisecondsPerDay).ceil()
+        : 0;
+    final paymentPct = effectiveExpiresAt <= 0
+        ? 0
+        : expiryDue
+        ? 0
+        : expirySoon
+        ? (daysLeft <= 0 ? 0 : (daysLeft * 10).clamp(0, 70))
+        : 100;
+    final paymentDaysLabel = effectiveExpiresAt <= 0
+        ? 'No expiry'
+        : expiryDue
+        ? 'Expired'
+        : '$daysLeft days left';
 
     return Column(
       children: [
@@ -2657,7 +2777,48 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ),
               ],
             ),
-            child: _heroActionGrid(compact: true),
+            child: Column(
+              children: [
+                if (veryNarrow) ...[
+                  _recordedActionGrid(compact: true),
+                  const SizedBox(height: 10),
+                  _recordedProgressPanel(
+                    compact: compact,
+                    modulePct: modulePct,
+                    unitPct: unitPct,
+                    lessonPct: lessonPct,
+                    paymentPct: paymentPct,
+                    paymentLabel: paymentDaysLabel,
+                    onTapPayment: () =>
+                        _showRecordedPaymentDetails(paymentPct: paymentPct),
+                  ),
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(right: compact ? 8 : 12),
+                          child: _recordedActionGrid(compact: true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _recordedProgressPanel(
+                          compact: compact,
+                          modulePct: modulePct,
+                          unitPct: unitPct,
+                          lessonPct: lessonPct,
+                          paymentPct: paymentPct,
+                          paymentLabel: paymentDaysLabel,
+                          onTapPayment: () => _showRecordedPaymentDetails(
+                            paymentPct: paymentPct,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ),
         Expanded(
@@ -3078,19 +3239,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ),
               ],
               SizedBox(height: compact ? 8 : 10),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _openFlexibleBooking,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFE65C00),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              if (_deliveryKey == 'flexible')
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _openFlexibleBooking,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFE65C00),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.event_available_rounded, size: 18),
+                    label: const Text('Book Next Class'),
                   ),
-                  icon: const Icon(Icons.event_available_rounded, size: 18),
-                  label: const Text('Book Next Class'),
                 ),
-              ),
             ],
           ),
         ),
@@ -3244,6 +3406,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     return count;
   }
 
+  bool _hasHomeworkInCourse() {
+    for (final row in _attendanceAll) {
+      final hwMap = row['homework'] is Map
+          ? Map<String, dynamic>.from(row['homework'] as Map)
+          : const <String, dynamic>{};
+      final text = (hwMap['text'] ?? row['homework'] ?? '').toString().trim();
+      final fileUrl = (row['homeworkUrl'] ?? '').toString().trim();
+      if (text.isNotEmpty || _isHttpUrl(fileUrl)) return true;
+    }
+    return false;
+  }
+
   Widget _flexActionsRow({required double width}) {
     final useTwoCols = width < 340;
     final tiles = [
@@ -3374,6 +3548,179 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   Widget _heroActionGrid({required bool compact}) {
+    final hideBookTile = _deliveryKey == 'private' || _deliveryKey == 'inclass';
+    final showHomeworkTile = _hasHomeworkInCourse();
+    if (_deliveryKey == 'inclass') {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Book',
+                  subtitle: 'Session',
+                  icon: Icons.menu_book_rounded,
+                  iconBg: const Color(0xFF0E4F8A),
+                  iconFg: const Color(0xFF6FE8F1),
+                  onTap: _openCourseBook,
+                  compact: compact,
+                ),
+              ),
+              _heroDividerV(compact: compact),
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Homework',
+                  subtitle: 'Practice',
+                  icon: Icons.assignment_rounded,
+                  iconBg: const Color(0xFF58372F),
+                  iconFg: const Color(0xFFFF7A38),
+                  onTap: _openHomework,
+                  compact: compact,
+                ),
+              ),
+            ],
+          ),
+          _heroDividerH(),
+          Row(
+            children: [
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Review',
+                  subtitle: 'Progress',
+                  icon: Icons.reviews_rounded,
+                  iconBg: const Color(0xFF223E79),
+                  iconFg: const Color(0xFF52A3FF),
+                  onTap: _openReviewSheet,
+                  compact: compact,
+                ),
+              ),
+              _heroDividerV(compact: compact),
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Message',
+                  subtitle: 'Teacher',
+                  icon: Icons.mail_rounded,
+                  iconBg: const Color(0xFF4A2F77),
+                  iconFg: const Color(0xFFD279FF),
+                  onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+                  compact: compact,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    if (hideBookTile) {
+      if (!showHomeworkTile) {
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _heroActionTile(
+                    label: 'Book',
+                    subtitle: 'Session',
+                    icon: Icons.menu_book_rounded,
+                    iconBg: const Color(0xFF0E4F8A),
+                    iconFg: const Color(0xFF6FE8F1),
+                    onTap: _openCourseBook,
+                    compact: compact,
+                  ),
+                ),
+                _heroDividerV(compact: compact),
+                Expanded(
+                  child: _heroActionTile(
+                    label: 'Review',
+                    subtitle: 'Progress',
+                    icon: Icons.reviews_rounded,
+                    iconBg: const Color(0xFF223E79),
+                    iconFg: const Color(0xFF52A3FF),
+                    onTap: _openReviewSheet,
+                    compact: compact,
+                  ),
+                ),
+              ],
+            ),
+            _heroDividerH(),
+            SizedBox(
+              width: double.infinity,
+              child: _heroActionTile(
+                label: 'Message',
+                subtitle: 'Teacher',
+                icon: Icons.mail_rounded,
+                iconBg: const Color(0xFF4A2F77),
+                iconFg: const Color(0xFFD279FF),
+                onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+                compact: compact,
+              ),
+            ),
+          ],
+        );
+      }
+
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Book',
+                  subtitle: 'Session',
+                  icon: Icons.menu_book_rounded,
+                  iconBg: const Color(0xFF0E4F8A),
+                  iconFg: const Color(0xFF6FE8F1),
+                  onTap: _openCourseBook,
+                  compact: compact,
+                ),
+              ),
+              _heroDividerV(compact: compact),
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Homework',
+                  subtitle: 'Practice',
+                  icon: Icons.assignment_rounded,
+                  iconBg: const Color(0xFF58372F),
+                  iconFg: const Color(0xFFFF7A38),
+                  onTap: showHomeworkTile ? _openHomework : null,
+                  compact: compact,
+                ),
+              ),
+            ],
+          ),
+          _heroDividerH(),
+          Row(
+            children: [
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Review',
+                  subtitle: 'Progress',
+                  icon: Icons.reviews_rounded,
+                  iconBg: const Color(0xFF223E79),
+                  iconFg: const Color(0xFF52A3FF),
+                  onTap: _openReviewSheet,
+                  compact: compact,
+                ),
+              ),
+              _heroDividerV(compact: compact),
+              Expanded(
+                child: _heroActionTile(
+                  label: 'Message',
+                  subtitle: 'Teacher',
+                  icon: Icons.mail_rounded,
+                  iconBg: const Color(0xFF4A2F77),
+                  iconFg: const Color(0xFFD279FF),
+                  onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+                  compact: compact,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
     return Column(
       children: [
         Row(
@@ -3397,7 +3744,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 icon: Icons.assignment_rounded,
                 iconBg: const Color(0xFF58372F),
                 iconFg: const Color(0xFFFF7A38),
-                onTap: _openHomework,
+                onTap: showHomeworkTile ? _openHomework : null,
                 compact: compact,
               ),
             ),
@@ -3430,6 +3777,53 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  Widget _recordedActionGrid({required bool compact}) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _heroActionTile(
+                label: 'Book',
+                subtitle: 'Session',
+                icon: Icons.menu_book_rounded,
+                iconBg: const Color(0xFF0E4F8A),
+                iconFg: const Color(0xFF6FE8F1),
+                onTap: _openCourseBook,
+                compact: compact,
+              ),
+            ),
+            _heroDividerV(compact: compact),
+            Expanded(
+              child: _heroActionTile(
+                label: 'Review',
+                subtitle: 'Progress',
+                icon: Icons.reviews_rounded,
+                iconBg: const Color(0xFF223E79),
+                iconFg: const Color(0xFF52A3FF),
+                onTap: _openReviewSheet,
+                compact: compact,
+              ),
+            ),
+          ],
+        ),
+        _heroDividerH(),
+        SizedBox(
+          width: double.infinity,
+          child: _heroActionTile(
+            label: 'Message',
+            subtitle: '',
+            icon: Icons.mail_rounded,
+            iconBg: const Color(0xFF4A2F77),
+            iconFg: const Color(0xFFD279FF),
+            onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+            compact: compact,
+          ),
         ),
       ],
     );
@@ -3544,6 +3938,213 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             child: const Text('Close'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _recordedProgressPanel({
+    required bool compact,
+    required int modulePct,
+    required int unitPct,
+    required int lessonPct,
+    required int paymentPct,
+    required String paymentLabel,
+    required VoidCallback onTapPayment,
+  }) {
+    return Column(
+      children: [
+        _recordedProgressRow(
+          icon: Icons.inventory_2_rounded,
+          iconBg: const Color(0xFF0D3E7D),
+          iconColor: const Color(0xFF2CB2FF),
+          label: 'Modules',
+          pct: modulePct,
+          barColor: const Color(0xFF22B6FF),
+        ),
+        SizedBox(height: compact ? 10 : 12),
+        _recordedProgressRow(
+          icon: Icons.layers_rounded,
+          iconBg: const Color(0xFF0B5B78),
+          iconColor: const Color(0xFF22E0D2),
+          label: 'Units',
+          pct: unitPct,
+          barColor: const Color(0xFF20D6D0),
+        ),
+        SizedBox(height: compact ? 10 : 12),
+        _recordedProgressRow(
+          icon: Icons.track_changes_rounded,
+          iconBg: const Color(0xFF2F6B31),
+          iconColor: const Color(0xFF9AE63B),
+          label: 'Lessons',
+          pct: lessonPct,
+          barColor: const Color(0xFF8EDC3C),
+        ),
+        SizedBox(height: compact ? 10 : 12),
+        _recordedProgressRow(
+          icon: Icons.credit_card_rounded,
+          iconBg: const Color(0xFF6D471D),
+          iconColor: const Color(0xFFFF9A22),
+          label: 'Payment',
+          pct: paymentPct,
+          valueLabel: paymentLabel,
+          barColor: const Color(0xFFFF9800),
+          onTap: onTapPayment,
+        ),
+      ],
+    );
+  }
+
+  Widget _recordedProgressRow({
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required String label,
+    required int pct,
+    required Color barColor,
+    String? valueLabel,
+    VoidCallback? onTap,
+  }) {
+    final row = Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: iconBg,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    valueLabel ?? '$pct%',
+                    style: TextStyle(
+                      color: barColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: (pct / 100).clamp(0.0, 1.0),
+                  minHeight: 8,
+                  backgroundColor: Colors.white.withValues(alpha: 0.22),
+                  valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: row,
+      ),
+    );
+  }
+
+  Future<void> _showRecordedPaymentDetails({required int paymentPct}) async {
+    final sum = _paymentSummary;
+    final lastAmount = _asInt(sum['lastAmount']);
+    final lastMethod = (sum['lastMethod'] ?? '').toString().trim();
+    final lastPaymentAtMs = _asInt(sum['lastPaymentAt']);
+    final lastPaymentAt = _fmtDateFromMs(lastPaymentAtMs);
+    final access = (_course['recorded_access'] is Map)
+        ? Map<String, dynamic>.from(_course['recorded_access'] as Map)
+        : const <String, dynamic>{};
+    final accessExpiresAt = _asInt(access['expiresAt']);
+    final summaryExpiresAt = _asInt(sum['expiresAt']);
+    final expiresAt = accessExpiresAt > 0 ? accessExpiresAt : summaryExpiresAt;
+    final expiryLabel = expiresAt > 0
+        ? _fmtDateFromMs(expiresAt)
+        : 'No expiry set';
+    final expired = expiresAt > 0 && _isExpiredMs(expiresAt);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1D5DB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Payment details',
+                style: TextStyle(
+                  color: UiK.mainText,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _kvRow('Access expiry', expiryLabel),
+              const SizedBox(height: 8),
+              _kvRow('Payment health', '$paymentPct%'),
+              const SizedBox(height: 8),
+              _kvRow(
+                'Last amount',
+                lastAmount > 0 ? _fmtMoney(lastAmount) : '—',
+              ),
+              const SizedBox(height: 8),
+              _kvRow('Last method', lastMethod.isNotEmpty ? lastMethod : '—'),
+              const SizedBox(height: 8),
+              _kvRow(
+                'Last payment date',
+                lastPaymentAt.isNotEmpty ? lastPaymentAt : '—',
+              ),
+              _kvRow('Access status', expired ? 'Expired' : 'Active'),
+              if (expired) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Your recorded access is expired. Please renew to continue.',
+                  style: UiK.subtleText(),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -5303,7 +5904,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final title = (s['title'] ?? '').toString().trim();
     final sessionId = (s['sessionId'] ?? '').toString().trim();
     final objective = (s['objective'] ?? '').toString().trim();
-    final hw = (s['homework'] ?? '').toString().trim();
     final hasHomeworkFile = _isHttpUrl((s['homeworkUrl'] ?? '').toString());
 
     final passed = _coveredSessionIds.contains(sessionId);
@@ -5371,7 +5971,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                             ? UiK.primaryBlue.withValues(alpha: 0.10)
                             : UiK.uiBorder.withValues(alpha: 0.18),
                       ),
-                      if (hw.isNotEmpty)
+                      if (hasHomeworkFile)
                         _miniChip(
                           icon: Icons.assignment_rounded,
                           text: 'Homework',
@@ -5811,8 +6411,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           const SizedBox(width: 6),
           Text(
             text,
-            style: const TextStyle(
-              color: UiK.mainText,
+            style: TextStyle(
+              color: fg ?? UiK.mainText,
               fontWeight: FontWeight.w800,
             ),
           ),

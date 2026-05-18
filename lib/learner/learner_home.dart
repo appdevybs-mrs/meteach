@@ -492,17 +492,17 @@ class _LearnerHomeState extends State<LearnerHome> {
 
         appBar: AppBar(
           toolbarHeight: isWebDashboard ? 74 : kToolbarHeight,
-          backgroundColor: p.cardBg,
+          backgroundColor: p.primary,
           elevation: 0,
           centerTitle: false,
-          surfaceTintColor: p.cardBg,
+          surfaceTintColor: p.primary,
           leading: webDesktop
               ? null
               : IconButton(
                   icon: Icon(
                     Icons.menu_rounded,
                     key: _menuIconKey,
-                    color: p.primary,
+                    color: Colors.white,
                   ),
                   onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
@@ -516,9 +516,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                   Text(
                     'Welcome back',
                     style: TextStyle(
-                      color: p.primary,
+                      color: Colors.white,
                       fontWeight: FontWeight.w900,
-                      fontSize: isWebDashboard ? 18 : 16,
+                      fontSize: isWebDashboard ? 14 : 12,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -527,9 +527,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: p.text.withValues(alpha: 0.72),
+                      color: Colors.white,
                       fontWeight: FontWeight.w700,
-                      fontSize: isWebDashboard ? 13 : 12,
+                      fontSize: isWebDashboard ? 20 : 18,
                     ),
                   ),
                 ],
@@ -540,12 +540,12 @@ class _LearnerHomeState extends State<LearnerHome> {
             if (webDesktop)
               IconButton(
                 tooltip: 'Settings',
-                icon: Icon(Icons.settings_rounded, color: p.primary),
+                icon: Icon(Icons.settings_rounded, color: Colors.white),
                 onPressed: _openSettingsSheet,
               ),
             IconButton(
               tooltip: 'Logout',
-              icon: Icon(Icons.logout_rounded, color: p.accent),
+              icon: Icon(Icons.logout_rounded, color: Colors.white),
               onPressed: () => _logout(context),
             ),
           ],
@@ -5428,6 +5428,8 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
         final m = (e.value is Map)
             ? Map<String, dynamic>.from(e.value as Map)
             : <String, dynamic>{};
+        final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
+        final courseId = realCourseId.isNotEmpty ? realCourseId : key;
         final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
         final code = (m['course_code'] ?? '').toString();
 
@@ -5452,7 +5454,7 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
           }
         }
 
-        final catalogNode = coursesCatalog[key];
+        final catalogNode = coursesCatalog[courseId] ?? coursesCatalog[key];
         final catalogMap = (catalogNode is Map)
             ? catalogNode.map((k, vv) => MapEntry(k.toString(), vv))
             : <String, dynamic>{};
