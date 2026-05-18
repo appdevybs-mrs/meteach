@@ -2584,23 +2584,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             fontWeight: FontWeight.w900,
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Review course',
-            icon: const Icon(Icons.reviews_rounded, color: UiK.actionOrange),
-            onPressed: _busy ? null : _openReviewSheet,
-          ),
-          IconButton(
-            tooltip: 'Homework',
-            icon: const Icon(Icons.assignment_rounded, color: UiK.actionOrange),
-            onPressed: _openHomework,
-          ),
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: UiK.actionOrange),
-            onPressed: _busy ? null : _load,
-          ),
-        ],
+        actions: const [],
         bottom: null,
       ),
       body: learnerWebBodyFrame(
@@ -2635,14 +2619,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ),
         ),
       ),
-      floatingActionButton: _busy
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _openReviewSheet,
-              backgroundColor: UiK.actionOrange,
-              icon: const Icon(Icons.reviews_rounded),
-              label: const Text('Write Review'),
-            ),
+      floatingActionButton: null,
     );
   }
 
@@ -2682,6 +2659,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final width = mq.size.width;
     final textScale = mq.textScaler.scale(1.0).clamp(1.0, 1.35);
     final compact = width < 380 || textScale > 1.12;
+    final veryNarrow = width < 360;
+    final narrow = width < 430;
 
     final sum = _paymentSummary;
     final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
@@ -2734,20 +2713,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final progressValue = totalLessons == 0
         ? 0.0
         : (coveredLessons / totalLessons).clamp(0.0, 1.0);
-    final paymentUsedValue = hasSessionBalance
-        ? (sessionsConsumed / effectiveSessionsPaidTotal).clamp(0.0, 1.0)
+    final paymentLeftValue = hasSessionBalance
+        ? (leftSafe / effectiveSessionsPaidTotal).clamp(0.0, 1.0)
         : 0.0;
-    final paymentUsedPct = (paymentUsedValue * 100).round();
-    final heroTitleSize = compact ? 26.0 : 30.0;
-    final heroPad = compact ? 14.0 : 18.0;
-    final ctaHeight = compact ? 42.0 : 46.0;
-    final ringSize = compact ? 92.0 : 108.0;
-    final showContinue =
-        _deliveryKey == 'flexible' || _deliveryKey == 'recorded';
-    final continueAction = _deliveryKey == 'recorded'
-        ? _openRecordedStudy
-        : _openFlexibleBooking;
-    final paymentRingColor = _paymentProgressColor(paymentUsedValue);
+    final paymentLeftPct = (paymentLeftValue * 100).round();
+    final heroPad = compact ? 14.0 : 16.0;
+    final ctaHeight = veryNarrow ? 42.0 : (compact ? 44.0 : 48.0);
+    final ringSize = veryNarrow ? 138.0 : (compact ? 148.0 : 164.0);
+    final paymentRingColor = _paymentProgressColor(1 - paymentLeftValue);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -2760,9 +2733,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         Container(
           padding: EdgeInsets.all(heroPad),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(26),
             gradient: const LinearGradient(
-              colors: [Color(0xFF004E57), Color(0xFF0B8F99)],
+              colors: [Color(0xFF052B66), Color(0xFF001A4F)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -2777,238 +2750,279 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Welcome back!',
-                style: UiK.subtleText().copyWith(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Keep going, you are doing great!',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: heroTitleSize,
-                  height: 1.08,
-                ),
-              ),
-              SizedBox(height: compact ? 12 : 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (showContinue)
-                    Expanded(
+              SizedBox(height: compact ? 2 : 4),
+              if (veryNarrow)
+                Column(
+                  children: [
+                    _heroActionGrid(compact: compact),
+                    const SizedBox(height: 12),
+                    Center(
                       child: SizedBox(
-                        height: ctaHeight,
-                        child: FilledButton.icon(
-                          onPressed: continueAction,
-                          icon: const Icon(Icons.play_arrow_rounded),
-                          label: const Text('Continue Learning'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: UiK.primaryBlue,
-                            textStyle: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 17,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (showContinue) SizedBox(width: compact ? 10 : 14),
-                  SizedBox(
-                    width: ringSize,
-                    height: ringSize,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        CircularProgressIndicator(
-                          value: progressValue,
-                          strokeWidth: compact ? 8 : 9,
-                          backgroundColor: Colors.white.withValues(alpha: 0.18),
-                          valueColor: const AlwaysStoppedAnimation(
-                            Color(0xFF6FF1EA),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: CircularProgressIndicator(
-                            value: paymentUsedValue,
-                            strokeWidth: compact ? 6 : 7,
-                            strokeCap: StrokeCap.round,
-                            backgroundColor: Colors.transparent,
-                            valueColor: AlwaysStoppedAnimation(
-                              paymentRingColor,
-                            ),
-                          ),
-                        ),
-                        Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '$syllabusPct%',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 18,
-                                ),
-                              ),
-                              Text(
-                                'Overall',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.86),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: compact ? -2 : -4,
-                          child: Text(
-                            'Payment $paymentUsedPct%',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: paymentRingColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: compact ? 11 : 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: compact ? 8 : 12),
-              Text(
-                hasSessionBalance
-                    ? 'Paid $effectiveSessionsPaidTotal • Used $sessionsConsumed • Left $leftSafe'
-                    : 'Payment data is syncing',
-                style: UiK.subtleText().copyWith(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _flexActionsRow(),
-        const SizedBox(height: 12),
-        _sectionCard(
-          icon: Icons.insights_rounded,
-          title: 'Your Progress',
-          child: Column(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: UiK.uiBorder.withValues(alpha: 0.85),
-                  ),
-                  color: Colors.white,
-                ),
-                child: compact
-                    ? Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: GridView.count(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 1.7,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
+                        width: ringSize + 20,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            _progressStatItem(
-                              icon: Icons.how_to_reg_rounded,
-                              iconBg: const Color(0xFFE5F7EA),
-                              iconFg: const Color(0xFF1D9A3D),
-                              value: '$attPct%',
-                              label: 'Attendance',
+                            InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () => _showProgressDetailsPopup(
+                                attendance: present.clamp(0, meetingsHeld),
+                                sessions: present.clamp(0, meetingsHeld),
+                                syllabus: syllabusPct,
+                                results: hasSessionBalance ? '$leftSafe' : '-',
+                                paid: effectiveSessionsPaidTotal,
+                                used: sessionsConsumed,
+                                left: leftSafe,
+                                paymentLeftPct: paymentLeftPct,
+                              ),
+                              child: SizedBox(
+                                width: ringSize,
+                                height: ringSize,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    CircularProgressIndicator(
+                                      value: 1,
+                                      strokeWidth: compact ? 10 : 12,
+                                      backgroundColor: Colors.white.withValues(
+                                        alpha: 0.14,
+                                      ),
+                                      valueColor: AlwaysStoppedAnimation(
+                                        Colors.white.withValues(alpha: 0.14),
+                                      ),
+                                    ),
+                                    CircularProgressIndicator(
+                                      value: progressValue,
+                                      strokeWidth: compact ? 10 : 12,
+                                      backgroundColor: Colors.transparent,
+                                      valueColor: const AlwaysStoppedAnimation(
+                                        Color(0xFF57B0FF),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: CircularProgressIndicator(
+                                        value: paymentLeftValue,
+                                        strokeWidth: compact ? 6 : 7,
+                                        strokeCap: StrokeCap.round,
+                                        backgroundColor: Colors.transparent,
+                                        valueColor: AlwaysStoppedAnimation(
+                                          paymentRingColor,
+                                        ),
+                                      ),
+                                    ),
+                                    Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            '$syllabusPct%',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: compact ? 24 : 30,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Overall',
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.9,
+                                              ),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: compact ? 12 : 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                            _progressStatItem(
-                              icon: Icons.event_note_rounded,
-                              iconBg: const Color(0xFFFFEFE8),
-                              iconFg: UiK.actionOrange,
-                              value:
-                                  '${present.clamp(0, meetingsHeld)}/$meetingsHeld',
-                              label: 'Session Completed',
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () => _showProgressDetailsPopup(
+                                attendance: present.clamp(0, meetingsHeld),
+                                sessions: present.clamp(0, meetingsHeld),
+                                syllabus: syllabusPct,
+                                results: hasSessionBalance ? '$leftSafe' : '-',
+                                paid: effectiveSessionsPaidTotal,
+                                used: sessionsConsumed,
+                                left: leftSafe,
+                                paymentLeftPct: paymentLeftPct,
+                              ),
+                              child: Text(
+                                'Payment Left $paymentLeftPct%',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFFFF8B2C),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
                             ),
-                            _progressStatItem(
-                              icon: Icons.bar_chart_rounded,
-                              iconBg: const Color(0xFFEAF0FF),
-                              iconFg: const Color(0xFF3A66D8),
-                              value: '$syllabusPct%',
-                              label: 'Syllabus Covered',
-                            ),
-                            _progressStatItem(
-                              icon: Icons.account_balance_wallet_rounded,
-                              iconBg: const Color(0xFFF3EBFF),
-                              iconFg: const Color(0xFF9B58D8),
-                              value: hasSessionBalance ? '$leftSafe' : '-',
-                              label: 'Remaining Balance',
-                            ),
+                            const SizedBox(height: 2),
                           ],
                         ),
-                      )
-                    : Row(
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: EdgeInsets.only(right: compact ? 8 : 12),
+                        child: _heroActionGrid(compact: compact),
+                      ),
+                    ),
+                    SizedBox(
+                      width: ringSize,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: _progressStatItem(
-                              icon: Icons.how_to_reg_rounded,
-                              iconBg: const Color(0xFFE5F7EA),
-                              iconFg: const Color(0xFF1D9A3D),
-                              value: '$attPct%',
-                              label: 'Attendance',
+                          InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _showProgressDetailsPopup(
+                              attendance: present.clamp(0, meetingsHeld),
+                              sessions: present.clamp(0, meetingsHeld),
+                              syllabus: syllabusPct,
+                              results: hasSessionBalance ? '$leftSafe' : '-',
+                              paid: effectiveSessionsPaidTotal,
+                              used: sessionsConsumed,
+                              left: leftSafe,
+                              paymentLeftPct: paymentLeftPct,
+                            ),
+                            child: SizedBox(
+                              width: ringSize,
+                              height: ringSize,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  CircularProgressIndicator(
+                                    value: 1,
+                                    strokeWidth: compact ? 10 : 12,
+                                    backgroundColor: Colors.white.withValues(
+                                      alpha: 0.14,
+                                    ),
+                                    valueColor: AlwaysStoppedAnimation(
+                                      Colors.white.withValues(alpha: 0.14),
+                                    ),
+                                  ),
+                                  CircularProgressIndicator(
+                                    value: progressValue,
+                                    strokeWidth: compact ? 10 : 12,
+                                    backgroundColor: Colors.transparent,
+                                    valueColor: const AlwaysStoppedAnimation(
+                                      Color(0xFF57B0FF),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: CircularProgressIndicator(
+                                      value: paymentLeftValue,
+                                      strokeWidth: compact ? 6 : 7,
+                                      strokeCap: StrokeCap.round,
+                                      backgroundColor: Colors.transparent,
+                                      valueColor: AlwaysStoppedAnimation(
+                                        paymentRingColor,
+                                      ),
+                                    ),
+                                  ),
+                                  Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '$syllabusPct%',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: compact ? 26 : 30,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Overall',
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.9,
+                                            ),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: compact ? 13 : 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          _dividerV(),
-                          Expanded(
-                            child: _progressStatItem(
-                              icon: Icons.event_note_rounded,
-                              iconBg: const Color(0xFFFFEFE8),
-                              iconFg: UiK.actionOrange,
-                              value:
-                                  '${present.clamp(0, meetingsHeld)}/$meetingsHeld',
-                              label: 'Session Completed',
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: () => _showProgressDetailsPopup(
+                              attendance: present.clamp(0, meetingsHeld),
+                              sessions: present.clamp(0, meetingsHeld),
+                              syllabus: syllabusPct,
+                              results: hasSessionBalance ? '$leftSafe' : '-',
+                              paid: effectiveSessionsPaidTotal,
+                              used: sessionsConsumed,
+                              left: leftSafe,
+                              paymentLeftPct: paymentLeftPct,
+                            ),
+                            child: Text(
+                              'Payment Left $paymentLeftPct%',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFFFF8B2C),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
                             ),
                           ),
-                          _dividerV(),
-                          Expanded(
-                            child: _progressStatItem(
-                              icon: Icons.bar_chart_rounded,
-                              iconBg: const Color(0xFFEAF0FF),
-                              iconFg: const Color(0xFF3A66D8),
-                              value: '$syllabusPct%',
-                              label: 'Syllabus Covered',
-                            ),
-                          ),
-                          _dividerV(),
-                          Expanded(
-                            child: _progressStatItem(
-                              icon: Icons.account_balance_wallet_rounded,
-                              iconBg: const Color(0xFFF3EBFF),
-                              iconFg: const Color(0xFF9B58D8),
-                              value: hasSessionBalance ? '$leftSafe' : '-',
-                              label: 'Remaining Balance',
-                            ),
-                          ),
+                          const SizedBox(height: 2),
                         ],
                       ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: ctaHeight,
+                child: FilledButton.icon(
+                  onPressed: _openFlexibleBooking,
+                  icon: const Icon(Icons.event_available_rounded),
+                  label: const Text('Book Next Class'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6C20),
+                    foregroundColor: Colors.white,
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
               ),
+              if (hasSessionBalance) ...[
+                SizedBox(height: compact ? 8 : 12),
+                Text(
+                  'Paid $effectiveSessionsPaidTotal • Used $sessionsConsumed • Left $leftSafe',
+                  style: UiK.subtleText().copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+        const SizedBox(height: 12),
         const SizedBox(height: 8),
         if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
         if (expiryDue || expirySoon)
@@ -3016,7 +3030,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         _sectionCard(
           icon: Icons.view_module_rounded,
           title: 'Learning Journey',
-          child: _unitsGridSection(units: units, twoPerRow: desktopWorkspace),
+          child: _unitsGridSection(units: units, twoPerRow: false),
         ),
         if (_showFlexibleDetails) ...[
           const SizedBox(height: 8),
@@ -3161,54 +3175,422 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     )!;
   }
 
-  Widget _flexActionsRow() {
+  int _undoneHomeworkCount() {
+    int count = 0;
+    for (final a in _attendanceAll) {
+      if (a['homework'] is! Map) continue;
+      final hw = Map<String, dynamic>.from(a['homework'] as Map);
+      final text = (hw['text'] ?? '').toString().trim();
+      if (text.isEmpty) continue;
+      final submittedAt = _asInt(hw['submittedAt']);
+      final doneAt = _asInt(hw['doneAt']);
+      final reviewStatus = (hw['reviewStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final done =
+          submittedAt > 0 ||
+          doneAt > 0 ||
+          reviewStatus == 'pass' ||
+          reviewStatus == 'done' ||
+          reviewStatus == 'completed';
+      if (!done) count++;
+    }
+    return count;
+  }
+
+  Widget _flexActionsRow({required double width}) {
+    final useTwoCols = width < 340;
+    final tiles = [
+      _quickActionTile(
+        label: 'Book',
+        subtitle: 'Session',
+        icon: Icons.menu_book_rounded,
+        iconBg: const Color(0xFFDFF6F7),
+        iconFg: UiK.primaryBlue,
+        onTap: _openCourseBook,
+      ),
+      _quickActionTile(
+        label: 'Homework',
+        subtitle: 'Practice',
+        icon: Icons.assignment_rounded,
+        iconBg: const Color(0xFFFFECE5),
+        iconFg: UiK.actionOrange,
+        onTap: _openHomework,
+      ),
+      _quickActionTile(
+        label: 'Review',
+        subtitle: 'Progress',
+        icon: Icons.reviews_rounded,
+        iconBg: const Color(0xFFF2E8FF),
+        iconFg: const Color(0xFF9B58D8),
+        onTap: _openReviewSheet,
+      ),
+      _quickActionTile(
+        label: 'Message',
+        subtitle: 'Teacher',
+        icon: Icons.mail_rounded,
+        iconBg: const Color(0xFFEAF0FF),
+        iconFg: const Color(0xFF4A76E8),
+        onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+        busy: _mailingTeacher,
+      ),
+    ];
+
+    if (useTwoCols) {
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: tiles.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 1.2,
+        ),
+        itemBuilder: (_, i) => tiles[i],
+      );
+    }
+
     return Row(
       children: [
-        Expanded(
-          child: _quickActionTile(
-            label: 'Book',
-            subtitle: 'Session',
-            icon: Icons.menu_book_rounded,
-            iconBg: const Color(0xFFDFF6F7),
-            iconFg: UiK.primaryBlue,
-            onTap: _openCourseBook,
-          ),
+        for (int i = 0; i < tiles.length; i++) ...[
+          Expanded(child: tiles[i]),
+          if (i != tiles.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
+
+  Widget _heroStatsGrid({
+    required int attPct,
+    required int present,
+    required int meetingsHeld,
+    required int syllabusPct,
+    required bool hasSessionBalance,
+    required int leftSafe,
+    required bool compact,
+  }) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _heroStatItem(
+                icon: Icons.how_to_reg_rounded,
+                iconBg: const Color(0xFF1D784F),
+                iconFg: const Color(0xFF6BF3A6),
+                value: '${present.clamp(0, meetingsHeld)}',
+                label: 'Attendance',
+                compact: compact,
+              ),
+            ),
+            _heroDividerV(compact: compact),
+            Expanded(
+              child: _heroStatItem(
+                icon: Icons.event_note_rounded,
+                iconBg: const Color(0xFF63423A),
+                iconFg: const Color(0xFFFF7A38),
+                value: '${present.clamp(0, meetingsHeld)}',
+                label: 'Sessions',
+                compact: compact,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _quickActionTile(
-            label: 'Homework',
-            subtitle: 'Practice',
-            icon: Icons.assignment_rounded,
-            iconBg: const Color(0xFFFFECE5),
-            iconFg: UiK.actionOrange,
-            onTap: _openHomework,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _quickActionTile(
-            label: 'Review',
-            subtitle: 'Progress',
-            icon: Icons.reviews_rounded,
-            iconBg: const Color(0xFFF2E8FF),
-            iconFg: const Color(0xFF9B58D8),
-            onTap: _openReviewSheet,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _quickActionTile(
-            label: 'Message',
-            subtitle: 'Teacher',
-            icon: Icons.mail_rounded,
-            iconBg: const Color(0xFFEAF0FF),
-            iconFg: const Color(0xFF4A76E8),
-            onTap: _mailingTeacher ? null : _mailTeacherDirectly,
-            busy: _mailingTeacher,
-          ),
+        _heroDividerH(),
+        Row(
+          children: [
+            Expanded(
+              child: _heroStatItem(
+                icon: Icons.bar_chart_rounded,
+                iconBg: const Color(0xFF213C75),
+                iconFg: const Color(0xFF52A3FF),
+                value: '$syllabusPct%',
+                label: 'Syllabus',
+                compact: compact,
+              ),
+            ),
+            _heroDividerV(compact: compact),
+            Expanded(
+              child: _heroStatItem(
+                icon: Icons.account_balance_wallet_rounded,
+                iconBg: const Color(0xFF4A2F77),
+                iconFg: const Color(0xFFD279FF),
+                value: hasSessionBalance ? '$leftSafe' : '-',
+                label: 'Results',
+                compact: compact,
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _heroActionGrid({required bool compact}) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _heroActionTile(
+                label: 'Book',
+                subtitle: 'Session',
+                icon: Icons.menu_book_rounded,
+                iconBg: const Color(0xFF0E4F8A),
+                iconFg: const Color(0xFF6FE8F1),
+                onTap: _openCourseBook,
+                compact: compact,
+              ),
+            ),
+            _heroDividerV(compact: compact),
+            Expanded(
+              child: _heroActionTile(
+                label: 'Homework',
+                subtitle: 'Practice',
+                icon: Icons.assignment_rounded,
+                iconBg: const Color(0xFF58372F),
+                iconFg: const Color(0xFFFF7A38),
+                onTap: _openHomework,
+                compact: compact,
+              ),
+            ),
+          ],
+        ),
+        _heroDividerH(),
+        Row(
+          children: [
+            Expanded(
+              child: _heroActionTile(
+                label: 'Review',
+                subtitle: 'Progress',
+                icon: Icons.reviews_rounded,
+                iconBg: const Color(0xFF223E79),
+                iconFg: const Color(0xFF52A3FF),
+                onTap: _openReviewSheet,
+                compact: compact,
+              ),
+            ),
+            _heroDividerV(compact: compact),
+            Expanded(
+              child: _heroActionTile(
+                label: 'Message',
+                subtitle: 'Teacher',
+                icon: Icons.mail_rounded,
+                iconBg: const Color(0xFF4A2F77),
+                iconFg: const Color(0xFFD279FF),
+                onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+                compact: compact,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _heroActionTile({
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required Color iconBg,
+    required Color iconFg,
+    required VoidCallback? onTap,
+    required bool compact,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          vertical: compact ? 8 : 10,
+          horizontal: 4,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: compact ? 46 : 52,
+              height: compact ? 46 : 52,
+              decoration: BoxDecoration(
+                color: iconBg.withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconFg, size: compact ? 24 : 28),
+            ),
+            SizedBox(height: compact ? 6 : 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: compact ? 14 : 16,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontWeight: FontWeight.w700,
+                fontSize: compact ? 10 : 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showProgressDetailsPopup({
+    required int attendance,
+    required int sessions,
+    required int syllabus,
+    required String results,
+    required int paid,
+    required int used,
+    required int left,
+    required int paymentLeftPct,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Course Details'),
+        content: SizedBox(
+          width: 340,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _kvRow('Attendance', '$attendance'),
+              const SizedBox(height: 8),
+              _kvRow('Sessions', '$sessions'),
+              const SizedBox(height: 8),
+              _kvRow('Syllabus', '$syllabus%'),
+              const SizedBox(height: 8),
+              _kvRow('Results', results),
+              const SizedBox(height: 8),
+              _kvRow('Paid / Used / Left', '$paid / $used / $left'),
+              const SizedBox(height: 8),
+              _kvRow('Payment Left', '$paymentLeftPct%'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _SkillTheme _skillThemeForSession(Map<String, dynamic> s) {
+    final raw = [
+      (s['skill'] ?? '').toString(),
+      (s['title'] ?? '').toString(),
+      (s['objective'] ?? '').toString(),
+      (s['content'] ?? '').toString(),
+    ].join(' ').toLowerCase();
+
+    if (raw.contains('speak')) {
+      return const _SkillTheme(
+        'Speaking',
+        Color(0xFFB46CFF),
+        Icons.mic_rounded,
+      );
+    }
+    if (raw.contains('read')) {
+      return const _SkillTheme(
+        'Reading',
+        Color(0xFF4EA5FF),
+        Icons.menu_book_rounded,
+      );
+    }
+    if (raw.contains('writ')) {
+      return const _SkillTheme(
+        'Writing',
+        Color(0xFFFF8A3B),
+        Icons.edit_note_rounded,
+      );
+    }
+    if (raw.contains('grammar')) {
+      return const _SkillTheme(
+        'Grammar',
+        Color(0xFFFF5B5B),
+        Icons.rule_rounded,
+      );
+    }
+    if (raw.contains('vocab')) {
+      return const _SkillTheme(
+        'Vocabulary',
+        Color(0xFF52C86D),
+        Icons.translate_rounded,
+      );
+    }
+    return const _SkillTheme(
+      'Listening',
+      Color(0xFFB46CFF),
+      Icons.headphones_rounded,
+    );
+  }
+
+  Widget _sessionDetailTile({
+    required Color accent,
+    required IconData icon,
+    required String title,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+      ),
+      child: Row(
+        children: [
+          Container(width: 4, height: 64, color: accent),
+          const SizedBox(width: 10),
+          CircleAvatar(
+            backgroundColor: accent.withValues(alpha: 0.12),
+            foregroundColor: accent,
+            child: Icon(icon),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: UiK.mainText,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  text,
+                  style: UiK.subtleText(),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: accent),
+        ],
+      ),
     );
   }
 
@@ -3221,74 +3603,152 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     required VoidCallback? onTap,
     bool busy = false,
   }) {
-    final scale = MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.35);
-    final compact = scale > 1.08;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
-      child: Container(
-        height: compact ? 110 : 118,
-        padding: EdgeInsets.all(compact ? 8 : 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final w = c.maxWidth;
+          final tiny = w < 84;
+          final compact = w < 96;
+          final cardHeight = tiny ? 156.0 : (compact ? 148.0 : 138.0);
+          final iconBox = tiny ? 36.0 : (compact ? 42.0 : 54.0);
+          final iconSize = tiny ? 18.0 : (compact ? 21.0 : 26.0);
+          final titleSize = tiny ? 9.8 : (compact ? 11.0 : 13.0);
+          final subSize = tiny ? 8.8 : (compact ? 9.8 : 10.8);
+
+          return Container(
+            height: cardHeight,
+            padding: EdgeInsets.all(tiny ? 6 : (compact ? 8 : 10)),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+              boxShadow: const [],
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: compact ? 40 : 44,
-              height: compact ? 40 : 44,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Center(
-                child: busy
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: iconFg,
-                        ),
-                      )
-                    : Icon(icon, size: compact ? 21 : 23, color: iconFg),
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: iconBox,
+                  height: iconBox,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: busy
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: iconFg,
+                            ),
+                          )
+                        : Icon(icon, size: iconSize, color: iconFg),
+                  ),
+                ),
+                SizedBox(height: tiny ? 6 : 8),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.clip,
+                  textScaler: const TextScaler.linear(1.0),
+                  softWrap: true,
+                  style: TextStyle(
+                    color: UiK.mainText,
+                    fontWeight: FontWeight.w900,
+                    fontSize: titleSize,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.clip,
+                  textScaler: const TextScaler.linear(1.0),
+                  softWrap: true,
+                  style: TextStyle(
+                    color: UiK.mainText.withValues(alpha: 0.65),
+                    fontWeight: FontWeight.w700,
+                    fontSize: subSize,
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: compact ? 8 : 10),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: UiK.mainText,
-                fontWeight: FontWeight.w900,
-                fontSize: compact ? 12.5 : 13,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: UiK.mainText.withValues(alpha: 0.65),
-                fontWeight: FontWeight.w700,
-                fontSize: compact ? 9.8 : 10.2,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget _heroDividerV({required bool compact}) {
+    return Container(
+      width: 1,
+      height: compact ? 66 : 76,
+      color: Colors.white.withValues(alpha: 0.18),
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+    );
+  }
+
+  Widget _heroDividerH() {
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      color: Colors.white.withValues(alpha: 0.18),
+    );
+  }
+
+  Widget _heroStatItem({
+    required IconData icon,
+    required Color iconBg,
+    required Color iconFg,
+    required String value,
+    required String label,
+    required bool compact,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: compact ? 44 : 52,
+          height: compact ? 44 : 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: iconBg.withValues(alpha: 0.6),
+          ),
+          child: Icon(icon, size: compact ? 22 : 26, color: iconFg),
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: compact ? 18 : 22,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          maxLines: 2,
+          overflow: TextOverflow.visible,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.92),
+            fontWeight: FontWeight.w700,
+            fontSize: compact ? 11 : 12,
+            height: 1.12,
+          ),
+        ),
+      ],
     );
   }
 
@@ -3368,38 +3828,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     }
 
     final List<Widget> rows = [];
-    for (int i = 0; i < units.length; i += (twoPerRow ? 2 : 1)) {
-      final chunk = units.sublist(
-        i,
-        (i + (twoPerRow ? 2 : 1)) > units.length
-            ? units.length
-            : (i + (twoPerRow ? 2 : 1)),
-      );
-      rows.add(
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (int c = 0; c < chunk.length; c++) ...[
-              Expanded(child: _unitGridCard(chunk[c])),
-              if (twoPerRow && c == 0) const SizedBox(width: 8),
-            ],
-            if (twoPerRow && chunk.length == 1)
-              const Expanded(child: SizedBox.shrink()),
-          ],
-        ),
-      );
-      rows.add(const SizedBox(height: 8));
-
-      final expandedInChunk = chunk
-          .where((u) => _unitKey(u) == _expandedFlexibleUnitKey)
-          .toList();
-      if (expandedInChunk.isNotEmpty) {
-        final sessions =
-            (expandedInChunk.first['sessions'] as List<Map<String, dynamic>>);
+    for (int i = 0; i < units.length; i++) {
+      final item = units[i];
+      rows.add(_unitGridCard(item));
+      final isOpen = _unitKey(item) == _expandedFlexibleUnitKey;
+      if (isOpen) {
+        final sessions = (item['sessions'] as List<Map<String, dynamic>>);
         rows.add(
           Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(8),
+            margin: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
@@ -3408,6 +3846,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             child: Column(children: sessions.map(_sessionLessonRow).toList()),
           ),
         );
+      } else {
+        rows.add(const SizedBox(height: 10));
       }
     }
 
@@ -3421,6 +3861,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   Widget _unitGridCard(Map<String, dynamic> u) {
+    final w = MediaQuery.of(context).size.width;
+    final compact = w < 390;
     final unitTitle = (u['unitTitle'] ?? 'Unit').toString();
     final sessions = (u['sessions'] as List<Map<String, dynamic>>);
     final total = sessions.length;
@@ -3439,11 +3881,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           _expandedFlexibleUnitKey = isOpen ? null : key;
         });
       },
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 14,
+          vertical: compact ? 10 : 12,
+        ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: isOpen
                 ? UiK.actionOrange.withValues(alpha: 0.8)
@@ -3454,22 +3899,22 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         child: Row(
           children: [
             SizedBox(
-              width: 44,
-              height: 44,
+              width: compact ? 48 : 52,
+              height: compact ? 48 : 52,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   CircularProgressIndicator(
                     value: total == 0 ? 0 : (covered / total).clamp(0.0, 1.0),
-                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.12),
+                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
                     valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
-                    strokeWidth: 5,
+                    strokeWidth: compact ? 4.5 : 5,
                   ),
                   Center(
                     child: Text(
                       '$pct%',
-                      style: const TextStyle(
-                        fontSize: 11,
+                      style: TextStyle(
+                        fontSize: compact ? 11 : 12,
                         fontWeight: FontWeight.w900,
                         color: UiK.mainText,
                       ),
@@ -3478,28 +3923,38 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ],
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: compact ? 10 : 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     unitTitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: UiK.mainText,
                       fontWeight: FontWeight.w900,
+                      fontSize: compact ? 15 : 18,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Text('$covered/$total lessons', style: UiK.subtleText()),
+                  SizedBox(height: compact ? 4 : 6),
+                  Text(
+                    '$covered/$total lessons',
+                    style: UiK.subtleText().copyWith(
+                      fontSize: compact ? 12 : 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
             ),
             Icon(
-              isOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              isOpen
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
               color: UiK.primaryBlue,
+              size: compact ? 24 : 28,
             ),
           ],
         ),
@@ -4943,6 +5398,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               final objective = (s['objective'] ?? '').toString().trim();
               final content = (s['content'] ?? '').toString().trim();
               final hw = (s['homework'] ?? '').toString().trim();
+              final duration = (s['duration'] ?? s['durationMin'] ?? '8')
+                  .toString();
+              final level = (s['level'] ?? 'Beginner').toString();
+              final skillTheme = _skillThemeForSession(s);
 
               final passed = _coveredSessionIds.contains(sessionId);
               final statusText = passed ? 'Passed' : 'Coming';
@@ -4983,158 +5442,204 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           16 + (bottomPad > 0 ? bottomPad : 12),
                         ),
                         children: [
-                          Card(
-                            elevation: 0,
-                            color: passed
-                                ? UiK.primaryBlue.withValues(alpha: 0.06)
-                                : Colors.white,
-                            shape: UiK.cardShape(),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      CircleAvatar(
-                                        backgroundColor:
-                                            (passed
-                                                    ? UiK.primaryBlue
-                                                    : UiK.uiBorder)
-                                                .withValues(alpha: 0.10),
-                                        child: Icon(
-                                          passed
-                                              ? Icons.check_circle_rounded
-                                              : Icons.schedule_rounded,
-                                          color: passed
-                                              ? UiK.primaryBlue
-                                              : UiK.primaryBlue.withValues(
-                                                  alpha: 0.6,
-                                                ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              title.isEmpty ? 'Session' : title,
-                                              style: const TextStyle(
-                                                color: UiK.mainText,
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 16,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            if (unitTitle.isNotEmpty)
-                                              Text(
-                                                unitTitle,
-                                                style: UiK.subtleText(),
-                                              ),
-                                            const SizedBox(height: 10),
-                                            Wrap(
-                                              spacing: 8,
-                                              runSpacing: 8,
-                                              children: [
-                                                _miniChip(
-                                                  icon: passed
-                                                      ? Icons.check_rounded
-                                                      : Icons.schedule_rounded,
-                                                  text: statusText,
-                                                  fg: passed
-                                                      ? UiK.primaryBlue
-                                                      : UiK.primaryBlue
-                                                            .withValues(
-                                                              alpha: 0.75,
-                                                            ),
-                                                  bg: passed
-                                                      ? UiK.primaryBlue
-                                                            .withValues(
-                                                              alpha: 0.10,
-                                                            )
-                                                      : UiK.uiBorder.withValues(
-                                                          alpha: 0.18,
-                                                        ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF052B66), Color(0xFF001A4F)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          if (objective.isNotEmpty)
-                            _sectionCard(
-                              icon: Icons.flag_rounded,
-                              title: 'Learning Outcome',
-                              child: Text(objective, style: UiK.subtleText()),
-                            ),
-                          if (objective.isNotEmpty) const SizedBox(height: 12),
-                          _sectionCard(
-                            icon: Icons.assignment_rounded,
-                            title: 'Homework',
-                            accent: UiK.actionOrange,
-                            child: hw.isEmpty
-                                ? Text(
-                                    'No homework for this session.',
-                                    style: UiK.subtleText(),
-                                  )
-                                : Column(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 96,
+                                  height: 96,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: skillTheme.color.withValues(
+                                        alpha: 0.85,
+                                      ),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    skillTheme.icon,
+                                    color: Colors.white,
+                                    size: 44,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Row(
+                                      Text(
+                                        skillTheme.label,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        unitTitle.isEmpty ? 'Unit' : unitTitle,
+                                        style: TextStyle(
+                                          color: skillTheme.color,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      _miniChip(
+                                        icon: passed
+                                            ? Icons.check_rounded
+                                            : Icons.schedule_rounded,
+                                        text: statusText,
+                                        fg: skillTheme.color,
+                                        bg: skillTheme.color.withValues(
+                                          alpha: 0.16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        objective.isEmpty
+                                            ? 'Students will practice this session skills.'
+                                            : objective,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.92,
+                                          ),
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
                                         children: [
-                                          Expanded(
-                                            child: Text(
-                                              'Follow the tasks below and submit as instructed.',
-                                              style: UiK.subtleText(),
+                                          _miniChip(
+                                            icon: Icons.timer_outlined,
+                                            text: '$duration min',
+                                            fg: Colors.white,
+                                            bg: Colors.white.withValues(
+                                              alpha: 0.12,
                                             ),
                                           ),
-                                          IconButton(
-                                            tooltip: 'Copy homework',
-                                            icon: const Icon(
-                                              Icons.copy_rounded,
-                                              color: UiK.primaryBlue,
+                                          _miniChip(
+                                            icon: Icons.bar_chart_rounded,
+                                            text: level,
+                                            fg: skillTheme.color,
+                                            bg: skillTheme.color.withValues(
+                                              alpha: 0.16,
                                             ),
-                                            onPressed: () async {
-                                              await Clipboard.setData(
-                                                ClipboardData(text: hw),
-                                              );
-                                              if (!mounted) return;
-                                              AppToast.fromSnackBar(
-                                                context,
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Homework copied',
-                                                  ),
-                                                ),
-                                              );
-                                            },
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 10),
-                                      ..._buildHomeworkBrief(hwBlocks),
                                     ],
                                   ),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 12),
-                          if (content.isNotEmpty)
-                            _sectionCard(
-                              icon: Icons.menu_book_rounded,
-                              title: 'Session Content',
-                              child: _collapsibleText(content),
+                          _sessionDetailTile(
+                            accent: const Color(0xFF1FB7D5),
+                            icon: Icons.gps_fixed_rounded,
+                            title: 'Learning Outcome',
+                            text: objective.isEmpty
+                                ? 'Students will understand and practice the topic.'
+                                : objective,
+                          ),
+                          const SizedBox(height: 12),
+                          _sessionDetailTile(
+                            accent: const Color(0xFFFF6C20),
+                            icon: Icons.assignment_rounded,
+                            title: 'Homework',
+                            text: hw.isEmpty
+                                ? 'No homework for this session.'
+                                : hwBlocks.first.lines.join(' '),
+                          ),
+                          const SizedBox(height: 12),
+                          _sessionDetailTile(
+                            accent: const Color(0xFF1F9AC5),
+                            icon: Icons.menu_book_rounded,
+                            title: 'Session Content',
+                            text: content.isEmpty
+                                ? 'Session content will be added soon.'
+                                : content,
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: UiK.uiBorder.withValues(alpha: 0.85),
+                              ),
+                              color: const Color(0xFFF7FAFF),
                             ),
+                            child: Row(
+                              children: [
+                                const CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: Color(0xFF0B4DBA),
+                                  child: Icon(
+                                    Icons.headset_mic_rounded,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Text(
+                                    'Contact Teacher\nHave a question or need help with this session?',
+                                    style: TextStyle(
+                                      color: UiK.mainText,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _mailingTeacher
+                                      ? null
+                                      : _mailTeacherDirectly,
+                                  icon: const Icon(Icons.mail_outline_rounded),
+                                  label: const Text('Contact Teacher'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => Navigator.pop(context),
+                                  icon: const Icon(
+                                    Icons.bookmark_border_rounded,
+                                  ),
+                                  label: const Text('Bookmark Lesson'),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: UiK.actionOrange,
+                                  ),
+                                  child: const Text('Continue Learning'),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -5624,6 +6129,14 @@ class _HwBlock {
   _HwBlock copyWith({String? title, List<String>? lines}) {
     return _HwBlock(title: title ?? this.title, lines: lines ?? this.lines);
   }
+}
+
+class _SkillTheme {
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  const _SkillTheme(this.label, this.color, this.icon);
 }
 
 class _ReadMore extends StatefulWidget {
