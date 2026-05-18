@@ -32,6 +32,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'learner_homework_screen.dart';
+import 'learner_booking_screen.dart';
 import 'learner_mail_thread_screen.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
@@ -2697,9 +2698,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final expirySoon =
         !isFreeCourse && !expiryDue && _isNearExpiryMs(expiresAt);
 
-    final plannedStr = (_plannedMeetings == null || _plannedMeetings! <= 0)
-        ? '-'
-        : '${_plannedMeetings!}';
+    final progressValue = totalLessons == 0
+        ? 0.0
+        : (coveredLessons / totalLessons).clamp(0.0, 1.0);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -2709,90 +2710,228 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         12 + (bottomPad > 0 ? bottomPad : 8),
       ),
       children: [
-        _sectionCard(
-          icon: Icons.school_rounded,
-          title: _courseTitle,
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF004E57), Color(0xFF0B8F99)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId} • Flexible',
+                'Welcome back!',
+                style: UiK.subtleText().copyWith(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Keep going, you are doing great!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 30,
+                  height: 1.08,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: FilledButton.icon(
+                        onPressed: _openFlexibleBooking,
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('Continue Learning'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: UiK.primaryBlue,
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 19,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  SizedBox(
+                    width: 96,
+                    height: 96,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CircularProgressIndicator(
+                          value: progressValue,
+                          strokeWidth: 9,
+                          backgroundColor: Colors.white.withValues(alpha: 0.18),
+                          valueColor: const AlwaysStoppedAnimation(
+                            Color(0xFF6FF1EA),
+                          ),
+                        ),
+                        Center(
+                          child: Text(
+                            '$syllabusPct%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                hasSessionBalance
+                    ? 'Paid $effectiveSessionsPaidTotal • Used $sessionsConsumed • Left $leftSafe'
+                    : 'Payment data is syncing',
+                style: UiK.subtleText().copyWith(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _sectionCard(
+          icon: Icons.school_rounded,
+          title: _courseTitle,
+          trailing: SizedBox(
+            height: 36,
+            child: FilledButton(
+              onPressed: () {
+                setState(() {
+                  _showFlexibleDetails = !_showFlexibleDetails;
+                });
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFF3F6F7),
+                foregroundColor: UiK.primaryBlue,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: Text(
+                _showFlexibleDetails ? 'Hide Details' : 'View Details',
+              ),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
                 style: UiK.subtleText(),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(_compactScheduleText(), style: UiK.subtleText()),
               if (_compactNextSessionText().isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(_compactNextSessionText(), style: UiK.subtleText()),
               ],
               const SizedBox(height: 8),
-              _progressLine(
-                icon: Icons.payments_rounded,
-                title: 'Payment',
-                subtitle: hasSessionBalance
-                    ? 'Paid $effectiveSessionsPaidTotal • Used $sessionsConsumed • Left $leftSafe'
-                    : 'Payment data is syncing',
-                value: hasSessionBalance
-                    ? (sessionsConsumed / effectiveSessionsPaidTotal).clamp(
-                        0.0,
-                        1.0,
-                      )
-                    : 0,
-              ),
-              const SizedBox(height: 8),
-              _progressLine(
-                icon: Icons.menu_book_rounded,
-                title: 'Syllabus',
-                subtitle: 'Covered $coveredLessons/$totalLessons lessons',
-                value: totalLessons == 0
-                    ? 0
-                    : (coveredLessons / totalLessons).clamp(0.0, 1.0),
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF47B95D),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('Payment data is syncing', style: UiK.subtleText()),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         _flexActionsRow(),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _kpi(
-              icon: Icons.how_to_reg_rounded,
-              label: 'Attend',
-              value: '$attPct%',
-            ),
-            _kpi(
-              icon: Icons.event_available_rounded,
-              label: 'Meetings',
-              value: '$meetingsHeld/$plannedStr',
-            ),
-            _kpi(
-              icon: Icons.bar_chart_rounded,
-              label: 'Syllabus',
-              value: '$syllabusPct%',
-            ),
-            _kpi(
-              icon: Icons.account_balance_wallet_rounded,
-              label: 'Left',
-              value: hasSessionBalance ? '$leftSafe' : '-',
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
+        const SizedBox(height: 12),
+        _sectionCard(
+          icon: Icons.insights_rounded,
+          title: 'Your Progress',
+          trailing: TextButton(
             onPressed: () {
               setState(() {
                 _showFlexibleDetails = !_showFlexibleDetails;
               });
             },
-            icon: const Icon(Icons.error_outline_rounded, size: 18),
-            label: Text(
-              _showFlexibleDetails ? '! Details: Hide' : '! Details: Show',
-            ),
+            child: const Text('View Stats'),
+          ),
+          child: Column(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: UiK.uiBorder.withValues(alpha: 0.85),
+                  ),
+                  color: Colors.white,
+                ),
+                child: Row(
+                  children: [
+                    _progressStatItem(
+                      icon: Icons.how_to_reg_rounded,
+                      iconBg: const Color(0xFFE5F7EA),
+                      iconFg: const Color(0xFF1D9A3D),
+                      value: '$attPct%',
+                      label: 'Attendance',
+                    ),
+                    _dividerV(),
+                    _progressStatItem(
+                      icon: Icons.event_note_rounded,
+                      iconBg: const Color(0xFFFFEFE8),
+                      iconFg: UiK.actionOrange,
+                      value: '${present.clamp(0, meetingsHeld)}/$meetingsHeld',
+                      label: 'Session Completed',
+                    ),
+                    _dividerV(),
+                    _progressStatItem(
+                      icon: Icons.bar_chart_rounded,
+                      iconBg: const Color(0xFFEAF0FF),
+                      iconFg: const Color(0xFF3A66D8),
+                      value: '$syllabusPct%',
+                      label: 'Syllabus Covered',
+                    ),
+                    _dividerV(),
+                    _progressStatItem(
+                      icon: Icons.account_balance_wallet_rounded,
+                      iconBg: const Color(0xFFF3EBFF),
+                      iconFg: const Color(0xFF9B58D8),
+                      value: hasSessionBalance ? '$leftSafe' : '-',
+                      label: 'Remaining Balance',
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 8),
@@ -2801,7 +2940,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           _expiryBanner(expired: expiryDue, expiresAt: expiresAt),
         _sectionCard(
           icon: Icons.view_module_rounded,
-          title: 'Units',
+          title: 'Learning Journey',
           child: _unitsGridSection(units: units, twoPerRow: desktopWorkspace),
         ),
         if (_showFlexibleDetails) ...[
@@ -2840,15 +2979,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   const SizedBox(height: 8),
                   const LinearProgressIndicator(minHeight: 4),
                 ],
-                if (_deliveryKey == 'flexible') ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    hasSessionBalance
-                        ? 'Flexible access depends on session balance and expiry date.'
-                        : 'Session balance is syncing from payment records.',
-                    style: UiK.subtleText(),
-                  ),
-                ],
+                const SizedBox(height: 8),
+                Text(
+                  hasSessionBalance
+                      ? 'Flexible access depends on session balance and expiry date.'
+                      : 'Session balance is syncing from payment records.',
+                  style: UiK.subtleText(),
+                ),
               ],
             ),
           ),
@@ -2880,86 +3017,209 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
-  Widget _progressLine({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required double value,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: UiK.actionOrange),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: const TextStyle(
-                color: UiK.mainText,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
+  Future<void> _openFlexibleBooking() async {
+    if (_courseId.trim().isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('Booking is not available for this course.'),
         ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            value: value.clamp(0.0, 1.0),
-            minHeight: 8,
-            backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
-            valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await OfflineActionGuard.runExclusive(
+      context,
+      'learner.course_detail.flexible_booking.${widget.courseKey}',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LearnerBookingScreen(courseId: _courseId),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(subtitle, style: UiK.subtleText()),
-      ],
+        );
+      },
     );
   }
 
   Widget _flexActionsRow() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    return Row(
       children: [
-        FilledButton.icon(
-          onPressed: _openCourseBook,
-          icon: const Icon(Icons.menu_book_rounded, size: 18),
-          label: const Text('Book'),
-          style: FilledButton.styleFrom(
-            backgroundColor: UiK.primaryBlue,
-            foregroundColor: Colors.white,
-            visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
+        Expanded(
+          child: _quickActionTile(
+            label: 'Book',
+            subtitle: 'Session',
+            icon: Icons.menu_book_rounded,
+            iconBg: const Color(0xFFDFF6F7),
+            iconFg: UiK.primaryBlue,
+            onTap: _openCourseBook,
           ),
         ),
-        FilledButton.icon(
-          onPressed: _openHomework,
-          icon: const Icon(Icons.assignment_rounded, size: 18),
-          label: const Text('Homework'),
-          style: FilledButton.styleFrom(
-            backgroundColor: UiK.actionOrange,
-            foregroundColor: Colors.white,
-            visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _quickActionTile(
+            label: 'Homework',
+            subtitle: 'Practice',
+            icon: Icons.assignment_rounded,
+            iconBg: const Color(0xFFFFECE5),
+            iconFg: UiK.actionOrange,
+            onTap: _openHomework,
           ),
         ),
-        OutlinedButton.icon(
-          onPressed: _openReviewSheet,
-          icon: const Icon(Icons.reviews_rounded, size: 18),
-          label: const Text('Review'),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _quickActionTile(
+            label: 'Review',
+            subtitle: 'Progress',
+            icon: Icons.reviews_rounded,
+            iconBg: const Color(0xFFF2E8FF),
+            iconFg: const Color(0xFF9B58D8),
+            onTap: _openReviewSheet,
+          ),
         ),
-        OutlinedButton.icon(
-          onPressed: _mailingTeacher ? null : _mailTeacherDirectly,
-          icon: _mailingTeacher
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.mail_rounded, size: 18),
-          label: const Text('Message'),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _quickActionTile(
+            label: 'Message',
+            subtitle: 'Teacher',
+            icon: Icons.mail_rounded,
+            iconBg: const Color(0xFFEAF0FF),
+            iconFg: const Color(0xFF4A76E8),
+            onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+            busy: _mailingTeacher,
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _quickActionTile({
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required Color iconBg,
+    required Color iconFg,
+    required VoidCallback? onTap,
+    bool busy = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        height: 122,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: busy
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: iconFg,
+                        ),
+                      )
+                    : Icon(icon, size: 24, color: iconFg),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: UiK.mainText,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: UiK.mainText.withValues(alpha: 0.65),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _progressStatItem({
+    required IconData icon,
+    required Color iconBg,
+    required Color iconFg,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Column(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+              child: Icon(icon, size: 22, color: iconFg),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: const TextStyle(
+                color: UiK.mainText,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: UiK.mainText.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dividerV() {
+    return Container(
+      width: 1,
+      height: 122,
+      color: UiK.uiBorder.withValues(alpha: 0.6),
     );
   }
 
@@ -4883,6 +5143,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     required String title,
     required Widget child,
     Color? accent,
+    Widget? trailing,
   }) {
     final a = accent ?? UiK.primaryBlue;
     return Card(
@@ -4898,13 +5159,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               children: [
                 Icon(icon, size: 18, color: a),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: UiK.mainText,
-                    fontWeight: FontWeight.w900,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
+                ...?trailing == null ? null : [trailing],
               ],
             ),
             const SizedBox(height: 10),
