@@ -34,6 +34,7 @@ import 'package:video_player/video_player.dart';
 import 'learner_homework_screen.dart';
 import 'learner_booking_screen.dart';
 import 'learner_mail_thread_screen.dart';
+import 'recorded_course_study_screen.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
@@ -113,7 +114,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Timer? _joinTicker;
   _TeacherMiniProfile? _teacherProfile;
   bool _mailingTeacher = false;
-  bool _showFlexibleDetails = false;
+  final bool _showFlexibleDetails = false;
   String? _expandedFlexibleUnitKey;
 
   @override
@@ -869,29 +870,31 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   Future<void> _mailTeacherDirectly() async {
-    final teacher = _teacherProfile;
-    if (teacher == null || teacher.uid.trim().isEmpty) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Teacher is not available yet.')),
-      );
-      return;
-    }
     if (_mailingTeacher) return;
 
     setState(() => _mailingTeacher = true);
 
     try {
-      String? threadId = await _findExistingThreadWithTeacher(teacher.uid);
-      threadId ??= await _createThreadWithTeacher(teacher);
+      final teachers = await _loadAllTeachersForMessaging();
+      if (!mounted) return;
+      if (teachers.isEmpty) {
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('No teachers available yet.')),
+        );
+        return;
+      }
+      final picked = await _pickTeacherForMail(teachers);
+      if (picked == null || !mounted) return;
+      String? threadId = await _findExistingThreadWithTeacher(picked.uid);
+      threadId ??= await _createThreadWithTeacher(picked);
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => LearnerMailThreadScreen(
             threadId: threadId!,
-            peerUid: teacher.uid,
-            peerName: teacher.name,
+            peerUid: picked.uid,
+            peerName: picked.name,
             subject:
                 'Course: ${_courseTitle.trim().isEmpty ? 'Message' : _courseTitle.trim()}',
           ),
@@ -908,6 +911,121 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         setState(() => _mailingTeacher = false);
       }
     }
+  }
+
+  Future<List<_TeacherMiniProfile>> _loadAllTeachersForMessaging() async {
+    final out = <_TeacherMiniProfile>[];
+    try {
+      final snap = await _usersRef.get();
+      if (!snap.exists || snap.value is! Map) {
+        return out;
+      }
+
+      final root = Map<dynamic, dynamic>.from(snap.value as Map);
+      for (final e in root.entries) {
+        final uid = e.key.toString().trim();
+        if (uid.isEmpty || uid == _uid || e.value is! Map) continue;
+        final m = (e.value as Map).map((k, v) => MapEntry('$k', v));
+        final roleRaw = (m['role'] ?? '').toString().trim().toLowerCase();
+        final role = roleRaw == 'instructor' ? 'teacher' : roleRaw;
+        if (role != 'teacher') continue;
+
+        final first = (m['first_name'] ?? m['firstName'] ?? '')
+            .toString()
+            .trim();
+        final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+        final full = '$first $last'.trim();
+        final email = (m['email'] ?? '').toString().trim();
+        final name = full.isNotEmpty
+            ? full
+            : (email.isNotEmpty ? email : 'Teacher');
+
+        out.add(
+          _TeacherMiniProfile(
+            uid: uid,
+            name: name,
+            photoUrl: ProfileAvatar.resolvePhotoFromMap(m),
+            aboutMe: '',
+            introVideoUrl: '',
+            socialVisible: false,
+            socialLinks: const <String, String>{},
+          ),
+        );
+      }
+
+      final current = _teacherProfile;
+      if (current != null &&
+          current.uid.trim().isNotEmpty &&
+          !out.any((x) => x.uid == current.uid)) {
+        out.add(current);
+      }
+
+      out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return out;
+    } catch (_) {
+      return out;
+    }
+  }
+
+  Future<_TeacherMiniProfile?> _pickTeacherForMail(
+    List<_TeacherMiniProfile> teachers,
+  ) async {
+    return showModalBottomSheet<_TeacherMiniProfile>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (_) {
+        return SafeArea(
+          child: SizedBox(
+            height: 420,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 6, 16, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Choose teacher',
+                      style: TextStyle(
+                        color: UiK.mainText,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: teachers.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final t = teachers[i];
+                      return ListTile(
+                        leading: ProfileAvatar(
+                          photoUrl: t.photoUrl,
+                          name: t.name,
+                          radius: 18,
+                        ),
+                        title: Text(
+                          t.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: const Text('Teacher'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.pop(context, t),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   List<_TeacherSocialAction> _socialActions(_TeacherMiniProfile teacher) {
@@ -2452,8 +2570,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final syllabusPct = totalLessons == 0
         ? 0
         : ((coveredLessons / totalLessons) * 100).round();
-    final isFlexible = _deliveryKey == 'flexible';
-
     return Scaffold(
       backgroundColor: UiK.appBg,
       appBar: AppBar(
@@ -2485,17 +2601,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             onPressed: _busy ? null : _load,
           ),
         ],
-        bottom: isFlexible
-            ? null
-            : TabBar(
-                controller: _tab,
-                labelColor: UiK.primaryBlue,
-                indicatorColor: UiK.actionOrange,
-                tabs: const [
-                  Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
-                  Tab(icon: Icon(Icons.insights_rounded), text: 'Progress'),
-                ],
-              ),
+        bottom: null,
       ),
       body: learnerWebBodyFrame(
         context: context,
@@ -2517,96 +2623,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ),
                   ),
                 )
-              : (isFlexible
-                    ? _flexibleMergedBody(
-                        desktopWorkspace: desktopWorkspace,
-                        meetingsHeld: meetingsHeld,
-                        present: present,
-                        attPct: attPct,
-                        sessionsConsumed: sessionsConsumed,
-                        syllabusPct: syllabusPct,
-                        coveredLessons: coveredLessons,
-                        totalLessons: totalLessons,
-                      )
-                    : (desktopWorkspace
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: TabBarView(
-                                    controller: _tab,
-                                    children: [
-                                      _paymentTab(
-                                        sessionsPassed: sessionsConsumed,
-                                        attPct: attPct,
-                                        present: present,
-                                        total: meetingsHeld,
-                                      ),
-                                      _progressTab(
-                                        meetingsHeld: meetingsHeld,
-                                        plannedMeetings: _plannedMeetings,
-                                        syllabusPct: syllabusPct,
-                                        coveredLessons: coveredLessons,
-                                        totalLessons: totalLessons,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  width: 1,
-                                  color: UiK.uiBorder.withValues(alpha: 0.8),
-                                ),
-                                SizedBox(
-                                  width: 320,
-                                  child: ListView(
-                                    padding: const EdgeInsets.all(16),
-                                    children: [
-                                      _desktopSummaryCard(
-                                        title: 'Meetings held',
-                                        value: '$meetingsHeld',
-                                        subtitle:
-                                            '$present present • $attPct% attendance',
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _desktopSummaryCard(
-                                        title: 'Lessons covered',
-                                        value: '$coveredLessons/$totalLessons',
-                                        subtitle:
-                                            'Syllabus progress: $syllabusPct%',
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _desktopSummaryCard(
-                                        title: 'Sessions consumed',
-                                        value: '$sessionsConsumed',
-                                        subtitle:
-                                            'Used in payment and completion tracking',
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          : TabBarView(
-                              controller: _tab,
-                              children: [
-                                _paymentTab(
-                                  sessionsPassed: sessionsConsumed,
-                                  attPct: attPct,
-                                  present: present,
-                                  total: meetingsHeld,
-                                ),
-                                _progressTab(
-                                  meetingsHeld: meetingsHeld,
-                                  plannedMeetings: _plannedMeetings,
-                                  syllabusPct: syllabusPct,
-                                  coveredLessons: coveredLessons,
-                                  totalLessons: totalLessons,
-                                ),
-                              ],
-                            ))),
+              : _flexibleMergedBody(
+                  desktopWorkspace: desktopWorkspace,
+                  meetingsHeld: meetingsHeld,
+                  present: present,
+                  attPct: attPct,
+                  sessionsConsumed: sessionsConsumed,
+                  syllabusPct: syllabusPct,
+                  coveredLessons: coveredLessons,
+                  totalLessons: totalLessons,
+                ),
         ),
       ),
-      floatingActionButton: _busy || isFlexible
+      floatingActionButton: _busy
           ? null
           : FloatingActionButton.extended(
               onPressed: _openReviewSheet,
@@ -2648,7 +2677,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     required int totalLessons,
   }) {
     final units = _groupSyllabiByUnit();
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+    final mq = MediaQuery.of(context);
+    final bottomPad = mq.viewPadding.bottom;
+    final width = mq.size.width;
+    final textScale = mq.textScaler.scale(1.0).clamp(1.0, 1.35);
+    final compact = width < 380 || textScale > 1.12;
 
     final sum = _paymentSummary;
     final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
@@ -2701,6 +2734,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final progressValue = totalLessons == 0
         ? 0.0
         : (coveredLessons / totalLessons).clamp(0.0, 1.0);
+    final paymentUsedValue = hasSessionBalance
+        ? (sessionsConsumed / effectiveSessionsPaidTotal).clamp(0.0, 1.0)
+        : 0.0;
+    final paymentUsedPct = (paymentUsedValue * 100).round();
+    final heroTitleSize = compact ? 26.0 : 30.0;
+    final heroPad = compact ? 14.0 : 18.0;
+    final ctaHeight = compact ? 42.0 : 46.0;
+    final ringSize = compact ? 92.0 : 108.0;
+    final showContinue =
+        _deliveryKey == 'flexible' || _deliveryKey == 'recorded';
+    final continueAction = _deliveryKey == 'recorded'
+        ? _openRecordedStudy
+        : _openFlexibleBooking;
+    final paymentRingColor = _paymentProgressColor(paymentUsedValue);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -2711,7 +2758,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       ),
       children: [
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: EdgeInsets.all(heroPad),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
             gradient: const LinearGradient(
@@ -2738,62 +2785,102 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Keep going, you are doing great!',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
-                  fontSize: 30,
+                  fontSize: heroTitleSize,
                   height: 1.08,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: compact ? 12 : 16),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 46,
-                      child: FilledButton.icon(
-                        onPressed: _openFlexibleBooking,
-                        icon: const Icon(Icons.play_arrow_rounded),
-                        label: const Text('Continue Learning'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: UiK.primaryBlue,
-                          textStyle: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 19,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(999),
+                  if (showContinue)
+                    Expanded(
+                      child: SizedBox(
+                        height: ctaHeight,
+                        child: FilledButton.icon(
+                          onPressed: continueAction,
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Continue Learning'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: UiK.primaryBlue,
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 17,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
+                  if (showContinue) SizedBox(width: compact ? 10 : 14),
                   SizedBox(
-                    width: 96,
-                    height: 96,
+                    width: ringSize,
+                    height: ringSize,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
                         CircularProgressIndicator(
                           value: progressValue,
-                          strokeWidth: 9,
+                          strokeWidth: compact ? 8 : 9,
                           backgroundColor: Colors.white.withValues(alpha: 0.18),
                           valueColor: const AlwaysStoppedAnimation(
                             Color(0xFF6FF1EA),
                           ),
                         ),
+                        Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: CircularProgressIndicator(
+                            value: paymentUsedValue,
+                            strokeWidth: compact ? 6 : 7,
+                            strokeCap: StrokeCap.round,
+                            backgroundColor: Colors.transparent,
+                            valueColor: AlwaysStoppedAnimation(
+                              paymentRingColor,
+                            ),
+                          ),
+                        ),
                         Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '$syllabusPct%',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              Text(
+                                'Overall',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.86),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: compact ? -2 : -4,
                           child: Text(
-                            '$syllabusPct%',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            'Payment $paymentUsedPct%',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: paymentRingColor,
                               fontWeight: FontWeight.w900,
-                              fontSize: 20,
+                              fontSize: compact ? 11 : 12,
                             ),
                           ),
                         ),
@@ -2802,7 +2889,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: compact ? 8 : 12),
               Text(
                 hasSessionBalance
                     ? 'Paid $effectiveSessionsPaidTotal • Used $sessionsConsumed • Left $leftSafe'
@@ -2816,75 +2903,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           ),
         ),
         const SizedBox(height: 12),
-        _sectionCard(
-          icon: Icons.school_rounded,
-          title: _courseTitle,
-          trailing: SizedBox(
-            height: 36,
-            child: FilledButton(
-              onPressed: () {
-                setState(() {
-                  _showFlexibleDetails = !_showFlexibleDetails;
-                });
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFF3F6F7),
-                foregroundColor: UiK.primaryBlue,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: Text(
-                _showFlexibleDetails ? 'Hide Details' : 'View Details',
-              ),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
-                style: UiK.subtleText(),
-              ),
-              const SizedBox(height: 4),
-              Text(_compactScheduleText(), style: UiK.subtleText()),
-              if (_compactNextSessionText().isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(_compactNextSessionText(), style: UiK.subtleText()),
-              ],
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF47B95D),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text('Payment data is syncing', style: UiK.subtleText()),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
         _flexActionsRow(),
         const SizedBox(height: 12),
         _sectionCard(
           icon: Icons.insights_rounded,
           title: 'Your Progress',
-          trailing: TextButton(
-            onPressed: () {
-              setState(() {
-                _showFlexibleDetails = !_showFlexibleDetails;
-              });
-            },
-            child: const Text('View Stats'),
-          ),
           child: Column(
             children: [
               Container(
@@ -2895,41 +2918,93 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   ),
                   color: Colors.white,
                 ),
-                child: Row(
-                  children: [
-                    _progressStatItem(
-                      icon: Icons.how_to_reg_rounded,
-                      iconBg: const Color(0xFFE5F7EA),
-                      iconFg: const Color(0xFF1D9A3D),
-                      value: '$attPct%',
-                      label: 'Attendance',
-                    ),
-                    _dividerV(),
-                    _progressStatItem(
-                      icon: Icons.event_note_rounded,
-                      iconBg: const Color(0xFFFFEFE8),
-                      iconFg: UiK.actionOrange,
-                      value: '${present.clamp(0, meetingsHeld)}/$meetingsHeld',
-                      label: 'Session Completed',
-                    ),
-                    _dividerV(),
-                    _progressStatItem(
-                      icon: Icons.bar_chart_rounded,
-                      iconBg: const Color(0xFFEAF0FF),
-                      iconFg: const Color(0xFF3A66D8),
-                      value: '$syllabusPct%',
-                      label: 'Syllabus Covered',
-                    ),
-                    _dividerV(),
-                    _progressStatItem(
-                      icon: Icons.account_balance_wallet_rounded,
-                      iconBg: const Color(0xFFF3EBFF),
-                      iconFg: const Color(0xFF9B58D8),
-                      value: hasSessionBalance ? '$leftSafe' : '-',
-                      label: 'Remaining Balance',
-                    ),
-                  ],
-                ),
+                child: compact
+                    ? Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: GridView.count(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 1.7,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            _progressStatItem(
+                              icon: Icons.how_to_reg_rounded,
+                              iconBg: const Color(0xFFE5F7EA),
+                              iconFg: const Color(0xFF1D9A3D),
+                              value: '$attPct%',
+                              label: 'Attendance',
+                            ),
+                            _progressStatItem(
+                              icon: Icons.event_note_rounded,
+                              iconBg: const Color(0xFFFFEFE8),
+                              iconFg: UiK.actionOrange,
+                              value:
+                                  '${present.clamp(0, meetingsHeld)}/$meetingsHeld',
+                              label: 'Session Completed',
+                            ),
+                            _progressStatItem(
+                              icon: Icons.bar_chart_rounded,
+                              iconBg: const Color(0xFFEAF0FF),
+                              iconFg: const Color(0xFF3A66D8),
+                              value: '$syllabusPct%',
+                              label: 'Syllabus Covered',
+                            ),
+                            _progressStatItem(
+                              icon: Icons.account_balance_wallet_rounded,
+                              iconBg: const Color(0xFFF3EBFF),
+                              iconFg: const Color(0xFF9B58D8),
+                              value: hasSessionBalance ? '$leftSafe' : '-',
+                              label: 'Remaining Balance',
+                            ),
+                          ],
+                        ),
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: _progressStatItem(
+                              icon: Icons.how_to_reg_rounded,
+                              iconBg: const Color(0xFFE5F7EA),
+                              iconFg: const Color(0xFF1D9A3D),
+                              value: '$attPct%',
+                              label: 'Attendance',
+                            ),
+                          ),
+                          _dividerV(),
+                          Expanded(
+                            child: _progressStatItem(
+                              icon: Icons.event_note_rounded,
+                              iconBg: const Color(0xFFFFEFE8),
+                              iconFg: UiK.actionOrange,
+                              value:
+                                  '${present.clamp(0, meetingsHeld)}/$meetingsHeld',
+                              label: 'Session Completed',
+                            ),
+                          ),
+                          _dividerV(),
+                          Expanded(
+                            child: _progressStatItem(
+                              icon: Icons.bar_chart_rounded,
+                              iconBg: const Color(0xFFEAF0FF),
+                              iconFg: const Color(0xFF3A66D8),
+                              value: '$syllabusPct%',
+                              label: 'Syllabus Covered',
+                            ),
+                          ),
+                          _dividerV(),
+                          Expanded(
+                            child: _progressStatItem(
+                              icon: Icons.account_balance_wallet_rounded,
+                              iconBg: const Color(0xFFF3EBFF),
+                              iconFg: const Color(0xFF9B58D8),
+                              value: hasSessionBalance ? '$leftSafe' : '-',
+                              label: 'Remaining Balance',
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ],
           ),
@@ -3043,6 +3118,49 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
+  void _openRecordedStudy() {
+    if (_courseId.trim().isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Recorded course is not available.')),
+      );
+      return;
+    }
+    unawaited(
+      OfflineActionGuard.runExclusive(
+        context,
+        'learner.course_detail.recorded_study.${widget.courseKey}',
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RecordedCourseStudyScreen(
+                courseKey: widget.courseKey,
+                courseData: _course,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Color _paymentProgressColor(double v) {
+    final x = v.clamp(0.0, 1.0);
+    if (x < 0.6) {
+      return Color.lerp(
+        const Color(0xFF88E05F),
+        const Color(0xFFFFC247),
+        x / 0.6,
+      )!;
+    }
+    return Color.lerp(
+      const Color(0xFFFFC247),
+      const Color(0xFFFF5A5A),
+      (x - 0.6) / 0.4,
+    )!;
+  }
+
   Widget _flexActionsRow() {
     return Row(
       children: [
@@ -3103,12 +3221,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     required VoidCallback? onTap,
     bool busy = false,
   }) {
+    final scale = MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.35);
+    final compact = scale > 1.08;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        height: 122,
-        padding: const EdgeInsets.all(10),
+        height: compact ? 110 : 118,
+        padding: EdgeInsets.all(compact ? 8 : 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
@@ -3125,8 +3245,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 46,
-              height: 46,
+              width: compact ? 40 : 44,
+              height: compact ? 40 : 44,
               decoration: BoxDecoration(
                 color: iconBg,
                 borderRadius: BorderRadius.circular(14),
@@ -3141,18 +3261,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           color: iconFg,
                         ),
                       )
-                    : Icon(icon, size: 24, color: iconFg),
+                    : Icon(icon, size: compact ? 21 : 23, color: iconFg),
               ),
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: compact ? 8 : 10),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: UiK.mainText,
                 fontWeight: FontWeight.w900,
-                fontSize: 16,
+                fontSize: compact ? 12.5 : 13,
               ),
             ),
             const SizedBox(height: 2),
@@ -3163,7 +3283,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               style: TextStyle(
                 color: UiK.mainText.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
-                fontSize: 12,
+                fontSize: compact ? 9.8 : 10.2,
               ),
             ),
           ],
@@ -3179,38 +3299,48 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     required String value,
     required String label,
   }) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        child: Column(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-              child: Icon(icon, size: 22, color: iconFg),
-            ),
-            const SizedBox(height: 8),
-            Text(
+    final scale = MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.35);
+    final compact = scale > 1.08;
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 8,
+        vertical: compact ? 10 : 12,
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: compact ? 36 : 40,
+            height: compact ? 36 : 40,
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(icon, size: compact ? 18 : 21, color: iconFg),
+          ),
+          SizedBox(height: compact ? 6 : 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
               value,
-              style: const TextStyle(
+              maxLines: 1,
+              style: TextStyle(
                 color: UiK.mainText,
-                fontSize: 20,
+                fontSize: compact ? 16 : 18,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: UiK.mainText.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w700,
-                height: 1.25,
-              ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: UiK.mainText.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+              fontSize: compact ? 11 : 12,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -3377,6 +3507,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _desktopSummaryCard({
     required String title,
     required String value,
@@ -3407,6 +3538,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   // -------------------- PAYMENT TAB (UNCHANGED) --------------------
 
+  // ignore: unused_element
   Widget _paymentTab({
     required int sessionsPassed,
     required int attPct,
@@ -4302,6 +4434,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   // -------------------- PROGRESS TAB (NOW MERGED ONLINE + IN-CLASS) --------------------
 
+  // ignore: unused_element
   Widget _progressTab({
     required int meetingsHeld,
     required int? plannedMeetings,

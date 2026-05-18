@@ -3163,9 +3163,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 paymentId: paymentId,
                               );
                             }
-                          } catch (_) {
+                          } catch (syncErr, st) {
+                            debugPrint(
+                              '[payments][sync][add] paymentId=$paymentId uid=$pickedUid courseKey=$pickedCourseKey variantKey=$pickedVariantKey error=$syncErr\n$st',
+                            );
                             postWarning =
-                                'Payment saved, but learner summary refresh failed.';
+                                'Payment saved, but learner summary refresh failed (${humanizeUiMessage(syncErr.toString())}).';
                           }
 
                           if (sendReceipt) {
@@ -3550,7 +3553,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                   variantKey: variantKey,
                                 );
                               }
-                            } catch (syncErr) {
+                            } catch (syncErr, st) {
+                              debugPrint(
+                                '[payments][sync][edit] paymentId=$paymentId uid=$oldUid courseKey=$oldCourseKey variantKey=$variantKey error=$syncErr\n$st',
+                              );
                               postWarning =
                                   'Payment updated, but summary sync failed (${humanizeUiMessage(syncErr.toString())}).';
                             }
@@ -3628,8 +3634,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               variantKey: variantKey,
             );
           }
-        } catch (_) {
-          postWarning = 'Payment deleted, but learner summary refresh failed.';
+        } catch (syncErr, st) {
+          debugPrint(
+            '[payments][sync][delete] paymentId=$paymentId uid=$uid courseKey=$courseKey variantKey=$variantKey error=$syncErr\n$st',
+          );
+          postWarning =
+              'Payment deleted, but learner summary refresh failed (${humanizeUiMessage(syncErr.toString())}).';
         }
       }
 

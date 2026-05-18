@@ -24,7 +24,6 @@ class AppWindowKeys {
   static const learnerStudyCoach = 'study_coach';
   static const learnerProfile = 'profile';
   static const learnerRegulations = 'regulations';
-  static const learnerThemeSettings = 'theme_settings';
 
   static const teacherProfile = 'profile';
   static const teacherSchedule = 'schedule';
@@ -41,7 +40,6 @@ class AppWindowKeys {
   static const teacherSyllabi = 'syllabi';
   static const teacherShared = 'shared';
   static const teacherMyPlatform = 'my_platform';
-  static const teacherThemeSettings = 'theme_settings';
   static const teacherHomeworkInbox = 'homework_inbox';
 
   static const adminLearners = 'learners';
@@ -209,15 +207,6 @@ class WindowAccessService {
       canClose: true,
     ),
     AppWindowDefinition(
-      role: AppWindowRole.learner,
-      key: AppWindowKeys.learnerThemeSettings,
-      labelEn: 'Theme Settings',
-      labelAr: 'إعدادات المظهر',
-      tab: 'Account',
-      canClose: true,
-    ),
-
-    AppWindowDefinition(
       role: AppWindowRole.teacher,
       key: AppWindowKeys.teacherProfile,
       labelEn: 'Profile',
@@ -335,14 +324,6 @@ class WindowAccessService {
       labelEn: 'My Platform',
       labelAr: 'منصتي',
       tab: 'Teaching',
-      canClose: true,
-    ),
-    AppWindowDefinition(
-      role: AppWindowRole.teacher,
-      key: AppWindowKeys.teacherThemeSettings,
-      labelEn: 'Theme Settings',
-      labelAr: 'إعدادات المظهر',
-      tab: 'Account',
       canClose: true,
     ),
     AppWindowDefinition(

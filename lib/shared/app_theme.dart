@@ -101,7 +101,7 @@ class AppThemeController extends ChangeNotifier {
     soft: Color(0xFFECE4D7),
   );
 
-  AppPalette get palette => kIsWeb ? _websitePalette : _paletteFromMode(_mode);
+  AppPalette get palette => _paletteFromMode(AppThemeMode.navy);
 
   String? get selectedFontFamily => _fontFamilyFromMode(_fontMode);
 
@@ -277,14 +277,8 @@ class AppThemeController extends ChangeNotifier {
 
   Future<void> loadSavedTheme() async {
     final prefs = await SharedPreferences.getInstance();
-
-    final rawTheme = prefs.getString(_themePrefsKey);
     final rawFont = prefs.getString(_fontPrefsKey);
-
-    _mode = AppThemeMode.values.firstWhere(
-      (e) => e.name == rawTheme,
-      orElse: () => AppThemeMode.navy,
-    );
+    _mode = AppThemeMode.navy;
 
     _fontMode = AppFontMode.values.firstWhere(
       (e) => e.name == rawFont,
@@ -295,13 +289,13 @@ class AppThemeController extends ChangeNotifier {
   }
 
   Future<void> setTheme(AppThemeMode mode) async {
-    if (_mode == mode) return;
-
-    _mode = mode;
-    notifyListeners();
+    if (_mode != AppThemeMode.navy) {
+      _mode = AppThemeMode.navy;
+      notifyListeners();
+    }
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_themePrefsKey, mode.name);
+    await prefs.setString(_themePrefsKey, AppThemeMode.navy.name);
   }
 
   Future<void> setFont(AppFontMode fontMode) async {

@@ -18,7 +18,7 @@ import '../admin/mail_topic_thread_screen.dart';
 import '../admin/admin_admin_todos_screen.dart';
 import '../admin/admin_job_applications_screen.dart';
 import '../learner/learner_booking_screen.dart';
-import '../learner/learner_courses_screen.dart';
+import '../learner/learner_home.dart';
 import '../learner/learner_mail_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
@@ -688,17 +688,7 @@ class FCMService {
       return;
     }
 
-    final courseKey = (data['courseId'] ?? data['courseKey'] ?? '')
-        .toString()
-        .trim();
-
-    nav.push(
-      MaterialPageRoute(
-        builder: (_) => LearnerCoursesScreen(
-          initialCourseKey: courseKey.isEmpty ? null : courseKey,
-        ),
-      ),
-    );
+    nav.push(MaterialPageRoute(builder: (_) => const LearnerHome()));
   }
 
   Future<void> _openRecordedCommentByRole(Map<String, dynamic> data) async {
@@ -716,14 +706,7 @@ class FCMService {
       return;
     }
 
-    final courseId = (data['courseId'] ?? '').toString().trim();
-    nav.push(
-      MaterialPageRoute(
-        builder: (_) => LearnerCoursesScreen(
-          initialCourseKey: courseId.isEmpty ? null : courseId,
-        ),
-      ),
-    );
+    nav.push(MaterialPageRoute(builder: (_) => const LearnerHome()));
   }
 
   Future<void> _openJobApplicationsByRole() async {

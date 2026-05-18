@@ -1013,68 +1013,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return '';
   }
 
-  void _openThemeSheet() {
-    final p = palette;
-
-    Future<void> pickTheme(AppThemeMode mode) async {
-      await appThemeController.setTheme(mode);
-      if (!mounted) return;
-      setState(() {});
-      Navigator.of(context).pop();
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: p.appBg,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Choose Theme',
-                      style: TextStyle(
-                        color: p.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    ...AppThemeMode.values.map((mode) {
-                      final previewPalette = appThemeController.paletteForMode(
-                        mode,
-                      );
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _ThemeChoiceTile(
-                          title: appThemeController.themeTitle(mode),
-                          subtitle: appThemeController.themeSubtitle(mode),
-                          selected: appThemeController.mode == mode,
-                          preview1: previewPalette.primary,
-                          preview2: previewPalette.accent,
-                          onTap: () => pickTheme(mode),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _pushScreen(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
@@ -1215,14 +1153,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
-  void _openThemeSettings() {
-    _openTeacherWindow(
-      AppWindowKeys.teacherThemeSettings,
-      _openThemeSheet,
-      requiresInternet: false,
-    );
-  }
-
   void _onThemeChanged() {
     if (!mounted) return;
     setState(() {});
@@ -1290,7 +1220,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 onOpenSyllabi: _openSyllabiScreen,
                 onOpenShared: _openSharedScreen,
                 onOpenMyPlatform: _openMyPlatformScreen,
-                onOpenThemeSettings: _openThemeSettings,
                 onLogout: () => _logout(context),
               ),
         appBar: AppBar(
@@ -1364,12 +1293,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             },
           ),
           actions: [
-            if (webDesktop)
-              IconButton(
-                tooltip: 'Theme',
-                icon: Icon(TeacherIcons.theme, color: p.primary),
-                onPressed: _openThemeSettings,
-              ),
             IconButton(
               tooltip: 'Logout',
               icon: Icon(TeacherIcons.logout, color: p.accent),
@@ -1968,7 +1891,6 @@ class _TeacherDrawer extends StatefulWidget {
     required this.onOpenWages,
     required this.onOpenRegulations,
     required this.onOpenSyllabi,
-    required this.onOpenThemeSettings,
     required this.onOpenShared,
     required this.onOpenMyPlatform,
     required this.onLogout,
@@ -1989,7 +1911,6 @@ class _TeacherDrawer extends StatefulWidget {
   final VoidCallback onOpenWages;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenSyllabi;
-  final VoidCallback onOpenThemeSettings;
   final VoidCallback onOpenShared;
   final VoidCallback onOpenMyPlatform;
   final VoidCallback onOpenGames;
@@ -2017,7 +1938,6 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
     'syllabi',
     'shared',
     'my_platform',
-    'theme',
   ];
 
   final List<String> _menuOrder = <String>[];
@@ -2219,13 +2139,6 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
         title: 'My Platform',
         subtitle: 'Assigned course comments and reviews',
         onTap: widget.onOpenMyPlatform,
-      ),
-      _TeacherMenuEntry(
-        id: 'theme',
-        icon: TeacherIcons.theme,
-        title: 'Theme Settings',
-        subtitle: 'Manly / girly looks',
-        onTap: widget.onOpenThemeSettings,
       ),
     ];
   }
@@ -3407,83 +3320,6 @@ class _WebQuickActionTile extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThemeChoiceTile extends StatelessWidget {
-  const _ThemeChoiceTile({
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.preview1,
-    required this.preview2,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final Color preview1;
-  final Color preview2;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? preview1 : const Color(0xFFD1D9E0),
-              width: selected ? 1.6 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(backgroundColor: preview1, radius: 12),
-              const SizedBox(width: 8),
-              CircleAvatar(backgroundColor: preview2, radius: 12),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF222222),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                selected
-                    ? TeacherIcons.themeSelected
-                    : TeacherIcons.themeUnselected,
-                color: selected ? preview1 : Colors.grey,
-              ),
-            ],
           ),
         ),
       ),

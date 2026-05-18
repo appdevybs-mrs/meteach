@@ -16,9 +16,7 @@ class LearnerSettingsSheet extends StatefulWidget {
   State<LearnerSettingsSheet> createState() => _LearnerSettingsSheetState();
 }
 
-class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _LearnerSettingsSheetState extends State<LearnerSettingsSheet> {
   LearnerNotificationSettings _settings =
       LearnerNotificationSettings.defaults();
   bool _loading = true;
@@ -29,13 +27,11 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _load();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -107,138 +103,41 @@ class _LearnerSettingsSheetState extends State<LearnerSettingsSheet>
   Widget build(BuildContext context) {
     final p = palette;
 
-    return DefaultTabController(
-      length: 2,
-      child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.92,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Settings',
-                        style: TextStyle(
-                          color: p.primary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                        ),
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.92,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Settings',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    if (_saving)
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TabBar(
-                  controller: _tabController,
-                  labelColor: p.primary,
-                  unselectedLabelColor: p.text.withValues(alpha: 0.6),
-                  indicatorColor: p.accent,
-                  tabs: const [
-                    Tab(text: 'Theme'),
-                    Tab(text: 'Notifications'),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [_buildThemeTab(p), _buildNotificationsTab(p)],
                   ),
-                ),
-              ],
-            ),
+                  if (_saving)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(child: _buildNotificationsTab(p)),
+            ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildThemeTab(AppPalette p) {
-    final modes = AppThemeMode.values;
-
-    return ListView.separated(
-      itemCount: modes.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final mode = modes[index];
-        final preview = appThemeController.paletteForMode(mode);
-
-        return Material(
-          color: p.cardBg,
-          borderRadius: BorderRadius.circular(18),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () async {
-              await appThemeController.setTheme(mode);
-              if (mounted) setState(() {});
-              await widget.onChanged?.call();
-            },
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: preview.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(Icons.settings_rounded, color: preview.primary),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          appThemeController.themeTitle(mode),
-                          style: TextStyle(
-                            color: p.primary,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          appThemeController.themeSubtitle(mode),
-                          style: TextStyle(
-                            color: p.text.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    appThemeController.mode == mode
-                        ? Icons.check_circle_rounded
-                        : Icons.circle_outlined,
-                    color: appThemeController.mode == mode
-                        ? p.accent
-                        : p.border,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 

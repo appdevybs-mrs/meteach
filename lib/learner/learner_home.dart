@@ -18,7 +18,6 @@ import 'learner_study_coach_screen.dart';
 import 'learner_regulations_screen.dart';
 import 'learner_mail_screen.dart';
 import 'learner_homework_screen.dart' as hw;
-import 'learner_courses_screen.dart';
 import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
@@ -67,7 +66,6 @@ class _LearnerHomeState extends State<LearnerHome> {
   int _shellRefreshEpoch = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuIconKey = GlobalKey();
-  final GlobalKey _drawerCoursesKey = GlobalKey();
   final GlobalKey _drawerGalleryKey = GlobalKey();
   final GlobalKey _drawerGamesKey = GlobalKey();
   final GlobalKey _drawerCoachKey = GlobalKey();
@@ -75,7 +73,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey _drawerProfileKey = GlobalKey();
   final GlobalKey _drawerMailKey = GlobalKey();
   final GlobalKey _drawerRegulationsKey = GlobalKey();
-  final GlobalKey _drawerSettingsKey = GlobalKey();
+  final GlobalKey _drawerMenuSettingsKey = GlobalKey();
   final GlobalKey _drawerLogoutKey = GlobalKey();
   final GlobalKey _dashboardHomeworkCardKey = GlobalKey();
   final GlobalKey _dashboardBookingCardKey = GlobalKey();
@@ -291,13 +289,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
-  void _openCoursesWindow({String? courseKey}) {
-    _openLearnerWindow(
-      AppWindowKeys.learnerCourses,
-      () => _pushScreen(LearnerCoursesScreen(initialCourseKey: courseKey)),
-    );
-  }
-
   void _openGalleryScreen() {
     _openLearnerWindow(
       AppWindowKeys.learnerGallery,
@@ -478,7 +469,6 @@ class _LearnerHomeState extends State<LearnerHome> {
                 palette: p,
                 displayNameFuture: _displayNameFuture,
                 profilePhotoFuture: _profilePhotoFuture,
-                coursesTileKey: _drawerCoursesKey,
                 galleryTileKey: _drawerGalleryKey,
                 gamesTileKey: _drawerGamesKey,
                 coachTileKey: _drawerCoachKey,
@@ -486,17 +476,16 @@ class _LearnerHomeState extends State<LearnerHome> {
                 profileTileKey: _drawerProfileKey,
                 mailTileKey: _drawerMailKey,
                 regulationsTileKey: _drawerRegulationsKey,
-                themeTileKey: _drawerSettingsKey,
+                settingsTileKey: _drawerMenuSettingsKey,
                 logoutButtonKey: _drawerLogoutKey,
                 onOpenProfile: _openProfileScreen,
                 onOpenMail: _openMailScreen,
-                onOpenCourses: _openCoursesWindow,
                 onOpenGallery: _openGalleryScreen,
                 onOpenStories: _openStoriesScreen,
                 onOpenGames: _openGamesScreen,
                 onOpenStudyCoach: _openStudyCoachScreen,
                 onOpenRegulations: _openRegulationsScreen,
-                onOpenThemeSettings: _openSettingsSheet,
+                onOpenSettings: _openSettingsSheet,
                 onLogout: () => _logout(context),
               ),
 
@@ -549,8 +538,8 @@ class _LearnerHomeState extends State<LearnerHome> {
           actions: [
             if (webDesktop)
               IconButton(
-                tooltip: 'Theme',
-                icon: Icon(Icons.palette_outlined, color: p.primary),
+                tooltip: 'Settings',
+                icon: Icon(Icons.settings_rounded, color: p.primary),
                 onPressed: _openSettingsSheet,
               ),
             IconButton(
@@ -569,11 +558,10 @@ class _LearnerHomeState extends State<LearnerHome> {
               if (webDesktop)
                 _LearnerHomeWebRail(
                   palette: p,
-                  onOpenCourses: _openCoursesWindow,
                   onOpenBooking: _openBookingScreen,
                   onOpenMail: _openMailScreen,
                   onOpenReminders: _openRemindersScreen,
-                  onOpenHomework: _openCoursesWindow,
+                  onOpenHomework: () => _openHomeworkCoursePicker(context),
                   onOpenGallery: _openGalleryScreen,
                   onOpenStories: _openStoriesScreen,
                   onOpenGames: _openGamesScreen,
@@ -607,7 +595,6 @@ class _LearnerHomeState extends State<LearnerHome> {
               if (webDesktop)
                 _LearnerHomeWebAside(
                   palette: p,
-                  onOpenCourses: _openCoursesWindow,
                   onOpenBooking: _openBookingScreen,
                   onOpenMail: _openMailScreen,
                   onOpenReminders: _openRemindersScreen,
@@ -2074,23 +2061,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     }
   }
 
-  void _openCoursesScreen({String? courseKey}) {
-    unawaited(
-      WindowAccessService.instance.guardOpen(
-        context: context,
-        role: AppWindowRole.learner,
-        windowKey: AppWindowKeys.learnerCourses,
-        onAllowed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => LearnerCoursesScreen(initialCourseKey: courseKey),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -2231,9 +2201,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                             return _ProgressCard(
                               palette: p,
                               item: items[i],
-                              onTap: () => _openCoursesScreen(
-                                courseKey: items[i].courseKey,
-                              ),
+                              onTap: () {},
                             );
                           },
                         );
@@ -6609,7 +6577,6 @@ class _StudyCoachHomeCard extends StatelessWidget {
 class _LearnerHomeWebRail extends StatelessWidget {
   const _LearnerHomeWebRail({
     required this.palette,
-    required this.onOpenCourses,
     required this.onOpenBooking,
     required this.onOpenMail,
     required this.onOpenReminders,
@@ -6623,7 +6590,6 @@ class _LearnerHomeWebRail extends StatelessWidget {
   });
 
   final _HomePalette palette;
-  final VoidCallback onOpenCourses;
   final VoidCallback onOpenBooking;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenReminders;
@@ -6662,12 +6628,6 @@ class _LearnerHomeWebRail extends StatelessWidget {
             Expanded(
               child: ListView(
                 children: [
-                  _DrawerTile(
-                    palette: palette,
-                    icon: LearnerIcons.courses,
-                    title: 'Courses',
-                    onTap: onOpenCourses,
-                  ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.booking,
@@ -6742,14 +6702,12 @@ class _LearnerHomeWebRail extends StatelessWidget {
 class _LearnerHomeWebAside extends StatelessWidget {
   const _LearnerHomeWebAside({
     required this.palette,
-    required this.onOpenCourses,
     required this.onOpenBooking,
     required this.onOpenMail,
     required this.onOpenReminders,
   });
 
   final _HomePalette palette;
-  final VoidCallback onOpenCourses;
   final VoidCallback onOpenBooking;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenReminders;
@@ -6778,12 +6736,6 @@ class _LearnerHomeWebAside extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            _DrawerTile(
-              palette: palette,
-              icon: LearnerIcons.courses,
-              title: 'Open Courses',
-              onTap: onOpenCourses,
-            ),
             _DrawerTile(
               palette: palette,
               icon: LearnerIcons.booking,
@@ -6831,7 +6783,6 @@ class _LearnerDrawer extends StatelessWidget {
     required this.palette,
     required this.displayNameFuture,
     required this.profilePhotoFuture,
-    required this.coursesTileKey,
     required this.galleryTileKey,
     required this.gamesTileKey,
     required this.coachTileKey,
@@ -6839,24 +6790,22 @@ class _LearnerDrawer extends StatelessWidget {
     required this.profileTileKey,
     required this.mailTileKey,
     required this.regulationsTileKey,
-    required this.themeTileKey,
+    required this.settingsTileKey,
     required this.logoutButtonKey,
     required this.onOpenProfile,
     required this.onOpenMail,
-    required this.onOpenCourses,
     required this.onOpenGallery,
     required this.onOpenStories,
     required this.onOpenGames,
     required this.onOpenStudyCoach,
     required this.onOpenRegulations,
-    required this.onOpenThemeSettings,
+    required this.onOpenSettings,
     required this.onLogout,
   });
 
   final _HomePalette palette;
   final Future<String>? displayNameFuture;
   final Future<String>? profilePhotoFuture;
-  final GlobalKey coursesTileKey;
   final GlobalKey galleryTileKey;
   final GlobalKey gamesTileKey;
   final GlobalKey coachTileKey;
@@ -6864,17 +6813,16 @@ class _LearnerDrawer extends StatelessWidget {
   final GlobalKey profileTileKey;
   final GlobalKey mailTileKey;
   final GlobalKey regulationsTileKey;
-  final GlobalKey themeTileKey;
+  final GlobalKey settingsTileKey;
   final GlobalKey logoutButtonKey;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
-  final VoidCallback onOpenCourses;
   final VoidCallback onOpenGallery;
   final VoidCallback onOpenStories;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStudyCoach;
   final VoidCallback onOpenRegulations;
-  final VoidCallback onOpenThemeSettings;
+  final VoidCallback onOpenSettings;
   final VoidCallback onLogout;
 
   @override
@@ -6981,16 +6929,6 @@ class _LearnerDrawer extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 children: [
                   _DrawerTile(
-                    targetKey: coursesTileKey,
-                    palette: palette,
-                    icon: LearnerIcons.courses,
-                    title: 'My Courses',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenCourses();
-                    },
-                  ),
-                  _DrawerTile(
                     targetKey: storiesTileKey,
                     palette: palette,
                     icon: LearnerIcons.stories,
@@ -7063,13 +7001,13 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    targetKey: themeTileKey,
+                    targetKey: settingsTileKey,
                     palette: palette,
                     icon: Icons.settings_rounded,
                     title: 'Settings',
                     onTap: () {
                       Navigator.of(context).pop();
-                      onOpenThemeSettings();
+                      onOpenSettings();
                     },
                   ),
                 ],

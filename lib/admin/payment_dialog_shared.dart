@@ -777,8 +777,12 @@ class PaymentDialogShared {
             variantKey: variantKey,
           );
         }
-      } catch (_) {
-        postWarning = 'Payment deleted, but learner summary refresh failed.';
+      } catch (syncErr, st) {
+        debugPrint(
+          '[payments][sync][delete-shared] paymentId=$paymentId uid=$uid courseKey=$courseKey variantKey=$variantKey error=$syncErr\n$st',
+        );
+        postWarning =
+            'Payment deleted, but learner summary refresh failed (${humanizeUiMessage(syncErr.toString())}).';
       }
 
       if (!context.mounted) return;
@@ -1235,9 +1239,12 @@ class PaymentDialogShared {
                           variantKey: variantKey,
                         );
                       }
-                    } catch (_) {
+                    } catch (syncErr, st) {
+                      debugPrint(
+                        '[payments][sync][edit-shared] paymentId=$paymentId uid=$uid courseKey=$courseKey variantKey=$variantKey error=$syncErr\n$st',
+                      );
                       postWarning =
-                          'Payment updated, but learner summary refresh failed.';
+                          'Payment updated, but learner summary refresh failed (${humanizeUiMessage(syncErr.toString())}).';
                     }
 
                     if (!context.mounted) return;
@@ -2009,9 +2016,12 @@ class PaymentDialogShared {
                           paymentId: paymentId,
                         );
                       }
-                    } catch (_) {
+                    } catch (syncErr, st) {
+                      debugPrint(
+                        '[payments][sync][add-shared] paymentId=$paymentId uid=$pickedUid courseKey=$pickedCourseKey variantKey=$normalizedVariantKey error=$syncErr\n$st',
+                      );
                       postWarning =
-                          'Payment saved, but learner summary refresh failed.';
+                          'Payment saved, but learner summary refresh failed (${humanizeUiMessage(syncErr.toString())}).';
                     }
 
                     if (!context.mounted) return;
