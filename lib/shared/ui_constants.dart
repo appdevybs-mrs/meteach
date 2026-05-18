@@ -4,7 +4,7 @@ class UiK {
   static const primaryBlue = Color(0xFF0E7C86);
   static const actionOrange = Color(0xFFBF5D39);
   static const mainText = Color(0xFF213038);
-  static const appBg = Color(0xFFF6F2E8);
+  static const appBg = Color(0xFFFAFCFF);
   static const uiBorder = Color(0xFFD8CFC1);
 
   static RoundedRectangleBorder cardShape() => RoundedRectangleBorder(

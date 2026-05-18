@@ -59,7 +59,7 @@ class AdminHome extends StatefulWidget {
   static const deepBlue = Color(0xFF135C7A);
   static const actionOrange = Color(0xFFBF5D39);
   static const mainText = Color(0xFF213038);
-  static const appBg = Color(0xFFF6F2E8);
+  static const appBg = Color(0xFFFAFCFF);
   static const cardBg = Color(0xFFFFFCF5);
   static const uiBorder = Color(0xFFD8CFC1);
   static const softText = Color(0xFF5E6B70);
@@ -272,7 +272,7 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Color get _screenBg =>
-      _isAdminMode ? const Color(0xFFF2F6FF) : const Color(0xFFFFF6EE);
+      _isAdminMode ? const Color(0xFFFAFCFF) : const Color(0xFFFFFFFF);
 
   String get _screenTitle =>
       _isAdminMode ? 'Admin Dashboard' : 'Reception Desk';
@@ -1120,8 +1120,8 @@ class _AdminHomeState extends State<AdminHome> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: _isAdminMode
-                        ? const [Color(0xFFE7F0FF), Color(0xFFF2F6FF)]
-                        : const [Color(0xFFFFE8D7), Color(0xFFFFF6EE)],
+                        ? const [Color(0xFFFFFFFF), Color(0xFFF6FAFF)]
+                        : const [Color(0xFFFFFFFF), Color(0xFFF8FBFF)],
                   ),
                 ),
               ),

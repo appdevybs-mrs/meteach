@@ -43,7 +43,7 @@ class WatermarkBackground extends StatelessWidget {
         Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFFF6F2E8), Color(0xFFEEE7D9), Color(0xFFE5EBF1)],
+              colors: [Color(0xFFFFFFFF), Color(0xFFFAFCFF), Color(0xFFF5F8FC)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -59,7 +59,7 @@ class WatermarkBackground extends StatelessWidget {
               height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: UiK.primaryBlue.withValues(alpha: 0.08),
+                color: Colors.white.withValues(alpha: 0.75),
               ),
             ),
           ),
@@ -74,7 +74,7 @@ class WatermarkBackground extends StatelessWidget {
               height: 240,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: UiK.actionOrange.withValues(alpha: 0.08),
+                color: const Color(0xFFF8FBFF).withValues(alpha: 0.9),
               ),
             ),
           ),

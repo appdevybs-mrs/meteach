@@ -22,6 +22,7 @@ import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
+import 'learner_course_detail_screen.dart';
 import 'learner_settings_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/offline_action_guard.dart';
@@ -1980,6 +1981,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         out.add(
           _CourseProgressItem(
             courseKey: key,
+            courseData: Map<String, dynamic>.from(course),
             title: title.isEmpty ? 'Course' : title,
             code: code,
             variantKey: variantKey,
@@ -2201,7 +2203,16 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                             return _ProgressCard(
                               palette: p,
                               item: items[i],
-                              onTap: () {},
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => LearnerCourseDetailScreen(
+                                      courseKey: items[i].courseKey,
+                                      courseData: items[i].courseData,
+                                    ),
+                                  ),
+                                );
+                              },
                             );
                           },
                         );
@@ -2283,6 +2294,7 @@ class _CourseMeta {
 
 class _CourseProgressItem {
   final String courseKey;
+  final Map<String, dynamic> courseData;
   final String title;
   final String code;
   final String variantKey;
@@ -2300,6 +2312,7 @@ class _CourseProgressItem {
 
   const _CourseProgressItem({
     required this.courseKey,
+    required this.courseData,
     required this.title,
     required this.code,
     required this.variantKey,

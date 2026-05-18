@@ -319,6 +319,22 @@ class _InternationalTeacherHomeScreenState
                   children: [
                     Positioned.fill(
                       child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.white.withValues(alpha: 0.54),
+                                Colors.white.withValues(alpha: 0.3),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: IgnorePointer(
                         child: Center(
                           child: Opacity(
                             opacity: 0.055,

@@ -1325,6 +1325,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   children: [
                     Positioned.fill(
                       child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.white.withValues(alpha: 0.56),
+                                Colors.white.withValues(alpha: 0.32),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: IgnorePointer(
                         child: Opacity(
                           opacity: 0.05,
                           child: Center(

@@ -95,7 +95,7 @@ class AppThemeController extends ChangeNotifier {
     primary: Color(0xFF0E7C86),
     accent: Color(0xFFBF5D39),
     text: Color(0xFF213038),
-    appBg: Color(0xFFF6F2E8),
+    appBg: Color(0xFFFAFCFF),
     cardBg: Color(0xFFFFFCF5),
     border: Color(0xFFD8CFC1),
     soft: Color(0xFFECE4D7),

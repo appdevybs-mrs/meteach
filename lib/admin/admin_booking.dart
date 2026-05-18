@@ -16,7 +16,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   // ===== Colors =====
   static const primaryBlue = Color(0xFF0E7C86);
   static const actionOrange = Color(0xFFBF5D39);
-  static const appBg = Color(0xFFF6F2E8);
+  static const appBg = Color(0xFFFAFCFF);
   static const uiBorder = Color(0xFFD8CFC1);
   static const successGreen = Color(0xFF2F9E44);
 
