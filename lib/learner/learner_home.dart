@@ -83,6 +83,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       GlobalKey<_BookingTopCardState>();
 
   bool _paymentDueToastChecked = false;
+  bool _profilePromptHandledThisSession = false;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<String>? _displayNameFuture;
@@ -98,6 +99,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       if (!mounted) return;
       FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
       unawaited(_showPaymentDueToastOnLoginIfNeeded());
+      unawaited(_maybePromptProfileCompletion());
       unawaited(_seedNotificationSettingsRecord());
       unawaited(StoryPreloadService.preloadFromHome(context));
     });
@@ -257,6 +259,214 @@ class _LearnerHomeState extends State<LearnerHome> {
         duration: const Duration(seconds: 5),
       );
     } catch (_) {}
+  }
+
+  bool _isMissingProfileData(Map<String, dynamic> m) {
+    String field(String key) => (m[key] ?? '').toString().trim();
+    return field('profile_photo').isEmpty ||
+        field('first_name').isEmpty ||
+        field('last_name').isEmpty ||
+        field('phone1').isEmpty ||
+        field('dob').isEmpty ||
+        field('gender').isEmpty ||
+        field('about_me').isEmpty;
+  }
+
+  Future<void> _maybePromptProfileCompletion() async {
+    if (_profilePromptHandledThisSession || !mounted) return;
+    _profilePromptHandledThisSession = true;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+
+    const snoozeHours = 24;
+    final snoozeKey = 'learner_profile_prompt_snooze_until_$uid';
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final snoozeUntilMs = prefs.getInt(snoozeKey) ?? 0;
+      if (snoozeUntilMs > 0) {
+        final snoozeUntil = DateTime.fromMillisecondsSinceEpoch(snoozeUntilMs);
+        if (DateTime.now().isBefore(snoozeUntil)) return;
+      }
+
+      final snap = await _db.child('users/$uid').get();
+      final raw = snap.value;
+      if (raw is! Map) return;
+
+      final userMap = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (!_isMissingProfileData(userMap) || !mounted) return;
+
+      final action = await _showProfileCompletionDialog();
+      if (!mounted || action == null) return;
+
+      if (action == _ProfilePromptAction.complete) {
+        _openProfileScreen();
+        return;
+      }
+
+      final until = DateTime.now().add(const Duration(hours: snoozeHours));
+      await prefs.setInt(snoozeKey, until.millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  Future<_ProfilePromptAction?> _showProfileCompletionDialog() {
+    return showDialog<_ProfilePromptAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 460),
+            decoration: BoxDecoration(
+              color: palette.cardBg,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: palette.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 26,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(23),
+                    ),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        palette.primary.withValues(alpha: 0.18),
+                        palette.accent.withValues(alpha: 0.14),
+                      ],
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: palette.primary.withValues(alpha: 0.16),
+                          border: Border.all(
+                            color: palette.primary.withValues(alpha: 0.34),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.workspace_premium_rounded,
+                          color: palette.primary,
+                          size: 25,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Complete your profile\nأكمل ملفك الشخصي',
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: 17,
+                            height: 1.25,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Add your photo and finish your details for a smoother learner experience.',
+                        style: TextStyle(
+                          color: palette.text.withValues(alpha: 0.88),
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'أضف صورتك وأكمل بياناتك لتحصل على تجربة تعلم أفضل.',
+                        style: TextStyle(
+                          color: palette.text.withValues(alpha: 0.84),
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                Navigator.of(
+                                  ctx,
+                                ).pop(_ProfilePromptAction.remindLater);
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: palette.text,
+                                side: BorderSide(color: palette.border),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 11,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Later',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                Navigator.of(
+                                  ctx,
+                                ).pop(_ProfilePromptAction.complete);
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: palette.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 11,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Profile',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _pushScreen(Widget screen) {
@@ -607,6 +817,8 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 }
+
+enum _ProfilePromptAction { complete, remindLater }
 
 class _LearnerDashboardLite extends StatefulWidget {
   const _LearnerDashboardLite({
