@@ -5947,13 +5947,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                             ? UiK.primaryBlue.withValues(alpha: 0.10)
                             : UiK.uiBorder.withValues(alpha: 0.18),
                       ),
-                      if (hasHomeworkFile)
-                        _miniChip(
-                          icon: Icons.assignment_rounded,
-                          text: 'Homework',
-                          fg: Colors.white,
-                          bg: UiK.actionOrange,
-                        ),
                     ],
                   ),
                   if (objective.isNotEmpty) ...[

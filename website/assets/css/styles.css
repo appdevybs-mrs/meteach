@@ -404,6 +404,77 @@ button, input, select { font: inherit; }
   gap: 12px;
 }
 
+.gallery-teachers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.gallery-teacher-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(18, 32, 72, 0.06);
+  padding: 14px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.gallery-teacher-avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 999px;
+  margin: 0 auto 10px;
+  background: linear-gradient(145deg, #e9f1ff, #f8fbff);
+  color: var(--brand-dark);
+  display: grid;
+  place-items: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.gallery-teacher-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-teacher-name {
+  font-weight: 800;
+  color: var(--brand-dark);
+}
+
+.gallery-teachers-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.gallery-teacher-media {
+  display: grid;
+  gap: 12px;
+}
+
+.gallery-teacher-media-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gallery-teacher-media-head h3 {
+  margin: 0;
+  color: var(--brand-dark);
+  font-size: 1.2rem;
+}
+
 .gallery-tile {
   position: relative;
   border: 0;

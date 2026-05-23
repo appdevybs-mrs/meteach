@@ -34,6 +34,7 @@
         <button type="button" class="gallery-filter-btn is-active" data-gallery-filter-btn="all">All</button>
         <button type="button" class="gallery-filter-btn" data-gallery-filter-btn="photo" data-i18n="gallery.photosTitle">Photos</button>
         <button type="button" class="gallery-filter-btn" data-gallery-filter-btn="video" data-i18n="gallery.videosTitle">Videos</button>
+        <button type="button" class="gallery-filter-btn" data-gallery-filter-btn="teachers" data-i18n="gallery.teachersTitle">Teachers</button>
       </div>
 
       <section class="gallery-section-block">
@@ -48,6 +49,21 @@
           <h2 data-i18n="gallery.videosTitle">Videos</h2>
         </div>
         <div class="gallery-media-grid" data-public-gallery-videos></div>
+      </section>
+
+      <section class="gallery-section-block" data-public-gallery-teachers-section hidden>
+        <div class="section-head">
+          <h2 data-i18n="gallery.teachersTitle">Teachers</h2>
+        </div>
+        <div class="gallery-teachers-grid" data-public-gallery-teachers></div>
+
+        <div class="gallery-teacher-media" data-public-gallery-teacher-media hidden>
+          <div class="gallery-teacher-media-head">
+            <button type="button" class="gallery-filter-btn" data-gallery-teacher-back data-i18n="gallery.backToTeachers">Back to Teachers</button>
+            <h3 data-public-gallery-teacher-name></h3>
+          </div>
+          <div class="gallery-media-grid" data-public-gallery-teacher-items></div>
+        </div>
       </section>
     </div>
 

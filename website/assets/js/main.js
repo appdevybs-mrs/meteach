@@ -27,6 +27,8 @@ const translations = {
     'gallery.lead': "Discover moments from our students' learning journey",
     'gallery.photosTitle': 'Photos',
     'gallery.videosTitle': 'Videos',
+    'gallery.teachersTitle': 'Teachers',
+    'gallery.backToTeachers': 'Back to Teachers',
     'gallery.viewPhotos': 'View Photos',
     'gallery.viewVideos': 'View Videos',
     'gallery.slide1Title': 'Creative classroom moments',
@@ -89,6 +91,8 @@ const translations = {
     'gallery.lead': 'اكتشف لحظات من رحلة تعلم طلابنا',
     'gallery.photosTitle': 'الصور',
     'gallery.videosTitle': 'الفيديوهات',
+    'gallery.teachersTitle': 'المعلمون',
+    'gallery.backToTeachers': 'الرجوع إلى المعلمين',
     'gallery.viewPhotos': 'عرض الصور',
     'gallery.viewVideos': 'عرض الفيديوهات',
     'gallery.slide1Title': 'لحظات صفية إبداعية',
@@ -151,6 +155,8 @@ const translations = {
     'gallery.lead': 'Découvrez des moments du parcours d’apprentissage de nos élèves',
     'gallery.photosTitle': 'Photos',
     'gallery.videosTitle': 'Vidéos',
+    'gallery.teachersTitle': 'Enseignants',
+    'gallery.backToTeachers': 'Retour aux enseignants',
     'gallery.viewPhotos': 'Voir les photos',
     'gallery.viewVideos': 'Voir les vidéos',
     'gallery.slide1Title': 'Moments créatifs en classe',
@@ -378,9 +384,16 @@ function initGallery() {
     restart();
   };
 
-  const renderBoard = (target, items) => {
+  const renderBoard = (target, items, options = {}) => {
+    const { learnerGallery = null, teacherProfiles = null } = options;
     const photosGrid = target.querySelector('[data-public-gallery-photos]');
     const videosGrid = target.querySelector('[data-public-gallery-videos]');
+    const teachersSection = target.querySelector('[data-public-gallery-teachers-section]');
+    const teachersGrid = target.querySelector('[data-public-gallery-teachers]');
+    const teacherMediaWrap = target.querySelector('[data-public-gallery-teacher-media]');
+    const teacherMediaGrid = target.querySelector('[data-public-gallery-teacher-items]');
+    const teacherMediaName = target.querySelector('[data-public-gallery-teacher-name]');
+    const teacherBack = target.querySelector('[data-gallery-teacher-back]');
     const photoSection = photosGrid?.closest('.gallery-section-block');
     const videoSection = videosGrid?.closest('.gallery-section-block');
     const filterButtons = Array.from(document.querySelectorAll('[data-gallery-filter-btn]'));
@@ -392,14 +405,69 @@ function initGallery() {
       const key = (hashValue || '').toString().replace('#', '').trim().toLowerCase();
       if (key === 'photos' || key === 'photo') return 'photo';
       if (key === 'videos' || key === 'video') return 'video';
+      if (key === 'teachers' || key === 'teacher') return 'teachers';
       return 'all';
     };
 
     const filterToHash = (filter) => {
       if (filter === 'photo') return 'photos';
       if (filter === 'video') return 'videos';
+      if (filter === 'teachers') return 'teachers';
       return '';
     };
+
+    const toProfilePhoto = (uid) => {
+      if (!teacherProfiles || !uid) return '';
+      const entry = teacherProfiles[uid];
+      if (!entry || typeof entry !== 'object') return '';
+      const profile = entry.profile && typeof entry.profile === 'object' ? entry.profile : {};
+
+      const single = (profile.profile_photo || '').toString().trim();
+      if (single) return single;
+
+      const photos = profile.profile_photos;
+      if (Array.isArray(photos) && photos.length) {
+        return (photos.find((x) => (x || '').toString().trim()) || '').toString().trim();
+      }
+      return '';
+    };
+
+    const buildTeacherGroups = () => {
+      if (!learnerGallery || typeof learnerGallery !== 'object') return [];
+
+      const groups = new Map();
+      Object.values(learnerGallery).forEach((learnerItems) => {
+        if (!learnerItems || typeof learnerItems !== 'object') return;
+
+        Object.values(learnerItems).forEach((rawItem) => {
+          if (!rawItem || typeof rawItem !== 'object') return;
+          const type = (rawItem.type || '').toString().trim().toLowerCase();
+          const url = (rawItem.url || '').toString().trim();
+          const teacherUid = (rawItem.teacherUid || '').toString().trim();
+          if (!teacherUid || !url || (type !== 'photo' && type !== 'video')) return;
+
+          if (!groups.has(teacherUid)) {
+            groups.set(teacherUid, {
+              uid: teacherUid,
+              name: (rawItem.teacherName || '').toString().trim() || 'Teacher',
+              photo: toProfilePhoto(teacherUid),
+              items: [],
+            });
+          }
+
+          groups.get(teacherUid).items.push(rawItem);
+        });
+      });
+
+      return Array.from(groups.values())
+        .map((group) => ({
+          ...group,
+          items: group.items.sort((a, b) => toInt(b.createdAt) - toInt(a.createdAt)),
+        }))
+        .sort((a, b) => toInt((b.items[0] || {}).createdAt) - toInt((a.items[0] || {}).createdAt));
+    };
+
+    const teacherGroups = buildTeacherGroups();
 
     const buildTile = (item) => {
       const button = document.createElement('button');
@@ -429,14 +497,74 @@ function initGallery() {
     photos.forEach((item) => photosGrid.appendChild(buildTile(item)));
     videos.forEach((item) => videosGrid.appendChild(buildTile(item)));
 
+    const openTeacherMedia = (group) => {
+      if (!teacherMediaWrap || !teacherMediaGrid || !teacherMediaName) return;
+      teacherMediaGrid.innerHTML = '';
+      teacherMediaName.textContent = group.name || 'Teacher';
+      group.items.forEach((item) => teacherMediaGrid.appendChild(buildTile(item)));
+      teacherMediaWrap.hidden = false;
+      teachersGrid.hidden = true;
+    };
+
+    const closeTeacherMedia = () => {
+      if (!teacherMediaWrap || !teachersGrid) return;
+      teacherMediaWrap.hidden = true;
+      teachersGrid.hidden = false;
+    };
+
+    if (teacherBack) {
+      teacherBack.onclick = () => closeTeacherMedia();
+    }
+
+    if (teachersGrid && teachersSection) {
+      teachersGrid.innerHTML = '';
+      if (!teacherGroups.length) {
+        const empty = document.createElement('p');
+        empty.className = 'gallery-teachers-empty';
+        empty.textContent = 'No teacher activity yet.';
+        teachersGrid.appendChild(empty);
+      } else {
+        teacherGroups.forEach((group) => {
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'gallery-teacher-card';
+          card.setAttribute('aria-label', `View ${group.name} media`);
+
+          const avatar = document.createElement('div');
+          avatar.className = 'gallery-teacher-avatar';
+          if (group.photo) {
+            const img = document.createElement('img');
+            img.src = group.photo;
+            img.alt = group.name || 'Teacher';
+            img.loading = 'lazy';
+            avatar.appendChild(img);
+          } else {
+            avatar.textContent = (group.name || 'T').trim().charAt(0).toUpperCase();
+          }
+
+          const name = document.createElement('div');
+          name.className = 'gallery-teacher-name';
+          name.textContent = group.name || 'Teacher';
+
+          card.appendChild(avatar);
+          card.appendChild(name);
+          card.onclick = () => openTeacherMedia(group);
+          teachersGrid.appendChild(card);
+        });
+      }
+    }
+
     const applyFilter = (nextFilter, options = {}) => {
       const { updateHash = true } = options;
       const filter = (nextFilter || 'all').toString().trim().toLowerCase();
       const showPhotos = filter === 'all' || filter === 'photo';
       const showVideos = filter === 'all' || filter === 'video';
+      const showTeachers = filter === 'teachers';
 
       if (photoSection) photoSection.hidden = !showPhotos;
       if (videoSection) videoSection.hidden = !showVideos;
+      if (teachersSection) teachersSection.hidden = !showTeachers;
+      if (!showTeachers) closeTeacherMedia();
 
       filterButtons.forEach((button) => {
         const value = (button.dataset.galleryFilterBtn || 'all').toString().trim().toLowerCase();
@@ -484,13 +612,18 @@ function initGallery() {
             .sort((a, b) => toInt(b.createdAt) - toInt(a.createdAt))
         : [];
 
-      if (!items.length) {
-        return;
-      }
-
       if (target.dataset.galleryTarget === 'page') {
-        renderBoard(target, items);
+        const [learnerGalleryResponse, teacherProfilesResponse] = await Promise.all([
+          fetch(`${DB_URL}/learner_gallery.json`, { cache: 'no-store' }),
+          fetch(`${DB_URL}/website/teachers.json`, { cache: 'no-store' }),
+        ]);
+
+        const learnerGallery = learnerGalleryResponse.ok ? await learnerGalleryResponse.json() : null;
+        const teacherProfiles = teacherProfilesResponse.ok ? await teacherProfilesResponse.json() : null;
+
+        renderBoard(target, items, { learnerGallery, teacherProfiles });
       } else {
+        if (!items.length) return;
         render(target, items);
       }
     } catch (e) {
