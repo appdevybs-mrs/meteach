@@ -413,13 +413,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       return;
     }
 
-    if (pdfUrl.isNotEmpty) {
-      unawaited(_incrementStoryStat(story, 'views'));
-    }
-    if (audioUrl.isNotEmpty) {
-      unawaited(_incrementStoryStat(story, 'listens'));
-    }
-
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -429,6 +422,13 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
           audioUrl: audioUrl,
           pdfUrl: pdfUrl,
           htmlUrl: htmlUrl,
+          onAudioStarted: () {
+            unawaited(_incrementStoryStat(story, 'plays'));
+            unawaited(_incrementStoryStat(story, 'listens'));
+          },
+          onReadInteraction: () {
+            unawaited(_incrementStoryStat(story, 'views'));
+          },
         ),
       ),
     );
@@ -676,10 +676,14 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     _storyStatChip(
                       p,
                       Icons.headphones_rounded,
-                      'Listens $listens',
+                      'Audio Listens $listens',
                     ),
                     _storyStatChip(p, Icons.visibility_rounded, 'Views $views'),
-                    _storyStatChip(p, Icons.play_arrow_rounded, 'Plays $plays'),
+                    _storyStatChip(
+                      p,
+                      Icons.play_arrow_rounded,
+                      'Audio Starts $plays',
+                    ),
                   ],
                 ),
                 if (authorSource.isNotEmpty) ...[

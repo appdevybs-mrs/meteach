@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -19,6 +20,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.url,
     this.headers = const <String, String>{},
     this.audioController,
+    this.onReadInteraction,
     this.viewerMode = MaterialViewerMode.game,
   }) : htmlString = null,
        assetPath = null;
@@ -28,6 +30,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.title,
     required this.assetPath,
     this.audioController,
+    this.onReadInteraction,
     this.viewerMode = MaterialViewerMode.game,
   }) : url = null,
        htmlString = null,
@@ -38,6 +41,7 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.title,
     required this.htmlString,
     this.audioController,
+    this.onReadInteraction,
     this.viewerMode = MaterialViewerMode.game,
   }) : url = null,
        assetPath = null,
@@ -49,6 +53,7 @@ class MaterialWebViewScreen extends StatefulWidget {
   final String? htmlString;
   final Map<String, String> headers;
   final StoryAudioController? audioController;
+  final VoidCallback? onReadInteraction;
   final MaterialViewerMode viewerMode;
 
   bool get isUrl => url != null && url!.trim().isNotEmpty;
@@ -61,6 +66,9 @@ class MaterialWebViewScreen extends StatefulWidget {
 
 class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     with WidgetsBindingObserver {
+  static const String _docSwipeHintSeenPrefKey =
+      'story_html_swipe_hint_seen_v1';
+
   WebViewController? _controller;
 
   int _progress = 0;
@@ -72,7 +80,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   bool _openedWebUrl = false;
   bool _audioPillExpanded = false;
   Timer? _loadWatchdog;
+  Timer? _docHintTimer;
   bool _didAutoFallbackToBrowser = false;
+  bool _didTrackReadInteraction = false;
+  bool _showDocumentHint = false;
 
   bool get _isWebRuntime => kIsWeb;
   bool get _hasController => _controller != null;
@@ -90,12 +101,17 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       unawaited(_handleWebStartup());
     }
 
+    if (_isDocumentMode) {
+      unawaited(_loadDocumentHintPreference());
+    }
+
     unawaited(_enterFullscreen());
   }
 
   @override
   void dispose() {
     _loadWatchdog?.cancel();
+    _docHintTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
@@ -105,6 +121,45 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       DeviceOrientation.landscapeRight,
     ]);
     super.dispose();
+  }
+
+  void _trackReadInteractionOnce() {
+    if (_didTrackReadInteraction) return;
+    _didTrackReadInteraction = true;
+    widget.onReadInteraction?.call();
+    if (_showDocumentHint) {
+      unawaited(_hideDocumentHint());
+    }
+  }
+
+  Future<void> _loadDocumentHintPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasSeen = prefs.getBool(_docSwipeHintSeenPrefKey) ?? false;
+      if (!mounted || hasSeen) return;
+      setState(() {
+        _showDocumentHint = true;
+      });
+      _docHintTimer?.cancel();
+      _docHintTimer = Timer(const Duration(seconds: 5), () {
+        if (!mounted) return;
+        unawaited(_hideDocumentHint());
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _hideDocumentHint() async {
+    if (_showDocumentHint && mounted) {
+      setState(() {
+        _showDocumentHint = false;
+      });
+    }
+    _docHintTimer?.cancel();
+    _docHintTimer = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_docSwipeHintSeenPrefKey, true);
+    } catch (_) {}
   }
 
   void _startLoadWatchdog() {
@@ -320,6 +375,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
             _lastError = 'Could not open this page in the browser.';
           }
         });
+        if (launched) {
+          _trackReadInteractionOnce();
+        }
         return;
       }
 
@@ -380,6 +438,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
             });
           },
           onPageFinished: (String url) async {
+            _trackReadInteractionOnce();
             final String? title = await _safeGetTitle();
 
             if (!mounted) return;
@@ -1286,8 +1345,18 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
         backgroundColor: Colors.white,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onTap: () => unawaited(_enterFullscreen()),
-          onDoubleTap: () => unawaited(_notifyViewportChanged()),
+          onTap: () {
+            if (_showDocumentHint) {
+              unawaited(_hideDocumentHint());
+            }
+            unawaited(_enterFullscreen());
+          },
+          onDoubleTap: () {
+            if (_showDocumentHint) {
+              unawaited(_hideDocumentHint());
+            }
+            unawaited(_notifyViewportChanged());
+          },
           child: SafeArea(
             top: false,
             bottom: false,
@@ -1298,6 +1367,39 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
                 Positioned.fill(child: _buildBody()),
                 if (_isLoading) Positioned.fill(child: _buildOverlayLoading()),
                 Positioned.fill(child: _buildAudioPill()),
+                IgnorePointer(
+                  ignoring: true,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: _showDocumentHint ? 1 : 0,
+                    child: SafeArea(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white30),
+                          ),
+                          child: const Text(
+                            'Tip: Scroll up/down, or swipe left/right if needed.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

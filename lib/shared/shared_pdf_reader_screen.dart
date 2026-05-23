@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 import 'app_theme.dart';
@@ -14,21 +15,27 @@ class SharedPdfReaderScreen extends StatefulWidget {
     required this.title,
     required this.pdfUrl,
     this.audioController,
+    this.onReadInteraction,
   });
 
   final String title;
   final String pdfUrl;
   final StoryAudioController? audioController;
+  final VoidCallback? onReadInteraction;
 
   @override
   State<SharedPdfReaderScreen> createState() => _SharedPdfReaderScreenState();
 }
 
 class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
+  static const String _swipeHintSeenPrefKey = 'story_pdf_swipe_hint_seen_v1';
+
   final PdfViewerController _pdfController = PdfViewerController();
   Timer? _chromeTimer;
+  Timer? _hintTimer;
   Orientation? _lastOrientation;
   int? _pendingRestorePage;
+  DateTime? _lastFallbackSwipeAt;
 
   bool _loading = true;
   String? _error;
@@ -37,11 +44,50 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
   bool _focusMode = true;
   int _viewerEpoch = 0;
   bool _audioPillExpanded = false;
+  bool _showSwipeHint = false;
+  bool _didTrackReadInteraction = false;
+
+  void _trackReadInteractionOnce() {
+    if (_didTrackReadInteraction) return;
+    _didTrackReadInteraction = true;
+    widget.onReadInteraction?.call();
+  }
 
   @override
   void initState() {
     super.initState();
     unawaited(_enterFullscreen());
+    unawaited(_loadSwipeHintPreference());
+  }
+
+  Future<void> _loadSwipeHintPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasSeen = prefs.getBool(_swipeHintSeenPrefKey) ?? false;
+      if (!mounted || hasSeen) return;
+      setState(() {
+        _showSwipeHint = true;
+      });
+      _hintTimer?.cancel();
+      _hintTimer = Timer(const Duration(seconds: 5), () {
+        if (!mounted) return;
+        unawaited(_hideSwipeHint());
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _hideSwipeHint() async {
+    if (_showSwipeHint && mounted) {
+      setState(() {
+        _showSwipeHint = false;
+      });
+    }
+    _hintTimer?.cancel();
+    _hintTimer = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_swipeHintSeenPrefKey, true);
+    } catch (_) {}
   }
 
   _PdfPalette get palette => _toPdfPalette(appThemeController.palette);
@@ -174,6 +220,43 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
     });
   }
 
+  void _handleFallbackPageSwipe({
+    required Axis axis,
+    required DragEndDetails details,
+    required bool isLandscape,
+  }) {
+    if (!_hasDocument || _loading || _error != null) return;
+
+    final shouldHandle =
+        (isLandscape && axis == Axis.vertical) ||
+        (!isLandscape && axis == Axis.horizontal);
+    if (!shouldHandle) return;
+
+    if (_showSwipeHint) {
+      unawaited(_hideSwipeHint());
+    }
+
+    final velocity = axis == Axis.vertical
+        ? details.primaryVelocity ?? 0
+        : details.velocity.pixelsPerSecond.dx;
+    if (velocity.abs() < 380) return;
+
+    final now = DateTime.now();
+    if (_lastFallbackSwipeAt != null &&
+        now.difference(_lastFallbackSwipeAt!) <
+            const Duration(milliseconds: 180)) {
+      return;
+    }
+    _lastFallbackSwipeAt = now;
+
+    final currentPage = _pageNumber > 0 ? _pageNumber : 1;
+    final targetPage = velocity < 0 ? currentPage + 1 : currentPage - 1;
+    final clamped = targetPage.clamp(1, _pageCount);
+    if (clamped == currentPage) return;
+
+    _pdfController.jumpToPage(clamped);
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -197,6 +280,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
   @override
   void dispose() {
     _chromeTimer?.cancel();
+    _hintTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -352,9 +436,22 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
+          if (_showSwipeHint) {
+            unawaited(_hideSwipeHint());
+          }
           _toggleChrome();
           unawaited(_enterFullscreen());
         },
+        onVerticalDragEnd: (details) => _handleFallbackPageSwipe(
+          axis: Axis.vertical,
+          details: details,
+          isLandscape: isLandscape,
+        ),
+        onHorizontalDragEnd: (details) => _handleFallbackPageSwipe(
+          axis: Axis.horizontal,
+          details: details,
+          isLandscape: isLandscape,
+        ),
         child: Stack(
           children: [
             Positioned.fill(
@@ -402,6 +499,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                   });
                 },
                 onPageChanged: (details) {
+                  _trackReadInteractionOnce();
                   if (!mounted) return;
                   setState(() {
                     _pageNumber = details.newPageNumber;
@@ -590,6 +688,41 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                 ),
               ),
             Positioned.fill(child: _buildAudioPill(p)),
+            IgnorePointer(
+              ignoring: true,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: _showSwipeHint ? 1 : 0,
+                child: SafeArea(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: p.cardBg.withValues(alpha: 0.95),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.95),
+                        ),
+                      ),
+                      child: Text(
+                        'Tip: Swipe up/down or left/right to change pages.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: p.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

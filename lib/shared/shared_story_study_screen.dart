@@ -24,6 +24,8 @@ class SharedStoryStudyScreen extends StatefulWidget {
     this.audioUrl = '',
     this.pdfUrl = '',
     this.htmlUrl = '',
+    this.onAudioStarted,
+    this.onReadInteraction,
   });
 
   final String title;
@@ -31,6 +33,8 @@ class SharedStoryStudyScreen extends StatefulWidget {
   final String audioUrl;
   final String pdfUrl;
   final String htmlUrl;
+  final VoidCallback? onAudioStarted;
+  final VoidCallback? onReadInteraction;
 
   @override
   State<SharedStoryStudyScreen> createState() => _SharedStoryStudyScreenState();
@@ -54,6 +58,9 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   bool _htmlLoading = true;
   String? _htmlError;
   int _htmlProgress = 0;
+  bool _didTrackAudioStart = false;
+  bool _didTrackReadInteraction = false;
+  PlayerState _lastAudioState = PlayerState.stopped;
 
   bool get _hasAudio => widget.audioUrl.trim().isNotEmpty;
   bool get _hasPdf => widget.pdfUrl.trim().isNotEmpty;
@@ -84,8 +91,26 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   }
 
   void _onAudioChanged() {
+    final nextState = _audio.playerState;
+    if (_lastAudioState != PlayerState.playing &&
+        nextState == PlayerState.playing) {
+      _trackAudioStartedOnce();
+    }
+    _lastAudioState = nextState;
     if (!mounted) return;
     setState(() {});
+  }
+
+  void _trackAudioStartedOnce() {
+    if (_didTrackAudioStart) return;
+    _didTrackAudioStart = true;
+    widget.onAudioStarted?.call();
+  }
+
+  void _trackReadInteractionOnce() {
+    if (_didTrackReadInteraction) return;
+    _didTrackReadInteraction = true;
+    widget.onReadInteraction?.call();
   }
 
   _StudyPalette _toStudyPalette(AppPalette p) {
@@ -237,6 +262,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             });
           },
           onPageFinished: (_) {
+            _trackReadInteractionOnce();
             if (!mounted) return;
             setState(() {
               _htmlLoading = false;
@@ -327,6 +353,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
           title: widget.title,
           pdfUrl: widget.pdfUrl.trim(),
           audioController: _audio,
+          onReadInteraction: _trackReadInteractionOnce,
         ),
       ),
     );
@@ -341,6 +368,8 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
           title: widget.title,
           url: widget.htmlUrl.trim(),
           audioController: _audio,
+          viewerMode: MaterialViewerMode.document,
+          onReadInteraction: _trackReadInteractionOnce,
         ),
       ),
     );
@@ -444,6 +473,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                         });
                       },
                       onPageChanged: (details) {
+                        _trackReadInteractionOnce();
                         if (!mounted) return;
                         setState(() {
                           _pageNumber = details.newPageNumber;
