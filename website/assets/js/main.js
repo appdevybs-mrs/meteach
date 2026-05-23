@@ -27,6 +27,8 @@ const translations = {
     'gallery.lead': "Discover moments from our students' learning journey",
     'gallery.photosTitle': 'Photos',
     'gallery.videosTitle': 'Videos',
+    'gallery.viewPhotos': 'View Photos',
+    'gallery.viewVideos': 'View Videos',
     'gallery.slide1Title': 'Creative classroom moments',
     'gallery.slide1Text': 'Interactive sessions, guided practice, and active learning.',
     'gallery.slide2Title': 'Student progress',
@@ -87,6 +89,8 @@ const translations = {
     'gallery.lead': 'اكتشف لحظات من رحلة تعلم طلابنا',
     'gallery.photosTitle': 'الصور',
     'gallery.videosTitle': 'الفيديوهات',
+    'gallery.viewPhotos': 'عرض الصور',
+    'gallery.viewVideos': 'عرض الفيديوهات',
     'gallery.slide1Title': 'لحظات صفية إبداعية',
     'gallery.slide1Text': 'جلسات تفاعلية، وتطبيق عملي، وتعلم نشط.',
     'gallery.slide2Title': 'تقدم الطلاب',
@@ -147,6 +151,8 @@ const translations = {
     'gallery.lead': 'Découvrez des moments du parcours d’apprentissage de nos élèves',
     'gallery.photosTitle': 'Photos',
     'gallery.videosTitle': 'Vidéos',
+    'gallery.viewPhotos': 'Voir les photos',
+    'gallery.viewVideos': 'Voir les vidéos',
     'gallery.slide1Title': 'Moments créatifs en classe',
     'gallery.slide1Text': 'Sessions interactives, pratique guidée et apprentissage actif.',
     'gallery.slide2Title': 'Progression des élèves',
@@ -375,10 +381,25 @@ function initGallery() {
   const renderBoard = (target, items) => {
     const photosGrid = target.querySelector('[data-public-gallery-photos]');
     const videosGrid = target.querySelector('[data-public-gallery-videos]');
+    const photoSection = photosGrid?.closest('.gallery-section-block');
+    const videoSection = videosGrid?.closest('.gallery-section-block');
+    const filterButtons = Array.from(document.querySelectorAll('[data-gallery-filter-btn]'));
     if (!photosGrid || !videosGrid) return;
 
     const photos = items.filter((item) => (item.type || '').toString().trim().toLowerCase() !== 'video');
     const videos = items.filter((item) => (item.type || '').toString().trim().toLowerCase() === 'video');
+    const hashToFilter = (hashValue) => {
+      const key = (hashValue || '').toString().replace('#', '').trim().toLowerCase();
+      if (key === 'photos' || key === 'photo') return 'photo';
+      if (key === 'videos' || key === 'video') return 'video';
+      return 'all';
+    };
+
+    const filterToHash = (filter) => {
+      if (filter === 'photo') return 'photos';
+      if (filter === 'video') return 'videos';
+      return '';
+    };
 
     const buildTile = (item) => {
       const button = document.createElement('button');
@@ -407,6 +428,48 @@ function initGallery() {
 
     photos.forEach((item) => photosGrid.appendChild(buildTile(item)));
     videos.forEach((item) => videosGrid.appendChild(buildTile(item)));
+
+    const applyFilter = (nextFilter, options = {}) => {
+      const { updateHash = true } = options;
+      const filter = (nextFilter || 'all').toString().trim().toLowerCase();
+      const showPhotos = filter === 'all' || filter === 'photo';
+      const showVideos = filter === 'all' || filter === 'video';
+
+      if (photoSection) photoSection.hidden = !showPhotos;
+      if (videoSection) videoSection.hidden = !showVideos;
+
+      filterButtons.forEach((button) => {
+        const value = (button.dataset.galleryFilterBtn || 'all').toString().trim().toLowerCase();
+        button.classList.toggle('is-active', value === filter);
+      });
+
+      if (updateHash) {
+        const nextHash = filterToHash(filter);
+        if (nextHash) {
+          if (window.location.hash !== `#${nextHash}`) {
+            window.location.hash = nextHash;
+          }
+        } else if (window.location.hash) {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      }
+    };
+
+    if (filterButtons.length) {
+      filterButtons.forEach((button) => {
+        button.onclick = () => {
+          const value = (button.dataset.galleryFilterBtn || 'all').toString().trim().toLowerCase();
+          applyFilter(value);
+        };
+      });
+
+      window.addEventListener('hashchange', () => {
+        const value = hashToFilter(window.location.hash);
+        applyFilter(value, { updateHash: false });
+      });
+    }
+
+    applyFilter(hashToFilter(window.location.hash), { updateHash: false });
   };
 
   const load = async (target) => {

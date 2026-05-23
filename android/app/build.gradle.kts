@@ -39,6 +39,20 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "app"
+    productFlavors {
+        create("prod") {
+            dimension = "app"
+            applicationId = "com.yourbridgeschool.dreamenglish"
+            manifestPlaceholders["appName"] = "Your Bridge School"
+        }
+        create("teacher") {
+            dimension = "app"
+            applicationId = "com.dreamenglish.academy.dream_english_academy"
+            manifestPlaceholders["appName"] = "Your Bridge School Teacher"
+        }
+    }
+
     val hasKeystore = keystorePropertiesFile.exists()
 
     signingConfigs {

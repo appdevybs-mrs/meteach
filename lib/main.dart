@@ -2409,6 +2409,7 @@ class _PublicGalleryShowcase extends StatefulWidget {
 
 class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  String _mediaFilter = 'all';
 
   DatabaseReference _galleryRef() => _db.child('public_gallery_teasers');
 
@@ -2440,14 +2441,40 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
-  static String _two(int n) => n < 10 ? '0$n' : '$n';
+  List<Map<String, dynamic>> _applyFilter(List<Map<String, dynamic>> items) {
+    if (_mediaFilter == 'all') return items;
 
-  String _fmtDate(dynamic ts) {
-    final ms = _toInt(ts);
-    if (ms <= 0) return '-';
+    return items.where((item) {
+      final type = (item['type'] ?? '').toString().trim().toLowerCase();
+      return type == _mediaFilter;
+    }).toList();
+  }
 
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
+  Widget _buildFilterButton({required String value, required String label}) {
+    final selected = _mediaFilter == value;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) {
+        if (_mediaFilter == value) return;
+        setState(() => _mediaFilter = value);
+      },
+      selectedColor: Brand.actionOrange.withValues(alpha: 0.16),
+      checkmarkColor: Brand.actionOrange,
+      labelStyle: TextStyle(
+        color: selected ? Brand.actionOrange : Brand.primaryBlue,
+        fontWeight: FontWeight.w800,
+      ),
+      side: BorderSide(
+        color: selected
+            ? Brand.actionOrange.withValues(alpha: 0.5)
+            : Brand.uiBorder,
+      ),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    );
   }
 
   @override
@@ -2460,6 +2487,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
               stream: _galleryRef().onValue,
               builder: (context, snap) {
                 final items = _itemsFromSnapshot(snap.data?.snapshot.value);
+                final visibleItems = _applyFilter(items);
 
                 if (items.isEmpty) {
                   return Center(
@@ -2507,110 +2535,109 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                   );
                 }
 
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1,
-                  ),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final type = (item['type'] ?? '')
-                        .toString()
-                        .trim()
-                        .toLowerCase();
-                    final url = (item['url'] ?? '').toString().trim();
-                    final uploadedByName = (item['uploadedByName'] ?? '')
-                        .toString()
-                        .trim();
-                    final createdAt = _fmtDate(item['createdAt']);
-
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => _PublicGalleryViewerScreen(
-                              type: type,
-                              url: url,
-                              uploadedByName: uploadedByName,
-                              createdAt: createdAt,
-                            ),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Brand.uiBorder.withValues(alpha: 0.85),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 6),
-                            ),
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildFilterButton(value: 'all', label: 'All'),
+                            _buildFilterButton(value: 'photo', label: 'Photos'),
+                            _buildFilterButton(value: 'video', label: 'Videos'),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              if (type == 'video')
-                                const _PublicGalleryVideoTile()
-                              else
-                                _FastNetworkThumb(url: url, fit: BoxFit.cover),
-                              Positioned(
-                                left: 10,
-                                right: 10,
-                                bottom: 10,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.58),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        type == 'video'
-                                            ? Icons.play_circle_fill_rounded
-                                            : Icons.photo_rounded,
-                                        color: Colors.white,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          type == 'video' ? 'Video' : 'Photo',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                      ),
+                    ),
+                    Expanded(
+                      child: visibleItems.isEmpty
+                          ? Center(
+                              child: Text(
+                                _mediaFilter == 'video'
+                                    ? 'No videos yet.'
+                                    : 'No photos yet.',
+                                style: const TextStyle(
+                                  color: Brand.primaryBlue,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                            )
+                          : GridView.builder(
+                              padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                    childAspectRatio: 1,
+                                  ),
+                              itemCount: visibleItems.length,
+                              itemBuilder: (context, index) {
+                                final item = visibleItems[index];
+                                final type = (item['type'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .toLowerCase();
+                                final url = (item['url'] ?? '')
+                                    .toString()
+                                    .trim();
+
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(20),
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            _PublicGalleryViewerScreen(
+                                              type: type,
+                                              url: url,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Brand.uiBorder.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.04,
+                                          ),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 6),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          if (type == 'video')
+                                            const _PublicGalleryVideoTile()
+                                          else
+                                            _FastNetworkThumb(
+                                              url: url,
+                                              fit: BoxFit.cover,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -2653,17 +2680,10 @@ class _PublicGalleryVideoTile extends StatelessWidget {
 }
 
 class _PublicGalleryViewerScreen extends StatelessWidget {
-  const _PublicGalleryViewerScreen({
-    required this.type,
-    required this.url,
-    required this.uploadedByName,
-    required this.createdAt,
-  });
+  const _PublicGalleryViewerScreen({required this.type, required this.url});
 
   final String type;
   final String url;
-  final String uploadedByName;
-  final String createdAt;
 
   @override
   Widget build(BuildContext context) {
@@ -2683,70 +2703,22 @@ class _PublicGalleryViewerScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: isVideo
-                  ? _PublicGalleryViewerVideo(url: url)
-                  : InteractiveViewer(
-                      minScale: 0.8,
-                      maxScale: 4,
-                      child: Image.network(
-                        url,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const Icon(
-                          Icons.broken_image_outlined,
-                          color: Colors.white,
-                          size: 44,
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              border: Border(
-                top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isVideo ? 'Video' : 'Photo',
-                  style: const TextStyle(
+      body: Center(
+        child: isVideo
+            ? _PublicGalleryViewerVideo(url: url)
+            : InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.broken_image_outlined,
                     color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
+                    size: 44,
                   ),
                 ),
-                if (uploadedByName.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Uploaded by: $uploadedByName',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  'Added: $createdAt',
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+              ),
       ),
     );
   }

@@ -343,6 +343,52 @@ button, input, select { font: inherit; }
   gap: 22px;
 }
 
+.gallery-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gallery-filter-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.gallery-filter-btn.is-active {
+  border-color: color-mix(in srgb, var(--brand) 40%, transparent);
+  background: color-mix(in srgb, var(--brand) 12%, white);
+  color: var(--brand-dark);
+}
+
+.gallery-quick-links {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gallery-quick-link {
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+  color: var(--brand-dark);
+  background: #fff;
+}
+
+.gallery-quick-link:hover {
+  border-color: color-mix(in srgb, var(--brand) 35%, transparent);
+  background: color-mix(in srgb, var(--brand) 8%, white);
+}
+
 .gallery-section-block {
   display: grid;
   gap: 14px;
