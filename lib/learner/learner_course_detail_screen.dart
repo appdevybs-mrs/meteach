@@ -5484,14 +5484,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                     size: 18,
                                     color: UiK.actionOrange,
                                   ),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Homework',
-                                    style: TextStyle(
-                                      color: UiK.mainText,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
                                 ],
                               ),
                               if (hwDue.isNotEmpty) ...[
@@ -6141,7 +6133,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           ),
                           const SizedBox(height: 12),
                           section(
-                            label: 'Homework',
+                            label: 'Assignment',
                             value: hw.isEmpty
                                 ? 'No homework for this session.'
                                 : hwBlocks.first.lines.join(' '),
