@@ -28,6 +28,7 @@ import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/chat_sender_identity.dart';
+import '../shared/media_download.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
   const TeacherMailThreadScreen({
@@ -2460,8 +2461,41 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final isVid = _looksLikeVideo(url) || _looksLikeVideo(name);
     final isAud = _looksLikeAudio(url) || _looksLikeAudio(name);
 
+    Widget withDownloadAction(Widget child) {
+      if (url.isEmpty) return child;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          child,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextButton.icon(
+              onPressed: () => MediaDownload.downloadUrl(
+                context,
+                url: url,
+                suggestedName: name,
+                askFolder: false,
+              ),
+              icon: const Icon(Icons.download_rounded, size: 16),
+              label: const Text('Download'),
+              style: TextButton.styleFrom(
+                visualDensity: const VisualDensity(
+                  horizontal: -2,
+                  vertical: -2,
+                ),
+                foregroundColor: mine ? Colors.white : _navy,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (isImg && url.isNotEmpty) {
-      return Padding(
+      return withDownloadAction(
+        Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
           onTap: () => _showImageViewer(url, title: name),
@@ -2503,18 +2537,24 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             ),
           ),
         ),
-      );
+      ));
     }
 
     if (isAud && url.isNotEmpty) {
-      return _buildCompactAudioBubble(name: name, url: url, mine: mine);
+      return withDownloadAction(
+        _buildCompactAudioBubble(name: name, url: url, mine: mine),
+      );
     }
 
     if (isVid && url.isNotEmpty) {
-      return _buildCompactVideoBubble(name: name, url: url, mine: mine);
+      return withDownloadAction(
+        _buildCompactVideoBubble(name: name, url: url, mine: mine),
+      );
     }
 
-    return _buildCompactFileBubble(name: name, url: url, mine: mine);
+    return withDownloadAction(
+      _buildCompactFileBubble(name: name, url: url, mine: mine),
+    );
   }
 
   String _normalizeCourseKey(String raw) {

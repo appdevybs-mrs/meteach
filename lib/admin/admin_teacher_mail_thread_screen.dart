@@ -20,6 +20,7 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/chat_sender_identity.dart';
+import '../shared/media_download.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -1112,8 +1113,41 @@ class _AdminTeacherMailThreadScreenState
     final isImg = _looksLikeImage(name) || _looksLikeImage(url);
     final isVid = _looksLikeVideo(name) || _looksLikeVideo(url);
 
+    Widget withDownloadAction(Widget child) {
+      if (url.isEmpty) return child;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          child,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextButton.icon(
+              onPressed: () => MediaDownload.downloadUrl(
+                context,
+                url: url,
+                suggestedName: name,
+                askFolder: false,
+              ),
+              icon: const Icon(Icons.download_rounded, size: 16),
+              label: const Text('Download'),
+              style: TextButton.styleFrom(
+                visualDensity: const VisualDensity(
+                  horizontal: -2,
+                  vertical: -2,
+                ),
+                foregroundColor: mine ? Colors.white : Colors.black87,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (isImg && url.isNotEmpty) {
-      return Padding(
+      return withDownloadAction(
+        Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
           onTap: () => _showImageViewer(url, title: name),
@@ -1125,11 +1159,12 @@ class _AdminTeacherMailThreadScreenState
             ),
           ),
         ),
-      );
+      ));
     }
 
     if (isVid && url.isNotEmpty) {
-      return Padding(
+      return withDownloadAction(
+        Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
           onTap: () => _showVideoViewer(url, title: name),
@@ -1171,10 +1206,10 @@ class _AdminTeacherMailThreadScreenState
             ),
           ),
         ),
-      );
+      ));
     }
 
-    return Padding(
+    return withDownloadAction(Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: InkWell(
         onTap: () => _openUrlExternal(url),
@@ -1186,7 +1221,7 @@ class _AdminTeacherMailThreadScreenState
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildFileUploadingBar() {
