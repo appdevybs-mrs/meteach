@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
 import '../services/push_dispatch_service.dart';
+import '../services/push_error_logger.dart';
 import '../services/notification_service.dart';
 import '../services/learner_notification_settings_service.dart';
 import '../services/audit_action_keys.dart';
@@ -1740,6 +1741,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   Future<void> _sendBookingNotifications(_Slot slot, {int? sessionNo}) async {
     try {
       final learnerName = await _getMyFullName();
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
 
       final effectiveSessionNo =
           sessionNo ?? _effectiveGroupSessionNo(slot) ?? _targetSessionNo;
@@ -1752,7 +1754,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           '$learnerName booked Session $effectiveSessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time} with ${slot.teacherName}.';
 
       final adminEventId =
-          'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$effectiveSessionNo';
+          'booking_admin_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_${effectiveSessionNo}_$nowMs';
       final adminUids = await PushDispatchService.loadAdminUids();
       await PushDispatchService.dispatchAdminTopic(
         intent: PushIntent.booking,
@@ -1783,7 +1785,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           '$learnerName booked Session $effectiveSessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time}.';
 
       final teacherEventId =
-          'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_$effectiveSessionNo';
+          'booking_teacher_${slot.courseId}_${slot.teacherId}_${slot.dayKey}_${slot.time}_${myUid}_${effectiveSessionNo}_$nowMs';
 
       await PushDispatchService.dispatchToUser(
         intent: PushIntent.booking,
@@ -1808,7 +1810,102 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           'sessionNo': effectiveSessionNo.toString(),
         },
       );
-    } catch (_) {}
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'learner/learner_booking',
+        action: 'booking_push_send_failed',
+        error: e,
+        stackTrace: st,
+        targetUid: myUid,
+        extra: {'type': 'booking', 'route': ''},
+      );
+    }
+  }
+
+  Future<void> _sendCancelNotifications(
+    _MyBooking booking, {
+    required String cid,
+  }) async {
+    try {
+      final learnerName = await _getMyFullName();
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final safeCourseTitle =
+          (courseTitleById[cid] ?? courseTitle).trim().isEmpty
+          ? 'Course'
+          : (courseTitleById[cid] ?? courseTitle).trim();
+      final effectiveSessionNo = booking.sessionNo > 0 ? booking.sessionNo : 0;
+
+      final title = 'Learner canceled booking';
+      final body =
+          '$learnerName canceled ${effectiveSessionNo > 0 ? 'Session $effectiveSessionNo ' : ''}for $safeCourseTitle on ${booking.dayKey} at ${booking.time} with ${booking.teacherName}.';
+
+      final adminEventId =
+          'booking_cancel_admin_${cid}_${booking.teacherId}_${booking.dayKey}_${booking.time}_${myUid}_${effectiveSessionNo > 0 ? effectiveSessionNo : 'na'}_$nowMs';
+      final teacherEventId =
+          'booking_cancel_teacher_${cid}_${booking.teacherId}_${booking.dayKey}_${booking.time}_${myUid}_${effectiveSessionNo > 0 ? effectiveSessionNo : 'na'}_$nowMs';
+
+      final adminUids = await PushDispatchService.loadAdminUids();
+      await PushDispatchService.dispatchAdminTopic(
+        intent: PushIntent.booking,
+        title: title,
+        message: body,
+        context: const PushDispatchContext(
+          screen: 'learner/learner_booking',
+          action: 'booking_cancel_admin_push',
+        ),
+        eventParts: [adminEventId],
+        fallbackAdminUids: adminUids,
+        data: {
+          'targetRole': 'admin',
+          'courseId': cid,
+          'courseTitle': safeCourseTitle,
+          'teacherId': booking.teacherId,
+          'teacherName': booking.teacherName,
+          'learnerUid': myUid,
+          'learnerName': learnerName,
+          'dayKey': booking.dayKey,
+          'time': booking.time,
+          if (effectiveSessionNo > 0)
+            'sessionNo': effectiveSessionNo.toString(),
+          'changeType': 'cancel',
+        },
+      );
+
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.booking,
+        targetUid: booking.teacherId,
+        title: title,
+        message: body,
+        context: const PushDispatchContext(
+          screen: 'learner/learner_booking',
+          action: 'booking_cancel_teacher_push',
+        ),
+        eventParts: [teacherEventId],
+        data: {
+          'targetRole': 'teacher',
+          'courseId': cid,
+          'courseTitle': safeCourseTitle,
+          'teacherId': booking.teacherId,
+          'teacherName': booking.teacherName,
+          'learnerUid': myUid,
+          'learnerName': learnerName,
+          'dayKey': booking.dayKey,
+          'time': booking.time,
+          if (effectiveSessionNo > 0)
+            'sessionNo': effectiveSessionNo.toString(),
+          'changeType': 'cancel',
+        },
+      );
+    } catch (e, st) {
+      await PushErrorLogger.logFailure(
+        screen: 'learner/learner_booking',
+        action: 'booking_cancel_push_send_failed',
+        error: e,
+        stackTrace: st,
+        targetUid: myUid,
+        extra: {'type': 'booking', 'route': ''},
+      );
+    }
   }
 
   Future<void> _scheduleLearnerLocalReminder(_Slot slot) async {
@@ -3396,6 +3493,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             minutesBeforeList: _allClassReminderLeadMinutes(),
           );
         } catch (_) {}
+        await _sendCancelNotifications(b, cid: cid);
         _toast('Booking cancelled successfully.');
         await _loadReservationsSummary(cid);
         await _generateSlots(cid);
