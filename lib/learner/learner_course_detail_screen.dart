@@ -41,6 +41,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/material_webview_screen.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
@@ -788,36 +789,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     } catch (_) {}
   }
 
-  Future<String?> _findExistingThreadWithTeacher(String teacherUid) async {
-    try {
-      final snap = await _db.child('mail_index/$_uid').get();
-      if (!snap.exists || snap.value is! Map) return null;
-      final root = Map<dynamic, dynamic>.from(snap.value as Map);
-      String? bestThreadId;
-      int bestUpdatedAt = 0;
-
-      for (final e in root.entries) {
-        final threadId = e.key.toString().trim();
-        if (threadId.isEmpty || e.value is! Map) continue;
-        final row = Map<dynamic, dynamic>.from(e.value as Map);
-        final peerUid = (row['peerUid'] ?? '').toString().trim();
-        final deletedAt = row['deletedAt'];
-        if (peerUid != teacherUid) continue;
-        if (deletedAt != null) continue;
-
-        final updatedAt = _asInt(row['updatedAt']);
-        if (bestThreadId == null || updatedAt >= bestUpdatedAt) {
-          bestThreadId = threadId;
-          bestUpdatedAt = updatedAt;
-        }
-      }
-
-      return bestThreadId;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<String> _createThreadWithTeacher(_TeacherMiniProfile teacher) async {
     final threadId = _db.child('mail_threads').push().key;
     if (threadId == null || threadId.trim().isEmpty) {
@@ -887,13 +858,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       }
       final picked = await _pickTeacherForMail(teachers);
       if (picked == null || !mounted) return;
-      String? threadId = await _findExistingThreadWithTeacher(picked.uid);
-      threadId ??= await _createThreadWithTeacher(picked);
+      final threadId = await _createThreadWithTeacher(picked);
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => LearnerMailThreadScreen(
-            threadId: threadId!,
+            threadId: threadId,
             peerUid: picked.uid,
             peerName: picked.name,
             subject:
@@ -5855,10 +5825,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         context,
         'learner.course_detail.material.${widget.courseKey}.${session.hashCode}',
         () async {
-          final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-          if (!ok && mounted) {
-            _showMissingHomeworkMessage();
-          }
+          final title = (session['title'] ?? '').toString().trim();
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => MaterialWebViewScreen.fromUrl(
+                title: title.isEmpty ? 'Homework' : '$title Homework',
+                url: uri.toString(),
+                viewerMode: MaterialViewerMode.document,
+              ),
+            ),
+          );
         },
       );
     } catch (_) {
@@ -6183,36 +6159,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                             value: content.isEmpty
                                 ? 'Session content will be added soon.'
                                 : content,
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: UiK.uiBorder.withValues(alpha: 0.85),
-                              ),
-                              color: const Color(0xFFF7FAFF),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Need help with this lesson?',
-                                  style: TextStyle(
-                                    color: UiK.mainText,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                OutlinedButton(
-                                  onPressed: _mailingTeacher
-                                      ? null
-                                      : _mailTeacherDirectly,
-                                  child: const Text('Contact Teacher'),
-                                ),
-                              ],
-                            ),
                           ),
                         ],
                       ),
