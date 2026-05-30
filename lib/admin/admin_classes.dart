@@ -688,7 +688,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (mounted) _notify('📋 Copied ${phones.length} phone number${phones.length > 1 ? 's' : ''} ✅');
 
     try {
-      final uri = Uri.parse('sms:${phones.first}');
+      final uri = Uri.parse('sms:${phones.join(';')}');
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {}
   }
