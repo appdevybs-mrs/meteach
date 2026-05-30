@@ -803,6 +803,135 @@ class _LearnersListState extends State<_LearnersList>
     }
   }
 
+  Future<bool> _confirm({
+    required String title,
+    required String message,
+    required String confirmText,
+  }) async {
+    return (await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmText),
+              ),
+            ],
+          ),
+        )) ??
+        false;
+  }
+
+  Future<void> _handleCall(Learner learner) async {
+    final phone = learner.phone1.trim();
+    if (phone.isEmpty) {
+      _toast('No phone number available.');
+      return;
+    }
+    final confirmed = await _confirm(
+      title: 'Call ${learner.firstName}?',
+      message: 'Call $phone?',
+      confirmText: 'Call',
+    );
+    if (!confirmed || !mounted) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      _toast('Cannot open phone dialer on this device.');
+    }
+  }
+
+  Future<void> _handleSms(Learner learner) async {
+    final phone = learner.phone1.trim();
+    if (phone.isEmpty) {
+      _toast('No phone number available.');
+      return;
+    }
+    final confirmed = await _confirm(
+      title: 'Send SMS',
+      message:
+          'Send SMS to ${learner.fullName} at $phone?',
+      confirmText: 'Send',
+    );
+    if (!confirmed || !mounted) return;
+    await _showSmsTemplateSheet(phone: phone, learner: learner);
+  }
+
+  Future<void> _handleReminder(String uid, Learner learner) async {
+    final confirmed = await _confirm(
+      title: 'Send Reminder',
+      message: 'Send a reminder to ${learner.fullName}?',
+      confirmText: 'Send',
+    );
+    if (!confirmed || !mounted) return;
+    await _showQuickReminderSheet(uid: uid, learner: learner);
+  }
+
+  Future<void> _handleMail(String uid, Learner learner) async {
+    final confirmed = await _confirm(
+      title: 'Open Mail',
+      message: 'Open mail for ${learner.fullName}?',
+      confirmText: 'Open',
+    );
+    if (!confirmed || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminLearnerMailTopicsScreen(
+          learnerUid: uid,
+          learnerName:
+              learner.fullName.isEmpty ? 'Learner' : learner.fullName,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLearnerActionRow({
+    required String uid,
+    required Learner learner,
+    required bool dense,
+  }) {
+    final iconSize = dense ? 16.0 : 18.0;
+    final color = AdminLearnersScreen.primaryBlue.withValues(alpha: 0.65);
+    final tapPadding = dense ? 5.0 : 6.0;
+
+    Widget iconWidget(IconData iconData, String tooltip, VoidCallback onTap) {
+      return Tooltip(
+        message: tooltip,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.all(tapPadding),
+            child: Icon(iconData, size: iconSize, color: color),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: dense ? 43.0 : 52.0,
+        bottom: 4,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          iconWidget(Icons.phone_rounded, 'Call', () => _handleCall(learner)),
+          iconWidget(Icons.sms_rounded, 'Send SMS', () => _handleSms(learner)),
+          iconWidget(Icons.notifications_active_rounded, 'Send Reminder',
+              () => _handleReminder(uid, learner)),
+          iconWidget(Icons.mail_rounded, 'Open Mail', () => _handleMail(uid, learner)),
+        ],
+      ),
+    );
+  }
+
   Future<String> _buildScheduleMessage(Learner learner) async {
     final fullName = learner.fullName;
     final coursesSnap = await _db.ref('users/${learner.uid}/courses').get();
@@ -1794,37 +1923,26 @@ class _LearnersListState extends State<_LearnersList>
                                 padding: EdgeInsets.all(dense ? 9 : 12),
                                 child: Row(
                                   children: [
-                                    GestureDetector(
-                                      onTap: () => _showQuickReminderSheet(
-                                        uid: row.uid,
-                                        learner: l,
-                                      ),
-                                      onLongPress: () =>
-                                          _showQuickReminderSheet(
-                                            uid: row.uid,
-                                            learner: l,
+                                    Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        ProfileAvatar(
+                                          name: l.fullName,
+                                          photoUrl: l.primaryProfilePhoto,
+                                          radius: dense ? 17 : 20,
+                                          fallbackBg: avatarBg,
+                                          fallbackFg: avatarFg,
+                                          borderColor: avatarBg.withValues(
+                                            alpha: 0.45,
                                           ),
-                                      child: Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          ProfileAvatar(
-                                            name: l.fullName,
-                                            photoUrl: l.primaryProfilePhoto,
-                                            radius: dense ? 17 : 20,
-                                            fallbackBg: avatarBg,
-                                            fallbackFg: avatarFg,
-                                            borderColor: avatarBg.withValues(
-                                              alpha: 0.45,
-                                            ),
+                                        ),
+                                        if (unread > 0)
+                                          Positioned(
+                                            right: -6,
+                                            top: -6,
+                                            child: _badge(unread),
                                           ),
-                                          if (unread > 0)
-                                            Positioned(
-                                              right: -6,
-                                              top: -6,
-                                              child: _badge(unread),
-                                            ),
-                                        ],
-                                      ),
+                                      ],
                                     ),
                                     SizedBox(width: dense ? 9 : 12),
                                     Expanded(
@@ -1880,12 +1998,6 @@ class _LearnersListState extends State<_LearnersList>
                                                         'Cannot open phone dialer on this device.',
                                                       );
                                                     }
-                                                  },
-                                                  onLongPress: () async {
-                                                    await _showSmsTemplateSheet(
-                                                      phone: l.phone1.trim(),
-                                                      learner: l,
-                                                    );
                                                   },
                                                   child: Text(
                                                     '📞 ${l.phone1}',
@@ -2000,6 +2112,12 @@ class _LearnersListState extends State<_LearnersList>
                                 ),
                               ),
                             ),
+                            if (l.phone1.trim().isNotEmpty)
+                              _buildLearnerActionRow(
+                                uid: row.uid,
+                                learner: l,
+                                dense: dense,
+                              ),
                             AnimatedSize(
                               duration: const Duration(milliseconds: 180),
                               curve: Curves.easeOut,
