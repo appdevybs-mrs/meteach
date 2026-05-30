@@ -32,8 +32,10 @@ import 'dart:async';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
@@ -535,6 +537,181 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
+  // ===== Phone / SMS helpers =====
+
+  String _learnerPhoneByUid(String uid) {
+    for (final l in _allLearners) {
+      if (l["uid"] == uid) return (l["phone1"] ?? "").toString().trim();
+    }
+    return '';
+  }
+
+  Future<void> _launchSms({required String phone, required String body}) async {
+    final p = phone.trim();
+    final text = body.trim();
+    if (p.isEmpty) return;
+
+    if (text.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) _notify('Message copied ✅');
+    }
+
+    final uri = text.isEmpty
+        ? Uri.parse('sms:$p')
+        : Uri.parse('sms:$p?body=${Uri.encodeComponent(text)}');
+
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        _notify('SMS app not available. Text is copied ✅');
+      }
+    } catch (_) {
+      if (mounted) _notify('SMS app not available. Text is copied ✅');
+    }
+  }
+
+  Future<void> _handleLearnerCall(String uid, String name) async {
+    final phone = _learnerPhoneByUid(uid);
+    if (phone.isEmpty) {
+      _notify('No phone number available.');
+      return;
+    }
+    final confirmed = await _confirmQuickAction(
+      title: 'Call $name?',
+      message: 'Call $phone?',
+      confirmText: 'Call',
+    );
+    if (!confirmed || !mounted) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      _notify('Cannot open phone dialer on this device.');
+    }
+  }
+
+  Future<void> _handleLearnerSms(String uid, String name) async {
+    final phone = _learnerPhoneByUid(uid);
+    if (phone.isEmpty) {
+      _notify('No phone number available.');
+      return;
+    }
+    final confirmed = await _confirmQuickAction(
+      title: 'Send SMS',
+      message: 'Send SMS to $name at $phone?',
+      confirmText: 'Send',
+    );
+    if (!confirmed || !mounted) return;
+    await _launchSms(phone: phone, body: '');
+  }
+
+  Future<void> _handleLearnerReminder(String uid, String name) async {
+    final confirmed = await _confirmQuickAction(
+      title: 'Send Reminder',
+      message: 'Send a reminder to $name?',
+      confirmText: 'Send',
+    );
+    if (!confirmed || !mounted) return;
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<_QuickLearnerReminder>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.payments_rounded),
+              title: const Text('Payment'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.payment),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_busy_rounded),
+              title: const Text('Absence'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
+            ),
+            ListTile(
+              leading: const Icon(Icons.access_time_rounded),
+              title: const Text('Late'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.late),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null || picked == _QuickLearnerReminder.empty) return;
+    await _sendLearnerQuickReminder(uid: uid, type: picked);
+  }
+
+  Future<void> _handleLearnerMail(String uid, String name) async {
+    final confirmed = await _confirmQuickAction(
+      title: 'Open Mail',
+      message: 'Open mail for $name?',
+      confirmText: 'Open',
+    );
+    if (!confirmed || !mounted) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminLearnerMailTopicsScreen(
+          learnerUid: uid,
+          learnerName: name.isEmpty ? 'Learner' : name,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleMassSms(List<Map<String, String>> learners) async {
+    final phones = learners
+        .map((l) => _learnerPhoneByUid(l['uid'] ?? ''))
+        .where((p) => p.isNotEmpty)
+        .toList();
+
+    if (phones.isEmpty) {
+      _notify('No phone numbers available.');
+      return;
+    }
+
+    final confirmed = await _confirmQuickAction(
+      title: 'Mass SMS',
+      message: 'Copy ${phones.length} learner phone number${phones.length > 1 ? 's' : ''} and open SMS?',
+      confirmText: 'Copy & Open',
+    );
+    if (!confirmed || !mounted) return;
+
+    final joined = phones.join(';');
+    await Clipboard.setData(ClipboardData(text: joined));
+    if (mounted) _notify('📋 Copied ${phones.length} phone number${phones.length > 1 ? 's' : ''} ✅');
+
+    try {
+      final uri = Uri.parse('sms:${phones.first}');
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  Widget _smallActionIcon({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onTap,
+    double size = 16,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, size: size, color: color),
+        ),
+      ),
+    );
+  }
+
   String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   Stream<Map<String, int>> _unreadByLearnerMapStream() {
@@ -979,6 +1156,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           final first = (data["first_name"] ?? "").toString().trim();
           final last = (data["last_name"] ?? "").toString().trim();
           final name = "$first $last".trim();
+          final phone1 = (data["phone1"] ?? "").toString().trim();
 
           final coursesMap = (data["courses"] is Map)
               ? Map<String, dynamic>.from(
@@ -995,6 +1173,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             "uid": uid,
             "serial": serial.isEmpty ? "N/A" : serial,
             "name": name.isEmpty ? "Unnamed" : name,
+            "phone1": phone1,
             "courses": coursesMap,
           });
         }
@@ -4683,6 +4862,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                       icon: const Icon(Icons.more_vert_rounded),
                                     ),
                                     IconButton(
+                                      tooltip: 'Mass SMS',
+                                      icon: Icon(
+                                        Icons.sms_rounded,
+                                        size: 20,
+                                        color: Colors.blueGrey.shade400,
+                                      ),
+                                      onPressed: learners.isEmpty
+                                          ? null
+                                          : () => _handleMassSms(learners),
+                                    ),
+                                    IconButton(
                                       tooltip: expanded
                                           ? 'Collapse learners'
                                           : 'Expand learners',
@@ -4944,6 +5134,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                         final subtitle = serial.isNotEmpty
                                             ? 'Serial: $serial'
                                             : null;
+                                        final learnerUid =
+                                            (l['uid'] ?? '').toString();
 
                                         return Column(
                                           children: [
@@ -4964,12 +5156,71 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                               subtitle: subtitle == null
                                                   ? null
                                                   : Text(subtitle),
-                                              trailing: const Icon(
-                                                Icons.open_in_new_rounded,
-                                                size: 18,
+                                              trailing: Row(
+                                                mainAxisSize:
+                                                    MainAxisSize.min,
+                                                children: [
+                                                  _smallActionIcon(
+                                                    icon: Icons
+                                                        .phone_rounded,
+                                                    color: Colors.green,
+                                                    tooltip: 'Call',
+                                                    onTap: () =>
+                                                        _handleLearnerCall(
+                                                      learnerUid,
+                                                      title,
+                                                    ),
+                                                  ),
+                                                  _smallActionIcon(
+                                                    icon: Icons.sms_rounded,
+                                                    color: AdminLearnersScreen
+                                                        .accentCyan,
+                                                    tooltip: 'Send SMS',
+                                                    onTap: () =>
+                                                        _handleLearnerSms(
+                                                      learnerUid,
+                                                      title,
+                                                    ),
+                                                  ),
+                                                  _smallActionIcon(
+                                                    icon: Icons
+                                                        .notifications_active_rounded,
+                                                    color: AdminLearnersScreen
+                                                        .actionOrange,
+                                                    tooltip: 'Send Reminder',
+                                                    onTap: () =>
+                                                        _handleLearnerReminder(
+                                                      learnerUid,
+                                                      title,
+                                                    ),
+                                                  ),
+                                                  _smallActionIcon(
+                                                    icon: Icons.mail_rounded,
+                                                    color: Colors.purple,
+                                                    tooltip: 'Open Mail',
+                                                    onTap: () =>
+                                                        _handleLearnerMail(
+                                                      learnerUid,
+                                                      title,
+                                                    ),
+                                                  ),
+                                                  GestureDetector(
+                                                    onTap: () =>
+                                                        _openLearnerFromClass(
+                                                            l),
+                                                    child: const Padding(
+                                                      padding: EdgeInsets.all(
+                                                          4),
+                                                      child: Icon(
+                                                        Icons
+                                                            .open_in_new_rounded,
+                                                        size: 16,
+                                                        color: Colors.grey,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              onTap: () =>
-                                                  _openLearnerFromClass(l),
                                             ),
                                             if (idx != learners.length - 1)
                                               const Divider(height: 1),

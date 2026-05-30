@@ -898,10 +898,15 @@ class _LearnersListState extends State<_LearnersList>
     required bool dense,
   }) {
     final iconSize = dense ? 16.0 : 18.0;
-    final color = AdminLearnersScreen.primaryBlue.withValues(alpha: 0.65);
+    final gap = dense ? 12.0 : 18.0;
     final tapPadding = dense ? 5.0 : 6.0;
 
-    Widget iconWidget(IconData iconData, String tooltip, VoidCallback onTap) {
+    Widget iconWidget(
+      IconData iconData,
+      String tooltip,
+      Color color,
+      VoidCallback onTap,
+    ) {
       return Tooltip(
         message: tooltip,
         child: GestureDetector(
@@ -922,11 +927,33 @@ class _LearnersListState extends State<_LearnersList>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          iconWidget(Icons.phone_rounded, 'Call', () => _handleCall(learner)),
-          iconWidget(Icons.sms_rounded, 'Send SMS', () => _handleSms(learner)),
-          iconWidget(Icons.notifications_active_rounded, 'Send Reminder',
-              () => _handleReminder(uid, learner)),
-          iconWidget(Icons.mail_rounded, 'Open Mail', () => _handleMail(uid, learner)),
+          iconWidget(
+            Icons.phone_rounded,
+            'Call',
+            Colors.green,
+            () => _handleCall(learner),
+          ),
+          SizedBox(width: gap),
+          iconWidget(
+            Icons.sms_rounded,
+            'Send SMS',
+            AdminLearnersScreen.accentCyan,
+            () => _handleSms(learner),
+          ),
+          SizedBox(width: gap),
+          iconWidget(
+            Icons.notifications_active_rounded,
+            'Send Reminder',
+            AdminLearnersScreen.actionOrange,
+            () => _handleReminder(uid, learner),
+          ),
+          SizedBox(width: gap),
+          iconWidget(
+            Icons.mail_rounded,
+            'Open Mail',
+            Colors.purple,
+            () => _handleMail(uid, learner),
+          ),
         ],
       ),
     );
