@@ -49,6 +49,8 @@ import 'admin_learners.dart';
 
 enum _QuickLearnerReminder { payment, absence, late, empty }
 
+enum _QuickSmsTemplate { empty, paymentReminder }
+
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
   final String? openClassSearchId;
@@ -590,6 +592,55 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
   }
 
+  Future<void> _showQuickSmsSheet({
+    required String phone,
+    required String learnerName,
+  }) async {
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<_QuickSmsTemplate>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.sms_rounded),
+              title: const Text('Empty'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
+            ),
+            ListTile(
+              leading: const Icon(Icons.payments_rounded),
+              title: const Text('Payment Reminder'),
+              onTap: () =>
+                  Navigator.pop(ctx, _QuickSmsTemplate.paymentReminder),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null) return;
+
+    String body = '';
+    switch (picked) {
+      case _QuickSmsTemplate.empty:
+        body = '';
+        break;
+      case _QuickSmsTemplate.paymentReminder:
+        body = [
+          'تذكير لطيف برسوم الدورة عند وقتك المناسب.',
+          'إذا تم الدفع بالفعل، يرجى تجاهل هذه الرسالة. شكراً لك.',
+        ].join('\n');
+        break;
+    }
+
+    await _launchSms(phone: phone, body: body);
+  }
+
   Future<void> _handleLearnerSms(String uid, String name) async {
     final phone = _learnerPhoneByUid(uid);
     if (phone.isEmpty) {
@@ -602,7 +653,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       confirmText: 'Send',
     );
     if (!confirmed || !mounted) return;
-    await _launchSms(phone: phone, body: '');
+    await _showQuickSmsSheet(phone: phone, learnerName: name);
   }
 
   Future<void> _handleLearnerReminder(String uid, String name) async {

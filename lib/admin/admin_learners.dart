@@ -620,7 +620,7 @@ enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
 enum _QuickLearnerReminder { payment, absence, late, empty }
 
-enum _QuickSmsTemplate { empty, welcome, paymentReminder, absence, schedule }
+enum _QuickSmsTemplate { empty, paymentReminder, schedule }
 
 class _LearnersList extends StatefulWidget {
   const _LearnersList({
@@ -699,20 +699,10 @@ class _LearnersListState extends State<_LearnersList>
               onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
             ),
             ListTile(
-              leading: const Icon(Icons.waving_hand_rounded),
-              title: const Text('Welcome'),
-              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.welcome),
-            ),
-            ListTile(
               leading: const Icon(Icons.payments_rounded),
               title: const Text('Payment Reminder'),
               onTap: () =>
                   Navigator.pop(ctx, _QuickSmsTemplate.paymentReminder),
-            ),
-            ListTile(
-              leading: const Icon(Icons.favorite_outline_rounded),
-              title: const Text('Absence (We miss you)'),
-              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.absence),
             ),
             ListTile(
               leading: const Icon(Icons.calendar_today_rounded),
@@ -733,30 +723,10 @@ class _LearnersListState extends State<_LearnersList>
         body = '';
         break;
 
-      case _QuickSmsTemplate.welcome:
-        final email = learner.email.trim();
-        body = [
-          'مرحباً ${learner.firstName.trim().isEmpty ? 'عزيزي الطالب' : learner.firstName.trim()}،',
-          'أهلاً بك في تطبيق "Your Bridge School".',
-          'يمكنك تسجيل الدخول باستخدام:',
-          if (email.isNotEmpty) 'البريد الإلكتروني: $email',
-          'كلمة المرور: 12345678',
-        ].join('\n');
-        break;
-
       case _QuickSmsTemplate.paymentReminder:
         body = [
-          'مرحباً ${learner.firstName.trim().isEmpty ? 'عزيزي الطالب' : learner.firstName.trim()}،',
           'تذكير لطيف برسوم الدورة عند وقتك المناسب.',
           'إذا تم الدفع بالفعل، يرجى تجاهل هذه الرسالة. شكراً لك.',
-        ].join('\n');
-        break;
-
-      case _QuickSmsTemplate.absence:
-        body = [
-          'مرحباً ${learner.firstName.trim().isEmpty ? 'عزيزي الطالب' : learner.firstName.trim()}،',
-          'اشتقنا لوجودك في الحصة ونتمنى أنك بخير.',
-          'إذا احتجت أي مساعدة للمتابعة، نحن دائماً معك.',
         ].join('\n');
         break;
 
@@ -960,12 +930,10 @@ class _LearnersListState extends State<_LearnersList>
   }
 
   Future<String> _buildScheduleMessage(Learner learner) async {
-    final fullName = learner.fullName;
     final coursesSnap = await _db.ref('users/${learner.uid}/courses').get();
     final coursesRaw = coursesSnap.value;
 
     final lines = <String>[];
-    lines.add('الطالب: $fullName');
 
     if (coursesRaw is Map) {
       final courseList = <Map<String, dynamic>>[];
