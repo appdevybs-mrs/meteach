@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../services/mail_consistency_service.dart';
 import '../services/internal_mail_service.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/mail_thread_by_id_screen.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
@@ -368,6 +369,28 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                                       senderUid: _meUid,
                                       body: body,
                                     );
+                                    final preview = body.trim().length > 80
+                                        ? body.trim().substring(0, 80)
+                                        : body.trim();
+                                    unawaited(() async {
+                                      try {
+                                        await PushDispatchService.dispatchMailToGroup(
+                                          threadId: threadId,
+                                          senderUid: _meUid,
+                                          senderName: 'Admin',
+                                          title: subject,
+                                          preview: preview.isEmpty
+                                              ? 'New group message'
+                                              : preview,
+                                          nowMs: now,
+                                          context: const PushDispatchContext(
+                                            screen:
+                                                'admin/admin_mail_inbox',
+                                            action: 'mail_push_group',
+                                          ),
+                                        );
+                                      } catch (_) {}
+                                    }());
                                     if (!mounted) return;
                                     if (ctx.mounted) {
                                       Navigator.pop(ctx);

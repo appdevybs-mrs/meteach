@@ -247,10 +247,20 @@ function initGallery() {
 
   const mediaNode = (item) => {
     const url = (item.url || '').toString().trim();
+    const thumbnailUrl = (item.thumbnailUrl || '').toString().trim();
     const type = (item.type || '').toString().trim().toLowerCase();
     if (!url) return null;
 
     if (type === 'video') {
+      if (thumbnailUrl) {
+        const img = document.createElement('img');
+        img.className = 'gallery-media';
+        img.loading = 'lazy';
+        img.alt = 'Gallery video';
+        img.src = thumbnailUrl;
+        return img;
+      }
+
       const video = document.createElement('video');
       video.controls = true;
       video.preload = 'metadata';

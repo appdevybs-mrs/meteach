@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'mail_topic_thread_screen.dart';
 import 'admin_mail_person_list_navigation.dart';
+import 'dart:async';
+import '../services/push_dispatch_service.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 
@@ -196,7 +198,25 @@ class _AdminTeacherMailTopicsScreenState
         'lastDeliveredAt': now,
       });
 
-      // 4) open the new topic thread
+      // 4) send push notification
+      unawaited(() async {
+        try {
+          await PushDispatchService.dispatchMailToUser(
+            targetUid: widget.teacherUid,
+            threadId: threadId,
+            peerUid: _meUid,
+            title: subject.trim(),
+            preview: 'New topic',
+            nowMs: now,
+            context: const PushDispatchContext(
+              screen: 'admin/admin_teacher_mail_topics',
+              action: 'mail_push',
+            ),
+          );
+        } catch (_) {}
+      }());
+
+      // 5) open the new topic thread
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(

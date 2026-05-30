@@ -56,8 +56,14 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
     });
 
     try {
-      final snap = await _db.child('syllabi').get();
-      final v = snap.value;
+      final results = await Future.wait([
+        _db.child('syllabi').get(),
+        _db.child('courses').get(),
+      ]);
+      final syllabiSnap = results[0];
+      final coursesSnap = results[1];
+
+      final v = syllabiSnap.value;
 
       if (v is! Map) {
         setState(() {
@@ -65,6 +71,30 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
           _items = const [];
         });
         return;
+      }
+
+      final coursesRaw = coursesSnap.value;
+      final thumbMap = <String, String>{};
+      final orderIndexMap = <String, int>{};
+      if (coursesRaw is Map) {
+        final cm = Map<dynamic, dynamic>.from(coursesRaw);
+        cm.forEach((cid, cval) {
+          final cmap = _asStringKeyMap(cval);
+          if (cmap == null) return;
+          final thumb = _firstNonEmpty([
+            _readString(cmap['thumbnail']),
+            _readString(cmap['thumb']),
+            _readString(cmap['image']),
+            _readString(cmap['thumbnailUrl']),
+          ]);
+          if (thumb.isNotEmpty) {
+            thumbMap[cid.toString()] = _fixUrl(thumb);
+          }
+          final orderVal = cmap['order_index'];
+          if (orderVal is int) {
+            orderIndexMap[cid.toString()] = orderVal;
+          }
+        });
       }
 
       final raw = Map<dynamic, dynamic>.from(v);
@@ -123,11 +153,19 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
             variants: variants,
             normalSearchText: searchIndex.normalText,
             deepEntries: searchIndex.deepEntries,
+            thumbnailUrl: thumbMap[courseId] ?? '',
+            orderIndex: orderIndexMap[courseId],
           ),
         );
       });
 
-      out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      out.sort((a, b) {
+        final ao = a.orderIndex ?? (1 << 30);
+        final bo = b.orderIndex ?? (1 << 30);
+        final c = ao.compareTo(bo);
+        if (c != 0) return c;
+        return b.updatedAt.compareTo(a.updatedAt);
+      });
 
       if (!mounted) return;
       setState(() {
@@ -427,6 +465,19 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
     return max;
   }
 
+  static String _fixUrl(String url) {
+    var u = url.trim();
+    if (u.isEmpty) return u;
+    if (u.startsWith('//')) u = 'https:$u';
+    if (u.startsWith('www.')) u = 'https://$u';
+    if (u.startsWith('http://')) u = 'https://${u.substring(7)}';
+    final uri = Uri.tryParse(u);
+    if (uri == null) return '';
+    if (uri.scheme != 'https' && uri.scheme != 'http') return '';
+    if (uri.host.trim().isEmpty) return '';
+    return uri.toString();
+  }
+
   String _fmtDate(int ms) {
     if (ms <= 0) return '';
     try {
@@ -584,6 +635,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
                               variants: it.variants.map(_variantLabel).toList(),
                               matchContext: _deepMatchContext(it),
                               matchQuery: _query,
+                              thumbnailUrl: it.thumbnailUrl,
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -616,6 +668,8 @@ class _SyllabusLite {
     required this.variants,
     required this.normalSearchText,
     required this.deepEntries,
+    this.thumbnailUrl = '',
+    this.orderIndex,
   });
 
   final String courseId;
@@ -626,6 +680,8 @@ class _SyllabusLite {
   final List<String> variants;
   final String normalSearchText;
   final List<_DeepSearchEntry> deepEntries;
+  final String thumbnailUrl;
+  final int? orderIndex;
 }
 
 /* ================== UI ================== */
@@ -857,6 +913,7 @@ class _SyllabusTile extends StatelessWidget {
     required this.variants,
     this.matchContext,
     this.matchQuery = '',
+    this.thumbnailUrl = '',
     required this.onTap,
   });
 
@@ -868,6 +925,7 @@ class _SyllabusTile extends StatelessWidget {
   final List<String> variants;
   final String? matchContext;
   final String matchQuery;
+  final String thumbnailUrl;
   final VoidCallback onTap;
 
   List<TextSpan> _buildHighlightedSpans({
@@ -924,6 +982,41 @@ class _SyllabusTile extends StatelessWidget {
     return spans;
   }
 
+  Widget _buildThumb() {
+    if (thumbnailUrl.trim().isEmpty) {
+      return _buildFallbackIcon();
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Image.network(
+        thumbnailUrl,
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildFallbackIcon(),
+        loadingBuilder: (_, child, progress) {
+          if (progress == null) return child;
+          return _buildFallbackIcon();
+        },
+      ),
+    );
+  }
+
+  Widget _buildFallbackIcon() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: palette.soft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: palette.border.withValues(alpha: 0.85),
+        ),
+      ),
+      child: Icon(Icons.menu_book_rounded, color: palette.primary),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -944,115 +1037,150 @@ class _SyllabusTile extends StatelessWidget {
           ],
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: palette.soft,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: palette.border.withValues(alpha: 0.85),
-                ),
-              ),
-              child: Icon(Icons.menu_book_rounded, color: palette.primary),
-            ),
+            _buildThumb(),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: palette.primary,
-                      fontSize: 15,
-                      height: 1.2,
-                    ),
-                  ),
-                  if ((matchContext ?? '').trim().isNotEmpty) ...[
-                    const SizedBox(height: 7),
-                    RichText(
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      text: TextSpan(
-                        children: _buildHighlightedSpans(
-                          text: matchContext!,
-                          query: matchQuery,
-                          normalStyle: TextStyle(
-                            fontSize: 12,
-                            height: 1.3,
-                            fontWeight: FontWeight.w700,
-                            color: palette.text.withValues(alpha: 0.74),
-                          ),
-                          highlightStyle: TextStyle(
-                            fontSize: 12,
-                            height: 1.3,
-                            fontWeight: FontWeight.w900,
-                            color: palette.primary,
-                            backgroundColor: palette.soft.withValues(
-                              alpha: 0.8,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (code.trim().isNotEmpty)
-                        _Pill(
-                          palette: palette,
-                          icon: Icons.qr_code_rounded,
-                          text: code,
-                        ),
-                      if (duration.trim().isNotEmpty)
-                        _Pill(
-                          palette: palette,
-                          icon: Icons.timer_rounded,
-                          text: duration,
-                        ),
-                      if (updatedLabel.trim().isNotEmpty)
-                        _Pill(
-                          palette: palette,
-                          icon: Icons.update_rounded,
-                          text: updatedLabel,
-                        ),
-                    ],
-                  ),
-                  if (variants.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: variants
-                          .map(
-                            (v) => _Pill(
-                              palette: palette,
-                              icon: Icons.layers_rounded,
-                              text: v,
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ],
-                ],
+              child: Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: palette.primary,
+                  fontSize: 15,
+                  height: 1.2,
+                ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _showInfoDialog(context),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: palette.soft,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: palette.border.withValues(alpha: 0.85),
+                  ),
+                ),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: palette.primary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
             Icon(
               Icons.chevron_right_rounded,
               color: palette.text.withValues(alpha: 0.45),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: palette.primary,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (code.trim().isNotEmpty) ...[
+                Row(
+                  children: [
+                    Icon(Icons.qr_code_rounded, size: 16, color: palette.primary),
+                    const SizedBox(width: 8),
+                    Text('Code: ', style: TextStyle(fontWeight: FontWeight.w700, color: palette.text)),
+                    Text(code, style: TextStyle(color: palette.text.withValues(alpha: 0.72))),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (duration.trim().isNotEmpty) ...[
+                Row(
+                  children: [
+                    Icon(Icons.timer_rounded, size: 16, color: palette.primary),
+                    const SizedBox(width: 8),
+                    Text('Duration: ', style: TextStyle(fontWeight: FontWeight.w700, color: palette.text)),
+                    Text(duration, style: TextStyle(color: palette.text.withValues(alpha: 0.72))),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (updatedLabel.trim().isNotEmpty) ...[
+                Row(
+                  children: [
+                    Icon(Icons.update_rounded, size: 16, color: palette.primary),
+                    const SizedBox(width: 8),
+                    Text('Updated: ', style: TextStyle(fontWeight: FontWeight.w700, color: palette.text)),
+                    Text(updatedLabel, style: TextStyle(color: palette.text.withValues(alpha: 0.72))),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (variants.isNotEmpty) ...[
+                Text('Variants:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: palette.primary)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: variants
+                      .map(
+                        (v) => _Pill(
+                          palette: palette,
+                          icon: Icons.layers_rounded,
+                          text: v,
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+              ],
+              if ((matchContext ?? '').trim().isNotEmpty) ...[
+                Text('Search match:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: palette.primary)),
+                const SizedBox(height: 6),
+                RichText(
+                  text: TextSpan(
+                    children: _buildHighlightedSpans(
+                      text: matchContext!,
+                      query: matchQuery,
+                      normalStyle: TextStyle(
+                        fontSize: 12, height: 1.3, fontWeight: FontWeight.w700,
+                        color: palette.text.withValues(alpha: 0.74),
+                      ),
+                      highlightStyle: TextStyle(
+                        fontSize: 12, height: 1.3, fontWeight: FontWeight.w900,
+                        color: palette.primary,
+                        backgroundColor: palette.soft.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

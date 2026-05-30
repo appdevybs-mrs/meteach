@@ -56,8 +56,26 @@ if (!move_uploaded_file($tmp, $targetPath)) {
 $rel = trim($resolved['clean'] . '/' . $finalName, '/');
 $url = build_public_url($resolved['root'], $rel);
 
+$thumbnailUrl = '';
+$videoExts = ['mp4', 'm4v', 'mov', 'webm'];
+if (in_array($ext, $videoExts, true)) {
+    $thumbName = pathinfo($finalName, PATHINFO_FILENAME) . '_thumb.jpg';
+    $thumbPath = $resolved['full'] . '/' . $thumbName;
+    $ffmpegCmd = sprintf(
+        'ffmpeg -y -i %s -ss 00:00:01 -vframes 1 -q:v 3 %s 2>/dev/null',
+        escapeshellarg($targetPath),
+        escapeshellarg($thumbPath)
+    );
+    exec($ffmpegCmd, $ffmpegOut, $ffmpegExit);
+    if ($ffmpegExit === 0 && file_exists($thumbPath)) {
+        $thumbRel = trim($resolved['clean'] . '/' . $thumbName, '/');
+        $thumbnailUrl = build_public_url($resolved['root'], $thumbRel);
+    }
+}
+
 json_response([
     'success' => true,
     'url' => $url,
+    'thumbnail_url' => $thumbnailUrl,
     'uploaderUid' => $auth['uid'],
 ]);

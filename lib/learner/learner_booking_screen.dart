@@ -51,8 +51,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   static const exactMatchBorder = Color(0xFF1F8A49);
   static const emptyBg = Color(0xFFFFF1E3);
   static const emptyBorder = Color(0xFFF9C59D);
-  static const lockedBg = Color(0xFFF4F4F5);
-  static const lockedBorder = Color(0xFFD7D7DB);
+  static const lockedBg = Color(0xFFFEE2E2);
+  static const lockedBorder = Color(0xFFF87171);
 
   AppPalette get palette => appThemeController.palette;
 
@@ -1127,13 +1127,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       1,
       _effectiveTotalSessions,
     );
+    if (_isWithin24Hours(s) && !_isJoinAllowedWithin24h(s)) {
+      return _SlotStatus.closed;
+    }
     final occ = globalSlotOccupancy[s.key];
     if (occ == null || occ.learnerCount <= 0) return _SlotStatus.availableBook;
     if (_isSlotFull(s)) return _SlotStatus.unavailable;
     if (occ.courseId != currentCourse) return _SlotStatus.unavailable;
-    if (_isWithin24Hours(s) && !_isJoinAllowedWithin24h(s)) {
-      return _SlotStatus.closed;
-    }
     if (occ.sessionNo == null || occ.sessionNo! <= 0) {
       return _SlotStatus.joinSameSession;
     }
@@ -4076,6 +4076,121 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
+  void _showClosedSlotInfo() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        final bottomPad = MediaQuery.of(context).padding.bottom;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomPad),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: lockedBg,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.access_time_rounded,
+                          color: Color(0xFFDC2626),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Booking Rule',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: primaryBlue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: lockedBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: lockedBorder),
+                    ),
+                    child: const Text(
+                      '⏰ New bookings close 24 hours before class starts.\n'
+                      'You can only join an existing group in the same level during this period.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Color(0xFF7C2D12),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: lockedBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: lockedBorder),
+                    ),
+                    child: const Text(
+                      '⏰ الحجوزات الجديدة تُغلق قبل 24 ساعة من بدء الحصة.\n'
+                      'يمكنك فقط الانضمام إلى مجموعة موجودة في نفس المستوى خلال هذه الفترة.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Color(0xFF7C2D12),
+                        height: 1.5,
+                      ),
+                      textAlign: TextAlign.end,
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: actionOrange,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Got it',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _langChip(
     String label,
     String code,
@@ -5284,7 +5399,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       case _SlotStatus.closed:
         bg = lockedBg;
         border = lockedBorder;
-        fg = Colors.grey.shade700;
+        fg = const Color(0xFFDC2626);
         break;
       case _SlotStatus.availableBook:
         break;
@@ -5674,8 +5789,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           s.time == t,
                     );
                     final status = _slotStatus(slot, sessionNo: _flowLessonNo);
+                    if (status == _SlotStatus.closed) {
+                      _showClosedSlotInfo();
+                      return;
+                    }
                     if (status == _SlotStatus.unavailable ||
-                        status == _SlotStatus.closed ||
                         status == _SlotStatus.booked) {
                       _toast(_blockedSlotToast(slot));
                       return;
@@ -5942,8 +6060,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       preferred,
                       sessionNo: _flowLessonNo,
                     );
+                    if (preferredStatus == _SlotStatus.closed) {
+                      _showClosedSlotInfo();
+                      return;
+                    }
                     if (preferredStatus == _SlotStatus.unavailable ||
-                        preferredStatus == _SlotStatus.closed ||
                         preferredStatus == _SlotStatus.booked) {
                       _toast(_blockedSlotToast(preferred));
                       return;

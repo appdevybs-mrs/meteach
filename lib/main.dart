@@ -2712,6 +2712,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                             .trim()
                             .toLowerCase();
                         final url = (item['url'] ?? '').toString().trim();
+                        final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
 
                         return InkWell(
                           borderRadius: BorderRadius.circular(20),
@@ -2746,7 +2747,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                 fit: StackFit.expand,
                                 children: [
                                   if (type == 'video')
-                                    const _PublicGalleryVideoTile()
+                                    _PublicGalleryVideoTile(thumbnailUrl: thumbnailUrl)
                                   else
                                     _FastNetworkThumb(
                                       url: url,
@@ -2976,6 +2977,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                 final url = (item['url'] ?? '')
                                     .toString()
                                     .trim();
+                                final thumbnailUrl = (item['thumbnailUrl'] ?? '')
+                                    .toString()
+                                    .trim();
 
                                 return InkWell(
                                   borderRadius: BorderRadius.circular(20),
@@ -3015,7 +3019,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                         fit: StackFit.expand,
                                         children: [
                                           if (type == 'video')
-                                            const _PublicGalleryVideoTile()
+                                            _PublicGalleryVideoTile(thumbnailUrl: thumbnailUrl)
                                           else
                                             _FastNetworkThumb(
                                               url: url,
@@ -3041,10 +3045,33 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
 }
 
 class _PublicGalleryVideoTile extends StatelessWidget {
-  const _PublicGalleryVideoTile();
+  const _PublicGalleryVideoTile({this.thumbnailUrl});
+
+  final String? thumbnailUrl;
 
   @override
   Widget build(BuildContext context) {
+    if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            thumbnailUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          Container(color: Colors.black.withValues(alpha: 0.18)),
+          const Center(
+            child: Icon(
+              Icons.play_circle_fill_rounded,
+              color: Colors.white,
+              size: 52,
+            ),
+          ),
+        ],
+      );
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [

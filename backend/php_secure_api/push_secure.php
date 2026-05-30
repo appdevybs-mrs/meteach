@@ -317,7 +317,10 @@ try {
             ->withApnsConfig($apnsConfig)
             ->withData($safeData);
 
-        $messageId = (string) $messaging->send($msg);
+        $messageId = (static function() use ($messaging, $msg) {
+    $r = $messaging->send($msg);
+    return is_array($r) ? ($r['name'] ?? 'unknown') : $r->messageId();
+})();
 
         $eventRef->update([
             'status' => 'sent',
@@ -343,7 +346,10 @@ try {
         ->withApnsConfig($apnsConfig)
         ->withData($safeData);
 
-    $messageId = (string) $messaging->send($msg);
+    $messageId = (static function() use ($messaging, $msg) {
+    $r = $messaging->send($msg);
+    return is_array($r) ? ($r['name'] ?? 'unknown') : $r->messageId();
+})();
 
     $eventRef->update([
         'status' => 'sent',

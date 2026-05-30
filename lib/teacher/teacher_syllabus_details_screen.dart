@@ -595,8 +595,6 @@ class _TeacherSyllabusDetailsScreenState
           ...unitsFiltered.map(
             (u) => _UnitCard(unit: u, isRecorded: variant.key == 'recorded'),
           ),
-        const SizedBox(height: 12),
-        const _FooterHint(),
       ],
     );
   }
@@ -911,27 +909,11 @@ class _RecommendationsCard extends StatelessWidget {
     return miss;
   }
 
-  int _countMissingHomework() {
-    int miss = 0;
-    for (final u in variant.units) {
-      for (final s in u.sessions) {
-        if (s.homework.trim().isEmpty) miss++;
-      }
-    }
-    return miss;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final sessionsTotal = variant.units.fold<int>(
-      0,
-      (p, u) => p + u.sessions.length,
-    );
-
     final missingDur = _countMissingDuration();
     final missingObj = _countMissingObjectives();
     final missingCont = _countMissingContent();
-    final missingHw = _countMissingHomework();
 
     final List<_RecItem> recs = [];
 
@@ -962,26 +944,6 @@ class _RecommendationsCard extends StatelessWidget {
           title: 'Add duration',
           desc:
               '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
-        ),
-      );
-    }
-
-    if (sessionsTotal > 0 && missingHw == sessionsTotal) {
-      recs.add(
-        const _RecItem(
-          icon: Icons.assignment_rounded,
-          title: 'Consider homework',
-          desc:
-              'No sessions have homework. Even short practice tasks improve retention.',
-        ),
-      );
-    } else if (missingHw > 0) {
-      recs.add(
-        _RecItem(
-          icon: Icons.assignment_rounded,
-          title: 'Improve homework coverage',
-          desc:
-              '$missingHw session(s) have no homework. Optional practice tasks are helpful.',
         ),
       );
     }
@@ -1111,58 +1073,98 @@ class _CourseTopCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: UiK.primaryBlue.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: UiK.uiBorder.withValues(alpha: 0.85),
-                  ),
-                ),
-                child: const Icon(
-                  Icons.menu_book_rounded,
-                  color: UiK.primaryBlue,
-                ),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: UiK.primaryBlue.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: UiK.uiBorder.withValues(alpha: 0.85),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: UiK.primaryBlue,
-                    fontSize: 16,
-                    height: 1.2,
-                  ),
-                ),
-              ),
-            ],
+            ),
+            child: const Icon(
+              Icons.menu_book_rounded,
+              color: UiK.primaryBlue,
+            ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _Pill(icon: Icons.layers_rounded, text: variantLabel),
-              if (code.trim().isNotEmpty)
-                _Pill(icon: Icons.qr_code_rounded, text: code),
-              if (duration.trim().isNotEmpty)
-                _Pill(icon: Icons.timer_rounded, text: duration),
-              _Pill(icon: Icons.layers_rounded, text: '$unitsCount units'),
-              _Pill(
-                icon: Icons.playlist_play_rounded,
-                text: '$sessionsCount sessions',
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: UiK.primaryBlue,
+                fontSize: 16,
+                height: 1.2,
               ),
-              if (updatedLabel.isNotEmpty)
-                _Pill(icon: Icons.update_rounded, text: updatedLabel),
-            ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _showInfoDialog(context),
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: UiK.primaryBlue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: UiK.uiBorder.withValues(alpha: 0.85),
+                ),
+              ),
+              child: const Icon(
+                Icons.info_outline_rounded,
+                size: 18,
+                color: UiK.primaryBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: UiK.primaryBlue,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Pill(icon: Icons.layers_rounded, text: variantLabel),
+            const SizedBox(height: 8),
+            if (code.trim().isNotEmpty)
+              _Pill(icon: Icons.qr_code_rounded, text: code),
+            if (code.trim().isNotEmpty) const SizedBox(height: 8),
+            if (duration.trim().isNotEmpty)
+              _Pill(icon: Icons.timer_rounded, text: duration),
+            if (duration.trim().isNotEmpty) const SizedBox(height: 8),
+            _Pill(icon: Icons.layers_rounded, text: '$unitsCount units'),
+            const SizedBox(height: 8),
+            _Pill(
+              icon: Icons.playlist_play_rounded,
+              text: '$sessionsCount sessions',
+            ),
+            if (updatedLabel.isNotEmpty) const SizedBox(height: 8),
+            if (updatedLabel.isNotEmpty)
+              _Pill(icon: Icons.update_rounded, text: updatedLabel),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -1512,86 +1514,30 @@ class _SessionExpansionState extends State<_SessionExpansion> {
     await _openInApp(cleanUrl, title: title);
   }
 
-  List<_RecItem> _sessionRecs(_Session s) {
-    final out = <_RecItem>[];
-
-    if (s.objective.trim().isEmpty) {
-      out.add(
-        const _RecItem(
-          icon: Icons.flag_rounded,
-          title: 'Objective missing',
-          desc:
-              'Add a short objective (1–2 lines): what learners should be able to do after this session.',
-        ),
-      );
-    }
-    if (s.content.trim().isEmpty) {
-      out.add(
-        const _RecItem(
-          icon: Icons.article_rounded,
-          title: 'Content missing',
-          desc:
-              'Add key points + activities (warm-up, practice, production) for consistent delivery.',
-        ),
-      );
-    }
-    if (s.durationMinutes <= 0) {
-      out.add(
-        const _RecItem(
-          icon: Icons.timelapse_rounded,
-          title: 'Duration missing',
-          desc: 'Set duration minutes to improve planning and pacing.',
-        ),
-      );
-    }
-    if (s.homework.trim().isEmpty) {
-      out.add(
-        const _RecItem(
-          icon: Icons.assignment_rounded,
-          title: 'Homework is optional',
-          desc:
-              'Consider short practice (5–10 minutes) to reinforce the session.',
-        ),
-      );
-    }
-
-    if (out.isEmpty) {
-      out.add(
-        const _RecItem(
-          icon: Icons.verified_rounded,
-          title: 'Ready to teach',
-          desc: 'Objective, content, duration, and homework look good.',
-        ),
-      );
-    }
-    return out;
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = widget.session;
     final title = s.title.trim().isEmpty ? 'Session' : s.title.trim();
-    final recs = _sessionRecs(s);
 
     return Container(
-      margin: const EdgeInsets.only(top: 10),
+      margin: const EdgeInsets.only(top: 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             initiallyExpanded: _expanded,
             onExpansionChanged: (v) => setState(() => _expanded = v),
             tilePadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 6,
+              horizontal: 10,
+              vertical: 4,
             ),
-            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
             leading: CircleAvatar(
               backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
               child: const Icon(
@@ -1625,10 +1571,10 @@ class _SessionExpansionState extends State<_SessionExpansion> {
             ),
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: UiK.primaryBlue.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: UiK.uiBorder.withValues(alpha: 0.70),
                   ),
@@ -1714,26 +1660,6 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                       ),
                       const SizedBox(height: 10),
                     ],
-                    const SizedBox(height: 2),
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.tips_and_updates_rounded,
-                          size: 18,
-                          color: UiK.actionOrange,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Suggestions',
-                          style: TextStyle(
-                            color: UiK.primaryBlue,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    ...recs.map((r) => _RecRow(item: r)),
                   ],
                 ),
               ),
@@ -1809,50 +1735,6 @@ class _Pill extends StatelessWidget {
               fontWeight: FontWeight.w900,
               color: UiK.primaryBlue,
               fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FooterHint extends StatelessWidget {
-  const _FooterHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: UiK.actionOrange.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
-            ),
-            child: const Icon(
-              Icons.info_outline_rounded,
-              color: UiK.actionOrange,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Tip: Follow modules, units, and lessons by order to deliver the syllabus as planned. Use Search to jump to any lesson quickly.',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
-                height: 1.35,
-              ),
             ),
           ),
         ],

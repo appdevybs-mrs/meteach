@@ -48,6 +48,7 @@ import '../shared/course_join_rules.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import '../services/course_feedback_service.dart';
 import '../services/learner_join_signal_service.dart';
+import '../services/push_dispatch_service.dart';
 import '../services/secure_window_service.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
@@ -836,6 +837,22 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     };
 
     await _db.update(updates);
+    unawaited(() async {
+      try {
+        await PushDispatchService.dispatchMailToUser(
+          targetUid: teacher.uid,
+          threadId: threadId,
+          peerUid: _uid,
+          title: subject,
+          preview: 'New topic',
+          nowMs: now,
+          context: const PushDispatchContext(
+            screen: 'learner/learner_course_detail',
+            action: 'mail_push',
+          ),
+        );
+      } catch (_) {}
+    }());
     return threadId;
   }
 

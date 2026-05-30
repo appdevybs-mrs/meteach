@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
+import '../services/push_dispatch_service.dart';
 import '../shared/ui_constants.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/responsive_layout.dart';
@@ -451,6 +452,22 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
         };
 
         await _db.update(updates);
+        unawaited(() async {
+          try {
+            await PushDispatchService.dispatchMailToUser(
+              targetUid: toUid,
+              threadId: threadId,
+              peerUid: meUid,
+              title: subject,
+              preview: 'New topic',
+              nowMs: now,
+              context: const PushDispatchContext(
+                screen: 'learner/learner_mail',
+                action: 'mail_push',
+              ),
+            );
+          } catch (_) {}
+        }());
         return threadId;
       }
 

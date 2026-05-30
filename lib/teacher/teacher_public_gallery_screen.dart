@@ -705,6 +705,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                           .trim()
                           .toLowerCase();
                       final url = (item['url'] ?? '').toString().trim();
+                      final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
                       final createdAt = _fmtDate(item['createdAt']);
                       final learnerName = (item['learnerName'] ?? '')
                           .toString()
@@ -739,7 +740,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                     fit: StackFit.expand,
                                     children: [
                                       if (type == 'video')
-                                        _TeacherGridVideoTile(url: url)
+                                        _TeacherGridVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                                       else
                                         Image.network(
                                           url,
@@ -1003,6 +1004,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                       .trim()
                       .toLowerCase();
                   final url = (item['url'] ?? '').toString().trim();
+                  final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
                   final createdAt = _fmtDate(item['createdAt']);
                   final uploader = (item['teacherName'] ?? '')
                       .toString()
@@ -1040,7 +1042,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                 fit: StackFit.expand,
                                 children: [
                                   if (type == 'video')
-                                    _TeacherGridVideoTile(url: url)
+                                    _TeacherGridVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                                   else
                                     Image.network(
                                       url,
@@ -1283,9 +1285,10 @@ class _TeacherGalleryEmptyBox extends StatelessWidget {
 }
 
 class _TeacherGridVideoTile extends StatefulWidget {
-  const _TeacherGridVideoTile({required this.url});
+  const _TeacherGridVideoTile({required this.url, this.thumbnailUrl});
 
   final String url;
+  final String? thumbnailUrl;
 
   @override
   State<_TeacherGridVideoTile> createState() => _TeacherGridVideoTileState();
@@ -1299,7 +1302,9 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
   @override
   void initState() {
     super.initState();
-    _init();
+    if (widget.thumbnailUrl == null || widget.thumbnailUrl!.isEmpty) {
+      _init();
+    }
   }
 
   Future<void> _init() async {
@@ -1343,6 +1348,46 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
   @override
   Widget build(BuildContext context) {
     final p = appThemeController.palette;
+
+    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            widget.thumbnailUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.black.withValues(alpha: 0.10),
+                  Colors.black.withValues(alpha: 0.35),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          Center(
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: p.accent.withValues(alpha: 0.90),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 34,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     if (_failed) {
       return Container(

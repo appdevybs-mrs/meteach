@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
+import '../services/push_dispatch_service.dart';
 import '../shared/human_error.dart';
 
 import 'admin_mail_person_list_navigation.dart';
@@ -174,6 +176,24 @@ class _AdminLearnerMailTopicsScreenState
       await _db.ref('mail_state/${widget.learnerUid}/$threadId').update({
         'lastDeliveredAt': now,
       });
+
+      // send push notification
+      unawaited(() async {
+        try {
+          await PushDispatchService.dispatchMailToUser(
+            targetUid: widget.learnerUid,
+            threadId: threadId,
+            peerUid: _meUid,
+            title: subject,
+            preview: 'New topic',
+            nowMs: now,
+            context: const PushDispatchContext(
+              screen: 'admin/admin_learner_mail_topics',
+              action: 'mail_push',
+            ),
+          );
+        } catch (_) {}
+      }());
 
       if (!mounted) return;
       final learnerLabel = widget.learnerName.trim().isEmpty

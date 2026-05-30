@@ -41,6 +41,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   String _courseId = '';
   List<Map<String, dynamic>> _items = [];
   final Set<String> _expanded = <String>{};
+  String _lang = 'en';
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
   Future<String> _resolveLearnerUidFromAuth(String authUid) async {
@@ -383,24 +384,122 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     }
   }
 
+  // ---- Bilingual helpers ----
+  String _confirmTitle() {
+    switch (_lang) {
+      case 'ar':
+        return 'إرسال الواجب البريدية؟';
+      default:
+        return 'Send homework email?';
+    }
+  }
+
+  List<String> _confirmBullets() {
+    switch (_lang) {
+      case 'ar':
+        return [
+          'بعد النقر على "نعم، أرسل"، تأكد من رفع ملف الواجب (صورة أو صوت أو فيديو).',
+          'سيتلقى المدرس إشعارًا وسيقوم بمراجعة تسليمك.',
+        ];
+      default:
+        return [
+          'After clicking "Yes, Send", make sure to upload the homework file (picture, audio, or video).',
+          'The teacher will receive a notification and review your submission.',
+        ];
+    }
+  }
+
+  String _btnNotYet() {
+    switch (_lang) {
+      case 'ar':
+        return 'ليس الآن';
+      default:
+        return 'Not yet';
+    }
+  }
+
+  String _btnYesSend() {
+    switch (_lang) {
+      case 'ar':
+        return 'نعم، أرسل';
+      default:
+        return 'Yes, send';
+    }
+  }
+
   Future<bool> _confirmFirstSubmit() async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Send homework email?'),
-        content: const Text(
-          'Was the homework done and ready to send to the teacher?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Not yet'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Yes, send'),
-          ),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Widget langChip(String label, String code) {
+            final selected = _lang == code;
+            return GestureDetector(
+              onTap: () {
+                setState(() => _lang = code);
+                setDialogState(() {});
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: selected ? UiK.primaryBlue : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: UiK.primaryBlue.withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? Colors.white : UiK.primaryBlue,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return AlertDialog(
+            title: Text(_confirmTitle()),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    langChip('English', 'en'),
+                    const SizedBox(width: 8),
+                    langChip('العربية', 'ar'),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                for (final bullet in _confirmBullets())
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('• ', style: TextStyle(fontWeight: FontWeight.w900)),
+                        Expanded(child: Text(bullet)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(_btnNotYet()),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(_btnYesSend()),
+              ),
+            ],
+          );
+        },
       ),
     );
     return result ?? false;

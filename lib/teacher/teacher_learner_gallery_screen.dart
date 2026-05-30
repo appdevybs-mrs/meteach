@@ -143,7 +143,7 @@ class _TeacherLearnerGalleryScreenState
   DatabaseReference _galleryRef() =>
       _db.child('learner_gallery/${widget.learnerUid}');
 
-  Future<String> _uploadPlatformFile(
+  Future<Map<String, String>> _uploadPlatformFile(
     PlatformFile file, {
     void Function(double progress)? onProgress,
   }) async {
@@ -236,14 +236,17 @@ class _TeacherLearnerGalleryScreenState
       throw Exception('Upload succeeded but no URL returned.');
     }
 
+    final thumbnailUrl = (decoded['thumbnail_url'] ?? '').toString().trim();
+
     onProgress?.call(0.98);
 
-    return url;
+    return {'url': url, 'thumbnailUrl': thumbnailUrl};
   }
 
   Future<void> _saveGalleryItem({
     required String type,
     required String url,
+    String thumbnailUrl = '',
   }) async {
     final teacherUid = FirebaseAuth.instance.currentUser?.uid;
     if (teacherUid == null || teacherUid.isEmpty) {
@@ -256,6 +259,7 @@ class _TeacherLearnerGalleryScreenState
         .set({
           'type': type,
           'url': url,
+          'thumbnailUrl': thumbnailUrl,
           'teacherUid': teacherUid,
           'teacherName': _teacherName,
           'learnerUid': widget.learnerUid,
@@ -312,7 +316,7 @@ class _TeacherLearnerGalleryScreenState
       });
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(
+      final uploadResult = await _uploadPlatformFile(
         file,
         onProgress: (p) {
           if (!mounted) return;
@@ -320,7 +324,7 @@ class _TeacherLearnerGalleryScreenState
         },
       );
 
-      await _saveGalleryItem(type: 'photo', url: url);
+      await _saveGalleryItem(type: 'photo', url: uploadResult['url']!);
 
       if (!mounted) return;
       setState(() {
@@ -367,7 +371,7 @@ class _TeacherLearnerGalleryScreenState
       });
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(
+      final uploadResult = await _uploadPlatformFile(
         file,
         onProgress: (p) {
           if (!mounted) return;
@@ -375,7 +379,7 @@ class _TeacherLearnerGalleryScreenState
         },
       );
 
-      await _saveGalleryItem(type: 'video', url: url);
+      await _saveGalleryItem(type: 'video', url: uploadResult['url']!, thumbnailUrl: uploadResult['thumbnailUrl']!);
 
       if (!mounted) return;
       setState(() {
@@ -959,6 +963,7 @@ class _TeacherLearnerGalleryScreenState
                             .trim()
                             .toLowerCase();
                         final url = (item['url'] ?? '').toString().trim();
+                        final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
                         final createdAt = _fmtDate(item['createdAt']);
                         final itemTeacherName = (item['teacherName'] ?? '')
                             .toString()
@@ -993,7 +998,7 @@ class _TeacherLearnerGalleryScreenState
                                       fit: StackFit.expand,
                                       children: [
                                         if (type == 'video')
-                                          _TeacherVideoTile(url: url)
+                                          _TeacherVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                                         else
                                           Image.network(
                                             url,
@@ -1121,9 +1126,10 @@ class _TeacherLearnerGalleryScreenState
 }
 
 class _TeacherVideoTile extends StatefulWidget {
-  const _TeacherVideoTile({required this.url});
+  const _TeacherVideoTile({required this.url, this.thumbnailUrl});
 
   final String url;
+  final String? thumbnailUrl;
 
   @override
   State<_TeacherVideoTile> createState() => _TeacherVideoTileState();
@@ -1137,7 +1143,9 @@ class _TeacherVideoTileState extends State<_TeacherVideoTile> {
   @override
   void initState() {
     super.initState();
-    _init();
+    if (widget.thumbnailUrl == null || widget.thumbnailUrl!.isEmpty) {
+      _init();
+    }
   }
 
   Future<void> _init() async {
@@ -1181,6 +1189,46 @@ class _TeacherVideoTileState extends State<_TeacherVideoTile> {
   @override
   Widget build(BuildContext context) {
     final p = appThemeController.palette;
+
+    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            widget.thumbnailUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.black.withValues(alpha: 0.10),
+                  Colors.black.withValues(alpha: 0.35),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          Center(
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: p.accent.withValues(alpha: 0.90),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 34,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     if (_failed) {
       return Container(

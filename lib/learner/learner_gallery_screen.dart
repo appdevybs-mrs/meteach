@@ -153,6 +153,7 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                             .trim()
                             .toLowerCase();
                         final url = (item['url'] ?? '').toString().trim();
+                        final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
                         final teacherName = (item['teacherName'] ?? '')
                             .toString()
                             .trim();
@@ -190,7 +191,7 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                                 fit: StackFit.expand,
                                 children: [
                                   if (type == 'video')
-                                    _LearnerVideoTile(url: url)
+                                    _LearnerVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                                   else
                                     Image.network(
                                       url,
@@ -295,9 +296,10 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
 }
 
 class _LearnerVideoTile extends StatefulWidget {
-  const _LearnerVideoTile({required this.url});
+  const _LearnerVideoTile({required this.url, this.thumbnailUrl});
 
   final String url;
+  final String? thumbnailUrl;
 
   @override
   State<_LearnerVideoTile> createState() => _LearnerVideoTileState();
@@ -311,7 +313,9 @@ class _LearnerVideoTileState extends State<_LearnerVideoTile> {
   @override
   void initState() {
     super.initState();
-    _init();
+    if (widget.thumbnailUrl == null || widget.thumbnailUrl!.isEmpty) {
+      _init();
+    }
   }
 
   Future<void> _init() async {
@@ -354,6 +358,27 @@ class _LearnerVideoTileState extends State<_LearnerVideoTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            widget.thumbnailUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          Container(color: Colors.black.withValues(alpha: 0.18)),
+          const Center(
+            child: Icon(
+              Icons.play_circle_fill_rounded,
+              color: Colors.white,
+              size: 52,
+            ),
+          ),
+        ],
+      );
+    }
+
     if (_failed) {
       return Container(
         color: Colors.black,

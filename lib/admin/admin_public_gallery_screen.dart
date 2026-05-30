@@ -361,7 +361,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   DatabaseReference _galleryRef() => _db.child('public_gallery_teasers');
 
-  Future<String> _uploadPlatformFile(
+  Future<Map<String, String>> _uploadPlatformFile(
     PlatformFile file, {
     required void Function(double progress) onProgress,
   }) async {
@@ -423,12 +423,15 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       throw Exception('Upload succeeded but no URL returned.');
     }
 
-    return url;
+    final thumbnailUrl = (decoded['thumbnail_url'] ?? '').toString().trim();
+
+    return {'url': url, 'thumbnailUrl': thumbnailUrl};
   }
 
   Future<void> _saveGalleryItem({
     required String type,
     required String url,
+    String thumbnailUrl = '',
   }) async {
     final adminUid = FirebaseAuth.instance.currentUser?.uid;
     if (adminUid == null || adminUid.isEmpty) {
@@ -441,6 +444,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     await newRef.set({
       'type': type,
       'url': url,
+      'thumbnailUrl': thumbnailUrl,
       'uploadedByUid': adminUid,
       'uploadedByName': _adminName,
       'createdAt': ServerValue.timestamp,
@@ -451,6 +455,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       itemId: itemId,
       type: type,
       url: url,
+      thumbnailUrl: thumbnailUrl,
     );
   }
 
@@ -459,6 +464,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     required String? itemId,
     required String type,
     required String url,
+    String thumbnailUrl = '',
   }) async {
     final cleanItemId = (itemId ?? '').trim();
     final cleanUrl = url.trim();
@@ -470,6 +476,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           .set({
             'type': type,
             'url': cleanUrl,
+            'thumbnailUrl': thumbnailUrl,
             'uploadedByUid': adminUid,
             'uploadedByName': _adminName,
             'createdAt': ServerValue.timestamp,
@@ -523,7 +530,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         }
 
         try {
-          final url = await _uploadPlatformFile(
+          final result = await _uploadPlatformFile(
             file,
             onProgress: (p) {
               if (!mounted) return;
@@ -531,7 +538,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
             },
           );
 
-          await _saveGalleryItem(type: 'photo', url: url);
+          await _saveGalleryItem(type: 'photo', url: result['url']!);
           uploadedCount += 1;
         } catch (e) {
           failedFiles.add(file.name);
@@ -623,7 +630,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         }
 
         try {
-          final url = await _uploadPlatformFile(
+          final result = await _uploadPlatformFile(
             file,
             onProgress: (p) {
               if (!mounted) return;
@@ -631,7 +638,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
             },
           );
 
-          await _saveGalleryItem(type: 'video', url: url);
+          await _saveGalleryItem(type: 'video', url: result['url']!, thumbnailUrl: result['thumbnailUrl']!);
           uploadedCount += 1;
         } catch (e) {
           failedFiles.add(file.name);
@@ -1572,6 +1579,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                       .trim()
                       .toLowerCase();
                   final url = (item['url'] ?? '').toString().trim();
+                  final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
                   final itemId = (item['id'] ?? '').toString().trim();
                   final isSelected = _selectedPublicIds.contains(itemId);
 
@@ -1608,7 +1616,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                           fit: StackFit.expand,
                           children: [
                             if (type == 'video')
-                              _AdminVideoTile(url: url)
+                              _AdminVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                             else
                               Image.network(
                                 url,
@@ -2979,6 +2987,7 @@ class _AdminTeacherProfileGalleryScreen extends StatelessWidget {
                     final item = items[index];
                     final type = (item['type'] ?? '').toString();
                     final url = (item['url'] ?? '').toString();
+                    final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString();
 
                     return InkWell(
                       borderRadius: BorderRadius.circular(18),
@@ -3012,7 +3021,7 @@ class _AdminTeacherProfileGalleryScreen extends StatelessWidget {
                             fit: StackFit.expand,
                             children: [
                               if (type == 'video')
-                                _AdminVideoTile(url: url)
+                                _AdminVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                               else
                                 Image.network(
                                   url,
@@ -3127,7 +3136,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
   DatabaseReference _galleryRef() =>
       _db.child('learner_gallery/${widget.learnerUid}');
 
-  Future<String> _uploadPlatformFile(
+  Future<Map<String, String>> _uploadPlatformFile(
     PlatformFile file, {
     required void Function(double progress) onProgress,
   }) async {
@@ -3189,12 +3198,15 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       throw Exception('Upload succeeded but no URL returned.');
     }
 
-    return url;
+    final thumbnailUrl = (decoded['thumbnail_url'] ?? '').toString().trim();
+
+    return {'url': url, 'thumbnailUrl': thumbnailUrl};
   }
 
   Future<void> _saveGalleryItem({
     required String type,
     required String url,
+    String thumbnailUrl = '',
   }) async {
     final adminUid = FirebaseAuth.instance.currentUser?.uid;
     if (adminUid == null || adminUid.isEmpty) {
@@ -3206,6 +3218,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     await newRef.set({
       'type': type,
       'url': url,
+      'thumbnailUrl': thumbnailUrl,
       'uploadedByUid': adminUid,
       'uploadedByName': _adminName,
       'uploadedByRole': 'admin',
@@ -3241,7 +3254,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(
+      final uploadResult = await _uploadPlatformFile(
         file,
         onProgress: (p) {
           if (!mounted) return;
@@ -3249,7 +3262,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
         },
       );
 
-      await _saveGalleryItem(type: 'photo', url: url);
+      await _saveGalleryItem(type: 'photo', url: uploadResult['url']!);
 
       if (!mounted) return;
       setState(() {
@@ -3292,7 +3305,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      final url = await _uploadPlatformFile(
+      final uploadResult = await _uploadPlatformFile(
         file,
         onProgress: (p) {
           if (!mounted) return;
@@ -3300,7 +3313,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
         },
       );
 
-      await _saveGalleryItem(type: 'video', url: url);
+      await _saveGalleryItem(type: 'video', url: uploadResult['url']!, thumbnailUrl: uploadResult['thumbnailUrl']!);
 
       if (!mounted) return;
       setState(() {
@@ -3673,6 +3686,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                             .trim()
                             .toLowerCase();
                         final url = (item['url'] ?? '').toString().trim();
+                        final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
                         final createdAt = _fmtDate(item['createdAt']);
                         final uploader = _displayUploader(item);
 
@@ -3698,7 +3712,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                       fit: StackFit.expand,
                                       children: [
                                         if (type == 'video')
-                                          _AdminVideoTile(url: url)
+                                          _AdminVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                                         else
                                           Image.network(
                                             url,
@@ -3850,9 +3864,10 @@ class _AdminCountPill extends StatelessWidget {
 }
 
 class _AdminVideoTile extends StatefulWidget {
-  const _AdminVideoTile({required this.url});
+  const _AdminVideoTile({required this.url, this.thumbnailUrl});
 
   final String url;
+  final String? thumbnailUrl;
 
   @override
   State<_AdminVideoTile> createState() => _AdminVideoTileState();
@@ -3866,7 +3881,9 @@ class _AdminVideoTileState extends State<_AdminVideoTile> {
   @override
   void initState() {
     super.initState();
-    _init();
+    if (widget.thumbnailUrl == null || widget.thumbnailUrl!.isEmpty) {
+      _init();
+    }
   }
 
   Future<void> _init() async {
@@ -3909,6 +3926,27 @@ class _AdminVideoTileState extends State<_AdminVideoTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            widget.thumbnailUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          Container(color: Colors.black.withValues(alpha: 0.18)),
+          const Center(
+            child: Icon(
+              Icons.play_circle_fill_rounded,
+              color: Colors.white,
+              size: 52,
+            ),
+          ),
+        ],
+      );
+    }
+
     if (_failed) {
       return Container(
         color: Colors.black,

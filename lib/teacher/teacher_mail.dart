@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../services/mail_consistency_service.dart';
 import '../services/internal_mail_service.dart';
+import '../services/push_dispatch_service.dart';
 import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
@@ -960,6 +961,25 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             teacherName: picked.teacherName,
           );
 
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final preview = _previewFromMessage(firstMessage);
+          unawaited(() async {
+            try {
+              await PushDispatchService.dispatchMailToUser(
+                targetUid: toUid,
+                threadId: threadId,
+                peerUid: _meUid,
+                title: subject,
+                preview: preview,
+                nowMs: now,
+                context: const PushDispatchContext(
+                  screen: 'teacher/teacher_mail',
+                  action: 'mail_push',
+                ),
+              );
+            } catch (_) {}
+          }());
+
           firstThreadId ??= threadId;
           firstUid ??= toUid;
           if (firstName.isEmpty) firstName = toName;
@@ -1015,6 +1035,24 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           senderUid: _meUid,
           body: firstMessage,
         );
+
+        final preview = _previewFromMessage(firstMessage);
+        unawaited(() async {
+          try {
+            await PushDispatchService.dispatchMailToGroup(
+              threadId: threadId,
+              senderUid: _meUid,
+              senderName: picked.teacherName,
+              title: subject,
+              preview: preview,
+              nowMs: now,
+              context: const PushDispatchContext(
+                screen: 'teacher/teacher_mail',
+                action: 'mail_push_group',
+              ),
+            );
+          } catch (_) {}
+        }());
 
         if (!mounted) return;
         await Navigator.of(context).push(
@@ -1082,13 +1120,32 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                   ? (((entry.value as Map)['name'] ?? '').toString())
                   : 'Learner');
 
-          await _createThreadWithFirstMessage(
+          final threadId = await _createThreadWithFirstMessage(
             subject: classSubject,
             firstMessage: firstMessage,
             toUid: learnerUid,
             toName: learnerName,
             teacherName: picked.teacherName,
           );
+
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final preview = _previewFromMessage(firstMessage);
+          unawaited(() async {
+            try {
+              await PushDispatchService.dispatchMailToUser(
+                targetUid: learnerUid,
+                threadId: threadId,
+                peerUid: _meUid,
+                title: classSubject,
+                preview: preview,
+                nowMs: now,
+                context: const PushDispatchContext(
+                  screen: 'teacher/teacher_mail',
+                  action: 'mail_push',
+                ),
+              );
+            } catch (_) {}
+          }());
 
           sent++;
         }
