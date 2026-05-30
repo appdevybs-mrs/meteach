@@ -604,7 +604,145 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       confirmText: 'Send',
     );
     if (!confirmed || !mounted) return;
-    await _launchSms(phone: phone, body: '');
+
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<_QuickSmsTemplate>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.sms_rounded),
+              title: const Text('Empty'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
+            ),
+            ListTile(
+              leading: const Icon(Icons.payments_rounded),
+              title: const Text('Payment Reminder'),
+              onTap: () =>
+                  Navigator.pop(ctx, _QuickSmsTemplate.paymentReminder),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today_rounded),
+              title: const Text('Schedule'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.schedule),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null) return;
+
+    String body = '';
+    switch (picked) {
+      case _QuickSmsTemplate.empty:
+        body = '';
+        break;
+      case _QuickSmsTemplate.paymentReminder:
+        body = [
+          'تذكير لطيف برسوم الدورة عند وقتك المناسب.',
+          'إذا تم الدفع بالفعل، يرجى تجاهل هذه الرسالة. شكراً لك.',
+        ].join('\n');
+        break;
+      case _QuickSmsTemplate.schedule:
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator()),
+        );
+        final scheduleBody = await _buildScheduleMessage(uid);
+        if (mounted) Navigator.of(context).pop();
+        if (!mounted) return;
+        await _launchSms(phone: phone, body: scheduleBody);
+        return;
+    }
+
+    await _launchSms(phone: phone, body: body);
+  }
+
+  Future<String> _buildScheduleMessage(String uid) async {
+    final coursesSnap = await _db.child('users/$uid/courses').get();
+    final coursesRaw = coursesSnap.value;
+
+    final lines = <String>[];
+
+    if (coursesRaw is Map) {
+      final courseList = <Map<String, dynamic>>[];
+      coursesRaw.forEach((_, val) {
+        if (val is Map) {
+          courseList.add(
+            val
+                .map((k, v) => MapEntry(k.toString(), v))
+                .cast<String, dynamic>(),
+          );
+        }
+      });
+
+      for (final course in courseList) {
+        final variantKey = _normalizeVariantKey(
+          (course['variantKey'] ?? course['variant'] ?? 'inclass').toString(),
+        );
+
+        if (variantKey != 'inclass' && variantKey != 'private') continue;
+
+        final title = (course['title'] ?? '').toString().trim();
+        final classMap = course['class'];
+        if (classMap is! Map) continue;
+        final classId = (classMap['class_id'] ?? '').toString().trim();
+        if (classId.isEmpty) continue;
+
+        final schedSnap = await _db.child('classes/$classId/schedule').get();
+        final schedRaw = schedSnap.value;
+        if (schedRaw is! Map) continue;
+
+        final sessionsRaw = schedRaw['sessions'];
+        final sessions = <Map<String, dynamic>>[];
+        if (sessionsRaw is List) {
+          for (final s in sessionsRaw) {
+            if (s is Map) {
+              sessions.add(
+                s
+                    .map((k, v) => MapEntry(k.toString(), v))
+                    .cast<String, dynamic>(),
+              );
+            }
+          }
+        }
+        if (sessions.isEmpty) continue;
+
+        final parts = sessions
+            .map((s) {
+              final day = (s['day'] ?? '').toString().trim();
+              final start = (s['start_time'] ?? '').toString().trim();
+              if (day.isEmpty && start.isEmpty) return '';
+              if (day.isEmpty) return start;
+              if (start.isEmpty) return day;
+              return '$day $start';
+            })
+            .where((e) => e.trim().isNotEmpty)
+            .toList();
+
+        if (parts.isEmpty) continue;
+
+        if (title.isNotEmpty) {
+          lines.add(title);
+        }
+        lines.add(parts.join(' • '));
+      }
+    }
+
+    if (lines.length <= 1) {
+      lines.add('لا يوجد جدول محدد حالياً.');
+    }
+
+    return lines.join('\n');
   }
 
   Future<void> _handleLearnerReminder(String uid, String name) async {
