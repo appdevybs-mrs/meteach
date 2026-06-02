@@ -620,7 +620,7 @@ enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
 enum _QuickLearnerReminder { payment, absence, late, empty }
 
-enum _QuickSmsTemplate { empty, paymentReminder, schedule }
+enum _QuickSmsTemplate { empty, welcome, paymentReminder, schedule }
 
 class _LearnersList extends StatefulWidget {
   const _LearnersList({
@@ -699,6 +699,11 @@ class _LearnersListState extends State<_LearnersList>
               onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
             ),
             ListTile(
+              leading: const Icon(Icons.waving_hand_rounded),
+              title: const Text('Welcome'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.welcome),
+            ),
+            ListTile(
               leading: const Icon(Icons.payments_rounded),
               title: const Text('Payment Reminder'),
               onTap: () =>
@@ -721,6 +726,16 @@ class _LearnersListState extends State<_LearnersList>
     switch (picked) {
       case _QuickSmsTemplate.empty:
         body = '';
+        break;
+
+      case _QuickSmsTemplate.welcome:
+        final email = learner.email.trim();
+        body = [
+          'أهلاً بك في تطبيق "Your Bridge School".',
+          'يمكنك تسجيل الدخول باستخدام:',
+          if (email.isNotEmpty) 'البريد الإلكتروني: $email',
+          'كلمة المرور: 12345678',
+        ].join('\n');
         break;
 
       case _QuickSmsTemplate.paymentReminder:

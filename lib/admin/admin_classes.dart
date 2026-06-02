@@ -49,7 +49,7 @@ import 'admin_learners.dart';
 
 enum _QuickLearnerReminder { payment, absence, late, empty }
 
-enum _QuickSmsTemplate { empty, paymentReminder, schedule }
+enum _QuickSmsTemplate { empty, welcome, paymentReminder, schedule }
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
@@ -548,6 +548,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return '';
   }
 
+  String _learnerEmailByUid(String uid) {
+    for (final l in _allLearners) {
+      if (l["uid"] == uid) return (l["email"] ?? "").toString().trim();
+    }
+    return '';
+  }
+
   Future<void> _launchSms({required String phone, required String body}) async {
     final p = phone.trim();
     final text = body.trim();
@@ -621,6 +628,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
             ),
             ListTile(
+              leading: const Icon(Icons.waving_hand_rounded),
+              title: const Text('Welcome'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.welcome),
+            ),
+            ListTile(
               leading: const Icon(Icons.payments_rounded),
               title: const Text('Payment Reminder'),
               onTap: () =>
@@ -643,6 +655,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     switch (picked) {
       case _QuickSmsTemplate.empty:
         body = '';
+        break;
+      case _QuickSmsTemplate.welcome:
+        final email = _learnerEmailByUid(uid);
+        body = [
+          'أهلاً بك في تطبيق "Your Bridge School".',
+          'يمكنك تسجيل الدخول باستخدام:',
+          if (email.isNotEmpty) 'البريد الإلكتروني: $email',
+          'كلمة المرور: 12345678',
+        ].join('\n');
         break;
       case _QuickSmsTemplate.paymentReminder:
         body = [
@@ -856,6 +877,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     String body = '';
     switch (picked) {
       case _QuickSmsTemplate.empty:
+      case _QuickSmsTemplate.welcome:
         body = '';
         break;
       case _QuickSmsTemplate.paymentReminder:
@@ -1374,6 +1396,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           final last = (data["last_name"] ?? "").toString().trim();
           final name = "$first $last".trim();
           final phone1 = (data["phone1"] ?? "").toString().trim();
+          final email = (data["email"] ?? "").toString().trim();
 
           final coursesMap = (data["courses"] is Map)
               ? Map<String, dynamic>.from(
@@ -1390,7 +1413,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             "uid": uid,
             "serial": serial.isEmpty ? "N/A" : serial,
             "name": name.isEmpty ? "Unnamed" : name,
+            "first_name": first,
             "phone1": phone1,
+            "email": email,
             "courses": coursesMap,
           });
         }
