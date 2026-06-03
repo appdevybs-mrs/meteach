@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -655,6 +657,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     required BookingSnapshot before,
     BookingSnapshot? after,
     required List<String> learnerUids,
+    String? cancelReason,
   }) async {
     await _ensureLearnerProfiles(learnerUids);
 
@@ -671,6 +674,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         before: before,
         after: after,
         learnerRecipients: _learnerRecipientsFor(learnerUids),
+        cancelReason: cancelReason,
       ),
     );
   }
@@ -748,32 +752,37 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     BuildContext detailsSheetContext,
   ) async {
     if (busyAction) return;
-    if (_isPastBooking(slot)) {
+    if (_isPastBooking(slot) && !_isLiveBooking(slot)) {
       _toast('Past booking locked. Admin changes are disabled.');
       return;
     }
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancel booking'),
-        content: Text(
-          'Remove this learner from:\n\n${_friendlyDateLong(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes, Cancel'),
-          ),
-        ],
-      ),
-    );
+    final isLive = _isLiveBooking(slot);
+    final reason = isLive ? await _pickCancelReason() : null;
+    if (isLive && reason == null) return;
 
-    if (ok != true) return;
+    if (!isLive) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Cancel booking'),
+          content: Text(
+            'Remove this learner from:\n\n${_friendlyDateLong(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes, Cancel'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
 
     setState(() => busyAction = true);
 
@@ -891,7 +900,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         _toast('Booking canceled ✅');
         try {
           await _dispatchBookingChange(
-            action: BookingChangeAction.cancelLearner,
+            action: isLive
+                ? BookingChangeAction.cancelGroupLive
+                : BookingChangeAction.cancelLearner,
             before: _bookingSnapshot(
               courseId: slot.courseId,
               dayKey: slot.dayKey,
@@ -902,6 +913,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               learnerUids: [learnerUid],
             ),
             learnerUids: [learnerUid],
+            cancelReason: reason,
           );
         } catch (e) {
           _toast('Booking canceled, but notifications failed.');
@@ -2201,12 +2213,93 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     }
   }
 
+  Future<String?> _pickCancelReason() {
+    final completer = Completer<String?>();
+    showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        String selected = 'technical';
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: Colors.red),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Cancel Session',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            content: RadioGroup<String>(
+              groupValue: selected,
+              onChanged: (v) { if (v != null) setDialogState(() => selected = v); },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Why is this session being cancelled?',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  RadioListTile<String>(
+                    title: const Text('\u26a1 Teacher had a technical issue'),
+                    value: 'technical',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('\uD83D\uDEA8 Teacher had an emergency'),
+                    value: 'emergency',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('\u2753 Other reason'),
+                    value: 'other',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  completer.complete(null);
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Back'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                ),
+                onPressed: () {
+                  completer.complete(selected);
+                  Navigator.pop(ctx);
+                },
+                icon: const Icon(Icons.group_remove_rounded),
+                label: const Text('Cancel Session'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    return completer.future;
+  }
+
   Future<void> _cancelWholeGroup(
     _AdminBookedSlot slot,
     BuildContext detailsSheetContext,
   ) async {
     if (busyAction) return;
-    if (_isPastBooking(slot)) {
+    if (_isPastBooking(slot) && !_isLiveBooking(slot)) {
       _toast('Past booking locked. Admin changes are disabled.');
       return;
     }
@@ -2215,31 +2308,40 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return;
     }
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancel Group'),
-        content: Text(
-          'Cancel this group booking for all learners?\n\n'
-          '${_friendlyDateLong(slot.start)} at ${slot.time}\n'
-          'Teacher: ${slot.teacherName}\n'
-          'Learners: ${slot.learnerCount}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes, Cancel Group'),
-          ),
-        ],
-      ),
-    );
+    final isLive = _isLiveBooking(slot);
 
-    if (ok != true) return;
+    String? reason;
+    if (isLive) {
+      reason = await _pickCancelReason();
+      if (reason == null) return;
+    }
+
+    if (!isLive) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Cancel Group'),
+          content: Text(
+            'Cancel this group booking for all learners?\n\n'
+            '${_friendlyDateLong(slot.start)} at ${slot.time}\n'
+            'Teacher: ${slot.teacherName}\n'
+            'Learners: ${slot.learnerCount}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes, Cancel Group'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
 
     setState(() => busyAction = true);
 
@@ -2290,7 +2392,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         _toast('Group booking canceled ✅');
         try {
           await _dispatchBookingChange(
-            action: BookingChangeAction.cancelGroup,
+            action: isLive
+                ? BookingChangeAction.cancelGroupLive
+                : BookingChangeAction.cancelGroup,
             before: _bookingSnapshot(
               courseId: slot.courseId,
               dayKey: slot.dayKey,
@@ -2301,6 +2405,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               learnerUids: slot.learnerUids,
             ),
             learnerUids: slot.learnerUids,
+            cancelReason: reason,
           );
         } catch (e) {
           _toast('Group canceled, but notifications failed.');
@@ -2506,6 +2611,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       builder: (sheetContext) {
         final bottomPad = MediaQuery.of(sheetContext).padding.bottom;
         final isPast = _isPastBooking(slot);
+        final isLive = _isLiveBooking(slot);
         final isSingleLearner = slot.learnerCount == 1;
 
         final learners =
@@ -2646,7 +2752,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                     vertical: 10,
                                   ),
                                 ),
-                                onPressed: (busyAction || isPast)
+                                onPressed: (busyAction || (isPast && !isLive))
                                     ? null
                                     : () =>
                                           _cancelWholeGroup(slot, sheetContext),
@@ -2663,7 +2769,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     ),
                   ),
                 ],
-                if (isPast) ...[
+                if (isPast && !isLive) ...[
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -2891,7 +2997,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                                       vertical: 10,
                                                     ),
                                               ),
-                                              onPressed: (busyAction || isPast)
+                                              onPressed: (busyAction || (isPast && !isLive))
                                                   ? null
                                                   : () =>
                                                         _cancelLearnerFromSlot(

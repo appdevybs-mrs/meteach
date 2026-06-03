@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -2818,13 +2819,22 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             const SizedBox(height: 8),
           ],
           if (m.body.trim().isNotEmpty)
-            SelectableText(
-              m.body,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 15,
-                height: 1.30,
-                fontWeight: FontWeight.w600,
+            MarkdownBody(
+              data: m.body,
+              selectable: true,
+              styleSheet: MarkdownStyleSheet(
+                p: TextStyle(
+                  color: textColor,
+                  fontSize: 15,
+                  height: 1.30,
+                  fontWeight: FontWeight.w600,
+                ),
+                strong: TextStyle(
+                  color: textColor,
+                  fontSize: 15,
+                  height: 1.30,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           if (m.attachments.isNotEmpty) ...[

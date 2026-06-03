@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -1686,15 +1687,23 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                     if (m.body
                                                         .trim()
                                                         .isNotEmpty)
-                                                      SelectableText(
-                                                        m.body,
-                                                        style: TextStyle(
-                                                          color: mine
-                                                              ? Colors.white
-                                                              : Colors.black87,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          height: 1.28,
+                                                      MarkdownBody(
+                                                        data: m.body,
+                                                        selectable: true,
+                                                        styleSheet: MarkdownStyleSheet(
+                                                          p: TextStyle(
+                                                            color: mine
+                                                                ? Colors.white
+                                                                : Colors.black87,
+                                                            fontWeight: FontWeight.w600,
+                                                            height: 1.28,
+                                                          ),
+                                                          strong: TextStyle(
+                                                            color: mine
+                                                                ? Colors.white
+                                                                : Colors.black87,
+                                                            fontWeight: FontWeight.w900,
+                                                          ),
                                                         ),
                                                       ),
                                                     if (m

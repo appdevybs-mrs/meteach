@@ -7,6 +7,7 @@ import 'push_dispatch_service.dart';
 enum BookingChangeAction {
   cancelLearner,
   cancelGroup,
+  cancelGroupLive,
   rescheduleLearner,
   rescheduleGroup,
   changeSessionSingle,
@@ -57,6 +58,7 @@ class BookingCommunicationRequest {
     required this.before,
     this.after,
     this.learnerRecipients = const <BookingRecipient>[],
+    this.cancelReason,
   });
 
   final BookingChangeAction action;
@@ -65,6 +67,7 @@ class BookingCommunicationRequest {
   final BookingSnapshot before;
   final BookingSnapshot? after;
   final List<BookingRecipient> learnerRecipients;
+  final String? cancelReason;
 }
 
 class BookingCommunicationService {
@@ -293,6 +296,8 @@ class BookingCommunicationService {
       case BookingChangeAction.cancelLearner:
       case BookingChangeAction.cancelGroup:
         return 'Booking canceled';
+      case BookingChangeAction.cancelGroupLive:
+        return '\u26a1 Session Cancelled';
       case BookingChangeAction.rescheduleLearner:
       case BookingChangeAction.rescheduleGroup:
         return 'Booking rescheduled';
@@ -310,6 +315,17 @@ class BookingCommunicationService {
       case BookingChangeAction.cancelLearner:
       case BookingChangeAction.cancelGroup:
         return '$learnerPart in ${before.courseTitle} was canceled for ${before.dayKey} at ${before.time}.';
+      case BookingChangeAction.cancelGroupLive: {
+        final reason = request.cancelReason ?? 'other';
+        switch (reason) {
+          case 'technical':
+            return '\u26a1 Your session was cancelled \u2014 teacher had a connectivity issue. No credit used.';
+          case 'emergency':
+            return '\uD83D\uDEA8 Your session was cancelled due to a teacher emergency. No credit used.';
+          default:
+            return '\u274C Your session was cancelled by admin. No credit used.';
+        }
+      }
       case BookingChangeAction.rescheduleLearner:
       case BookingChangeAction.rescheduleGroup:
         return '$learnerPart in ${before.courseTitle} moved from ${before.dayKey} ${before.time} to ${after?.dayKey ?? ''} ${after?.time ?? ''}.'
@@ -326,6 +342,68 @@ class BookingCommunicationService {
   }) {
     final before = request.before;
     final after = request.after;
+
+    if (request.action == BookingChangeAction.cancelGroupLive) {
+      final reason = request.cancelReason ?? 'other';
+      final reasonText = switch (reason) {
+        'technical' => 'Teacher had a technical issue (internet/power)',
+        'emergency' => 'Teacher had an emergency',
+        _ => 'Cancelled by admin',
+      };
+      final emoji = switch (reason) {
+        'technical' => '\u26a1',
+        'emergency' => '\uD83D\uDEA8',
+        _ => '\u274C',
+      };
+      final learnerSummary = _learnerSummary(before.learnerNames);
+
+      switch (audience) {
+        case 'learner':
+          return '''$emoji **Session Cancelled**
+
+Hi there,
+
+Your session has been cancelled.
+
+**Course:** ${before.courseTitle}
+**Date:** ${before.dayKey}
+**Time:** ${before.time}
+**Teacher:** ${before.teacherName}
+**Session:** ${_sessionLabel(before.sessionNo)}
+
+**Reason:** $reasonText
+
+\u2705 **No credit was used.** No charge.
+
+Sorry for the inconvenience \uD83D\uDC4F''';
+        case 'teacher':
+          return '''$emoji **Session Cancelled**
+
+Your session has been cancelled by admin.
+
+**Course:** ${before.courseTitle}
+**Date:** ${before.dayKey}
+**Time:** ${before.time}
+**Learners:** $learnerSummary
+**Session:** ${_sessionLabel(before.sessionNo)}
+
+**Reason:** $reasonText''';
+        default:
+          return '''$emoji **Session Cancelled** \u2014 Admin notice
+
+**Course:** ${before.courseTitle}
+**Date:** ${before.dayKey}
+**Time:** ${before.time}
+**Teacher:** ${before.teacherName}
+**Learners:** $learnerSummary
+**Session:** ${_sessionLabel(before.sessionNo)}
+
+**Reason:** $reasonText
+
+**Cancelled by:** ${request.actingAdminName.trim().isEmpty ? 'Admin' : request.actingAdminName.trim()}''';
+      }
+    }
+
     final lines = <String>[
       _subjectForAction(request.action),
       '',
@@ -345,6 +423,8 @@ class BookingCommunicationService {
       case BookingChangeAction.cancelLearner:
       case BookingChangeAction.cancelGroup:
         lines.add('Status: booking canceled.');
+        break;
+      case BookingChangeAction.cancelGroupLive:
         break;
       case BookingChangeAction.rescheduleLearner:
       case BookingChangeAction.rescheduleGroup:
