@@ -302,6 +302,122 @@ class AppLoading {
   }
 }
 
+class ProgressDialog {
+  static Future<void> run(
+    BuildContext context, {
+    required String message,
+    required int total,
+    required Future<void> Function(void Function(int current) reportProgress)
+        task,
+  }) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    int current = 0;
+
+    final entry = OverlayEntry(
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Material(
+          color: Colors.black.withValues(alpha: 0.18),
+          child: Center(
+            child: _ProgressDialogContent(
+              message: message,
+              current: current,
+              total: total,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(entry);
+
+    try {
+      await task((value) {
+        current = value;
+        try {
+          entry.markNeedsBuild();
+        } catch (_) {}
+      });
+    } finally {
+      try {
+        entry.remove();
+      } catch (_) {}
+    }
+  }
+}
+
+class _ProgressDialogContent extends StatelessWidget {
+  const _ProgressDialogContent({
+    required this.message,
+    required this.current,
+    required this.total,
+  });
+
+  final String message;
+  final int current;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = total > 0 ? (current / total).clamp(0.0, 1.0) : 0.0;
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const YbsBusyLogo(size: 48),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Color(0xFF1D4ED8),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$current of $total',
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.55),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class BrandedInlineLoader extends StatelessWidget {
   const BrandedInlineLoader({super.key, this.message = 'Loading...'});
 

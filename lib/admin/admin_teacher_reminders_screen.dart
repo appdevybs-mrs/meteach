@@ -386,27 +386,62 @@ class _AdminTeacherRemindersScreenState
     int successCount = 0;
     int failedCount = 0;
 
-    for (final teacher in selectedTeachers) {
-      try {
-        await _saveReminderForTeacher(
-          teacherUid: teacher.uid,
-          created: _TeacherReminderDraft(
-            title: created.title,
-            description: created.description,
-            dueAtMs: created.dueAtMs,
-            attachmentUrl: created.attachmentUrl,
-            attachmentName: created.attachmentName,
-            teacherName: teacher.fullName,
-            teacherEmail: teacher.email,
-            teacherSerial: teacher.serial,
-            teacherRole: teacher.role,
-            teacherPhone1: teacher.phone1,
-            teacherPhone2: teacher.phone2,
-          ),
-        );
-        successCount++;
-      } catch (_) {
-        failedCount++;
+    if (selectedTeachers.length > 1) {
+      await ProgressDialog.run(
+        context,
+        message: 'Sending reminders...',
+        total: selectedTeachers.length,
+        task: (reportProgress) async {
+          for (int i = 0; i < selectedTeachers.length; i++) {
+            final teacher = selectedTeachers[i];
+            try {
+              await _saveReminderForTeacher(
+                teacherUid: teacher.uid,
+                created: _TeacherReminderDraft(
+                  title: created.title,
+                  description: created.description,
+                  dueAtMs: created.dueAtMs,
+                  attachmentUrl: created.attachmentUrl,
+                  attachmentName: created.attachmentName,
+                  teacherName: teacher.fullName,
+                  teacherEmail: teacher.email,
+                  teacherSerial: teacher.serial,
+                  teacherRole: teacher.role,
+                  teacherPhone1: teacher.phone1,
+                  teacherPhone2: teacher.phone2,
+                ),
+              );
+              successCount++;
+            } catch (_) {
+              failedCount++;
+            }
+            reportProgress(i + 1);
+          }
+        },
+      );
+    } else {
+      for (final teacher in selectedTeachers) {
+        try {
+          await _saveReminderForTeacher(
+            teacherUid: teacher.uid,
+            created: _TeacherReminderDraft(
+              title: created.title,
+              description: created.description,
+              dueAtMs: created.dueAtMs,
+              attachmentUrl: created.attachmentUrl,
+              attachmentName: created.attachmentName,
+              teacherName: teacher.fullName,
+              teacherEmail: teacher.email,
+              teacherSerial: teacher.serial,
+              teacherRole: teacher.role,
+              teacherPhone1: teacher.phone1,
+              teacherPhone2: teacher.phone2,
+            ),
+          );
+          successCount++;
+        } catch (_) {
+          failedCount++;
+        }
       }
     }
 

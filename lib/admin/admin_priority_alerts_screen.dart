@@ -379,15 +379,39 @@ class _AdminPriorityAlertsScreenState extends State<AdminPriorityAlertsScreen> {
     if (draft == null) return;
 
     int ok = 0;
-    for (final target in picked) {
-      try {
-        await _createAlert(target: target, draft: draft);
-        ok += 1;
-      } catch (e) {
-        _toast(
-          toHumanError(e, fallback: 'Could not send to ${target.name}.'),
-          type: AppToastType.error,
-        );
+
+    if (picked.length > 1) {
+      await ProgressDialog.run(
+        context,
+        message: 'Sending priority alerts...',
+        total: picked.length,
+        task: (reportProgress) async {
+          for (int i = 0; i < picked.length; i++) {
+            final target = picked[i];
+            try {
+              await _createAlert(target: target, draft: draft);
+              ok += 1;
+            } catch (e) {
+              _toast(
+                toHumanError(e, fallback: 'Could not send to ${target.name}.'),
+                type: AppToastType.error,
+              );
+            }
+            reportProgress(i + 1);
+          }
+        },
+      );
+    } else {
+      for (final target in picked) {
+        try {
+          await _createAlert(target: target, draft: draft);
+          ok += 1;
+        } catch (e) {
+          _toast(
+            toHumanError(e, fallback: 'Could not send to ${target.name}.'),
+            type: AppToastType.error,
+          );
+        }
       }
     }
 
