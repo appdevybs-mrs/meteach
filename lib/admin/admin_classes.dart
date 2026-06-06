@@ -40,6 +40,7 @@ import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
+import '../shared/profile_avatar.dart';
 import '../shared/study_variant.dart';
 import '../services/mail_consistency_service.dart';
 import '../services/push_dispatch_service.dart';
@@ -1416,6 +1417,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             "first_name": first,
             "phone1": phone1,
             "email": email,
+            "profile_photo": (data["profile_photo"] ?? "").toString().trim(),
+            "profile_photos": data["profile_photos"],
             "courses": coursesMap,
           });
         }
@@ -2640,6 +2643,32 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       paidSessions: paidSessions,
       progressValue: progressValue,
     );
+  }
+
+  static String _learnerPhotoUrl(Map<String, dynamic>? learner) {
+    if (learner == null) return '';
+    final direct = (learner['profile_photo'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return direct;
+    final photos = learner['profile_photos'];
+    if (photos is List) {
+      for (final item in photos) {
+        final p = item.toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+    }
+    if (photos is Map) {
+      final entries = photos.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final e in entries) {
+        final p = e.value.toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+    }
+    return '';
   }
 
   // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
@@ -5312,8 +5341,18 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                   const EdgeInsets.symmetric(
                                                     horizontal: 6,
                                                   ),
-                                              leading: const Icon(
-                                                Icons.person_rounded,
+                                              leading: ProfileAvatar(
+                                                name: name,
+                                                photoUrl:
+                                                    _learnerPhotoUrl(
+                                                      learnerByUid[
+                                                          learnerUid],
+                                                    ),
+                                                radius: 16,
+                                                borderColor: paymentProgress
+                                                        .isOver
+                                                    ? Colors.red.shade400
+                                                    : null,
                                               ),
                                               title: Text(
                                                 title,
@@ -5401,18 +5440,40 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
-                                                  Text(
-                                                    paymentProgress.hasPackage
-                                                        ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
-                                                        : 'Payment: no package',
-                                                    style: TextStyle(
-                                                      color:
-                                                          Colors.grey.shade700,
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
+                                                  Text.rich(
+                                                     TextSpan(
+                                                       text: paymentProgress
+                                                               .hasPackage
+                                                           ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
+                                                           : 'Payment: no package',
+                                                       style: TextStyle(
+                                                         color: Colors
+                                                             .grey.shade700,
+                                                         fontSize: 11,
+                                                         fontWeight:
+                                                             FontWeight.w700,
+                                                       ),
+                                                       children: paymentProgress
+                                                                   .hasPackage &&
+                                                               paymentProgress
+                                                                   .isOver
+                                                           ? [
+                                                               TextSpan(
+                                                                 text:
+                                                                     '  Over:${paymentProgress.overSessions}',
+                                                                 style: const TextStyle(
+                                                                   color: Colors
+                                                                       .red,
+                                                                   fontSize: 11,
+                                                                   fontWeight:
+                                                                       FontWeight
+                                                                           .w700,
+                                                                 ),
+                                                               ),
+                                                             ]
+                                                           : null,
+                                                     ),
+                                                   ),
                                                   const SizedBox(height: 3),
                                                   ClipRRect(
                                                     borderRadius:
@@ -7679,6 +7740,8 @@ class _LearnerPaymentProgress {
       progressValue = 0;
 
   bool get hasPackage => paidSessions > 0;
+  bool get isOver => consumedSessions > paidSessions;
+  int get overSessions => isOver ? consumedSessions - paidSessions : 0;
 }
 
 class _PauseWindowSelection {

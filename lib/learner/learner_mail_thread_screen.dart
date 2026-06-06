@@ -2120,23 +2120,35 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             const SizedBox(height: 8),
           ],
           if (m.body.trim().isNotEmpty)
-            MarkdownBody(
-              data: m.body,
-              selectable: true,
-              styleSheet: MarkdownStyleSheet(
-                p: TextStyle(
-                  color: textColor,
-                  fontSize: 15,
-                  height: 1.30,
-                  fontWeight: FontWeight.w600,
-                ),
-                strong: TextStyle(
-                  color: textColor,
-                  fontSize: 15,
-                  height: 1.30,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+            Builder(
+              builder: (ctx) {
+                try {
+                  final parsed = jsonDecode(m.body.trim());
+                  if (parsed is Map && parsed['v'] == 2) {
+                    return _ReportCardContent(
+                      data: Map<String, dynamic>.from(parsed),
+                    );
+                  }
+                } catch (_) {}
+                return MarkdownBody(
+                  data: m.body,
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet(
+                    p: TextStyle(
+                      color: textColor,
+                      fontSize: 15,
+                      height: 1.30,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    strong: TextStyle(
+                      color: textColor,
+                      fontSize: 15,
+                      height: 1.30,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                );
+              },
             ),
           if (m.attachments.isNotEmpty) ...[
             if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
@@ -2994,6 +3006,273 @@ class _MailVideoViewerState extends State<_MailVideoViewer> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ReportCardContent extends StatelessWidget {
+  const _ReportCardContent({required this.data});
+
+  final Map<String, dynamic> data;
+
+  static const _skillLabels = <String, String>{
+    'participation': 'Participation',
+    'behavior': 'Behavior / Conduct',
+    'punctuality': 'Punctuality',
+    'vocabulary': 'Vocabulary Range',
+    'fluency': 'Speaking Fluency',
+    'grammar': 'Grammar Accuracy',
+    'writing': 'Writing / Punctuation',
+    'listening': 'Listening Comprehension',
+  };
+
+  Color _scoreColor(int v) {
+    if (v >= 90) return const Color(0xFF059669);
+    if (v >= 70) return const Color(0xFF10B981);
+    if (v >= 40) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final skills = (data['skills'] as Map?)
+            ?.map((k, v) => MapEntry(k.toString(), (v as num).toInt())) ??
+        <String, int>{};
+    final stats = (data['stats'] as Map?)
+            ?.map((k, v) => MapEntry(k.toString(), v)) ??
+        <String, dynamic>{};
+    final note = (data['note'] as String?)?.trim() ?? '';
+    final month = (data['month'] as String?) ?? '';
+    const navy = Color(0xFF1F4E79);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 380;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFDBE6F2)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.assessment_rounded, size: 18, color: navy),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Learner Progress Report',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                      color: navy,
+                    ),
+                  ),
+                ],
+              ),
+              if (month.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  month,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              if (stats.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (stats['attendance'] != null)
+                      _chip(
+                        'Attendance',
+                        '${stats['attendance']}%',
+                        _attC(stats['attendance']),
+                      ),
+                    if (stats['lessonsCovered'] != null)
+                      _chip(
+                        'Lessons',
+                        '${stats['lessonsCovered']}',
+                        const Color(0xFF3B82F6),
+                      ),
+                    if (stats['homeworkPending'] != null)
+                      _chip(
+                        'HW Pending',
+                        '${stats['homeworkPending']}',
+                        ((stats['homeworkPending'] as num?)?.toInt() ?? 0) > 0
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF10B981),
+                      ),
+                  ],
+                ),
+              ],
+              if (skills.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Divider(height: 1, color: Color(0xFFE8EDF4)),
+                const SizedBox(height: 8),
+                if (isWide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _skillColumn(skills, 0, 4),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _skillColumn(skills, 4, 8),
+                      ),
+                    ],
+                  )
+                else
+                  _skillColumn(skills, 0, 8),
+              ],
+              if (note.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8EC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFFD9A3)),
+                  ),
+                  child: Text(
+                    note,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      height: 1.30,
+                      color: Color(0xFF3F2A04),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Color _attC(dynamic v) {
+    final pct = (v is num) ? v.toInt() : 0;
+    if (pct >= 80) return const Color(0xFF10B981);
+    if (pct >= 50) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
+
+  Widget _chip(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withAlpha(18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(50)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                color: color.withAlpha(170),
+                fontWeight: FontWeight.w700,
+                fontSize: 10,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _skillColumn(Map<String, int> skills, int start, int end) {
+    final entries = _skillLabels.entries.toList();
+    final slice = entries.length <= start
+        ? <MapEntry<String, String>>[]
+        : entries.sublist(start, end.clamp(0, entries.length));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final entry in slice) ...[
+          if (entry != slice.first) const SizedBox(height: 4),
+          _skillRow(entry.key, skills[entry.key] ?? 0),
+        ],
+      ],
+    );
+  }
+
+  Widget _skillRow(String key, int score) {
+    final label = _skillLabels[key] ?? key;
+    final color = _scoreColor(score);
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 94,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF334155),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: (score / 100.0).clamp(0.0, 1.0),
+              minHeight: 8,
+              backgroundColor: color.withAlpha(25),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 32,
+          child: Text(
+            '$score%',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

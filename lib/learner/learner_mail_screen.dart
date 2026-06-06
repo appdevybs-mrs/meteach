@@ -896,8 +896,8 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
                                                           overflow: TextOverflow
                                                               .ellipsis,
                                                           style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w900,
+                                                          fontWeight:
+                                                              FontWeight.w700,
                                                             color: _navy,
                                                             fontSize: 15,
                                                           ),
@@ -1076,7 +1076,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
                                                         TextOverflow.ellipsis,
                                                     style: TextStyle(
                                                       fontWeight:
-                                                          FontWeight.w800,
+                                                          FontWeight.w400,
                                                       color: _navy.withValues(
                                                         alpha: 0.62,
                                                       ),

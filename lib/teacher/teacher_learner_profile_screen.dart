@@ -1,6 +1,12 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+
+import 'teacher_mail_thread_screen.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
@@ -627,166 +633,322 @@ class _TeacherLearnerProfileScreenState
       return;
     }
 
-    final behaviorC = TextEditingController();
-    final progressC = TextEditingController();
-    final homeworkC = TextEditingController(
-      text: 'Homework pending: $_statHomeworkPending',
-    );
-    final commentC = TextEditingController();
+    final skills = <String, double>{
+      'participation': 50,
+      'behavior': 50,
+      'punctuality': 50,
+      'vocabulary': 50,
+      'fluency': 50,
+      'grammar': 50,
+      'writing': 50,
+      'listening': 50,
+    };
+
+    final noteC = TextEditingController();
+    const skillLabels = <(String, String)>[
+      ('Participation', 'participation'),
+      ('Behavior / Conduct', 'behavior'),
+      ('Punctuality', 'punctuality'),
+      ('Vocabulary Range', 'vocabulary'),
+      ('Speaking Fluency', 'fluency'),
+      ('Grammar Accuracy', 'grammar'),
+      ('Writing / Punctuation', 'writing'),
+      ('Listening Comprehension', 'listening'),
+    ];
     bool sending = false;
+
+    Color scoreColor(double v) {
+      if (v >= 90) return const Color(0xFF059669);
+      if (v >= 70) return const Color(0xFF10B981);
+      if (v >= 40) return const Color(0xFFF59E0B);
+      return const Color(0xFFEF4444);
+    }
+
+    String scoreLabel(double v) {
+      if (v >= 90) return 'Excellent';
+      if (v >= 70) return 'Good';
+      if (v >= 40) return 'Developing';
+      return 'Needs Improvement';
+    }
 
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Monthly Report Card'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  enabled: false,
-                  decoration: InputDecoration(
-                    labelText: 'Course',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    hintText: courseTitle,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: behaviorC,
-                  decoration: const InputDecoration(
-                    labelText: 'Behavior',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  minLines: 2,
-                  maxLines: 4,
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: progressC,
-                  decoration: const InputDecoration(
-                    labelText: 'Progress / Advancement',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  minLines: 2,
-                  maxLines: 4,
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: homeworkC,
-                  decoration: const InputDecoration(
-                    labelText: 'Homework Review',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  minLines: 2,
-                  maxLines: 4,
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: commentC,
-                  decoration: const InputDecoration(
-                    labelText: 'Teacher Comment',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  minLines: 2,
-                  maxLines: 5,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: sending ? null : () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: sending
-                  ? null
-                  : () async {
-                      setLocal(() => sending = true);
-                      try {
-                        final me = FirebaseAuth.instance.currentUser;
-                        final meUid = _safeStr(me?.uid);
-                        if (meUid.isEmpty) {
-                          throw Exception('Teacher not signed in.');
-                        }
-                        final meName = _safeStr(me?.email).isEmpty
-                            ? 'Teacher'
-                            : _safeStr(me?.email).split('@').first;
-                        final learnerName = widget.learnerName.trim().isEmpty
-                            ? 'Learner'
-                            : widget.learnerName.trim();
-                        final subject = _reportSubject(courseTitle);
-                        final threadId = await _ensureReportThread(
-                          teacherUid: meUid,
-                          teacherName: meName,
-                          learnerUid: widget.learnerUid,
-                          learnerName: learnerName,
-                          subject: subject,
-                        );
-                        final body = [
-                          'Report Month: ${_monthLabel()}',
-                          'Course: $courseTitle',
-                          'Attendance: $_statAttendancePct%',
-                          'Lessons Covered: $_statLessonsCovered',
-                          'Homework Pending: $_statHomeworkPending',
-                          '',
-                          'Behavior:',
-                          behaviorC.text.trim().isEmpty
-                              ? '-'
-                              : behaviorC.text.trim(),
-                          '',
-                          'Progress / Advancement:',
-                          progressC.text.trim().isEmpty
-                              ? '-'
-                              : progressC.text.trim(),
-                          '',
-                          'Homework Review:',
-                          homeworkC.text.trim().isEmpty
-                              ? '-'
-                              : homeworkC.text.trim(),
-                          '',
-                          'Teacher Comment:',
-                          commentC.text.trim().isEmpty
-                              ? '-'
-                              : commentC.text.trim(),
-                        ].join('\n');
+        builder: (ctx, setLocal) {
+          void generateReport() {
+            final parts = <String>['Performance Summary:'];
+            for (final (label, key) in skillLabels) {
+              final v = skills[key] ?? 50;
+              parts.add('  $label: ${scoreLabel(v)} (${v.round()}%)');
+            }
+            final text = parts.join('\n');
+            noteC.text = text;
+            noteC.selection = TextSelection.fromPosition(
+              TextPosition(offset: text.length),
+            );
+          }
 
-                        await _sendReportMail(
-                          threadId: threadId,
-                          teacherUid: meUid,
-                          learnerUid: widget.learnerUid,
-                          body: body,
-                          subject: subject,
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } catch (e) {
-                        setLocal(() => sending = false);
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(content: Text(toHumanError(e))),
-                          );
-                        }
-                      }
-                    },
-              icon: sending
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send_rounded),
-              label: Text(sending ? 'Sending…' : 'Send report'),
+          return AlertDialog(
+            title: const Text('Monthly Report Card'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    enabled: false,
+                    decoration: InputDecoration(
+                      labelText: 'Course',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      hintText: courseTitle,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Class Stats',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 6,
+                          children: [
+                            _statChip(
+                              'Attendance',
+                              '$_statAttendancePct%',
+                              _attendanceColor(_statAttendancePct),
+                            ),
+                            _statChip(
+                              'Lessons',
+                              '$_statLessonsCovered',
+                              const Color(0xFF3B82F6),
+                            ),
+                            _statChip(
+                              'Homework Pending',
+                              '$_statHomeworkPending',
+                              _statHomeworkPending > 0
+                                  ? const Color(0xFFEF4444)
+                                  : const Color(0xFF10B981),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Skill Evaluation',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        for (final (label, key) in skillLabels) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 130,
+                                  child: Text(
+                                    label,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      activeTrackColor: scoreColor(
+                                        skills[key] ?? 50,
+                                      ),
+                                      inactiveTrackColor: scoreColor(
+                                        skills[key] ?? 50,
+                                      ).withAlpha(25),
+                                      thumbColor: scoreColor(
+                                        skills[key] ?? 50,
+                                      ),
+                                      overlayColor: scoreColor(
+                                        skills[key] ?? 50,
+                                      ).withAlpha(20),
+                                      trackHeight: 6,
+                                      thumbShape:
+                                          const RoundSliderThumbShape(
+                                        enabledThumbRadius: 8,
+                                      ),
+                                    ),
+                                    child: Slider(
+                                      value: skills[key] ?? 50,
+                                      min: 0,
+                                      max: 100,
+                                      divisions: 100,
+                                      onChanged: (val) => setLocal(
+                                        () => skills[key] = val,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 48,
+                                  child: Text(
+                                    '${(skills[key] ?? 50).round()}%',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                      color: scoreColor(skills[key] ?? 50),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => setLocal(() => generateReport()),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('Generate Report'),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: noteC,
+                    decoration: const InputDecoration(
+                      labelText: 'Teacher Note',
+                      border: OutlineInputBorder(),
+                      alignLabelWithHint: true,
+                    ),
+                    minLines: 3,
+                    maxLines: 6,
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null : () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: sending
+                    ? null
+                    : () async {
+                        setLocal(() => sending = true);
+                        try {
+                          final me = FirebaseAuth.instance.currentUser;
+                          final meUid = _safeStr(me?.uid);
+                          if (meUid.isEmpty) {
+                            throw Exception('Teacher not signed in.');
+                          }
+                          final meName = _safeStr(me?.email).isEmpty
+                              ? 'Teacher'
+                              : _safeStr(me?.email).split('@').first;
+                          final learnerName =
+                              widget.learnerName.trim().isEmpty
+                                  ? 'Learner'
+                                  : widget.learnerName.trim();
+                          final subject = _reportSubject(courseTitle);
+                          final threadId = await _ensureReportThread(
+                            teacherUid: meUid,
+                            teacherName: meName,
+                            learnerUid: widget.learnerUid,
+                            learnerName: learnerName,
+                            subject: subject,
+                          );
+
+                          final body = jsonEncode({
+                            'v': 2,
+                            'month': _monthLabel(),
+                            'course': courseTitle,
+                            'stats': {
+                              'attendance': _statAttendancePct,
+                              'lessonsCovered': _statLessonsCovered,
+                              'homeworkPending': _statHomeworkPending,
+                            },
+                            'skills': skills.map(
+                              (k, v) => MapEntry(k, v.round()),
+                            ),
+                            'note': noteC.text.trim().isEmpty
+                                ? ''
+                                : noteC.text.trim(),
+                          });
+
+                          await _sendReportMail(
+                            threadId: threadId,
+                            teacherUid: meUid,
+                            learnerUid: widget.learnerUid,
+                            body: body,
+                            subject: subject,
+                          );
+
+                          final skillValues = skills.map(
+                            (k, v) => MapEntry(k, v.round()),
+                          );
+                          _generateAndSaveDiagram(
+                            courseTitle: courseTitle,
+                            learnerName: learnerName,
+                            teacherName: meName,
+                            skillValues: skillValues,
+                            note: noteC.text.trim(),
+                          );
+
+                          if (ctx.mounted) Navigator.pop(ctx, true);
+                        } catch (e) {
+                          setLocal(() => sending = false);
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text(toHumanError(e))),
+                            );
+                          }
+                        }
+                      },
+                icon: sending
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_rounded),
+                label: Text(sending ? 'Sending…' : 'Send report'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -795,6 +957,123 @@ class _TeacherLearnerProfileScreenState
         const SnackBar(content: Text('Report sent successfully.')),
       );
     }
+  }
+
+  Future<void> _generateAndSaveDiagram({
+    required String courseTitle,
+    required String learnerName,
+    required String teacherName,
+    required Map<String, int> skillValues,
+    required String note,
+  }) async {
+    try {
+      final diagramUrl = await _generateReportDiagram(
+        learnerName: learnerName,
+        courseTitle: courseTitle,
+        teacherName: teacherName,
+        skills: skillValues,
+        note: note,
+      );
+
+      final reportRef = _db.child('reports/${widget.learnerUid}').push();
+      await reportRef.set({
+        'v': 2,
+        'createdAt': DateTime.now().millisecondsSinceEpoch,
+        'createdByName': teacherName,
+        'courseTitle': courseTitle,
+        'skills': skillValues,
+        'stats': {
+          'attendance': _statAttendancePct,
+          'lessonsCovered': _statLessonsCovered,
+          'homeworkPending': _statHomeworkPending,
+        },
+        'comment': note,
+        'diagramUrl': diagramUrl ?? '',
+      });
+    } catch (_) {}
+  }
+
+  Future<String?> _generateReportDiagram({
+    required String learnerName,
+    required String courseTitle,
+    required String teacherName,
+    required Map<String, int> skills,
+    required String note,
+  }) async {
+    if (!mounted) return null;
+    final month = _monthLabel();
+    final diagramKey = GlobalKey();
+
+    final overlayEntry = OverlayEntry(
+      builder: (_) => Center(
+        child: RepaintBoundary(
+          key: diagramKey,
+          child: _ReportCardDiagramV3(
+            schoolTitle: '',
+            learnerName: learnerName,
+            courseLabel: courseTitle,
+            month: month,
+            teacherName: teacherName,
+            skills: skills,
+            note: note,
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(overlayEntry);
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    try {
+      final ro = diagramKey.currentContext?.findRenderObject();
+      if (ro is! RenderRepaintBoundary) return null;
+      final image = await ro.toImage(pixelRatio: 2.5);
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      if (byteData == null) return null;
+
+      final bytes = byteData.buffer.asUint8List();
+      final client = MailUploadClient.defaultClient();
+      final name = 'report_${DateTime.now().millisecondsSinceEpoch}.png';
+      return client.uploadBytes(bytes: bytes, filename: name);
+    } catch (_) {
+      return null;
+    } finally {
+      overlayEntry.remove();
+    }
+  }
+
+  Widget _statChip(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(50)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color.withAlpha(180),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Color _attendanceColor(int pct) {
@@ -1384,6 +1663,357 @@ class _TeacherLearnerProfileScreenState
                 ],
               ),
       ),
+    );
+  }
+}
+
+class _ReportCardDiagramV3 extends StatelessWidget {
+  const _ReportCardDiagramV3({
+    required this.schoolTitle,
+    required this.learnerName,
+    required this.courseLabel,
+    required this.month,
+    required this.teacherName,
+    required this.skills,
+    required this.note,
+  });
+
+  final String schoolTitle;
+  final String learnerName;
+  final String courseLabel;
+  final String month;
+  final String teacherName;
+  final Map<String, int> skills;
+  final String note;
+
+  static const _skillLabels = <String, String>{
+    'participation': 'Participation',
+    'behavior': 'Behavior / Conduct',
+    'punctuality': 'Punctuality',
+    'vocabulary': 'Vocabulary Range',
+    'fluency': 'Speaking Fluency',
+    'grammar': 'Grammar Accuracy',
+    'writing': 'Writing / Punctuation',
+    'listening': 'Listening Comprehension',
+  };
+
+  static const _leftKeys = [
+    'participation',
+    'behavior',
+    'punctuality',
+    'vocabulary',
+  ];
+
+  int _toScore(int v) {
+    if (v >= 80) return 5;
+    if (v >= 60) return 4;
+    if (v >= 40) return 3;
+    if (v >= 20) return 2;
+    return 1;
+  }
+
+  Color _dotColor(int score) {
+    if (score >= 4) return const Color(0xFF10B981);
+    if (score >= 3) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const navy = Color(0xFF1F4E79);
+    const deepNavy = Color(0xFF163B5D);
+    const slate = Color(0xFF334155);
+
+    final avg = skills.values.isEmpty
+        ? 0
+        : (skills.values.reduce((a, b) => a + b) / skills.length).round();
+
+    return Container(
+      width: 360,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF7FBFF), Color(0xFFFFFAF2)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDBE6F2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: DefaultTextStyle(
+          style: const TextStyle(color: Color(0xFF0F172A)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [deepNavy, navy],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.school_rounded,
+                        size: 28,
+                        color: navy,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            schoolTitle.isNotEmpty
+                                ? schoolTitle
+                                : 'Dream English Academy',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.86),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Learner Progress Report',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      learnerName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        color: Color(0xFF102A43),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Course: $courseLabel',
+                      style: const TextStyle(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    Text(
+                      'Date: $month',
+                      style: const TextStyle(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    Text(
+                      'Teacher: $teacherName',
+                      style: const TextStyle(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _metricChip(
+                          label: 'Avg Score',
+                          value: '$avg/100',
+                          background: navy.withAlpha(20),
+                          foreground: navy,
+                        ),
+                        _metricChip(
+                          label: 'Skills',
+                          value: '${skills.length}',
+                          background: const Color(0xFFE8F1FF),
+                          foreground: const Color(0xFF2A5B9C),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (skills.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2F8FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFD1E4F7)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: _buildSkillColumn(_leftKeys),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildSkillColumn(
+                                _skillLabels.keys
+                                    .where((k) => !_leftKeys.contains(k))
+                                    .toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (note.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF8EC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFFD9A3)),
+                        ),
+                        child: Text(
+                          note,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1.28,
+                            color: Color(0xFF3F2A04),
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 6,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _metricChip({
+    required String label,
+    required String value,
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foreground.withValues(alpha: 0.22)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                color: foreground.withValues(alpha: 0.80),
+                fontWeight: FontWeight.w800,
+                fontSize: 10,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: TextStyle(
+                color: foreground,
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scoreDots(int score, {required Color active}) {
+    final s = score.clamp(1, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        final on = i < s;
+        return Container(
+          width: 8,
+          height: 8,
+          margin: EdgeInsets.only(right: i == 4 ? 0 : 4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: on ? active : active.withValues(alpha: 0.20),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildSkillColumn(List<String> keys) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final key in keys) ...[
+          if (keys.indexOf(key) > 0) const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _skillLabels[key] ?? key,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _scoreDots(
+                _toScore(skills[key] ?? 0),
+                active: _dotColor(_toScore(skills[key] ?? 0)),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

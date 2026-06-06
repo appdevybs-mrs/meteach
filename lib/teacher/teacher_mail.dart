@@ -2025,9 +2025,7 @@ class _ThreadTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: row.unreadCount > 0
-                            ? FontWeight.w900
-                            : FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         color: isReport
                             ? const Color(0xFF1F4E79)
                             : (row.unreadCount > 0
