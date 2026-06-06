@@ -800,6 +800,29 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         upcoming.add(occ);
         if (upcoming.length >= 2) break;
       }
+
+      if (upcoming.length == 2) {
+        final first = upcoming[0];
+        final second = upcoming[1];
+        if (first.classId == second.classId &&
+            first.start.year == second.start.year &&
+            first.start.month == second.start.month &&
+            first.start.day == second.start.day) {
+          return [
+            _HomeUpcomingClass(
+              classId: first.classId,
+              courseCode: first.courseCode,
+              courseTitle: first.courseTitle,
+              start: first.start,
+              end: first.end,
+              isOnline: first.isOnline,
+              secondStart: second.start,
+              secondEnd: second.end,
+            ),
+          ];
+        }
+      }
+
       return upcoming;
     } catch (_) {
       return const [];
@@ -1652,6 +1675,8 @@ class _HomeUpcomingClass {
     required this.start,
     required this.end,
     this.isOnline = false,
+    this.secondStart,
+    this.secondEnd,
   });
 
   final String classId;
@@ -1660,6 +1685,10 @@ class _HomeUpcomingClass {
   final DateTime start;
   final DateTime end;
   final bool isOnline;
+  final DateTime? secondStart;
+  final DateTime? secondEnd;
+
+  bool get isMerged => secondStart != null;
 }
 
 class _HomeTeacherIdentity {
@@ -2892,13 +2921,17 @@ class _NextComingClassCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                index == 0
+                                c.isMerged
                                     ? (isOnline
-                                          ? 'Next Online Class'
-                                          : 'Next Coming Class')
-                                    : (isOnline
-                                          ? 'Upcoming Online Class'
-                                          : 'Upcoming Class'),
+                                          ? 'Next Online Class (2 sessions)'
+                                          : 'Next Coming Class (2 sessions)')
+                                    : index == 0
+                                        ? (isOnline
+                                              ? 'Next Online Class'
+                                              : 'Next Coming Class')
+                                        : (isOnline
+                                              ? 'Upcoming Online Class'
+                                              : 'Upcoming Class'),
                                 style: TextStyle(
                                   color: itemPrimary,
                                   fontWeight: FontWeight.w900,
@@ -3008,7 +3041,9 @@ class _NextComingClassCard extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
+                                    c.isMerged
+                                      ? '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}  &  ${DateFormat('hh:mm a').format(c.secondStart!)} - ${DateFormat('hh:mm a').format(c.secondEnd!)}'
+                                      : '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -3037,9 +3072,11 @@ class _NextComingClassCard extends StatelessWidget {
                             _InfoChip(
                               palette: palette,
                               icon: TeacherIcons.nextClassBadge,
-                              text: c.isOnline
-                                  ? 'Online booking'
-                                  : 'In-class session',
+                              text: c.isMerged
+                                  ? '2 sessions today'
+                                  : c.isOnline
+                                      ? 'Online booking'
+                                      : 'In-class session',
                             ),
                           ],
                         ),
