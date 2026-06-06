@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/mail_consistency_service.dart';
 import '../services/internal_mail_service.dart';
 import '../services/push_dispatch_service.dart';
+import '../services/homework_review_sync_service.dart';
 import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
@@ -865,6 +866,18 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         'reviewNote': noteText,
         'needsRedo': status == 'redo',
       });
+
+      final verifySnap = await _db.ref(hwRefPath).get();
+      final verifyMap = verifySnap.value is Map
+          ? (verifySnap.value as Map).map((k, v) => MapEntry('$k', v))
+          : <String, dynamic>{};
+      final savedStatus = HomeworkReviewSyncService.normalizeStatus(
+        verifyMap['reviewStatus'],
+      );
+      if (HomeworkReviewSyncService.toInt(verifyMap['reviewedAt']) <= 0 ||
+          savedStatus != status) {
+        throw Exception('Homework review was not saved.');
+      }
 
       final preview = status == 'redo'
           ? '🔁 Redo • $parsedScore/100'

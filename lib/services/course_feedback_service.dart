@@ -546,6 +546,97 @@ class CourseFeedbackService {
     });
   }
 
+  static Future<void> updateOwnLessonCommentText({
+    required String courseId,
+    required String lessonId,
+    required String commentId,
+    required String uid,
+    required String text,
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeCommentId = commentId.trim();
+    final safeUid = uid.trim();
+    final safeText = text.trim();
+    if (safeCourseId.isEmpty ||
+        safeLessonId.isEmpty ||
+        safeCommentId.isEmpty ||
+        safeUid.isEmpty) {
+      throw Exception('Missing comment details.');
+    }
+    if (safeText.isEmpty) {
+      throw Exception('Write a comment first.');
+    }
+    if (safeText.length > 400) {
+      throw Exception('Comment is too long (max 400 chars).');
+    }
+
+    final ref = _db
+        .child(lessonCommentsNode)
+        .child(safeCourseId)
+        .child(safeLessonId)
+        .child(safeCommentId);
+    final snap = await ref.get();
+    if (!snap.exists || snap.value is! Map) {
+      throw Exception('Comment was not found.');
+    }
+    final current = Map<String, dynamic>.from(snap.value as Map);
+    if (_safe(current['uid']) != safeUid) {
+      throw Exception('You can edit only your own comment.');
+    }
+    if (_safe(current['status']) != 'visible') {
+      throw Exception('This comment can no longer be edited.');
+    }
+
+    await ref.update({
+      'text': safeText,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  static Future<void> removeOwnLessonCommentWithReplies({
+    required String courseId,
+    required String lessonId,
+    required String commentId,
+    required String uid,
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeCommentId = commentId.trim();
+    final safeUid = uid.trim();
+    if (safeCourseId.isEmpty ||
+        safeLessonId.isEmpty ||
+        safeCommentId.isEmpty ||
+        safeUid.isEmpty) {
+      throw Exception('Missing comment details.');
+    }
+
+    final commentPath =
+        '$lessonCommentsNode/$safeCourseId/$safeLessonId/$safeCommentId';
+    final snap = await _db.child(commentPath).get();
+    if (!snap.exists || snap.value is! Map) {
+      throw Exception('Comment was not found.');
+    }
+    final current = Map<String, dynamic>.from(snap.value as Map);
+    if (_safe(current['uid']) != safeUid) {
+      throw Exception('You can delete only your own comment.');
+    }
+    if (_safe(current['status']) != 'visible') {
+      throw Exception('This comment has already been removed.');
+    }
+
+    await _db.child(commentPath).update({
+      'status': 'removed',
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+    await _db
+        .child(lessonRepliesNode)
+        .child(safeCourseId)
+        .child(safeLessonId)
+        .child(safeCommentId)
+        .remove();
+  }
+
   static Future<LessonCommentPage> listLessonCommentsPage(
     String courseId,
     String lessonId, {

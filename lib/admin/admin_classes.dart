@@ -2565,12 +2565,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   Future<_ClassTabMetrics> _loadClassTabMetrics(
     Map<String, dynamic> cls,
   ) async {
-    final classId = (cls['class_id'] ?? '').toString().trim();
     final courseId = (cls['course_id'] ?? '').toString().trim();
     final variantKey = _normalizeVariantKey(
       (cls['variantKey'] ?? '').toString(),
     );
-    final studyMode = _normalizeStudyMode((cls['studyMode'] ?? '').toString());
 
     final heldSessions = _classHeldSessionsCount(cls);
     final coveredSessions = _classCoveredSessionIds(cls).length;
@@ -2584,101 +2582,63 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       );
     }
 
-    final learnerUids = _classLearnersList(cls)
-        .map((e) => (e['uid'] ?? '').trim())
-        .where((uid) => uid.isNotEmpty)
-        .toList();
-    final learnerByUid = <String, Map<String, dynamic>>{};
-    for (final learner in _allLearners) {
-      final uid = (learner['uid'] ?? '').toString().trim();
-      if (uid.isNotEmpty) learnerByUid[uid] = learner;
-    }
-
-    final packageFreq = <int, int>{};
-    final consumedFreqByPackage = <int, Map<int, int>>{};
-
-    for (final uid in learnerUids) {
-      final learner = learnerByUid[uid];
-      if (learner == null) continue;
-
-      final courseMap = _resolveLearnerCourseForClass(
-        learner: learner,
-        classId: classId,
-        courseId: courseId,
-        variantKey: variantKey,
-        studyMode: studyMode,
-      );
-      if (courseMap == null) continue;
-      if (courseIsFreeBilling(courseMap)) continue;
-
-      final summaryMap = (courseMap['payment_summary'] is Map)
-          ? Map<String, dynamic>.from(courseMap['payment_summary'])
-          : <String, dynamic>{};
-      final sessionsPaidRaw = _asInt(summaryMap['sessionsPaidTotal']);
-      final effectivePaid = sessionsPaidRaw > 0
-          ? sessionsPaidRaw
-          : (_hasPaymentHistory(summaryMap) &&
-                    (variantKey == 'inclass' || variantKey == 'private')
-                ? 8
-                : 0);
-      if (effectivePaid <= 0) continue;
-
-      final consumed = _classConsumedFromCourseMap(
-        courseMap: courseMap,
-        variantKey: variantKey,
-      );
-
-      packageFreq[effectivePaid] = (packageFreq[effectivePaid] ?? 0) + 1;
-      final bucket = consumedFreqByPackage.putIfAbsent(
-        effectivePaid,
-        () => <int, int>{},
-      );
-      bucket[consumed] = (bucket[consumed] ?? 0) + 1;
-    }
-
-    var paidSessions = 0;
-    var consumedSessions = 0;
-    var paymentVariesAcrossLearners = false;
-
-    if (packageFreq.isNotEmpty) {
-      final sorted = packageFreq.entries.toList()
-        ..sort((a, b) {
-          final byFreq = b.value.compareTo(a.value);
-          if (byFreq != 0) return byFreq;
-          return a.key.compareTo(b.key);
-        });
-
-      paidSessions = sorted.first.key;
-      paymentVariesAcrossLearners = sorted.length > 1;
-
-      final consumedFreq =
-          consumedFreqByPackage[paidSessions] ?? const <int, int>{};
-      if (consumedFreq.isNotEmpty) {
-        final consumedSorted = consumedFreq.entries.toList()
-          ..sort((a, b) {
-            final byFreq = b.value.compareTo(a.value);
-            if (byFreq != 0) return byFreq;
-            return a.key.compareTo(b.key);
-          });
-        consumedSessions = consumedSorted.first.key;
-      }
-    }
-
     final courseProgressValue = totalSessions > 0
         ? (currentSessions / totalSessions).clamp(0.0, 1.0)
-        : 0.0;
-    final paymentProgressValue = paidSessions > 0
-        ? (consumedSessions / paidSessions).clamp(0.0, 1.0)
         : 0.0;
 
     return _ClassTabMetrics(
       currentSessions: currentSessions,
       totalSessions: totalSessions,
       courseProgressValue: courseProgressValue,
+    );
+  }
+
+  _LearnerPaymentProgress _learnerPaymentProgressForClass({
+    required Map<String, dynamic> cls,
+    required Map<String, dynamic>? learner,
+  }) {
+    if (learner == null) return const _LearnerPaymentProgress.empty();
+
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    final courseId = (cls['course_id'] ?? '').toString().trim();
+    final variantKey = _normalizeVariantKey(
+      (cls['variantKey'] ?? '').toString(),
+    );
+    final studyMode = _normalizeStudyMode((cls['studyMode'] ?? '').toString());
+
+    final courseMap = _resolveLearnerCourseForClass(
+      learner: learner,
+      classId: classId,
+      courseId: courseId,
+      variantKey: variantKey,
+      studyMode: studyMode,
+    );
+    if (courseMap == null || courseIsFreeBilling(courseMap)) {
+      return const _LearnerPaymentProgress.empty();
+    }
+
+    final summaryMap = (courseMap['payment_summary'] is Map)
+        ? Map<String, dynamic>.from(courseMap['payment_summary'])
+        : <String, dynamic>{};
+    final sessionsPaidRaw = _asInt(summaryMap['sessionsPaidTotal']);
+    final paidSessions = sessionsPaidRaw > 0
+        ? sessionsPaidRaw
+        : (_hasPaymentHistory(summaryMap) &&
+                  (variantKey == 'inclass' || variantKey == 'private')
+              ? 8
+              : 0);
+    if (paidSessions <= 0) return const _LearnerPaymentProgress.empty();
+
+    final consumedSessions = _classConsumedFromCourseMap(
+      courseMap: courseMap,
+      variantKey: variantKey,
+    );
+    final progressValue = (consumedSessions / paidSessions).clamp(0.0, 1.0);
+
+    return _LearnerPaymentProgress(
       consumedSessions: consumedSessions,
       paidSessions: paidSessions,
-      paymentProgressValue: paymentProgressValue,
-      paymentVariesAcrossLearners: paymentVariesAcrossLearners,
+      progressValue: progressValue,
     );
   }
 
@@ -5009,6 +4969,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         final firstDate = (sched["first_session_date"] ?? "")
                             .toString();
                         final learners = _classLearnersList(cls);
+                        final learnerByUid = <String, Map<String, dynamic>>{};
+                        for (final learner in _allLearners) {
+                          final uid = (learner['uid'] ?? '').toString().trim();
+                          if (uid.isNotEmpty) learnerByUid[uid] = learner;
+                        }
 
                         return Card(
                           color: isPaused ? const Color(0xFFFFF3E0) : null,
@@ -5112,7 +5077,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                       ),
                                       onPressed: learners.isEmpty
                                           ? null
-                                          : () => _handleMassSms(learners, sched),
+                                          : () =>
+                                                _handleMassSms(learners, sched),
                                     ),
                                     IconButton(
                                       tooltip: expanded
@@ -5287,38 +5253,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                 >(Color(0xFF2563EB)),
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          metrics.paidSessions > 0
-                                              ? 'Payment progress: ${metrics.consumedSessions} / ${metrics.paidSessions}'
-                                              : 'Payment progress: no package total',
-                                          style: TextStyle(
-                                            color: Colors.grey.shade800,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          child: LinearProgressIndicator(
-                                            value: metrics.paymentProgressValue,
-                                            minHeight: 9,
-                                            backgroundColor: const Color(
-                                              0xFFE5E7EB,
-                                            ),
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  metrics.paidSessions > 0
-                                                      ? const Color(0xFFD97706)
-                                                      : Colors
-                                                            .blueGrey
-                                                            .shade500,
-                                                ),
-                                          ),
-                                        ),
                                         const SizedBox(height: 6),
                                         Text(
                                           metrics.totalSessions > 0
@@ -5330,20 +5264,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                             fontSize: 12,
                                           ),
                                         ),
-                                        if (metrics.paymentVariesAcrossLearners)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 4,
-                                            ),
-                                            child: Text(
-                                              'Payment package varies across learners.',
-                                              style: TextStyle(
-                                                color: Colors.grey.shade700,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ),
                                       ],
                                     );
                                   },
@@ -5376,8 +5296,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                         final subtitle = serial.isNotEmpty
                                             ? 'Serial: $serial'
                                             : null;
-                                        final learnerUid =
-                                            (l['uid'] ?? '').toString();
+                                        final learnerUid = (l['uid'] ?? '')
+                                            .toString();
+                                        final paymentProgress =
+                                            _learnerPaymentProgressForClass(
+                                              cls: cls,
+                                              learner: learnerByUid[learnerUid],
+                                            );
 
                                         return Column(
                                           children: [
@@ -5399,19 +5324,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                   ? null
                                                   : Text(subtitle),
                                               trailing: Row(
-                                                mainAxisSize:
-                                                    MainAxisSize.min,
+                                                mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   _smallActionIcon(
-                                                    icon: Icons
-                                                        .phone_rounded,
+                                                    icon: Icons.phone_rounded,
                                                     color: Colors.green,
                                                     tooltip: 'Call',
                                                     onTap: () =>
                                                         _handleLearnerCall(
-                                                      learnerUid,
-                                                      title,
-                                                    ),
+                                                          learnerUid,
+                                                          title,
+                                                        ),
                                                   ),
                                                   _smallActionIcon(
                                                     icon: Icons.sms_rounded,
@@ -5420,9 +5343,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                     tooltip: 'Send SMS',
                                                     onTap: () =>
                                                         _handleLearnerSms(
-                                                      learnerUid,
-                                                      title,
-                                                    ),
+                                                          learnerUid,
+                                                          title,
+                                                        ),
                                                   ),
                                                   _smallActionIcon(
                                                     icon: Icons
@@ -5432,9 +5355,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                     tooltip: 'Send Reminder',
                                                     onTap: () =>
                                                         _handleLearnerReminder(
-                                                      learnerUid,
-                                                      title,
-                                                    ),
+                                                          learnerUid,
+                                                          title,
+                                                        ),
                                                   ),
                                                   _smallActionIcon(
                                                     icon: Icons.mail_rounded,
@@ -5442,23 +5365,85 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                     tooltip: 'Open Mail',
                                                     onTap: () =>
                                                         _handleLearnerMail(
-                                                      learnerUid,
-                                                      title,
-                                                    ),
+                                                          learnerUid,
+                                                          title,
+                                                        ),
                                                   ),
                                                   GestureDetector(
                                                     onTap: () =>
                                                         _openLearnerFromClass(
-                                                            l),
+                                                          l,
+                                                        ),
                                                     child: const Padding(
                                                       padding: EdgeInsets.all(
-                                                          4),
+                                                        4,
+                                                      ),
                                                       child: Icon(
                                                         Icons
                                                             .open_in_new_rounded,
                                                         size: 16,
                                                         color: Colors.grey,
                                                       ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                    54,
+                                                    0,
+                                                    8,
+                                                    8,
+                                                  ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    paymentProgress.hasPackage
+                                                        ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
+                                                        : 'Payment: no package',
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  ClipRRect(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                    child: LinearProgressIndicator(
+                                                      value:
+                                                          paymentProgress
+                                                              .hasPackage
+                                                          ? paymentProgress
+                                                                .progressValue
+                                                          : 0,
+                                                      minHeight: 4,
+                                                      backgroundColor:
+                                                          const Color(
+                                                            0xFFE5E7EB,
+                                                          ),
+                                                      valueColor:
+                                                          AlwaysStoppedAnimation<
+                                                            Color
+                                                          >(
+                                                            paymentProgress
+                                                                    .hasPackage
+                                                                ? const Color(
+                                                                    0xFFD97706,
+                                                                  )
+                                                                : Colors
+                                                                      .blueGrey
+                                                                      .shade500,
+                                                          ),
                                                     ),
                                                   ),
                                                 ],
@@ -7669,20 +7654,31 @@ class _ClassTabMetrics {
   final int currentSessions;
   final int totalSessions;
   final double courseProgressValue;
-  final int consumedSessions;
-  final int paidSessions;
-  final double paymentProgressValue;
-  final bool paymentVariesAcrossLearners;
 
   const _ClassTabMetrics({
     required this.currentSessions,
     required this.totalSessions,
     required this.courseProgressValue,
+  });
+}
+
+class _LearnerPaymentProgress {
+  final int consumedSessions;
+  final int paidSessions;
+  final double progressValue;
+
+  const _LearnerPaymentProgress({
     required this.consumedSessions,
     required this.paidSessions,
-    required this.paymentProgressValue,
-    required this.paymentVariesAcrossLearners,
+    required this.progressValue,
   });
+
+  const _LearnerPaymentProgress.empty()
+    : consumedSessions = 0,
+      paidSessions = 0,
+      progressValue = 0;
+
+  bool get hasPackage => paidSessions > 0;
 }
 
 class _PauseWindowSelection {

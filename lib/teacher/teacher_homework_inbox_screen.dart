@@ -11,6 +11,7 @@ import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
+import '../services/homework_review_sync_service.dart';
 import 'teacher_mail_thread_screen.dart';
 
 enum _HomeworkFilter { all, notReviewed, reviewed, sent }
@@ -101,10 +102,7 @@ class _TeacherHomeworkInboxScreenState
   }
 
   String _normalizeHomeworkStatus(dynamic raw) {
-    final s = (raw ?? '').toString().trim().toLowerCase();
-    if (s == 'approved') return 'pass';
-    if (s == 'needs_work') return 'redo';
-    return s;
+    return HomeworkReviewSyncService.normalizeStatus(raw);
   }
 
   List<_HomeworkThreadRow> _rowsFromSnapshot(dynamic value) {
@@ -428,6 +426,25 @@ class _TeacherHomeworkInboxScreenState
                     .toString()
                     .trim();
             homeworkDueDate = (hw['dueDate'] ?? '').toString().trim();
+          }
+
+          if (!reviewed) {
+            final repaired =
+                await HomeworkReviewSyncService.repairHomeworkNodeFromThread(
+                  db: FirebaseDatabase.instance,
+                  threadId: row.threadId,
+                  homeworkRefPath: homeworkRefPath,
+                  lastMessage: row.lastMessage,
+                  updatedAt: row.updatedAtMs,
+                );
+            if (repaired != null) {
+              reviewedAt = repaired.reviewedAt;
+              reviewStatus = repaired.reviewStatus;
+              score = repaired.reviewScore;
+              grade = repaired.reviewGrade;
+              needsRedo = repaired.needsRedo;
+              reviewed = true;
+            }
           }
         }
 
@@ -1009,6 +1026,32 @@ class _TeacherHomeworkInboxScreenState
     }
   }
 
+  String _filterEmoji(_HomeworkFilter f) {
+    switch (f) {
+      case _HomeworkFilter.all:
+        return '📚';
+      case _HomeworkFilter.notReviewed:
+        return '⏳';
+      case _HomeworkFilter.reviewed:
+        return '✅';
+      case _HomeworkFilter.sent:
+        return '📤';
+    }
+  }
+
+  Color _filterColor(_HomeworkFilter f) {
+    switch (f) {
+      case _HomeworkFilter.all:
+        return const Color(0xFF243B5A);
+      case _HomeworkFilter.notReviewed:
+        return const Color(0xFFEC740A);
+      case _HomeworkFilter.reviewed:
+        return const Color(0xFF15803D);
+      case _HomeworkFilter.sent:
+        return const Color(0xFF2563EB);
+    }
+  }
+
   String _initialsOf(String name) {
     final parts = name
         .trim()
@@ -1260,44 +1303,83 @@ class _TeacherHomeworkInboxScreenState
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: SegmentedButton<_HomeworkFilter>(
-        showSelectedIcon: false,
-        style: ButtonStyle(
-          backgroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return Colors.indigo.withValues(alpha: 0.12);
-            }
-            return Colors.white;
-          }),
-          foregroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return Colors.indigo.shade700;
-            }
-            return Colors.black.withValues(alpha: 0.75);
-          }),
-          side: WidgetStatePropertyAll(
-            BorderSide(color: Colors.black.withValues(alpha: 0.08)),
-          ),
-          textStyle: const WidgetStatePropertyAll(
-            TextStyle(fontWeight: FontWeight.w800),
-          ),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          ),
-        ),
-        selected: <_HomeworkFilter>{_filter},
-        onSelectionChanged: (selected) {
-          if (selected.isEmpty) return;
-          setState(() => _filter = selected.first);
-        },
-        segments: tabs
-            .map(
-              (f) => ButtonSegment<_HomeworkFilter>(
-                value: f,
-                label: Text('${_filterLabel(f)} (${countByFilter[f] ?? 0})'),
+      child: Row(
+        children: tabs.map((f) {
+          final selected = _filter == f;
+          final color = _filterColor(f);
+          final count = countByFilter[f] ?? 0;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => setState(() => _filter = f),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: selected ? color : color.withValues(alpha: 0.09),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: selected ? color : color.withValues(alpha: 0.28),
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.22),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_filterEmoji(f), style: const TextStyle(fontSize: 15)),
+                    const SizedBox(width: 7),
+                    Text(
+                      _filterLabel(f),
+                      style: TextStyle(
+                        color: selected ? Colors.white : color,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: selected
+                              ? Colors.white.withValues(alpha: 0.22)
+                              : color.withValues(alpha: 0.22),
+                        ),
+                      ),
+                      child: Text(
+                        '$count',
+                        style: TextStyle(
+                          color: selected ? Colors.white : color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )
-            .toList(),
+            ),
+          );
+        }).toList(),
       ),
     );
   }

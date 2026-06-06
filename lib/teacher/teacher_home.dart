@@ -38,6 +38,7 @@ import 'take_attendance_screen.dart';
 import 'teacher_schedule_data_service.dart';
 import '../services/notification_service.dart';
 import '../services/notification_counter_service.dart';
+import '../services/homework_review_sync_service.dart';
 import '../services/teacher_schedule_widget_service.dart';
 import '../services/window_access_service.dart';
 
@@ -959,11 +960,21 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
         final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
         final reviewedAt = _toInt(hw['reviewedAt']);
-        final reviewStatus = (hw['reviewStatus'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
+        final reviewStatus = HomeworkReviewSyncService.normalizeStatus(
+          hw['reviewStatus'],
+        );
         final reviewed = reviewedAt > 0 || reviewStatus.isNotEmpty;
+        if (!reviewed) {
+          final repaired =
+              await HomeworkReviewSyncService.repairHomeworkNodeFromThread(
+                db: FirebaseDatabase.instance,
+                threadId: threadId,
+                homeworkRefPath: hwRefPath,
+                lastMessage: (t['lastMessage'] ?? '').toString(),
+                updatedAt: _toInt(t['updatedAt']),
+              );
+          if (repaired != null) return 0;
+        }
         return reviewed ? 0 : 1;
       } catch (_) {
         return 1;

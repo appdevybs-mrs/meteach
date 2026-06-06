@@ -22,6 +22,7 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
+import '../services/homework_review_sync_service.dart';
 import '../services/mail_consistency_service.dart';
 import '../services/internal_mail_service.dart';
 import '../shared/human_error.dart';
@@ -616,14 +617,28 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return 'Pending review';
   }
 
+  String get _homeworkCompactStatusLabel {
+    if (_homeworkNeedsRedo) return 'Redo';
+    if (_homeworkReviewedAtMs > 0) return 'Done';
+    return 'Pending';
+  }
+
   Color get _homeworkStatusColor {
     if (_homeworkNeedsRedo) return Colors.deepOrange;
     if (_homeworkReviewedAtMs > 0) return Colors.green;
     return const Color(0xFFE28B15);
   }
 
-  void _focusComposerForFeedback() {
-    _bodyFocus.requestFocus();
+  String get _homeworkLessonOrDateLabel {
+    final title = _homeworkLessonTitle.trim();
+    if (title.isNotEmpty) return title;
+
+    final sessionDate = _fmtDayDateFromRaw(_homeworkSessionId);
+    if (sessionDate.isNotEmpty) return sessionDate;
+
+    final session = _homeworkSessionId.trim();
+    if (session.isNotEmpty) return 'Session $session';
+    return 'Homework submission';
   }
 
   Future<void> _showHomeworkSnapshot() async {
@@ -706,11 +721,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (!_homeworkAvailable || _selectionMode || _isGroupThread) {
       return const SizedBox.shrink();
     }
+    final submittedDate = _homeworkSubmittedAtMs > 0
+        ? _fmtDayDate(_homeworkSubmittedAtMs)
+        : '';
+    final submittedTime = _homeworkSubmittedAtMs > 0
+        ? _fmtTime(_homeworkSubmittedAtMs)
+        : '';
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
         boxShadow: [
           BoxShadow(
@@ -723,208 +746,143 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-            onTap: () => setState(() => _evalExpanded = !_evalExpanded),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFE9CF),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: const Color(0xFFEC740A).withValues(alpha: 0.35),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEC740A).withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.assignment_rounded,
-                      color: Color(0xFFB45D07),
+          Row(
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() => _evalExpanded = !_evalExpanded),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE9CF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFEC740A).withValues(alpha: 0.28),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Homework Evaluation',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                        color: _navy,
-                      ),
-                    ),
-                  ),
-                  Icon(
+                  child: Icon(
                     _evalExpanded
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
                     color: const Color(0xFFB45D07),
+                    size: 21,
                   ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              const Text(
+                'Eval',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                  color: _navy,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _homeworkStatusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: _homeworkStatusColor.withValues(alpha: 0.28),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _homeworkNeedsRedo
+                          ? Icons.refresh_rounded
+                          : (_homeworkReviewedAtMs > 0
+                                ? Icons.check_rounded
+                                : Icons.schedule_rounded),
+                      size: 13,
+                      color: _homeworkStatusColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _homeworkCompactStatusLabel,
+                      style: TextStyle(
+                        color: _homeworkStatusColor,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (submittedDate.isNotEmpty) ...[
+                const Spacer(),
+                Flexible(
+                  child: Text(
+                    submittedDate,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: _navy.withValues(alpha: 0.72),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           if (_evalExpanded) ...[
             const SizedBox(height: 7),
             Row(
               children: [
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _navy.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _homeworkLessonTitle.isNotEmpty
-                          ? _homeworkLessonTitle
-                          : (_homeworkSessionId.isNotEmpty
-                                ? 'Session: $_homeworkSessionId'
-                                : 'Homework submission'),
-                      style: TextStyle(
-                        color: _navy.withValues(alpha: 0.82),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _homeworkStatusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: _homeworkStatusColor.withValues(alpha: 0.28),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.schedule_rounded,
-                        size: 14,
-                        color: _homeworkStatusColor,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        _homeworkStatusLabel,
-                        style: TextStyle(
-                          color: _homeworkStatusColor,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _showHomeworkSnapshot,
-                    icon: const Icon(Icons.visibility_outlined),
-                    label: const Text('View homework'),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: _navy.withValues(alpha: 0.24)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _focusComposerForFeedback,
-                    icon: const Icon(Icons.chat_bubble_outline_rounded),
-                    label: const Text('Add feedback'),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: _navy.withValues(alpha: 0.24)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _reviewHomeworkFromThread,
-                    icon: const Icon(Icons.check_circle_outline_rounded),
-                    label: const Text('Edit review'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF5B33D6),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.image_outlined,
-                    size: 18,
-                    color: _navy.withValues(alpha: 0.7),
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Homework submission',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    _homeworkSubmittedAtMs > 0
-                        ? _fmtTime(_homeworkSubmittedAtMs)
-                        : '-',
+                  child: Text(
+                    _homeworkLessonOrDateLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      fontWeight: FontWeight.w700,
+                      color: _navy.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
                     ),
                   ),
-                ],
-              ),
+                ),
+                IconButton.filledTonal(
+                  tooltip: 'View homework',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _showHomeworkSnapshot,
+                  icon: const Icon(Icons.visibility_outlined, size: 19),
+                ),
+                const SizedBox(width: 4),
+                FilledButton.icon(
+                  onPressed: _reviewHomeworkFromThread,
+                  icon: const Icon(Icons.fact_check_rounded, size: 18),
+                  label: const Text('Review'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF5B33D6),
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size(0, 38),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                ),
+              ],
             ),
+            if (submittedTime.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                'Submitted $submittedTime',
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.48),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -2497,48 +2455,52 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (isImg && url.isNotEmpty) {
       return withDownloadAction(
         Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: InkWell(
-          onTap: () => _showImageViewer(url, title: name),
-          borderRadius: BorderRadius.circular(14),
-          child: ClipRRect(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: InkWell(
+            onTap: () => _showImageViewer(url, title: name),
             borderRadius: BorderRadius.circular(14),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 160),
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.06),
-                child: Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) {
-                    return InkWell(
-                      onTap: () => _openUrlExternal(url),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          'Image failed to load\nTap to open',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: mine ? Colors.white : _navy,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 220,
+                  maxHeight: 160,
+                ),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) {
+                      return InkWell(
+                        onTap: () => _openUrlExternal(url),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            'Image failed to load\nTap to open',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: mine ? Colors.white : _navy,
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                  loadingBuilder: (ctx, child, prog) {
-                    if (prog == null) return child;
-                    return const SizedBox(
-                      width: 220,
-                      height: 140,
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  },
+                      );
+                    },
+                    loadingBuilder: (ctx, child, prog) {
+                      if (prog == null) return child;
+                      return const SizedBox(
+                        width: 220,
+                        height: 140,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ));
+      );
     }
 
     if (isAud && url.isNotEmpty) {
@@ -2632,6 +2594,45 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(d.hour)}:${two(d.minute)}';
+  }
+
+  static int _epochMsFromRaw(String raw) {
+    final clean = raw.trim();
+    if (clean.isEmpty) return 0;
+    final parsed = int.tryParse(clean);
+    if (parsed == null || parsed <= 0) return 0;
+    if (parsed < 10000000000) return parsed * 1000;
+    return parsed;
+  }
+
+  static String _fmtDayDateFromRaw(String raw) {
+    final ms = _epochMsFromRaw(raw);
+    if (ms <= 0) return '';
+    return _fmtDayDate(ms);
+  }
+
+  static String _fmtDayDate(int ms) {
+    const days = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final day = days[(d.weekday - 1).clamp(0, 6)];
+    final month = months[(d.month - 1).clamp(0, 11)];
+    final now = DateTime.now();
+    final year = d.year == now.year ? '' : ' ${d.year}';
+    return '$day, ${d.day} $month$year';
   }
 
   static String _fmtReceiptAt(int ms) {
@@ -3666,6 +3667,18 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'reviewNote': noteText,
         'needsRedo': finalNeedsRedo,
       });
+
+      final verifySnap = await _db.ref(hwRefPath).get();
+      final verifyMap = verifySnap.value is Map
+          ? (verifySnap.value as Map).map((k, v) => MapEntry('$k', v))
+          : <String, dynamic>{};
+      final savedStatus = HomeworkReviewSyncService.normalizeStatus(
+        verifyMap['reviewStatus'],
+      );
+      if (HomeworkReviewSyncService.toInt(verifyMap['reviewedAt']) <= 0 ||
+          savedStatus != status) {
+        throw Exception('Homework review was not saved.');
+      }
 
       final evalText = [
         status == 'redo'

@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../services/mail_consistency_service.dart';
+import '../services/homework_review_sync_service.dart';
 import '../services/internal_mail_service.dart';
 import '../services/push_dispatch_service.dart';
 import '../services/mail_thread_by_id_screen.dart';
@@ -38,6 +39,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
   bool _repairInProgress = false;
   bool _didInitialRepair = false;
   bool _groupBackfillRunning = false;
+  bool _homeworkReviewBackfillRunning = false;
   _AdminMailFilter _filter = _AdminMailFilter.all;
   _AdminInboxTab _tab = _AdminInboxTab.mail;
   final Map<String, String> _peerRoleCache = <String, String>{};
@@ -114,6 +116,58 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
       // Keep inbox responsive even if migration check fails.
     } finally {
       _groupBackfillRunning = false;
+    }
+  }
+
+  Future<void> _runHomeworkReviewBackfill() async {
+    if (_homeworkReviewBackfillRunning) return;
+
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Repair old homework reviews?'),
+            content: const Text(
+              'This scans homework mail threads and fills missing review fields only when an old evaluation message is detected. Already reviewed homework is not overwritten.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: const Icon(Icons.build_circle_rounded),
+                label: const Text('Run repair'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    setState(() => _homeworkReviewBackfillRunning = true);
+    try {
+      final result = await HomeworkReviewSyncService.runBulkReviewBackfill(
+        db: _db,
+      );
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _db.ref('appConfig/homework/reviewBackfillV1').update({
+        'lastRunAt': now,
+        'lastRunByUid': _meUid,
+        ...result.toMap(),
+      });
+      if (!mounted) return;
+      _snack(
+        'Homework repair complete: ${result.repaired} repaired, ${result.homeworkThreads} homework threads checked.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Homework repair failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _homeworkReviewBackfillRunning = false);
+      }
     }
   }
 
@@ -384,8 +438,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                                               : preview,
                                           nowMs: now,
                                           context: const PushDispatchContext(
-                                            screen:
-                                                'admin/admin_mail_inbox',
+                                            screen: 'admin/admin_mail_inbox',
                                             action: 'mail_push_group',
                                           ),
                                         );
@@ -600,6 +653,19 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                     if (!mounted) return;
                     _snack('Inbox scan complete ✅');
                   },
+          ),
+          IconButton(
+            tooltip: 'Repair old homework reviews',
+            icon: _homeworkReviewBackfillRunning
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.fact_check_rounded),
+            onPressed: _homeworkReviewBackfillRunning
+                ? null
+                : _runHomeworkReviewBackfill,
           ),
         ],
       ),

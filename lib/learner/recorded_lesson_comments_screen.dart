@@ -472,6 +472,146 @@ class _RecordedLessonCommentsScreenState
     AppToast.show(context, 'Comment reported.');
   }
 
+  Future<void> _editComment(LessonCommentItem item, String courseId) async {
+    final controller = TextEditingController(text: item.text.trim());
+    final submit = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottom),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Edit comment',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    maxLength: 400,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Update your comment...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          icon: const Icon(Icons.check_rounded),
+                          label: const Text('Save'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    final text = controller.text.trim();
+    controller.dispose();
+    if (submit != true) return;
+    if (!mounted) return;
+    if (text.isEmpty) {
+      AppToast.show(
+        context,
+        'Write a comment first.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    try {
+      await CourseFeedbackService.updateOwnLessonCommentText(
+        courseId: courseId,
+        lessonId: widget.lessonId,
+        commentId: item.id,
+        uid: widget.uid,
+        text: text,
+      );
+      await _loadComments(reset: true);
+      if (!mounted) return;
+      AppToast.show(context, 'Comment updated.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  Future<void> _deleteOwnComment(
+    LessonCommentItem item,
+    String courseId,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete comment?'),
+        content: const Text(
+          'This will remove your comment from the discussion and delete all replies under it. Teachers/admins can still review the removed comment.',
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await CourseFeedbackService.removeOwnLessonCommentWithReplies(
+        courseId: courseId,
+        lessonId: widget.lessonId,
+        commentId: item.id,
+        uid: widget.uid,
+      );
+      await _loadComments(reset: true);
+      if (!mounted) return;
+      AppToast.show(context, 'Comment deleted.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    }
+  }
+
   Widget _buildHeaderCard() {
     return Container(
       width: double.infinity,
@@ -588,6 +728,7 @@ class _RecordedLessonCommentsScreenState
     final courseId = item.courseId.trim().isEmpty
         ? widget.primaryCourseId
         : item.courseId;
+    final isMine = item.uid.trim() == widget.uid.trim();
     final replies = _repliesByComment[item.id] ?? const [];
     final loadingReplies = _loadingReplies.contains(item.id);
     final expanded = _expandedReplies.contains(item.id);
@@ -641,14 +782,50 @@ class _RecordedLessonCommentsScreenState
                             ),
                           ),
                         ),
-                        Text(
-                          _fmtDateTime(item.createdAt),
-                          style: const TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              _fmtDateTime(item.createdAt),
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (item.updatedAt > item.createdAt)
+                              const Text(
+                                'edited',
+                                style: TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                          ],
                         ),
+                        if (isMine)
+                          PopupMenuButton<String>(
+                            tooltip: 'Comment actions',
+                            icon: const Icon(
+                              Icons.more_horiz_rounded,
+                              size: 18,
+                            ),
+                            onSelected: (choice) {
+                              if (choice == 'edit') {
+                                _editComment(item, courseId);
+                              } else if (choice == 'delete') {
+                                _deleteOwnComment(item, courseId);
+                              }
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(value: 'edit', child: Text('Edit')),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete'),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -684,21 +861,22 @@ class _RecordedLessonCommentsScreenState
                 () => _replyToComment(item.id, courseId),
                 const Color(0xFF1D4ED8),
               ),
-              FilledButton.tonalIcon(
-                onPressed: () => _reportComment(item.id, courseId),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFEE2E2),
-                  foregroundColor: const Color(0xFFB91C1C),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  minimumSize: const Size(0, 36),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+              if (!isMine)
+                FilledButton.tonalIcon(
+                  onPressed: () => _reportComment(item.id, courseId),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFEE2E2),
+                    foregroundColor: const Color(0xFFB91C1C),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  icon: const Icon(Icons.flag_rounded, size: 16),
+                  label: const Text('Report'),
                 ),
-                icon: const Icon(Icons.flag_rounded, size: 16),
-                label: const Text('Report'),
-              ),
               if (hasReplies)
                 OutlinedButton.icon(
                   onPressed: () async {
