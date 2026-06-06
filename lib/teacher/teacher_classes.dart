@@ -2162,7 +2162,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final dur = durationMinutes <= 0 ? 60 : durationMinutes;
     final openUntil = start
         .add(Duration(minutes: dur))
-        .add(const Duration(minutes: 15));
+        .add(const Duration(minutes: 3));
     return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
@@ -3180,8 +3180,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Widget _bookingCard(_OnlineBooking b) {
     final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
-    final endAt = dt.add(Duration(minutes: b.durationMinutes));
-    final classPassed = !DateTime.now().isBefore(endAt);
+    final sessionStarted = !DateTime.now().isBefore(dt);
     final expanded = _expandedBookingCards[b.bookingKey] == true;
     final when =
         '${dt.year}-${_two(dt.month)}-${_two(dt.day)}  ${_two(dt.hour)}:${_two(dt.minute)}';
@@ -3407,12 +3406,12 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                             : Icons.visibility_rounded)
                                       : Icons.fact_check_rounded;
                                   final canOpenTake =
-                                      hasAttendance || classPassed;
+                                      hasAttendance || sessionStarted;
                                   final actionBg = hasAttendance
                                       ? (mine
                                             ? const Color(0xFFD97706)
                                             : p.text.withValues(alpha: 0.55))
-                                      : (classPassed
+                                      : (sessionStarted
                                             ? p.accent
                                             : p.text.withValues(alpha: 0.35));
 

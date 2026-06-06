@@ -80,6 +80,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
   late final DatabaseReference _classesRef = _db.child(classesNode);
+  late final DatabaseReference _coursesRef = _db.child('courses');
 
   bool _busy = true;
   String? _error;
@@ -620,6 +621,35 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     return teacherUid;
   }
 
+  /// Fallback: get teacher UIDs from the course node's instructors_map.
+  /// Used when class-based lookup finds no teacher (common for recorded courses).
+  Future<List<String>> _teacherUidsFromCourseInstructorsMap() async {
+    final out = <String>[];
+    try {
+      Map<String, dynamic>? rawMap;
+
+      final raw = _course['instructors_map'];
+      if (raw is Map) {
+        rawMap = raw.map((k, v) => MapEntry(k.toString(), v));
+      } else {
+        final courseId = _courseId;
+        if (courseId.isEmpty) return out;
+        final snap =
+            await _coursesRef.child(courseId).child('instructors_map').get();
+        if (snap.exists && snap.value is Map) {
+          rawMap = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        }
+      }
+
+      if (rawMap == null) return out;
+      for (final uid in rawMap.keys) {
+        final tid = uid.trim();
+        if (tid.isNotEmpty) out.add(tid);
+      }
+    } catch (_) {}
+    return out;
+  }
+
   Future<_TeacherMiniProfile?> _loadTeacherProfile() async {
     Map<String, dynamic> classNode = <String, dynamic>{};
     if (_classId.trim().isNotEmpty) {
@@ -631,7 +661,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       } catch (_) {}
     }
 
-    final teacherUid = _bestTeacherUidFromClassNode(classNode);
+    String teacherUid = _bestTeacherUidFromClassNode(classNode);
+    if (teacherUid.isEmpty) {
+      final uids = await _teacherUidsFromCourseInstructorsMap();
+      if (uids.isNotEmpty) teacherUid = uids.first;
+    }
     if (teacherUid.isEmpty) return null;
 
     String displayName =
@@ -906,21 +940,32 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     try {
       final classId = _classId.trim();
       final learnerUid = _uid.trim();
-      if (classId.isEmpty || learnerUid.isEmpty) return out;
 
-      final classSnap = await _classesRef.child(classId).get();
-      if (!classSnap.exists || classSnap.value is! Map) return out;
-      final classNode = (classSnap.value as Map).map(
-        (k, v) => MapEntry('$k', v),
-      );
+      String teacherUid = '';
 
-      final learnersRaw = classNode['learners'];
-      final learners = learnersRaw is Map
-          ? Map<dynamic, dynamic>.from(learnersRaw)
-          : <dynamic, dynamic>{};
-      if (!learners.containsKey(learnerUid)) return out;
+      // Try class-based lookup first
+      if (classId.isNotEmpty && learnerUid.isNotEmpty) {
+        final classSnap = await _classesRef.child(classId).get();
+        if (classSnap.exists && classSnap.value is Map) {
+          final classNode = (classSnap.value as Map).map(
+            (k, v) => MapEntry('$k', v),
+          );
+          final learnersRaw = classNode['learners'];
+          final learners = learnersRaw is Map
+              ? Map<dynamic, dynamic>.from(learnersRaw)
+              : <dynamic, dynamic>{};
+          if (learners.containsKey(learnerUid)) {
+            teacherUid = _bestTeacherUidFromClassNode(classNode).trim();
+          }
+        }
+      }
 
-      final teacherUid = _bestTeacherUidFromClassNode(classNode).trim();
+      // Fallback: try course instructors_map (common for recorded courses)
+      if (teacherUid.isEmpty) {
+        final uids = await _teacherUidsFromCourseInstructorsMap();
+        if (uids.isNotEmpty) teacherUid = uids.first;
+      }
+
       if (teacherUid.isEmpty || teacherUid == learnerUid) return out;
 
       final teacherSnap = await _usersRef.child(teacherUid).get();
