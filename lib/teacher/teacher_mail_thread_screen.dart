@@ -3705,7 +3705,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         body: evalText,
         attachments: const [],
         updateThreadPreview: true,
-        sendPush: false,
+        sendPush: true,
         messageType: 'homework_eval',
       );
 

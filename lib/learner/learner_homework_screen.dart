@@ -12,6 +12,7 @@ import '../shared/watermark_background.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../services/mail_consistency_service.dart';
+import '../services/push_dispatch_service.dart';
 
 class LearnerHomeworkScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2...
@@ -266,6 +267,21 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       },
     );
 
+    try {
+      await PushDispatchService.dispatchMailToUser(
+        targetUid: teacherUid,
+        threadId: threadId,
+        peerUid: _uid,
+        title: subject,
+        preview: body.length > 80 ? body.substring(0, 80) : body,
+        nowMs: now,
+        context: const PushDispatchContext(
+          screen: 'learner/learner_homework',
+          action: 'homework_submit_push',
+        ),
+      );
+    } catch (_) {}
+
     if (!mounted) return;
 
     await OfflineActionGuard.runExclusive(
@@ -440,7 +456,10 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                 setDialogState(() {});
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: selected ? UiK.primaryBlue : Colors.white,
                   borderRadius: BorderRadius.circular(20),
@@ -481,7 +500,10 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('• ', style: TextStyle(fontWeight: FontWeight.w900)),
+                        const Text(
+                          '• ',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
                         Expanded(child: Text(bullet)),
                       ],
                     ),

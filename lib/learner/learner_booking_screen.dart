@@ -107,8 +107,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String? _lastBookedStudyMode;
   int _computedRecommendedSessionNo = 1;
   int upcomingBookingsCount = 0;
-  String helpLang = 'en'; // en | ar | fr | tr | ur
-  bool lessonChoiceArabic = false;
+  String helpLang = 'ar'; // en | ar | fr | tr | ur
+  bool lessonChoiceArabic = true;
   final Set<String> _expandedLessonChoiceCards = <String>{};
   final Set<int> _expandedSyllabusObjectives = <int>{};
   late final AnimationController _sessionPulseCtrl;
@@ -3972,8 +3972,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            _langChip('English', 'en', setLocalState),
                             _langChip('العربية', 'ar', setLocalState),
+                            _langChip('English', 'en', setLocalState),
                             _langChip('Français', 'fr', setLocalState),
                             _langChip('Türkçe', 'tr', setLocalState),
                             _langChip('اردو', 'ur', setLocalState),

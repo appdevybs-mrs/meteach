@@ -196,6 +196,23 @@ function push_recommended_fix(string $category): string
     }
 }
 
+function firebase_message_id($sendResult): string
+{
+    if (is_string($sendResult)) {
+        return $sendResult;
+    }
+
+    if (is_array($sendResult)) {
+        return (string) ($sendResult['name'] ?? $sendResult['messageId'] ?? 'unknown');
+    }
+
+    if (is_object($sendResult) && method_exists($sendResult, 'messageId')) {
+        return (string) $sendResult->messageId();
+    }
+
+    return 'unknown';
+}
+
 $auth = require_auth(['admin', 'teacher', 'learner']);
 $payload = request_json();
 
@@ -317,10 +334,7 @@ try {
             ->withApnsConfig($apnsConfig)
             ->withData($safeData);
 
-        $messageId = (static function() use ($messaging, $msg) {
-    $r = $messaging->send($msg);
-    return is_array($r) ? ($r['name'] ?? 'unknown') : $r->messageId();
-})();
+        $messageId = firebase_message_id($messaging->send($msg));
 
         $eventRef->update([
             'status' => 'sent',
@@ -346,10 +360,7 @@ try {
         ->withApnsConfig($apnsConfig)
         ->withData($safeData);
 
-    $messageId = (static function() use ($messaging, $msg) {
-    $r = $messaging->send($msg);
-    return is_array($r) ? ($r['name'] ?? 'unknown') : $r->messageId();
-})();
+    $messageId = firebase_message_id($messaging->send($msg));
 
     $eventRef->update([
         'status' => 'sent',
@@ -359,6 +370,18 @@ try {
 
     if ($targetValue === 'admins') {
         save_push_inbox_for_admin_topic($db, $eventId, $title, $message, $type, $safeData);
+    }
+
+    if (preg_match('/^user_([A-Za-z0-9_\-]{6,128})$/', $targetValue, $m) === 1) {
+        $topicUid = trim((string) ($m[1] ?? ''));
+        if ($topicUid !== '') {
+            save_push_inbox($db, $topicUid, $eventId, $title, $message, $type, $safeData);
+        }
+    }
+
+    $targetUid = trim((string) ($safeData['targetUid'] ?? ''));
+    if ($targetUid !== '' && preg_match('/^[A-Za-z0-9_\-]{6,128}$/', $targetUid)) {
+        save_push_inbox($db, $targetUid, $eventId, $title, $message, $type, $safeData);
     }
 
     json_response(['success' => true, 'eventId' => $eventId]);

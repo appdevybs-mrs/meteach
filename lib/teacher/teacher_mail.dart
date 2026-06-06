@@ -898,6 +898,23 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
       await _db.ref().update(updates);
 
+      if (learnerUid.isNotEmpty) {
+        try {
+          await PushDispatchService.dispatchMailToUser(
+            targetUid: learnerUid,
+            threadId: threadId,
+            peerUid: _meUid,
+            title: subject.trim().isEmpty ? 'Homework reviewed' : subject,
+            preview: preview,
+            nowMs: now,
+            context: const PushDispatchContext(
+              screen: 'teacher/teacher_mail',
+              action: 'homework_review_push',
+            ),
+          );
+        } catch (_) {}
+      }
+
       _snack('Saved ✅');
     } catch (e) {
       _snack('Save failed: $e');

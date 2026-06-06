@@ -12,6 +12,7 @@ import '../shared/teacher_web_layout.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../services/homework_review_sync_service.dart';
+import '../services/push_dispatch_service.dart';
 import 'teacher_mail_thread_screen.dart';
 
 enum _HomeworkFilter { all, notReviewed, reviewed, sent }
@@ -872,6 +873,20 @@ class _TeacherHomeworkInboxScreenState
         ),
         keywords: [v.courseKey, v.sessionId, v.row.threadId],
       );
+      try {
+        await PushDispatchService.dispatchMailToUser(
+          targetUid: v.row.peerUid,
+          threadId: v.row.threadId,
+          peerUid: _meUid,
+          title: 'Homework reviewed',
+          preview: 'Your homework has been reviewed.',
+          nowMs: now,
+          context: const PushDispatchContext(
+            screen: 'teacher/teacher_homework_inbox',
+            action: 'homework_review_push',
+          ),
+        );
+      } catch (_) {}
     } catch (_) {
       await AuditLogService.logFailure(
         actionKey: AuditActionKeys.teacherHomeworkReviewPass,
