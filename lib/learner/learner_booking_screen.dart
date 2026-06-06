@@ -437,7 +437,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       lessonChoiceArabic ? 'هدف الحصة' : 'Session objective';
 
   String _bookingLimitNote() => lessonChoiceArabic
-      ? 'لقد حجزت 3 جلسات بالفعل. ألغِ واحدة للمتابعة.'
+      ? 'لقد حجزت 3 دروس بالفعل. ألغِ واحدة للمتابعة.'
       : 'You already booked 3 sessions. Cancel one to continue.';
 
   Future<bool> _hasPossibleMissingAttendanceForSession({
@@ -1320,7 +1320,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _detailsTitle(String lang) {
     switch (lang) {
       case 'ar':
-        return 'تفاصيل الجلسة';
+        return 'تفاصيل الدرس';
       case 'fr':
         return 'Détails de session';
       case 'tr':
@@ -1646,7 +1646,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Join this group and switch your booking session to Session $groupSession?\nهل تريد الانضمام إلى هذه المجموعة وتغيير جلستك المحجوزة إلى الجلسة $groupSession؟',
+                  'Join this group and switch your booking session to Session $groupSession?\nهل تريد الانضمام إلى هذه المجموعة وتغيير درسك المحجوز إلى الدرس $groupSession؟',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.grey.shade800,
@@ -1674,7 +1674,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         ),
                         onPressed: () => Navigator.pop(ctx, true),
                         child: const Text(
-                          'Join & Switch Session / انضم وغيّر الجلسة',
+                          'Join & Switch Session / انضم وغيّر الدرس',
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
@@ -3050,7 +3050,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         _toast(
           _bilingual(
             'You already booked 3 sessions. Please cancel one first.',
-            'لقد حجزت 3 جلسات بالفعل. يرجى إلغاء واحدة أولاً.',
+            'لقد حجزت 3 دروس بالفعل. يرجى إلغاء واحدة أولاً.',
           ),
         );
         return;
@@ -3072,7 +3072,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           _toast(
             _bilingual(
               'You already booked 3 sessions. Please cancel one first.',
-              'لقد حجزت 3 جلسات بالفعل. يرجى إلغاء واحدة أولاً.',
+              'لقد حجزت 3 دروس بالفعل. يرجى إلغاء واحدة أولاً.',
             ),
           );
           return;
@@ -3083,7 +3083,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           final ok = await _confirmWithLogo(
             title: 'Booking limit | حد الحجز',
             message:
-                'You already booked $count ${count == 1 ? 'session' : 'sessions'}.\nYou can book up to 3 sessions.\n\nلقد حجزت $count ${count == 1 ? 'جلسة' : 'جلسات'} بالفعل.\nيمكنك حجز حتى 3 جلسات.\n\nContinue booking this slot?\nمتابعة حجز هذه الحصة؟',
+                'You already booked $count ${count == 1 ? 'session' : 'sessions'}.\nYou can book up to 3 sessions.\n\nلقد حجزت $count ${count == 1 ? 'درس' : 'دروس'} بالفعل.\nيمكنك حجز حتى 3 دروس.\n\nContinue booking this slot?\nمتابعة حجز هذه الحصة؟',
             confirmLabel: 'Continue',
           );
           if (!mounted) return;
@@ -4549,7 +4549,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _helpStateSwitchSession(String lang) {
     switch (lang) {
       case 'ar':
-        return 'انضم مع تغيير الجلسة: نفس المستوى لكن جلسة مختلفة.';
+        return 'انضم مع تغيير الدرس: نفس المستوى لكن درس مختلف.';
       case 'fr':
         return 'Rejoindre en changeant la session : même niveau, session différente.';
       case 'tr':
@@ -4732,6 +4732,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     bool enabled = true,
     double closedMinHeight = 140,
     String? badge,
+    IconData? icon,
   }) {
     final width = MediaQuery.sizeOf(context).width;
     final cardPadding = width >= 900 ? 24.0 : 20.0;
@@ -4779,6 +4780,22 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (icon != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: primary
+                        ? primaryText.withValues(alpha: 0.12)
+                        : palette.primary.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    color: primary ? primaryText : palette.primary,
+                    size: 28,
+                  ),
+                ),
               Row(
                 children: [
                   Expanded(
@@ -4906,9 +4923,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     final limitReached = upcomingBookingsCount >= 3;
     final recommendedNo = _recommendedSessionNo;
     final recommendedTitle = _sessionTitleFor(recommendedNo);
+    final nextObjective = _sessionObjectiveFor(recommendedNo);
     final followExpanded = _expandedLessonChoiceCards.contains('follow');
     final customExpanded = _expandedLessonChoiceCards.contains('custom');
-    final nextObjective = _sessionObjectiveFor(recommendedNo);
+    const maxBookings = 3;
+    final used = upcomingBookingsCount;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4951,75 +4970,139 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              _buildPremiumActionCard(
-                title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
-                sessionLine: isAr
-                    ? 'الجلسة $recommendedNo${recommendedTitle.isEmpty ? '' : ' • $recommendedTitle'}'
-                    : _sessionLabel(recommendedNo, title: recommendedTitle),
-                description: isAr
-                    ? 'تابع مع الجلسة التالية المقترحة لك.'
-                    : 'Continue with your recommended next session.',
-                cta: isAr ? 'احجز الدرس التالي' : 'Book next lesson',
-                objective: isAr
-                    ? (nextObjective.isEmpty
-                          ? 'الهدف: متابعة التدرج الطبيعي للدورة مع نفس تسلسل التعلم.'
-                          : 'الهدف: $nextObjective')
-                    : (nextObjective.isEmpty
-                          ? 'Objective: Continue your normal course sequence and keep steady progress.'
-                          : 'Objective: $nextObjective'),
-                badge: isAr ? 'موصى به' : 'Recommended',
-                expanded: followExpanded,
-                onToggleExpand: () {
-                  setState(() {
-                    if (followExpanded) {
-                      _expandedLessonChoiceCards.remove('follow');
-                    } else {
-                      _expandedLessonChoiceCards.add('follow');
-                    }
-                  });
-                },
-                primary: true,
-                enabled: !limitReached,
-                closedMinHeight: 160,
-                onTap: () {
-                  setState(() {
-                    studyMode = 'follow';
-                    selectedLessonForFlow = recommendedNo;
-                    selectedSessionNo = recommendedNo;
-                    _resetScheduleSelections();
-                    flowStep = _BookingFlowStep.schedule;
-                  });
-                },
+              const SizedBox(height: 8),
+              Text(
+                isAr
+                    ? 'اختر كيف تريد أن تتعلم اليوم'
+                    : "Choose how you'd like to learn today",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: palette.text.withValues(alpha: 0.7),
+                ),
               ),
+              if (used > 0) ...[
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isAr
+                            ? '$used من $maxBookings حجوزات مستخدمة'
+                            : '$used of $maxBookings bookings used',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: palette.text.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: used / maxBookings,
+                    minHeight: 6,
+                    backgroundColor: palette.soft,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      used >= maxBookings ? actionOrange : palette.primary,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 22),
-              _buildPremiumActionCard(
-                title: isAr ? 'اختر درسك' : 'Pick your lesson',
-                description: isAr
-                    ? 'اختر درساً محدداً من المنهج.'
-                    : 'Choose a specific lesson from the syllabus.',
-                cta: isAr ? 'اختر من المنهج' : 'Choose from syllabus',
-                objective: isAr
-                    ? 'الهدف: استعرض أهداف كل درس في المنهج واختر الدرس الذي يناسب احتياجك الآن.'
-                    : 'Objective: Browse lesson objectives in the syllabus and pick the lesson that matches your current learning need.',
-                expanded: customExpanded,
-                enabled: !limitReached,
-                onToggleExpand: () {
-                  setState(() {
-                    if (customExpanded) {
-                      _expandedLessonChoiceCards.remove('custom');
-                    } else {
-                      _expandedLessonChoiceCards.add('custom');
-                    }
-                  });
+              LayoutBuilder(
+                builder: (_, constraints) {
+                  final wide = constraints.maxWidth >= 580;
+                  final card1 = _buildPremiumActionCard(
+                    icon: Icons.auto_awesome_rounded,
+                    title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
+                    sessionLine: isAr
+                        ? 'الدرس $recommendedNo${recommendedTitle.isEmpty ? '' : ' • $recommendedTitle'}'
+                        : _sessionLabel(recommendedNo, title: recommendedTitle),
+                    description: isAr
+                        ? 'تابع مع الدرس التالي المقترح لك.'
+                        : 'Continue with your recommended next session.',
+                    cta: isAr ? 'احجز الدرس التالي' : 'Book next lesson',
+                    objective: isAr
+                        ? (nextObjective.isEmpty
+                              ? 'الهدف: متابعة التدرج الطبيعي للدورة مع نفس تسلسل التعلم.'
+                              : 'الهدف: $nextObjective')
+                        : (nextObjective.isEmpty
+                              ? 'Objective: Continue your normal course sequence and keep steady progress.'
+                              : 'Objective: $nextObjective'),
+                    badge: isAr ? 'موصى به' : 'Recommended',
+                    expanded: followExpanded,
+                    onToggleExpand: () {
+                      setState(() {
+                        if (followExpanded) {
+                          _expandedLessonChoiceCards.remove('follow');
+                        } else {
+                          _expandedLessonChoiceCards.add('follow');
+                        }
+                      });
+                    },
+                    primary: true,
+                    enabled: !limitReached,
+                    closedMinHeight: 156,
+                    onTap: () {
+                      setState(() {
+                        studyMode = 'follow';
+                        selectedLessonForFlow = recommendedNo;
+                        selectedSessionNo = recommendedNo;
+                        _resetScheduleSelections();
+                        flowStep = _BookingFlowStep.schedule;
+                      });
+                    },
+                  );
+                  final card2 = _buildPremiumActionCard(
+                    icon: Icons.menu_book_rounded,
+                    title: isAr ? 'اختر درسك' : 'Pick your lesson',
+                    description: isAr
+                        ? 'اختر درساً محدداً من المنهج.'
+                        : 'Choose a specific lesson from the syllabus.',
+                    cta: isAr ? 'اختر من المنهج' : 'Choose from syllabus',
+                    objective: isAr
+                        ? 'الهدف: استعرض أهداف كل درس في المنهج واختر الدرس الذي يناسب احتياجك الآن.'
+                        : 'Objective: Browse lesson objectives in the syllabus and pick the lesson that matches your current learning need.',
+                    expanded: customExpanded,
+                    enabled: !limitReached,
+                    closedMinHeight: 156,
+                    onToggleExpand: () {
+                      setState(() {
+                        if (customExpanded) {
+                          _expandedLessonChoiceCards.remove('custom');
+                        } else {
+                          _expandedLessonChoiceCards.add('custom');
+                        }
+                      });
+                    },
+                    onTap: () {
+                      setState(() {
+                        studyMode = 'custom';
+                        flowStep = _BookingFlowStep.syllabus;
+                      });
+                    },
+                  );
+                  if (wide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: card1),
+                        const SizedBox(width: 16),
+                        Expanded(child: card2),
+                      ],
+                    );
+                  }
+                  return Column(
+                    children: [
+                      card1,
+                      const SizedBox(height: 16),
+                      card2,
+                    ],
+                  );
                 },
-                onTap: () {
-                  setState(() {
-                    studyMode = 'custom';
-                    flowStep = _BookingFlowStep.syllabus;
-                  });
-                },
-                closedMinHeight: 140,
               ),
               if (limitReached) ...[
                 const SizedBox(height: 14),
@@ -5040,6 +5123,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   ),
                 ),
               ],
+              const SizedBox(height: 20),
+              _buildCancelEntryCard(),
             ],
           ),
         ),
@@ -6846,7 +6931,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
                             child: Column(
                               children: [
-                                if (flowStep != _BookingFlowStep.confirm)
+                                if (flowStep != _BookingFlowStep.confirm &&
+                                    flowStep != _BookingFlowStep.lessonChoice)
                                   _buildCancelEntryCard(),
                                 const SizedBox(height: 10),
                                 _buildFlowShell(_buildFlowContent()),

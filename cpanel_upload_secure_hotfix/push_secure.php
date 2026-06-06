@@ -146,6 +146,23 @@ function push_channel_for_type(string $type): string
     return 'ch_default_v2';
 }
 
+function firebase_message_id($sendResult): string
+{
+    if (is_string($sendResult)) {
+        return $sendResult;
+    }
+
+    if (is_array($sendResult)) {
+        return (string) ($sendResult['name'] ?? $sendResult['messageId'] ?? 'unknown');
+    }
+
+    if (is_object($sendResult) && method_exists($sendResult, 'messageId')) {
+        return (string) $sendResult->messageId();
+    }
+
+    return 'unknown';
+}
+
 $auth = require_auth(['admin', 'teacher', 'learner']);
 $payload = request_json();
 
@@ -262,10 +279,7 @@ try {
             ->withApnsConfig($apnsConfig)
             ->withData($safeData);
 
-        $messageId = (static function() use ($messaging, $msg) {
-    $r = $messaging->send($msg);
-    return is_array($r) ? ($r['name'] ?? 'unknown') : $r->messageId();
-})();
+        $messageId = firebase_message_id($messaging->send($msg));
 
         $eventRef->update([
             'status' => 'sent',
@@ -291,10 +305,7 @@ try {
         ->withApnsConfig($apnsConfig)
         ->withData($safeData);
 
-    $messageId = (static function() use ($messaging, $msg) {
-    $r = $messaging->send($msg);
-    return is_array($r) ? ($r['name'] ?? 'unknown') : $r->messageId();
-})();
+    $messageId = firebase_message_id($messaging->send($msg));
 
     $eventRef->update([
         'status' => 'sent',

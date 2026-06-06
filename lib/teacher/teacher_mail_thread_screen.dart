@@ -3060,199 +3060,440 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               });
             }
 
-            return AnimatedPadding(
-              duration: const Duration(milliseconds: 160),
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
               ),
-              child: Dialog(
-                insetPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+              backgroundColor: Colors.transparent,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: 560,
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.72,
                 ),
-                backgroundColor: Colors.transparent,
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxWidth: 560,
-                    maxHeight: MediaQuery.of(ctx).size.height * 0.72,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.max,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-                        decoration: BoxDecoration(
-                          color: _navy,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(28),
-                          ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                      decoration: BoxDecoration(
+                        color: _navy,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(28),
                         ),
-                        child: Row(
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.fact_check_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Homework Review',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _peerNameShown,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          14,
+                          16,
+                          10 + MediaQuery.of(ctx).viewInsets.bottom,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 42,
-                              height: 42,
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(14),
+                                color: _orange.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: _orange.withValues(alpha: 0.28),
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.fact_check_rounded,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Homework Review',
-                                    style: TextStyle(
-                                      color: Colors.white,
+                                  Text(
+                                    '${liveScore.clamp(0, 100)} / 100',
+                                    style: const TextStyle(
+                                      fontSize: 32,
                                       fontWeight: FontWeight.w900,
-                                      fontSize: 18,
+                                      color: _navy,
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _peerNameShown,
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.85,
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _navy.withValues(alpha: 0.10),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Grade $liveGrade',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: _navy,
+                                          ),
+                                        ),
                                       ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: status == 'redo'
+                                              ? Colors.red.withValues(
+                                                  alpha: 0.12,
+                                                )
+                                              : Colors.green.withValues(
+                                                  alpha: 0.12,
+                                                ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: status == 'redo'
+                                                ? Colors.red.withValues(
+                                                    alpha: 0.25,
+                                                  )
+                                                : Colors.green.withValues(
+                                                    alpha: 0.25,
+                                                  ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          status == 'redo'
+                                              ? 'Redo required'
+                                              : 'Pass',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: status == 'redo'
+                                                ? Colors.red.shade700
+                                                : Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: _orange.withValues(alpha: 0.10),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: _orange.withValues(alpha: 0.28),
+                            const SizedBox(height: 12),
+
+                            TextField(
+                              controller: scoreC,
+                              onChanged: (_) => recalcGradeFromText(),
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: 'Score (0-100)',
+                                hintText: 'Enter score',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: _orange.withValues(alpha: 0.75),
+                                    width: 1.4,
                                   ),
                                 ),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      '${liveScore.clamp(0, 100)} / 100',
-                                      style: const TextStyle(
-                                        fontSize: 32,
-                                        fontWeight: FontWeight.w900,
-                                        color: _navy,
+                                prefixIcon: const Icon(Icons.percent_rounded),
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => setLocal(() {
+                                      status = 'pass';
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 160,
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      alignment: WrapAlignment.center,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 7,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _navy.withValues(
-                                              alpha: 0.10,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Grade $liveGrade',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: _navy,
-                                            ),
-                                          ),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: status == 'pass'
+                                            ? Colors.green.withValues(
+                                                alpha: 0.12,
+                                              )
+                                            : Colors.grey.withValues(
+                                                alpha: 0.06,
+                                              ),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: status == 'pass'
+                                              ? Colors.green.withValues(
+                                                  alpha: 0.45,
+                                                )
+                                              : Colors.black.withValues(
+                                                  alpha: 0.08,
+                                                ),
+                                          width: status == 'pass' ? 1.4 : 1,
                                         ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 7,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: status == 'redo'
-                                                ? Colors.red.withValues(
-                                                    alpha: 0.12,
-                                                  )
-                                                : Colors.green.withValues(
-                                                    alpha: 0.12,
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle_rounded,
+                                            color: status == 'pass'
+                                                ? Colors.green.shade700
+                                                : Colors.black.withValues(
+                                                    alpha: 0.45,
                                                   ),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            border: Border.all(
-                                              color: status == 'redo'
-                                                  ? Colors.red.withValues(
-                                                      alpha: 0.25,
-                                                    )
-                                                  : Colors.green.withValues(
-                                                      alpha: 0.25,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Pass',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: status == 'pass'
+                                                  ? Colors.green.shade700
+                                                  : Colors.black.withValues(
+                                                      alpha: 0.72,
                                                     ),
                                             ),
                                           ),
-                                          child: Text(
-                                            status == 'redo'
-                                                ? 'Redo required'
-                                                : 'Pass',
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Homework accepted',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.55,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => setLocal(() {
+                                      status = 'redo';
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 160,
+                                      ),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: status == 'redo'
+                                            ? Colors.red.withValues(alpha: 0.10)
+                                            : Colors.grey.withValues(
+                                                alpha: 0.06,
+                                              ),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: status == 'redo'
+                                              ? Colors.red.withValues(
+                                                  alpha: 0.40,
+                                                )
+                                              : Colors.black.withValues(
+                                                  alpha: 0.08,
+                                                ),
+                                          width: status == 'redo' ? 1.4 : 1,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Icon(
+                                            Icons.refresh_rounded,
+                                            color: status == 'redo'
+                                                ? Colors.red.shade700
+                                                : Colors.black.withValues(
+                                                    alpha: 0.45,
+                                                  ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Redo',
                                             style: TextStyle(
                                               fontWeight: FontWeight.w900,
                                               color: status == 'redo'
                                                   ? Colors.red.shade700
-                                                  : Colors.green.shade700,
+                                                  : Colors.black.withValues(
+                                                      alpha: 0.72,
+                                                    ),
                                             ),
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Student should try again',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.55,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ],
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Quick feedback',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.black.withValues(alpha: 0.78),
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children:
+                                    [
+                                      'Great effort',
+                                      'Well done',
+                                      'Nice improvement',
+                                      'Check spelling',
+                                      'Review grammar',
+                                      'Complete all parts',
+                                      'Redo carefully',
+                                    ].map((text) {
+                                      return ActionChip(
+                                        label: Text(text),
+                                        onPressed: () {
+                                          final current = noteC.text.trim();
+                                          final next = current.isEmpty
+                                              ? text
+                                              : '$current $text';
+                                          noteC.text = next;
+                                          noteC.selection =
+                                              TextSelection.fromPosition(
+                                                TextPosition(
+                                                  offset: noteC.text.length,
+                                                ),
+                                              );
+                                          setLocal(() {});
+                                        },
+                                        backgroundColor: _navy.withValues(
+                                          alpha: 0.06,
+                                        ),
+                                        visualDensity: const VisualDensity(
+                                          horizontal: -2,
+                                          vertical: -2,
+                                        ),
+                                        labelPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                            ),
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        side: BorderSide(
+                                          color: _navy.withValues(alpha: 0.10),
+                                        ),
+                                        labelStyle: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: _navy.withValues(alpha: 0.88),
+                                        ),
+                                      );
+                                    }).toList(),
+                              ),
+                            ),
 
-                              TextField(
-                                controller: scoreC,
-                                onChanged: (_) => recalcGradeFromText(),
-                                keyboardType: TextInputType.number,
+                            const SizedBox(height: 10),
+
+                            SizedBox(
+                              height: 120,
+                              child: TextField(
+                                controller: noteC,
+                                expands: true,
+                                maxLines: null,
+                                minLines: null,
+                                textAlignVertical: TextAlignVertical.top,
                                 decoration: InputDecoration(
-                                  labelText: 'Score (0-100)',
-                                  hintText: 'Enter score',
+                                  labelText: 'Personal feedback',
+                                  hintText:
+                                      'Example: Great effort. Please review verb forms in exercise 2.',
+                                  alignLabelWithHint: true,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -3263,394 +3504,138 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                       width: 1.4,
                                     ),
                                   ),
-                                  prefixIcon: const Icon(Icons.percent_rounded),
                                 ),
                               ),
+                            ),
 
-                              const SizedBox(height: 12),
+                            const SizedBox(height: 10),
 
-                              Row(
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Student preview',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.black.withValues(alpha: 0.78),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(18),
-                                      onTap: () => setLocal(() {
-                                        status = 'pass';
-                                      }),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 160,
-                                        ),
-                                        padding: const EdgeInsets.all(14),
-                                        decoration: BoxDecoration(
-                                          color: status == 'pass'
-                                              ? Colors.green.withValues(
-                                                  alpha: 0.12,
-                                                )
-                                              : Colors.grey.withValues(
-                                                  alpha: 0.06,
-                                                ),
-                                          borderRadius: BorderRadius.circular(
-                                            18,
-                                          ),
-                                          border: Border.all(
-                                            color: status == 'pass'
-                                                ? Colors.green.withValues(
-                                                    alpha: 0.45,
-                                                  )
-                                                : Colors.black.withValues(
-                                                    alpha: 0.08,
-                                                  ),
-                                            width: status == 'pass' ? 1.4 : 1,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          children: [
-                                            Icon(
-                                              Icons.check_circle_rounded,
-                                              color: status == 'pass'
-                                                  ? Colors.green.shade700
-                                                  : Colors.black.withValues(
-                                                      alpha: 0.45,
-                                                    ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Pass',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: status == 'pass'
-                                                    ? Colors.green.shade700
-                                                    : Colors.black.withValues(
-                                                        alpha: 0.72,
-                                                      ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Homework accepted',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.55,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                  Text(
+                                    status == 'redo'
+                                        ? '🔁 Homework: REDO (do it again)'
+                                        : '✅ Homework: PASS',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: status == 'redo'
+                                          ? Colors.red.shade700
+                                          : Colors.green.shade700,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(18),
-                                      onTap: () => setLocal(() {
-                                        status = 'redo';
-                                      }),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 160,
-                                        ),
-                                        padding: const EdgeInsets.all(14),
-                                        decoration: BoxDecoration(
-                                          color: status == 'redo'
-                                              ? Colors.red.withValues(
-                                                  alpha: 0.10,
-                                                )
-                                              : Colors.grey.withValues(
-                                                  alpha: 0.06,
-                                                ),
-                                          borderRadius: BorderRadius.circular(
-                                            18,
-                                          ),
-                                          border: Border.all(
-                                            color: status == 'redo'
-                                                ? Colors.red.withValues(
-                                                    alpha: 0.40,
-                                                  )
-                                                : Colors.black.withValues(
-                                                    alpha: 0.08,
-                                                  ),
-                                            width: status == 'redo' ? 1.4 : 1,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          children: [
-                                            Icon(
-                                              Icons.refresh_rounded,
-                                              color: status == 'redo'
-                                                  ? Colors.red.shade700
-                                                  : Colors.black.withValues(
-                                                      alpha: 0.45,
-                                                    ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Redo',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: status == 'redo'
-                                                    ? Colors.red.shade700
-                                                    : Colors.black.withValues(
-                                                        alpha: 0.72,
-                                                      ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Student should try again',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.55,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Score: ${liveScore.clamp(0, 100)}/100',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _navy,
                                     ),
                                   ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 12),
-
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  'Quick feedback',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.black.withValues(alpha: 0.78),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children:
-                                      [
-                                        'Great effort',
-                                        'Well done',
-                                        'Nice improvement',
-                                        'Check spelling',
-                                        'Review grammar',
-                                        'Complete all parts',
-                                        'Redo carefully',
-                                      ].map((text) {
-                                        return ActionChip(
-                                          label: Text(text),
-                                          onPressed: () {
-                                            final current = noteC.text.trim();
-                                            final next = current.isEmpty
-                                                ? text
-                                                : '$current $text';
-                                            noteC.text = next;
-                                            noteC.selection =
-                                                TextSelection.fromPosition(
-                                                  TextPosition(
-                                                    offset: noteC.text.length,
-                                                  ),
-                                                );
-                                            setLocal(() {});
-                                          },
-                                          backgroundColor: _navy.withValues(
-                                            alpha: 0.06,
-                                          ),
-                                          visualDensity: const VisualDensity(
-                                            horizontal: -2,
-                                            vertical: -2,
-                                          ),
-                                          labelPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 4,
-                                              ),
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                          side: BorderSide(
-                                            color: _navy.withValues(
-                                              alpha: 0.10,
-                                            ),
-                                          ),
-                                          labelStyle: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                            color: _navy.withValues(
-                                              alpha: 0.88,
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                ),
-                              ),
-
-                              const SizedBox(height: 10),
-
-                              SizedBox(
-                                height: 120,
-                                child: TextField(
-                                  controller: noteC,
-                                  expands: true,
-                                  maxLines: null,
-                                  minLines: null,
-                                  textAlignVertical: TextAlignVertical.top,
-                                  decoration: InputDecoration(
-                                    labelText: 'Personal feedback',
-                                    hintText:
-                                        'Example: Great effort. Please review verb forms in exercise 2.',
-                                    alignLabelWithHint: true,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: BorderSide(
-                                        color: _orange.withValues(alpha: 0.75),
-                                        width: 1.4,
-                                      ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Grade: $liveGrade',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _navy,
                                     ),
                                   ),
-                                ),
-                              ),
-
-                              const SizedBox(height: 10),
-
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  'Student preview',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.black.withValues(alpha: 0.78),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.04),
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: Colors.black.withValues(alpha: 0.08),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      status == 'redo'
-                                          ? '🔁 Homework: REDO (do it again)'
-                                          : '✅ Homework: PASS',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: status == 'redo'
-                                            ? Colors.red.shade700
-                                            : Colors.green.shade700,
-                                      ),
-                                    ),
+                                  if (noteC.text.trim().isNotEmpty) ...[
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Score: ${liveScore.clamp(0, 100)}/100',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: _navy,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Grade: $liveGrade',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: _navy,
-                                      ),
-                                    ),
-                                    if (noteC.text.trim().isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Comment: ${noteC.text.trim()}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black.withValues(
-                                            alpha: 0.72,
-                                          ),
-                                          height: 1.3,
+                                      'Comment: ${noteC.text.trim()}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black.withValues(
+                                          alpha: 0.72,
                                         ),
+                                        height: 1.3,
                                       ),
-                                    ],
+                                    ),
                                   ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: const BorderRadius.vertical(
-                            bottom: Radius.circular(28),
-                          ),
-                          border: Border(
-                            top: BorderSide(
-                              color: Colors.black.withValues(alpha: 0.06),
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(52),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  side: BorderSide(
-                                    color: _navy.withValues(alpha: 0.18),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Cancel',
-                                  style: TextStyle(fontWeight: FontWeight.w900),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: FilledButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _navy,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size.fromHeight(52),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Save',
-                                  style: TextStyle(fontWeight: FontWeight.w900),
-                                ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(28),
+                        ),
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.black.withValues(alpha: 0.06),
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                side: BorderSide(
+                                  color: _navy.withValues(alpha: 0.18),
+                                ),
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _navy,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Save',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
