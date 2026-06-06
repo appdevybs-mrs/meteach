@@ -95,8 +95,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
               'Class')
           .toString();
 
-  String get _courseCode => (widget.classData['course_code'] ?? '').toString();
-
   String get _courseId => (widget.classData['course_id'] ?? '').toString();
   String get _variantKey => normalizeVariantKey(
     (widget.classData['variantKey'] ?? widget.classData['variant'] ?? '')
@@ -622,14 +620,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     return list;
   }
 
-  String _progressLabel(int pct) {
-    if (pct >= 90) return 'Excellent';
-    if (pct >= 75) return 'Strong';
-    if (pct >= 50) return 'Fair';
-    if (pct >= 25) return 'Started';
-    return 'Not started';
-  }
-
   Color _progressColor(int pct) {
     if (pct >= 75) return successGreen;
     if (pct >= 40) return warningOrange;
@@ -704,7 +694,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                           _learnerPickerCard(p),
                           const SizedBox(height: 12),
                         ],
-                        _groupByCard(p),
+                        _currentGroupContent(p),
                       ],
                     ),
             ],
@@ -768,18 +758,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                         height: 1.15,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Class: ${widget.classId}${_courseCode.isEmpty ? '' : ' • Code: $_courseCode'}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.86),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
+
                     _heroChip(label: 'Learners $learnersCount'),
                   ],
                 ),
@@ -814,6 +793,8 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
 
   Widget _viewModeCard(AppPalette p) {
     final canUseLearnerView = _learners.isNotEmpty;
+    final hasReview = _sessionsToReview.isNotEmpty;
+    final activeIndex = _effectiveGroupIndex();
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -832,15 +813,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'View',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 10),
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
@@ -885,43 +857,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _groupByCard(AppPalette p) {
-    final hasReview = _sessionsToReview.isNotEmpty;
-    final activeIndex = _effectiveGroupIndex();
-    final isByDate = activeIndex == 1;
-    final isReview = activeIndex == 2;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Group by',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
@@ -933,7 +869,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                 Expanded(
                   child: _toggleBtn(
                     p,
-                    label: 'By Unit',
+                    label: 'Per Unit',
                     selected: activeIndex == 0,
                     onTap: () {
                       _groupTabController.animateTo(0);
@@ -945,7 +881,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                   child: _toggleBtn(
                     p,
                     label: 'By Date',
-                    selected: isByDate,
+                    selected: activeIndex == 1,
                     onTap: () {
                       _groupTabController.animateTo(1);
                       setState(() {});
@@ -957,7 +893,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                     child: _toggleBtn(
                       p,
                       label: 'Check syllabus',
-                      selected: isReview,
+                      selected: activeIndex == 2,
                       onTap: () {
                         _groupTabController.animateTo(2);
                         setState(() {});
@@ -967,16 +903,20 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          if (activeIndex == 0)
-            _unitsProgressCard(p)
-          else if (activeIndex == 1)
-            _attendanceByDateCard(p)
-          else
-            _sessionsToReviewCard(p),
         ],
       ),
     );
+  }
+
+  Widget _currentGroupContent(AppPalette p) {
+    final activeIndex = _effectiveGroupIndex();
+    if (activeIndex == 0) {
+      return _unitsProgressCard(p);
+    } else if (activeIndex == 1) {
+      return _attendanceByDateCard(p);
+    } else {
+      return _sessionsToReviewCard(p);
+    }
   }
 
   Widget _toggleBtn(
@@ -1195,15 +1135,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            _learnerView ? 'Learner Progress' : 'Class Progress',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 10),
+
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -1253,32 +1185,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
               valueColor: AlwaysStoppedAnimation(progressColor),
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Text(
-                _progressLabel(pct),
-                style: TextStyle(
-                  color: progressColor,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _learnerView
-                      ? 'Learner progress is based on covered sessions where this learner was present.'
-                      : 'Class progress is based on syllabus sessions already taught.',
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
+
         ],
       ),
     );

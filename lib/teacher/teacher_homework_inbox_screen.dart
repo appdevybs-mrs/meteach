@@ -405,6 +405,13 @@ class _TeacherHomeworkInboxScreenState
             : (courseKey.isNotEmpty ? courseKey : 'Course not set');
 
         homeworkRefPath = (t['homeworkRef'] ?? '').toString().trim();
+        if (homeworkRefPath.isEmpty &&
+            row.peerUid.isNotEmpty &&
+            courseKey.isNotEmpty &&
+            sessionId.isNotEmpty) {
+          homeworkRefPath =
+              'users/${row.peerUid}/courses/$courseKey/attendance/$sessionId/homework';
+        }
         if (homeworkRefPath.isNotEmpty) {
           final hwSnap = await _db.child(homeworkRefPath).get();
           if (hwSnap.exists && hwSnap.value is Map) {
