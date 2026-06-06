@@ -54,6 +54,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
 
   List<Map<String, dynamic>> _syllabiFlat = [];
   int _totalSyllabusSessions = 0;
+  List<Map<String, dynamic>> _sessionsToReview = [];
 
   Set<String> _classCoveredSessionIds = {};
   int _classProgressPct = 0;
@@ -67,7 +68,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
-    _groupTabController = TabController(length: 2, vsync: this);
+    _groupTabController = TabController(length: 3, vsync: this);
     _groupTabController.addListener(() {
       if (!mounted) return;
       setState(() {});
@@ -128,6 +129,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
               : <String, dynamic>{};
 
           final covered = _computeCoveredFromClassAttendance(att);
+          final reviewSessions = _computeSessionsToReview(att);
           final pct = _totalSyllabusSessions <= 0
               ? 0
               : ((covered.length / _totalSyllabusSessions) * 100).round().clamp(
@@ -148,6 +150,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
             _attendance = att;
             _learners = learners;
             _classCoveredSessionIds = covered;
+            _sessionsToReview = reviewSessions;
             _classProgressPct = pct;
             _selectedLearnerUid = selected;
             if (_learners.isEmpty) _learnerView = false;
@@ -297,6 +300,89 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     }
 
     return covered;
+  }
+
+  Set<String> _syllabusSessionIdSet() {
+    return _syllabiFlat
+        .map((s) => (s['sessionId'] ?? '').toString().trim())
+        .where((sid) => sid.isNotEmpty)
+        .toSet();
+  }
+
+  bool _recordHasSyllabusLink(Map<String, dynamic> record) {
+    final syllabusIds = _syllabusSessionIdSet();
+    if (syllabusIds.isEmpty) return false;
+
+    if (record['taughtItems'] is List) {
+      final items = (record['taughtItems'] as List).whereType<Map>().toList();
+      for (final item in items) {
+        final m = Map<String, dynamic>.from(item);
+        final sid = (m['sessionId'] ?? '').toString().trim();
+        if (sid.isNotEmpty && syllabusIds.contains(sid)) return true;
+      }
+    }
+
+    final taught = record['taught'];
+    if (taught is Map) {
+      final tm = Map<String, dynamic>.from(taught);
+      final sid = (tm['sessionId'] ?? '').toString().trim();
+      if (sid.isNotEmpty && syllabusIds.contains(sid)) return true;
+    }
+
+    return false;
+  }
+
+  String _reviewRecordLabel(Map<String, dynamic> record) {
+    if (record['taughtItems'] is List) {
+      final items = (record['taughtItems'] as List).whereType<Map>().toList();
+      for (final item in items) {
+        final m = Map<String, dynamic>.from(item);
+        final title = (m['title'] ?? '').toString().trim();
+        if (title.isNotEmpty) return title;
+      }
+    }
+
+    final taught = record['taught'];
+    if (taught is Map) {
+      final tm = Map<String, dynamic>.from(taught);
+      final title = (tm['title'] ?? '').toString().trim();
+      if (title.isNotEmpty) return title;
+    }
+
+    return 'Session to review';
+  }
+
+  List<Map<String, dynamic>> _computeSessionsToReview(Map<String, dynamic> att) {
+    if (_syllabiFlat.isEmpty) return <Map<String, dynamic>>[];
+
+    final list = <Map<String, dynamic>>[];
+
+    for (final entry in att.entries) {
+      final rec = entry.value;
+      if (rec is! Map) continue;
+
+      final record = <String, dynamic>{'id': entry.key, ...Map<String, dynamic>.from(rec)};
+      if (_recordHasSyllabusLink(record)) continue;
+      list.add(record);
+    }
+
+    list.sort((a, b) {
+      final dateA = (a['date'] ?? '0000-00-00').toString();
+      final dateB = (b['date'] ?? '0000-00-00').toString();
+      final cmp = dateB.compareTo(dateA);
+      if (cmp != 0) return cmp;
+      final idA = (a['id'] ?? '').toString();
+      final idB = (b['id'] ?? '').toString();
+      return idB.compareTo(idA);
+    });
+
+    return list;
+  }
+
+  int _effectiveGroupIndex() {
+    return _sessionsToReview.isNotEmpty || _groupTabController.index != 2
+        ? _groupTabController.index
+        : 1;
   }
 
   Set<String> _computeCoveredForLearner(String learnerUid) {
@@ -805,7 +891,10 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
   }
 
   Widget _groupByCard(AppPalette p) {
-    final isByDate = _groupTabController.index == 1;
+    final hasReview = _sessionsToReview.isNotEmpty;
+    final activeIndex = _effectiveGroupIndex();
+    final isByDate = activeIndex == 1;
+    final isReview = activeIndex == 2;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -845,7 +934,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                   child: _toggleBtn(
                     p,
                     label: 'By Unit',
-                    selected: !isByDate,
+                    selected: activeIndex == 0,
                     onTap: () {
                       _groupTabController.animateTo(0);
                       setState(() {});
@@ -863,11 +952,28 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                     },
                   ),
                 ),
+                if (hasReview)
+                  Expanded(
+                    child: _toggleBtn(
+                      p,
+                      label: 'Check syllabus',
+                      selected: isReview,
+                      onTap: () {
+                        _groupTabController.animateTo(2);
+                        setState(() {});
+                      },
+                    ),
+                  ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          if (!isByDate) _unitsProgressCard(p) else _attendanceByDateCard(p),
+          if (activeIndex == 0)
+            _unitsProgressCard(p)
+          else if (activeIndex == 1)
+            _attendanceByDateCard(p)
+          else
+            _sessionsToReviewCard(p),
         ],
       ),
     );
@@ -897,6 +1003,36 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _chip({
+    required IconData icon,
+    required String text,
+    required Color tint,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tint.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: tint),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: tint,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1402,6 +1538,200 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     );
   }
 
+  List<Map<String, dynamic>> _groupSessionsToReviewByDate() {
+    final Map<String, Map<String, dynamic>> groups = {};
+    var order = 0;
+
+    DateTime? parseDate(String raw) {
+      final v = raw.trim();
+      if (v.isEmpty) return null;
+      return DateTime.tryParse(v);
+    }
+
+    for (final record in _sessionsToReview) {
+      final dateLabel = (record['date'] ?? '').toString().trim();
+      final key = dateLabel.isEmpty ? 'No date' : dateLabel;
+      final sortDate = parseDate(dateLabel);
+
+      groups.putIfAbsent(key, () {
+        return {
+          'dateLabel': key,
+          'sortDate': sortDate,
+          'order': order++,
+          'sessions': <Map<String, dynamic>>[],
+        };
+      });
+
+      (groups[key]!['sessions'] as List<Map<String, dynamic>>).add(record);
+    }
+
+    final list = groups.values.toList();
+    list.sort((a, b) {
+      final ad = a['sortDate'] as DateTime?;
+      final bd = b['sortDate'] as DateTime?;
+      if (ad != null && bd != null) {
+        final c = bd.compareTo(ad);
+        if (c != 0) return c;
+      } else if (ad != null) {
+        return -1;
+      } else if (bd != null) {
+        return 1;
+      }
+      return (a['order'] as int).compareTo(b['order'] as int);
+    });
+
+    return list;
+  }
+
+  Widget _sessionsToReviewCard(AppPalette p) {
+    final groups = _groupSessionsToReviewByDate();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sessions to review',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'These sessions need a syllabus lesson selected before they can be saved.',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (groups.isEmpty)
+            Text(
+              'No sessions need review.',
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w800),
+            )
+          else
+            ...groups.map(
+              (group) => _reviewDateGroupCard(
+                p,
+                dateLabel: (group['dateLabel'] ?? 'No date').toString(),
+                sessions: (group['sessions'] as List<Map<String, dynamic>>),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewDateGroupCard(
+    AppPalette p, {
+    required String dateLabel,
+    required List<Map<String, dynamic>> sessions,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: warningOrange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            dateLabel,
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...sessions.map((record) => _reviewSessionCard(p, record)),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewSessionCard(AppPalette p, Map<String, dynamic> record) {
+    final title = _reviewRecordLabel(record);
+    final date = (record['date'] ?? '').toString().trim();
+    final sessionId = (record['sessionId'] ?? record['id'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        color: p.cardBg,
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: warningOrange.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.edit_note_rounded,
+            color: warningOrange,
+          ),
+        ),
+        title: Text(
+          title.isEmpty ? 'Session to review' : title,
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _chip(
+                icon: Icons.info_outline_rounded,
+                text: 'Needs syllabus check',
+                tint: warningOrange,
+              ),
+              if (date.isNotEmpty)
+                _chip(
+                  icon: Icons.calendar_month_rounded,
+                  text: date,
+                  tint: p.primary,
+                ),
+            ],
+          ),
+        ),
+        trailing: IconButton(
+          onPressed: sessionId.isEmpty
+              ? null
+              : () => _openEditAttendance(record),
+          icon: const Icon(Icons.edit_rounded),
+          color: vividEdit,
+          tooltip: 'Edit session',
+        ),
+      ),
+    );
+  }
+
   Widget _sessionExpansion(
     AppPalette p,
     Map<String, dynamic> s,
@@ -1425,7 +1755,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     final attendanceRecord = passed
         ? _attendanceRecordForSession(sessionId)
         : null;
-    final isByDateView = _groupTabController.index == 1;
+    final isByDateView = _effectiveGroupIndex() == 1;
 
     return GestureDetector(
       onLongPress: () => _copySessionCardDetails(

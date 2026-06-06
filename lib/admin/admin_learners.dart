@@ -10,6 +10,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/offline_action_guard.dart';
 import '../shared/payment_status.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/admin_web_layout.dart';
@@ -23,6 +24,7 @@ import '../services/audit_log_service.dart';
 import '../services/backend_api.dart';
 import 'admin_learner_mail_topics_screen.dart';
 import 'admin_classes.dart';
+import '../teacher/take_attendance_screen.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key, this.initialSearch = ''});
@@ -3495,6 +3497,178 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     );
   }
 
+  void _refreshClassAttendanceCache(String classId) {
+    final key = classId.trim();
+    if (key.isEmpty) return;
+    _classAttendanceFutureCache.remove(key);
+  }
+
+  Future<Map<String, dynamic>?> _loadEditClassData({
+    required Map<String, dynamic> courseNode,
+    required String classId,
+  }) async {
+    final fallback = <String, dynamic>{};
+    final courseClassRaw = courseNode['class'];
+    if (courseClassRaw is Map) {
+      fallback.addAll(courseClassRaw.map((k, v) => MapEntry(k.toString(), v)));
+    }
+
+    final courseId = (courseNode['id'] ?? courseNode['course_id'] ?? '')
+        .toString()
+        .trim();
+    final courseCode = (courseNode['course_code'] ?? '').toString().trim();
+    final courseTitle = (courseNode['title'] ?? '').toString().trim();
+    final variantKey = (courseNode['variantKey'] ?? courseNode['variant'] ?? '')
+        .toString()
+        .trim();
+    final studyMode = (courseNode['studyMode'] ?? '').toString().trim();
+
+    fallback['class_id'] = classId;
+    if (courseId.isNotEmpty) fallback['course_id'] = courseId;
+    if (courseCode.isNotEmpty) fallback['course_code'] = courseCode;
+    if (courseTitle.isNotEmpty) fallback['course_title'] = courseTitle;
+    if (variantKey.isNotEmpty) {
+      fallback['variantKey'] = variantKey;
+      fallback['variant'] = variantKey;
+    }
+    if (studyMode.isNotEmpty) fallback['studyMode'] = studyMode;
+
+    try {
+      final snap = await widget.db.ref('classes/$classId').get();
+      if (snap.exists && snap.value is Map) {
+        final classData =
+            Map<String, dynamic>.from(snap.value as Map).cast<String, dynamic>();
+
+        classData['class_id'] = (classData['class_id'] ?? classId).toString();
+        if ((classData['course_id'] ?? '').toString().trim().isEmpty &&
+            courseId.isNotEmpty) {
+          classData['course_id'] = courseId;
+        }
+        if ((classData['course_code'] ?? '').toString().trim().isEmpty &&
+            courseCode.isNotEmpty) {
+          classData['course_code'] = courseCode;
+        }
+        if ((classData['course_title'] ?? '').toString().trim().isEmpty &&
+            courseTitle.isNotEmpty) {
+          classData['course_title'] = courseTitle;
+        }
+        if ((classData['variantKey'] ?? '').toString().trim().isEmpty &&
+            variantKey.isNotEmpty) {
+          classData['variantKey'] = variantKey;
+        }
+        if ((classData['variant'] ?? '').toString().trim().isEmpty &&
+            variantKey.isNotEmpty) {
+          classData['variant'] = variantKey;
+        }
+        if ((classData['studyMode'] ?? '').toString().trim().isEmpty &&
+            studyMode.isNotEmpty) {
+          classData['studyMode'] = studyMode;
+        }
+
+        return classData;
+      }
+    } catch (_) {
+      // Fall back to the learner course snapshot if the class node can't be reloaded.
+    }
+
+    return fallback.isNotEmpty ? fallback : null;
+  }
+
+  Future<void> _confirmAndOpenAttendanceEdit({
+    required Map<String, dynamic> courseNode,
+    required Map<String, dynamic> classRec,
+  }) async {
+    final classId = (courseNode['class'] is Map)
+        ? (courseNode['class'] as Map)['class_id']?.toString().trim() ?? ''
+        : '';
+    final sessionId = (classRec['sessionId'] ?? '').toString().trim();
+    if (classId.isEmpty || sessionId.isEmpty) return;
+
+    final ok = await _confirm(
+      title: 'Edit attendance?',
+      message:
+          'This will reopen the teacher attendance screen for this class session so you can edit taught items, attendance, and homework. Continue?',
+      confirmText: 'Edit',
+    );
+    if (!ok || !mounted) return;
+
+    final navigator = Navigator.of(context);
+
+    await OfflineActionGuard.runExclusive(
+      context,
+      'admin.learners.edit_attendance.$classId.$sessionId',
+      () async {
+        final classData = await _loadEditClassData(
+          courseNode: courseNode,
+          classId: classId,
+        );
+        if (classData == null) return;
+
+        final recordSnap = await widget.db
+            .ref('classes/$classId/attendance/$sessionId')
+            .get();
+        final record = recordSnap.exists && recordSnap.value is Map
+            ? Map<String, dynamic>.from(recordSnap.value as Map)
+            : Map<String, dynamic>.from(classRec);
+        record['sessionId'] = sessionId;
+
+        if (!mounted) return;
+
+        await navigator.push(
+          MaterialPageRoute(
+            builder: (_) => TakeAttendanceScreen(
+              classData: classData,
+              existingSessionId: sessionId,
+              existingRecord: record,
+            ),
+          ),
+        );
+      },
+    );
+
+    _refreshClassAttendanceCache(classId);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _confirmAndDeleteLearnerAttendance({
+    required Map<String, dynamic> courseNode,
+    required String courseKey,
+    required Map<String, dynamic> classRec,
+  }) async {
+    final classId = (courseNode['class'] is Map)
+        ? (courseNode['class'] as Map)['class_id']?.toString().trim() ?? ''
+        : '';
+    final sessionId = (classRec['sessionId'] ?? '').toString().trim();
+    if (classId.isEmpty || sessionId.isEmpty) return;
+
+    final ok = await _confirm(
+      title: 'Delete learner attendance?',
+      message:
+          'This will remove only this learner from the session, including their homework and consumed-session count. The class lesson stays for other learners. Continue?',
+      confirmText: 'Delete',
+    );
+    if (!ok || !mounted) return;
+
+    await OfflineActionGuard.runExclusive(
+      context,
+      'admin.learners.delete_attendance.$classId.$sessionId',
+      () async {
+        final updates = <String, dynamic>{
+          'classes/$classId/attendance/$sessionId/present/${widget.uid}': null,
+          'classes/$classId/attendance/$sessionId/absent/${widget.uid}': null,
+          'users/${widget.uid}/courses/$courseKey/attendance/$sessionId': null,
+        };
+
+        await widget.db.ref().update(updates);
+      },
+    );
+
+    _refreshClassAttendanceCache(classId);
+    if (!mounted) return;
+    setState(() {});
+  }
+
   void _scheduleSummaryRepairIfNeeded({
     required String courseKey,
     required int summarySessionsPaidTotal,
@@ -4612,7 +4786,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   Widget _paymentPanel(BuildContext context) {
     final courseKey = _selectedCourseKey!;
-    final courseNode = (_userCourses[courseKey] ?? {}) as Map;
+    final courseNode = Map<String, dynamic>.from(_userCourses[courseKey] ?? {});
     final courseId = (courseNode['id'] ?? '').toString().trim();
 
     if (courseId.isEmpty) {
@@ -5367,7 +5541,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     final courseKey = _selectedCourseKey;
     if (courseKey == null) return const _MiniState(text: 'Pick a course.');
 
-    final courseNode = (_userCourses[courseKey] ?? {}) as Map;
+    final courseNode = Map<String, dynamic>.from(_userCourses[courseKey] ?? {});
     final courseId = (courseNode['id'] ?? '').toString().trim();
     final variantKey = _normalizeVariantKey(
       (courseNode['variantKey'] ?? courseNode['variant'] ?? 'inclass')
@@ -5960,7 +6134,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
                 for (final entry in classSessions.asMap().entries) {
                   final i = entry.key;
-                  final classRec = entry.value;
+                  final classRec = Map<String, dynamic>.from(entry.value);
 
                   while (boundaryIndex < boundaries.length &&
                       consumedCount >= boundaries[boundaryIndex]) {
@@ -6069,6 +6243,53 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () => _confirmAndOpenAttendanceEdit(
+                                courseNode: courseNode,
+                                classRec: classRec,
+                              ),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF98D28)
+                                      .withValues(alpha: 0.14),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.edit_note_rounded,
+                                  color: Color(0xFFF98D28),
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                            if (learnerRec != null) ...[
+                              const SizedBox(width: 6),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(999),
+                                onTap: () => _confirmAndDeleteLearnerAttendance(
+                                  courseNode: courseNode,
+                                  courseKey: courseKey,
+                                  classRec: classRec,
+                                ),
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.red,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 10),
                           ],
                         ),
                       ),
@@ -6416,13 +6637,16 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
   static List<Map<String, dynamic>> _mapToList(dynamic v) {
     if (v is! Map) return [];
     final out = <Map<String, dynamic>>[];
-    v.forEach((_, val) {
+    v.forEach((key, val) {
       if (val is Map) {
-        out.add(
-          val
-              .map((k, vv) => MapEntry(k.toString(), vv))
-              .cast<String, dynamic>(),
-        );
+        final m = val
+            .map((k, vv) => MapEntry(k.toString(), vv))
+            .cast<String, dynamic>();
+        if ((m['sessionId'] ?? '').toString().trim().isEmpty) {
+          final sid = key.toString().trim();
+          if (sid.isNotEmpty) m['sessionId'] = sid;
+        }
+        out.add(m);
       }
     });
     out.sort(

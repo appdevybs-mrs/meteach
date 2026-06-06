@@ -540,6 +540,68 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         false;
   }
 
+  Future<void> _showSyllabusRequiredDialog() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(
+          Icons.menu_book_rounded,
+          color: actionOrange,
+          size: 34,
+        ),
+        title: const Text(
+          'Syllabus lesson required',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: const Text(
+          'Please choose at least one lesson from the syllabus first. This keeps the attendance flow aligned with the course plan. After that, you can add custom items if needed.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: mainText,
+            height: 1.45,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: actionOrange,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'OK',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _hasSyllabusLesson() {
+    for (final item in _taughtItems) {
+      if ((item['type'] ?? 'syllabus').toString() == 'syllabus') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Homework autofill from syllabus session
   void _applyHomeworkAutofillFromSelectedSession(Map<String, dynamic> session) {
     final hwFromSyllabus = (session['homework'] ?? '').toString().trim();
@@ -897,6 +959,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   }
 
   Future<void> _openCustomTaughtDialog() async {
+    if (!_hasSyllabusLesson()) {
+      await _showSyllabusRequiredDialog();
+      return;
+    }
+
     final titleC = TextEditingController();
     final notesC = TextEditingController();
 
@@ -999,11 +1066,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       );
       return;
     }
-    if (_taughtItems.isEmpty) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Please add at least 1 taught lesson')),
-      );
+    if (_taughtItems.isEmpty || !_hasSyllabusLesson()) {
+      await _showSyllabusRequiredDialog();
       return;
     }
 
@@ -1554,7 +1618,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _openCustomTaughtDialog,
+                    onPressed: _hasSyllabusLesson()
+                        ? _openCustomTaughtDialog
+                        : () async {
+                            await _showSyllabusRequiredDialog();
+                          },
                     icon: const Icon(Icons.edit),
                     label: const Text('Add Custom'),
                   ),
