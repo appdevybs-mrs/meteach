@@ -163,7 +163,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   int _homeworkReviewedAtMs = 0;
   bool _homeworkNeedsRedo = false;
   bool _homeworkAvailable = false;
-  bool _evalExpanded = true;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -641,6 +640,26 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return 'Homework submission';
   }
 
+  String get _homeworkSessionDisplayLabel {
+    final sessionDate = _fmtDayDateTimeFromRaw(_homeworkSessionId);
+    if (sessionDate.isNotEmpty) return sessionDate;
+
+    final session = _homeworkSessionId.trim();
+    if (session.isNotEmpty) return 'Session $session';
+    return '';
+  }
+
+  IconData get _homeworkStatusIcon {
+    if (_homeworkNeedsRedo) return Icons.refresh_rounded;
+    if (_homeworkReviewedAtMs > 0) return Icons.check_rounded;
+    return Icons.schedule_rounded;
+  }
+
+  String get _homeworkReviewActionLabel {
+    if (_homeworkNeedsRedo || _homeworkReviewedAtMs > 0) return 'Edit';
+    return 'Review';
+  }
+
   Future<void> _showHomeworkSnapshot() async {
     String homeworkText = '';
     try {
@@ -657,48 +676,86 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (_) {}
     if (!mounted) return;
 
+    final statusColor = _homeworkStatusColor;
+    final statusBg = statusColor.withValues(alpha: 0.12);
+    final sessionLabel = _homeworkSessionDisplayLabel;
+
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Homework details'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Status: $_homeworkStatusLabel'),
-            if (_homeworkLessonTitle.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text('Lesson: $_homeworkLessonTitle'),
-            ],
-            if (_homeworkSessionId.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text('Session: $_homeworkSessionId'),
-            ],
-            if (_homeworkSubmittedAtMs > 0) ...[
-              const SizedBox(height: 6),
-              Text('Submitted: ${_fmtReceiptAt(_homeworkSubmittedAtMs)}'),
-            ],
-            if (_homeworkReviewedAtMs > 0) ...[
-              const SizedBox(height: 6),
-              Text('Reviewed: ${_fmtReceiptAt(_homeworkReviewedAtMs)}'),
-            ],
-            if (_homeworkRefPath.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Reference: ready',
-                style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: statusBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: statusColor.withValues(alpha: 0.28),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(_homeworkStatusIcon, color: statusColor, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _homeworkStatusLabel,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              if (_homeworkLessonTitle.trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text('Lesson: $_homeworkLessonTitle'),
+              ],
+              if (sessionLabel.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text('Session: $sessionLabel'),
+              ],
+              if (_homeworkSubmittedAtMs > 0) ...[
+                const SizedBox(height: 6),
+                Text('Submitted: ${_fmtDayDateTime(_homeworkSubmittedAtMs)}'),
+              ],
+              if (_homeworkReviewedAtMs > 0) ...[
+                const SizedBox(height: 6),
+                Text('Reviewed: ${_fmtDayDateTime(_homeworkReviewedAtMs)}'),
+              ],
+              if (homeworkText.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'Homework text',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Text(homeworkText),
+                ),
+              ],
             ],
-            if (homeworkText.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Homework text',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 4),
-              Text(homeworkText),
-            ],
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -722,15 +779,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       return const SizedBox.shrink();
     }
     final submittedDate = _homeworkSubmittedAtMs > 0
-        ? _fmtDayDate(_homeworkSubmittedAtMs)
-        : '';
-    final submittedTime = _homeworkSubmittedAtMs > 0
-        ? _fmtTime(_homeworkSubmittedAtMs)
+        ? _fmtDayDateTime(_homeworkSubmittedAtMs)
         : '';
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -743,147 +797,95 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => setState(() => _evalExpanded = !_evalExpanded),
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFE9CF),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFEC740A).withValues(alpha: 0.28),
-                    ),
-                  ),
-                  child: Icon(
-                    _evalExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: const Color(0xFFB45D07),
-                    size: 21,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Eval',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                  color: _navy,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _homeworkStatusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: _homeworkStatusColor.withValues(alpha: 0.28),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _homeworkNeedsRedo
-                          ? Icons.refresh_rounded
-                          : (_homeworkReviewedAtMs > 0
-                                ? Icons.check_rounded
-                                : Icons.schedule_rounded),
-                      size: 13,
-                      color: _homeworkStatusColor,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _homeworkCompactStatusLabel,
-                      style: TextStyle(
-                        color: _homeworkStatusColor,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (submittedDate.isNotEmpty) ...[
-                const Spacer(),
-                Flexible(
-                  child: Text(
-                    submittedDate,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: _navy.withValues(alpha: 0.72),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ],
+          const Text(
+            'Eval',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              color: _navy,
+            ),
           ),
-          if (_evalExpanded) ...[
-            const SizedBox(height: 7),
-            Row(
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: _homeworkStatusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: _homeworkStatusColor.withValues(alpha: 0.28),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: Text(
-                    _homeworkLessonOrDateLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _navy.withValues(alpha: 0.82),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                IconButton.filledTonal(
-                  tooltip: 'View homework',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _showHomeworkSnapshot,
-                  icon: const Icon(Icons.visibility_outlined, size: 19),
+                Icon(
+                  _homeworkStatusIcon,
+                  size: 13,
+                  color: _homeworkStatusColor,
                 ),
                 const SizedBox(width: 4),
-                FilledButton.icon(
-                  onPressed: _reviewHomeworkFromThread,
-                  icon: const Icon(Icons.fact_check_rounded, size: 18),
-                  label: const Text('Review'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF5B33D6),
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                    minimumSize: const Size(0, 38),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                Text(
+                  _homeworkCompactStatusLabel,
+                  style: TextStyle(
+                    color: _homeworkStatusColor,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
                   ),
                 ),
               ],
             ),
-            if (submittedTime.isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Text(
-                'Submitted $submittedTime',
-                style: TextStyle(
-                  color: Colors.black.withValues(alpha: 0.48),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11,
-                ),
+          ),
+          if (submittedDate.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Text(
+              submittedDate,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _navy.withValues(alpha: 0.72),
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
               ),
-            ],
+            ),
           ],
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _homeworkLessonOrDateLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _navy.withValues(alpha: 0.82),
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          IconButton.filledTonal(
+            tooltip: 'View homework',
+            visualDensity: VisualDensity.compact,
+            onPressed: _showHomeworkSnapshot,
+            icon: const Icon(Icons.visibility_outlined, size: 18),
+          ),
+          const SizedBox(width: 4),
+          FilledButton.icon(
+            onPressed: _reviewHomeworkFromThread,
+            icon: const Icon(Icons.fact_check_rounded, size: 17),
+            label: Text(_homeworkReviewActionLabel),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF5B33D6),
+              foregroundColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(13),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+            ),
+          ),
         ],
       ),
     );
@@ -2611,6 +2613,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return _fmtDayDate(ms);
   }
 
+  static String _fmtDayDateTimeFromRaw(String raw) {
+    final ms = _epochMsFromRaw(raw);
+    if (ms <= 0) return '';
+    return _fmtDayDateTime(ms);
+  }
+
   static String _fmtDayDate(int ms) {
     const days = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const months = <String>[
@@ -2633,6 +2641,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final now = DateTime.now();
     final year = d.year == now.year ? '' : ' ${d.year}';
     return '$day, ${d.day} $month$year';
+  }
+
+  static String _fmtDayDateTime(int ms) {
+    return '${_fmtDayDate(ms)} ${_fmtTime(ms)}';
   }
 
   static String _fmtReceiptAt(int ms) {
