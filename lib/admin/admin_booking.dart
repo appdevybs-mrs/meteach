@@ -923,8 +923,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
-          Navigator.of(detailsSheetContext).pop();
-        }
+        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
@@ -1839,8 +1838,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
-          Navigator.of(detailsSheetContext).pop();
-        }
+        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
