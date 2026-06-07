@@ -73,6 +73,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   // Curriculum (optional)
   int totalSessions = 0;
   Map<String, dynamic> curriculumSessions = {};
+  List<Map<String, dynamic>> curriculumUnits = [];
 
   // Progress
   int currentSession = 1;
@@ -109,8 +110,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   int upcomingBookingsCount = 0;
   String helpLang = 'ar'; // en | ar | fr | tr | ur
   bool lessonChoiceArabic = true;
-  final Set<String> _expandedLessonChoiceCards = <String>{};
-  final Set<int> _expandedSyllabusObjectives = <int>{};
+  final Set<String> _expandedSyllabusObjectives = <String>{};
   late final AnimationController _sessionPulseCtrl;
   Map<String, List<_BusyRange>>? _busyRangesCache;
   DateTime? _busyRangesCacheAt;
@@ -167,9 +167,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         setState(() => flowStep = _BookingFlowStep.schedule);
         return true;
       case _BookingFlowStep.schedule:
-        setState(() => flowStep = _BookingFlowStep.syllabus);
-        return true;
-      case _BookingFlowStep.syllabus:
         setState(() => flowStep = _BookingFlowStep.lessonChoice);
         return true;
       case _BookingFlowStep.lessonChoice:
@@ -2266,24 +2263,26 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       final units = root['units'];
       final Map<String, dynamic> out = {};
+      final List<Map<String, dynamic>> outUnits = [];
       int fallbackNo = 1;
 
       if (units is List) {
         for (final u in units) {
           if (u is! Map) continue;
           final unit = u.map((k, vv) => MapEntry(k.toString(), vv));
-          final sessions = unit['sessions'];
+          final rawSessions = unit['sessions'];
 
-          if (sessions is! List) continue;
+          if (rawSessions is! List) continue;
 
-          for (final s in sessions) {
+          final List<Map<String, dynamic>> unitSessions = [];
+          for (final s in rawSessions) {
             if (s is! Map) continue;
             final sess = s.map((k, vv) => MapEntry(k.toString(), vv));
 
             final sourceSessionNo = _toInt(sess['sessionNumber'], fallback: 0);
             final no = fallbackNo;
 
-            out['$no'] = {
+            final entry = <String, dynamic>{
               'sessionNo': no,
               'sourceSessionNumber': sourceSessionNo,
               'sessionTitle': (sess['title'] ?? '').toString(),
@@ -2294,12 +2293,23 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               'source': 'syllabi/flexible',
             };
 
+            out['$no'] = entry;
+            unitSessions.add(entry);
             fallbackNo++;
           }
+
+          outUnits.add({
+            'unitId': (unit['id'] ?? '').toString(),
+            'unitTitle': (unit['title'] ?? 'Unit').toString(),
+            'unitDescription': (unit['description'] ?? '').toString().trim(),
+            'unitOrder': unit['order'] ?? 0,
+            'sessions': unitSessions,
+          });
         }
       }
 
       curriculumSessions = out;
+      curriculumUnits = outUnits;
 
       if (totalSessions <= 0) {
         totalSessions = out.length;
@@ -4715,201 +4725,148 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
-  bool _preferDarkText(Color bg) {
-    return ThemeData.estimateBrightnessForColor(bg) == Brightness.light;
-  }
-
-  Widget _buildPremiumActionCard({
-    required String title,
-    required String description,
-    required String cta,
-    required String objective,
-    required bool expanded,
-    required VoidCallback onToggleExpand,
-    required VoidCallback onTap,
-    bool primary = false,
-    String? sessionLine,
-    bool enabled = true,
-    double closedMinHeight = 140,
-    String? badge,
-    IconData? icon,
-  }) {
-    final width = MediaQuery.sizeOf(context).width;
-    final cardPadding = width >= 900 ? 24.0 : 20.0;
-    final cardRadius = 18.0;
-    final objectivePadding = width >= 900 ? 20.0 : 16.0;
-    final primaryHsl = HSLColor.fromColor(palette.primary);
-    final primaryShade = primaryHsl
-        .withLightness((primaryHsl.lightness - 0.08).clamp(0.16, 0.5))
-        .toColor();
-    final cardMain = primary ? palette.primary : palette.cardBg;
-    final primaryText = _preferDarkText(cardMain) ? palette.text : Colors.white;
-    final secondaryPrimaryText = _preferDarkText(cardMain)
-        ? palette.text.withValues(alpha: 0.82)
-        : Colors.white.withValues(alpha: 0.93);
+  Widget _buildContinueLearningCard() {
+    final recommendedNo = _recommendedSessionNo;
+    final recommendedTitle = _sessionTitleFor(recommendedNo);
+    final nextObjective = _sessionObjectiveFor(recommendedNo);
+    final limitReached = upcomingBookingsCount >= 3;
 
     return Opacity(
-      opacity: enabled ? 1 : 0.56,
+      opacity: limitReached ? 0.56 : 1,
       child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(cardRadius),
+        onTap: limitReached
+            ? null
+            : () {
+                setState(() {
+                  studyMode = 'follow';
+                  selectedLessonForFlow = recommendedNo;
+                  selectedSessionNo = recommendedNo;
+                  _resetScheduleSelections();
+                  flowStep = _BookingFlowStep.schedule;
+                });
+              },
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          constraints: BoxConstraints(
-            minHeight: expanded ? 0 : closedMinHeight,
-          ),
-          padding: EdgeInsets.all(cardPadding),
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: primary
-                ? LinearGradient(colors: [palette.primary, primaryShade])
-                : null,
-            color: primary ? null : palette.cardBg,
-            borderRadius: BorderRadius.circular(cardRadius),
-            border: Border.all(
-              color: primary
-                  ? primaryShade.withValues(alpha: 0.95)
-                  : palette.border.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(20),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0E7C86), Color(0xFF0A5E66)],
             ),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x12000000),
-                blurRadius: 10,
-                offset: Offset(0, 5),
+                color: const Color(0xFF0E7C86).withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (icon != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: primary
-                        ? primaryText.withValues(alpha: 0.12)
-                        : palette.primary.withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    icon,
-                    color: primary ? primaryText : palette.primary,
-                    size: 28,
-                  ),
-                ),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primary ? primaryText : palette.primary,
-                        fontSize: 18,
-                      ),
+                  Expanded(child: _buildPathwayGraphic()),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
                     ),
-                  ),
-                  if (badge != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: primary
-                            ? primaryText.withValues(alpha: 0.12)
-                            : palette.accent.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        badge,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primary ? primaryText : palette.accent,
-                          fontSize: 11,
-                        ),
-                      ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                  const SizedBox(width: 6),
-                  InkWell(
-                    onTap: onToggleExpand,
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: primary
-                            ? primaryText.withValues(alpha: 0.12)
-                            : palette.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: AnimatedRotation(
-                        turns: expanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 180),
-                        child: Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: primary ? primaryText : palette.primary,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '⭐',
+                          style: const TextStyle(fontSize: 14),
                         ),
-                      ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Recommended',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              if (sessionLine != null) ...[
-                const SizedBox(height: 10),
-                _buildSessionLinePill(label: sessionLine, onPrimary: primary),
-              ],
-              const SizedBox(height: 10),
+              const SizedBox(height: 14),
               Text(
-                description,
-                style: TextStyle(
-                  color: primary
-                      ? secondaryPrimaryText
-                      : palette.text.withValues(alpha: 0.78),
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                cta,
-                style: TextStyle(
-                  color: primary ? primaryText : palette.accent,
+                'Continue Learning',
+                style: const TextStyle(
+                  color: Colors.white,
                   fontWeight: FontWeight.w900,
+                  fontSize: 22,
                 ),
               ),
-              AnimatedCrossFade(
-                firstChild: const SizedBox.shrink(),
-                secondChild: Padding(
-                  padding: const EdgeInsets.only(top: 14),
-                  child: Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.all(objectivePadding),
-                    decoration: BoxDecoration(
-                      color: primary
-                          ? primaryText.withValues(alpha: 0.1)
-                          : palette.soft.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: primary
-                            ? primaryText.withValues(alpha: 0.22)
-                            : palette.border,
-                      ),
+              const SizedBox(height: 4),
+              Text(
+                'continue from where you left',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _buildSessionLinePill(
+                label: _sessionLabel(recommendedNo, title: recommendedTitle),
+                onPrimary: true,
+              ),
+              if (nextObjective.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  nextObjective,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFBF5D39),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
-                      objective,
-                      style: TextStyle(
-                        color: primary
-                            ? primaryText
-                            : palette.text.withValues(alpha: 0.86),
-                        fontWeight: FontWeight.w700,
-                        height: 1.35,
-                      ),
+                  ),
+                  onPressed: limitReached
+                      ? null
+                      : () {
+                          setState(() {
+                            studyMode = 'follow';
+                            selectedLessonForFlow = recommendedNo;
+                            selectedSessionNo = recommendedNo;
+                            _resetScheduleSelections();
+                            flowStep = _BookingFlowStep.schedule;
+                          });
+                        },
+                  child: const Text(
+                    '▶ Continue',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
                     ),
                   ),
                 ),
-                crossFadeState: expanded
-                    ? CrossFadeState.showSecond
-                    : CrossFadeState.showFirst,
-                duration: const Duration(milliseconds: 180),
               ),
             ],
           ),
@@ -4918,370 +4875,475 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
-  Widget _buildLessonChoiceStep() {
-    final isAr = lessonChoiceArabic;
-    final limitReached = upcomingBookingsCount >= 3;
-    final recommendedNo = _recommendedSessionNo;
-    final recommendedTitle = _sessionTitleFor(recommendedNo);
-    final nextObjective = _sessionObjectiveFor(recommendedNo);
-    final followExpanded = _expandedLessonChoiceCards.contains('follow');
-    final customExpanded = _expandedLessonChoiceCards.contains('custom');
-    const maxBookings = 3;
-    final used = upcomingBookingsCount;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: Column(
-            crossAxisAlignment: isAr
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      isAr
-                          ? 'ماذا تريد أن تدرس؟'
-                          : 'What would you like to study?',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        color: palette.primary,
-                      ),
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        lessonChoiceArabic = !lessonChoiceArabic;
-                      });
-                    },
-                    icon: const Icon(Icons.translate_rounded, size: 18),
-                    label: Text(isAr ? 'English' : 'العربية'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: palette.primary,
-                      side: BorderSide(color: palette.border),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isAr
-                    ? 'اختر كيف تريد أن تتعلم اليوم'
-                    : "Choose how you'd like to learn today",
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: palette.text.withValues(alpha: 0.7),
-                ),
-              ),
-              if (used > 0) ...[
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        isAr
-                            ? '$used من $maxBookings حجوزات مستخدمة'
-                            : '$used of $maxBookings bookings used',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: palette.text.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    value: used / maxBookings,
-                    minHeight: 6,
-                    backgroundColor: palette.soft,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      used >= maxBookings ? actionOrange : palette.primary,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 22),
-              LayoutBuilder(
-                builder: (_, constraints) {
-                  final wide = constraints.maxWidth >= 580;
-                  final card1 = _buildPremiumActionCard(
-                    icon: Icons.auto_awesome_rounded,
-                    title: isAr ? 'احجز الدرس التالي' : 'Book the next lesson',
-                    sessionLine: isAr
-                        ? 'الدرس $recommendedNo${recommendedTitle.isEmpty ? '' : ' • $recommendedTitle'}'
-                        : _sessionLabel(recommendedNo, title: recommendedTitle),
-                    description: isAr
-                        ? 'تابع مع الدرس التالي المقترح لك.'
-                        : 'Continue with your recommended next session.',
-                    cta: isAr ? 'احجز الدرس التالي' : 'Book next lesson',
-                    objective: isAr
-                        ? (nextObjective.isEmpty
-                              ? 'الهدف: متابعة التدرج الطبيعي للدورة مع نفس تسلسل التعلم.'
-                              : 'الهدف: $nextObjective')
-                        : (nextObjective.isEmpty
-                              ? 'Objective: Continue your normal course sequence and keep steady progress.'
-                              : 'Objective: $nextObjective'),
-                    badge: isAr ? 'موصى به' : 'Recommended',
-                    expanded: followExpanded,
-                    onToggleExpand: () {
-                      setState(() {
-                        if (followExpanded) {
-                          _expandedLessonChoiceCards.remove('follow');
-                        } else {
-                          _expandedLessonChoiceCards.add('follow');
-                        }
-                      });
-                    },
-                    primary: true,
-                    enabled: !limitReached,
-                    closedMinHeight: 156,
-                    onTap: () {
-                      setState(() {
-                        studyMode = 'follow';
-                        selectedLessonForFlow = recommendedNo;
-                        selectedSessionNo = recommendedNo;
-                        _resetScheduleSelections();
-                        flowStep = _BookingFlowStep.schedule;
-                      });
-                    },
-                  );
-                  final card2 = _buildPremiumActionCard(
-                    icon: Icons.menu_book_rounded,
-                    title: isAr ? 'اختر درسك' : 'Pick your lesson',
-                    description: isAr
-                        ? 'اختر درساً محدداً من المنهج.'
-                        : 'Choose a specific lesson from the syllabus.',
-                    cta: isAr ? 'اختر من المنهج' : 'Choose from syllabus',
-                    objective: isAr
-                        ? 'الهدف: استعرض أهداف كل درس في المنهج واختر الدرس الذي يناسب احتياجك الآن.'
-                        : 'Objective: Browse lesson objectives in the syllabus and pick the lesson that matches your current learning need.',
-                    expanded: customExpanded,
-                    enabled: !limitReached,
-                    closedMinHeight: 156,
-                    onToggleExpand: () {
-                      setState(() {
-                        if (customExpanded) {
-                          _expandedLessonChoiceCards.remove('custom');
-                        } else {
-                          _expandedLessonChoiceCards.add('custom');
-                        }
-                      });
-                    },
-                    onTap: () {
-                      setState(() {
-                        studyMode = 'custom';
-                        flowStep = _BookingFlowStep.syllabus;
-                      });
-                    },
-                  );
-                  if (wide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: card1),
-                        const SizedBox(width: 16),
-                        Expanded(child: card2),
-                      ],
-                    );
-                  }
-                  return Column(
-                    children: [
-                      card1,
-                      const SizedBox(height: 16),
-                      card2,
-                    ],
-                  );
-                },
-              ),
-              if (limitReached) ...[
-                const SizedBox(height: 14),
+  Widget _buildPathwayGraphic() {
+    return SizedBox(
+      height: 24,
+      child: Row(
+        children: List.generate(5, (i) {
+          final filled = i < 3;
+          return Expanded(
+            child: Row(
+              children: [
                 Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
+                  width: 12,
+                  height: 12,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFEFEA),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF2B8A8)),
-                  ),
-                  child: Text(
-                    _bookingLimitNote(),
-                    style: const TextStyle(
-                      color: Color(0xFF8A3D27),
-                      fontWeight: FontWeight.w800,
+                    shape: BoxShape.circle,
+                    color: filled
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.35),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      width: 2,
                     ),
                   ),
                 ),
+                if (i < 4)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      color: filled
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : Colors.white.withValues(alpha: 0.2),
+                    ),
+                  ),
               ],
-              const SizedBox(height: 20),
-              _buildCancelEntryCard(),
-            ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildOrDivider() {
+    return Row(
+      children: [
+        const Expanded(
+          child: Divider(thickness: 1, color: Color(0xFFD8CFC1)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            'OR',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: palette.text.withValues(alpha: 0.5),
+              fontSize: 13,
+              letterSpacing: 2,
+            ),
           ),
+        ),
+        const Expanded(
+          child: Divider(thickness: 1, color: Color(0xFFD8CFC1)),
         ),
       ],
     );
   }
 
-  Widget _buildSyllabusStep() {
-    final total = _effectiveTotalSessions;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            IconButton(
-              onPressed: () =>
-                  setState(() => flowStep = _BookingFlowStep.lessonChoice),
-              icon: const Icon(Icons.arrow_back_rounded, color: primaryBlue),
-            ),
-            const SizedBox(width: 4),
-            const Text(
+  Widget _buildChooseLessonSection() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFD8CFC1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
               'Choose a lesson',
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: primaryBlue,
-                fontSize: 21,
+                fontSize: 18,
+                color: palette.primary,
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '$courseTitle - $studiedSessionsConsumed of $total sessions studied',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Colors.grey.shade700,
           ),
-        ),
-        const SizedBox(height: 12),
-        ...List.generate(total, (i) {
-          final no = i + 1;
-          final title = _sessionTitleFor(no);
-          final status = no < currentSession
-              ? 'Studied'
-              : (no == currentSession ? 'Next lesson' : 'Available');
-          final objective = _sessionObjectiveFor(no);
-          final expanded = _expandedSyllabusObjectives.contains(no);
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: uiBorder),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 4),
+          if (curriculumUnits.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Text(
+                'No lessons available yet.',
+                style: TextStyle(
+                  color: Color(0xFF999999),
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
+              ),
+            )
+          else
+            ...curriculumUnits.map((unit) => _buildUnitCard(unit)),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  String _unitKey(Map<String, dynamic> unit) {
+    final id = (unit['unitId'] ?? '').toString().trim();
+    if (id.isNotEmpty) return id;
+    return '${unit['unitOrder'] ?? ''}|${unit['unitTitle'] ?? ''}';
+  }
+
+  Widget _buildUnitCard(Map<String, dynamic> unit) {
+    final unitTitle = (unit['unitTitle'] ?? 'Unit').toString();
+    final sessions = (unit['sessions'] as List<Map<String, dynamic>>);
+    final total = sessions.length;
+    int studied = 0;
+    for (final s in sessions) {
+      final no = _toInt(s['sessionNo'], fallback: 0);
+      if (no > 0 && no < currentSession) studied++;
+    }
+    final pct = total == 0 ? 0.0 : (studied / total).clamp(0.0, 1.0);
+    final completed = total > 0 && studied >= total;
+    final started = studied > 0;
+    final key = _unitKey(unit);
+    final isOpen = _expandedSyllabusObjectives.contains(key);
+    final statusText = completed
+        ? 'Completed'
+        : started
+            ? 'In progress'
+            : 'Not started';
+    final statusBg = completed
+        ? const Color(0xFF0E7C86).withValues(alpha: 0.10)
+        : started
+            ? const Color(0xFFBF5D39).withValues(alpha: 0.10)
+            : const Color(0xFFD8CFC1).withValues(alpha: 0.18);
+    final statusFg = completed
+        ? const Color(0xFF0E7C86)
+        : started
+            ? const Color(0xFFBF5D39)
+            : const Color(0xFF0E7C86).withValues(alpha: 0.7);
+
+    return Column(
+      children: [
+        InkWell(
+          onTap: () {
+            setState(() {
+              if (isOpen) {
+                _expandedSyllabusObjectives.remove(key);
+              } else {
+                _expandedSyllabusObjectives.add(key);
+              }
+            });
+          },
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isOpen
+                    ? const Color(0xFF0E7C86).withValues(alpha: 0.5)
+                    : const Color(0xFFD8CFC1).withValues(alpha: 0.75),
+              ),
+              color: isOpen ? const Color(0xFFF9FCFF) : Colors.white,
             ),
-            child: Column(
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                CircleAvatar(
+                  backgroundColor:
+                      const Color(0xFF0E7C86).withValues(alpha: 0.08),
+                  child: Icon(
+                    completed
+                        ? Icons.verified_rounded
+                        : Icons.folder_open_rounded,
+                    color: const Color(0xFF0E7C86),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        unitTitle,
+                        style: const TextStyle(
+                          color: Color(0xFF1A1A1A),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
                         children: [
-                          _buildSessionLinePill(
-                            label: _sessionLabel(no, title: title),
-                            compact: true,
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: pct,
+                                minHeight: 6,
+                                backgroundColor: const Color(0xFF0E7C86)
+                                    .withValues(alpha: 0.08),
+                                valueColor:
+                                    const AlwaysStoppedAnimation(Color(
+                                      0xFFBF5D39,
+                                    )),
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(width: 8),
                           Text(
-                            'Status: $status',
+                            '$studied/$total',
                             style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade700,
+                              color: const Color(0xFF1A1A1A)
+                                  .withValues(alpha: 0.75),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (expanded) {
-                            _expandedSyllabusObjectives.remove(no);
-                          } else {
-                            _expandedSyllabusObjectives.add(no);
-                          }
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(999),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: AnimatedRotation(
-                          turns: expanded ? 0.5 : 0,
-                          duration: const Duration(milliseconds: 180),
-                          child: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: primaryBlue,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: actionOrange,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          selectedLessonForFlow = no;
-                          selectedSessionNo = no;
-                          _resetScheduleSelections();
-                          flowStep = _BookingFlowStep.schedule;
-                        });
-                      },
-                      child: const Text('Select'),
-                    ),
-                  ],
-                ),
-                AnimatedCrossFade(
-                  firstChild: const SizedBox.shrink(),
-                  secondChild: Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(top: 10),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF6F8FA),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: uiBorder),
-                    ),
-                    child: Text(
-                      objective.isEmpty
-                          ? 'Objective: Build skills for this lesson part and prepare for the next step.'
-                          : 'Objective: $objective',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade800,
-                        height: 1.3,
-                      ),
-                    ),
+                    ],
                   ),
-                  crossFadeState: expanded
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 180),
+                ),
+                const SizedBox(width: 8),
+                _miniStatusPill(statusText, statusBg, statusFg),
+                const SizedBox(width: 4),
+                Icon(
+                  isOpen
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: const Color(0xFF0E7C86),
+                  size: 22,
                 ),
               ],
             ),
-          );
-        }),
+          ),
+        ),
+        if (isOpen)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFD8CFC1).withValues(alpha: 0.85),
+              ),
+              color: const Color(0xFFFAFBFC),
+            ),
+            child: Column(
+              children: sessions.map((s) => _buildLessonRow(s)).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _miniStatusPill(String text, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: fg,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLessonRow(Map<String, dynamic> session) {
+    final no = _toInt(session['sessionNo'], fallback: 0);
+    final title = (session['sessionTitle'] ?? '').toString().trim();
+    final label = title.isEmpty ? 'Session $no' : 'Session $no • $title';
+    final studied = no > 0 && no < currentSession;
+    final isNext = no == currentSession;
+    final isAvailable = no > currentSession;
+    final limitReached = upcomingBookingsCount >= 3;
+
+    IconData icon;
+    Color iconColor;
+    String status;
+    if (studied) {
+      icon = Icons.check_circle_rounded;
+      iconColor = const Color(0xFF0E7C86);
+      status = 'Studied';
+    } else if (isNext) {
+      icon = Icons.play_circle_filled_rounded;
+      iconColor = const Color(0xFFBF5D39);
+      status = 'Next';
+    } else {
+      icon = Icons.menu_book_rounded;
+      iconColor = const Color(0xFF0E7C86).withValues(alpha: 0.55);
+      status = 'Available';
+    }
+
+    return InkWell(
+      onTap: (isNext || isAvailable) && !limitReached
+          ? () {
+              setState(() {
+                studyMode = 'custom';
+                selectedLessonForFlow = no;
+                selectedSessionNo = no;
+                _resetScheduleSelections();
+                flowStep = _BookingFlowStep.schedule;
+              });
+            }
+          : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: studied
+                ? const Color(0xFF0E7C86).withValues(alpha: 0.24)
+                : const Color(0xFFD8CFC1).withValues(alpha: 0.75),
+          ),
+          color: studied
+              ? const Color(0xFF0E7C86).withValues(alpha: 0.03)
+              : Colors.white,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: iconColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            _miniStatusPill(
+              status,
+              studied
+                  ? const Color(0xFF0E7C86).withValues(alpha: 0.10)
+                  : isNext
+                      ? const Color(0xFFBF5D39).withValues(alpha: 0.10)
+                      : const Color(0xFF0E7C86).withValues(alpha: 0.06),
+              studied
+                  ? const Color(0xFF0E7C86)
+                  : isNext
+                      ? const Color(0xFFBF5D39)
+                      : const Color(0xFF0E7C86).withValues(alpha: 0.7),
+            ),
+            if ((isNext || isAvailable) && !limitReached) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFBF5D39),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Book',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLessonChoiceStep() {
+    final limitReached = upcomingBookingsCount >= 3;
+    const maxBookings = 3;
+    final used = upcomingBookingsCount;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _buildCancelEntryCard(),
+        const SizedBox(height: 20),
+        Icon(Icons.auto_awesome_rounded, size: 36, color: palette.primary),
+        const SizedBox(height: 10),
+        Text(
+          'What would you like to learn?',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            color: palette.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'continue your recommended path, or choose a lesson yourself.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: palette.text.withValues(alpha: 0.65),
+          ),
+        ),
+        if (used > 0) ...[
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$used of $maxBookings bookings used',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: palette.text.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: used / maxBookings,
+              minHeight: 6,
+              backgroundColor: palette.soft,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                used >= maxBookings ? actionOrange : palette.primary,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 22),
+        _buildContinueLearningCard(),
+        const SizedBox(height: 20),
+        _buildOrDivider(),
+        const SizedBox(height: 20),
+        _buildChooseLessonSection(),
+        if (limitReached) ...[
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFEFEA),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF2B8A8)),
+            ),
+            child: Text(
+              _bookingLimitNote(),
+              style: const TextStyle(
+                color: Color(0xFF8A3D27),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -5310,7 +5372,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         flowStep = _BookingFlowStep.lessonChoice;
       } else if (wasCustomMode) {
         studyMode = 'custom';
-        flowStep = _BookingFlowStep.syllabus;
+        flowStep = _BookingFlowStep.lessonChoice;
       } else {
         flowStep = _BookingFlowStep.lessonChoice;
       }
@@ -6839,8 +6901,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     switch (flowStep) {
       case _BookingFlowStep.lessonChoice:
         return _buildLessonChoiceStep();
-      case _BookingFlowStep.syllabus:
-        return _buildSyllabusStep();
       case _BookingFlowStep.schedule:
         return _buildScheduleStep();
       case _BookingFlowStep.confirm:
@@ -7065,7 +7125,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
 enum _CancelBookingStatus { cancelled, notFound, locked, failed }
 
-enum _BookingFlowStep { lessonChoice, syllabus, schedule, confirm, success }
+enum _BookingFlowStep { lessonChoice, schedule, confirm, success }
 
 enum _SchedulePath { byTeacher, byDay }
 
